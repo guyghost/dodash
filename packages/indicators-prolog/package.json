@@ -1,0 +1,28 @@
+{
+  "name": "@dodash/indicators-prolog",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "pnpm prepare:prolog && tsc -p tsconfig.build.json",
+    "check": "pnpm check:prolog && tsc -p tsconfig.json --noEmit",
+    "check:prolog": "node scripts/embed-prolog.mjs --check",
+    "prepare:prolog": "node scripts/embed-prolog.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dodash/domain": "workspace:*",
+    "tau-prolog": "^0.3.4"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}
+
