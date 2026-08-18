@@ -25,6 +25,16 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(vite@8.2.1)
 
+  packages/allocator:
+    dependencies:
+      '@dodash/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.1)
+
   packages/domain:
     devDependencies:
       vitest:
@@ -39,6 +49,16 @@ importers:
       tau-prolog:
         specifier: ^0.3.4
         version: 0.3.4
+    devDependencies:
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.1)
+
+  packages/risk:
+    dependencies:
+      '@dodash/domain':
+        specifier: workspace:*
+        version: link:../domain
     devDependencies:
       vitest:
         specifier: ^4.1.10
