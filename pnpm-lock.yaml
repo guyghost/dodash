@@ -44,6 +44,19 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(vite@8.2.1)
 
+  packages/strategies:
+    dependencies:
+      '@dodash/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@dodash/indicators-prolog':
+        specifier: workspace:*
+        version: link:../indicators-prolog
+    devDependencies:
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.1)
+
 packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':
