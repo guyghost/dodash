@@ -65,6 +65,31 @@ Les statuts de frontière sont déterministes : `401` credential absent/invalide
 interdite, `413` requête/réponse hors limite, `502` échec du service Agent et
 `503` secret interne absent ou trop faible.
 
+### Topologie Cloudflare de production
+
+Le déploiement conserve la frontière same-origin avec quatre Workers et trois
+service bindings unidirectionnels :
+
+```text
+navigateur
+  → dodash-dashboard (assets publics, /api/* seulement vers le Worker)
+    → DASHBOARD_API → dodash-dashboard-api (privé)
+      → AGENT_SERVICE → dodash-agent (privé)
+        → MARKET_DATA → dodash-mcp-market-data (privé)
+```
+
+- `dodash-dashboard` est l'unique service exposé sur `workers.dev`. Il sert les
+  assets statiques et transmet `/api/*` sans réécrire l'URL ni les headers.
+- `dodash-dashboard-api`, `dodash-agent` et `dodash-mcp-market-data` ont
+  `workers_dev: false` et restent joignables uniquement par service binding.
+- Le cache marché utilise un namespace KV dédié `dodash-market-cache`.
+- Les trois secrets de contrôle sont distincts par rôle :
+  `DASHBOARD_ACCESS_TOKEN`, `CONTROL_API_TOKEN` et `INTERNAL_SERVICE_TOKEN`.
+  Seules les égalités explicitement documentées entre émetteur et récepteur
+  sont autorisées.
+- Le mode live reste désactivé au premier déploiement. Les secrets Coinbase ne
+  sont ajoutés qu'au cours d'une activation live séparée et revue.
+
 ## Invariants
 
 1. Aucun secret ou Bearer token ne vit dans le contexte XState, l’URL ou le
@@ -77,3 +102,6 @@ interdite, `413` requête/réponse hors limite, `502` échec du service Agent et
 6. Le proxy ne transmet aucun header fourni par le navigateur au service Agent.
 7. Le proxy n'accepte aucun chemin ou verbe libre et ne réessaie jamais une
    commande mutante.
+8. Aucun Worker privé ne possède de route publique directe en production.
+9. Le Worker d'assets ne décide d'aucun état métier : il route `/api/*` et sert
+   le reste depuis le binding `ASSETS`.

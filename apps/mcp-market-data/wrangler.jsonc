@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-08-18",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
@@ -15,8 +16,7 @@
   "kv_namespaces": [
     {
       "binding": "MARKET_CACHE",
-      "id": "00000000000000000000000000000000"
+      "id": "72c126510250480580b0115a47a5cbcf"
     }
   ]
 }
-

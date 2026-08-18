@@ -6,6 +6,7 @@
   "scripts": {
     "build": "wrangler deploy --dry-run --outdir dist",
     "check": "tsc -p tsconfig.json --noEmit",
+    "deploy": "wrangler deploy",
     "dev": "wrangler dev --port 8788",
     "test": "vitest run",
     "types": "wrangler types"

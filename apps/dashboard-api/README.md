@@ -15,9 +15,10 @@ Créer `apps/dashboard-api/.dev.vars` à partir de l'exemple, avec deux valeurs
 aléatoires d'au moins 32 caractères. `CONTROL_API_TOKEN` doit être identique à
 celui du Worker Agent.
 
-En production, enregistrer les deux valeurs avec `wrangler secret put`. Router
-`/api/*` vers ce Worker sur le même hostname que le dashboard ; les assets du
-dashboard restent servis par le Worker Sites préparé dans `apps/dashboard`.
+En production, enregistrer les deux valeurs avec `wrangler secret put`. Le
+Worker public `dodash-dashboard` transmet `/api/*` à ce Worker par service
+binding et sert les assets sur le même hostname. Ce Worker conserve
+`workers_dev: false` et n'est jamais exposé directement.
 
 ```sh
 pnpm --filter @dodash/dashboard-api check

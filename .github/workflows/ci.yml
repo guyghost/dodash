@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy_workers:
-        description: Deploy the three Cloudflare Workers after verification
+        description: Deploy the four Cloudflare Workers after verification
         required: false
         type: boolean
         default: false
@@ -59,3 +59,7 @@ jobs:
         run: pnpm --filter @dodash/agent exec wrangler deploy
       - name: Deploy dashboard API Worker
         run: pnpm --filter @dodash/dashboard-api exec wrangler deploy
+      - name: Build dashboard assets
+        run: pnpm --filter @dodash/dashboard build
+      - name: Deploy dashboard Worker
+        run: pnpm --filter @dodash/dashboard exec wrangler deploy

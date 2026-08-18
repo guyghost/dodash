@@ -34,7 +34,7 @@ flowchart LR
 | `apps/mcp-market-data` | MCP et frontière Coinbase read-only, cache KV |
 | `apps/agent` | Durable Object, Alarm API, SQLite et exécution Coinbase |
 | `apps/dashboard-api` | Proxy de contrôle same-origin, authentifié et borné |
-| `apps/dashboard` | Surface React pilotée par le modèle de session |
+| `apps/dashboard` | Surface React et Worker public d'assets pilotés par le modèle de session |
 
 Le LLM ne décide d'aucune transition. Les signaux entrent dans les modèles ;
 seules les machines et règles déterministes choisissent les états suivants.
@@ -70,12 +70,13 @@ Copier les exemples `.dev.vars.example` en `.dev.vars` dans :
 
 Les tokens doivent contenir au moins 32 caractères. En production, les placer
 avec `wrangler secret put` et ne jamais les écrire dans `wrangler.jsonc`.
-Remplacer également l'identifiant KV factice de
-`apps/mcp-market-data/wrangler.jsonc`.
+Le namespace KV `dodash-market-cache` est provisionné séparément et son
+identifiant est versionné dans `apps/mcp-market-data/wrangler.jsonc`.
 
-Ordre de déploiement : market data, Agent, dashboard API, puis dashboard Sites.
-Le dashboard API doit recevoir la route `/api/*` sur le même hostname que le
-dashboard afin de conserver la frontière same-origin. Le déploiement Workers
+Ordre de déploiement : market data, Agent, dashboard API, puis dashboard. Seul
+`dodash-dashboard` est public ; il transmet `/api/*` au proxy privé par service
+binding et sert le reste depuis le binding d'assets statiques. Le paquet Sites
+reste généré et testé comme option de publication alternative. Le déploiement
 peut être déclenché manuellement par `.github/workflows/ci.yml` après avoir
 configuré l'environnement GitHub `production` et les secrets Cloudflare.
 

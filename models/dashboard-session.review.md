@@ -23,6 +23,11 @@
 | Réponse Agent supérieure à 1 MiB | `413`, contenu non relayé | À tester au proxy |
 | Secret interne absent ou trop faible | `503`, aucun appel Agent | À tester au proxy |
 | Tentative cross-origin navigateur | absence de CORS; le déploiement doit router `/api/*` same-origin | Modélisé |
+| Accès direct au proxy, à l'Agent ou au MCP | aucun sous-domaine public; service bindings seulement | À vérifier dans les configs et après déploiement |
+| Route dashboard `/api/*` | transmise au proxy sans réécriture; aucune logique métier dans l'edge d'assets | À tester |
+| Route dashboard hors `/api/*` | servie par `ASSETS` avec fallback SPA | À tester |
+| Premier déploiement | paper uniquement; aucun secret Coinbase requis | À vérifier dans les secrets/configs |
+| Namespace KV absent | provisioning explicite avant le Worker marché | À vérifier avant déploiement |
 
 La machine ne prend aucune décision de trading. Elle autorise seulement des
 effets UI typés; `tradingCycleMachine` reste l’unique arbitre des transitions du
