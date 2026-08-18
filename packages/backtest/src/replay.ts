@@ -26,6 +26,7 @@ import {
   type PaperPortfolio,
   type PaperTrade,
 } from "./paper-broker.js";
+import type { PreparedBacktestIndicators } from "./prepared-indicators.js";
 
 export interface BacktestConfig {
   readonly runId: string;
@@ -52,6 +53,7 @@ export interface BacktestResult {
 export type BacktestReplayError =
   | { readonly code: "INVALID_BACKTEST_CONFIG" }
   | { readonly code: "INVALID_CANDLES"; readonly cause: MarketValidationError }
+  | { readonly code: "INVALID_PREPARED_INDICATORS" }
   | { readonly code: "INDICATOR_FAILURE"; readonly cause: IndicatorError }
   | { readonly code: "STRATEGY_FAILURE"; readonly cause: StrategyError }
   | { readonly code: "ALLOCATION_FAILURE"; readonly cause: AllocationError }
@@ -67,6 +69,23 @@ const validConfig = (config: BacktestConfig): boolean =>
   config.maxDecisionNotional > 0 &&
   Number.isFinite(config.minNetQuantity) &&
   config.minNetQuantity >= 0;
+
+const validPreparedIndicators = (
+  prepared: PreparedBacktestIndicators,
+  candles: readonly Candle[],
+  config: IndicatorConfig,
+  warmup: number,
+): boolean =>
+  prepared.config.rsiPeriod === config.rsiPeriod &&
+  prepared.config.emaFastPeriod === config.emaFastPeriod &&
+  prepared.config.emaSlowPeriod === config.emaSlowPeriod &&
+  prepared.config.atrPeriod === config.atrPeriod &&
+  prepared.snapshots.length === candles.length &&
+  prepared.snapshots.every((snapshot, index) =>
+    index < warmup - 1
+      ? snapshot === null
+      : snapshot !== null && snapshot.candleClosedAt === candles[index]?.start,
+  );
 
 const capSpotOrder = (
   order: OrderIntent,
@@ -93,6 +112,7 @@ const capSpotOrder = (
 export const replayBacktest = async (
   candles: readonly Candle[],
   config: BacktestConfig,
+  preparedIndicators?: PreparedBacktestIndicators,
 ): Promise<Result<BacktestResult, BacktestReplayError>> => {
   if (!validConfig(config)) return err({ code: "INVALID_BACKTEST_CONFIG" });
   const validated = validateCandleSeries(candles);
@@ -103,6 +123,17 @@ export const replayBacktest = async (
     config.indicators.emaSlowPeriod,
     config.indicators.atrPeriod,
   );
+  if (
+    preparedIndicators !== undefined &&
+    !validPreparedIndicators(
+      preparedIndicators,
+      validated.value,
+      config.indicators,
+      warmup,
+    )
+  ) {
+    return err({ code: "INVALID_PREPARED_INDICATORS" });
+  }
   let portfolio: PaperPortfolio = {
     cash: config.initialCapital,
     positionQuantity: 0,
@@ -154,7 +185,11 @@ export const replayBacktest = async (
     }
 
     const history = validated.value.slice(0, index + 1);
-    const indicatorResult = await computeIndicators(history, config.indicators);
+    const preparedSnapshot = preparedIndicators?.snapshots[index];
+    const indicatorResult =
+      preparedSnapshot === undefined || preparedSnapshot === null
+        ? await computeIndicators(history, config.indicators)
+        : ok(preparedSnapshot);
     if (!indicatorResult.ok) {
       return err({ code: "INDICATOR_FAILURE", cause: indicatorResult.error });
     }

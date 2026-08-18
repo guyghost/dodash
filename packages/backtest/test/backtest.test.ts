@@ -18,6 +18,7 @@ import {
   executePaperOrder,
   replayBacktest,
   type PaperPortfolio,
+  type PreparedBacktestIndicators,
 } from "../src/index.js";
 
 const product = createProductId("BTC-USD");
@@ -83,6 +84,72 @@ describe("paper broker", () => {
       ok: false,
       error: { code: "INSUFFICIENT_CASH" },
     });
+  });
+
+  it("accepte un achat all-in malgré l’arrondi flottant et conserve un cash nul", () => {
+    const marketPrice = 117_488.59;
+    const feeBps = 6;
+    const slippageBps = 2;
+    const executionPrice = marketPrice * (1 + slippageBps / 10_000);
+    const quantity = 10_000 / (executionPrice * (1 + feeBps / 10_000));
+
+    const result = executePaperOrder(
+      { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+      order("BUY", quantity),
+      marketPrice,
+      1,
+      { feeBps, slippageBps },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.portfolio.cash).toBe(0);
+    expect(result.value.portfolio.positionQuantity).toBe(quantity);
+  });
+
+  it("intègre les frais d’entrée au prix de revient et réalise le PnL à la clôture", () => {
+    const initial: PaperPortfolio = {
+      cash: 1_000,
+      positionQuantity: 0,
+      averagePrice: 0,
+    };
+    const buy = executePaperOrder(initial, order("BUY"), 100, 1, {
+      feeBps: 100,
+      slippageBps: 0,
+    });
+    expect(buy.ok).toBe(true);
+    if (!buy.ok) return;
+    expect(buy.value.trade.realizedPnl).toBe(0);
+    expect(buy.value.trade.closedQuantity).toBe(0);
+    expect(buy.value.portfolio.averagePrice).toBe(101);
+
+    const sell = executePaperOrder(buy.value.portfolio, order("SELL"), 110, 2, {
+      feeBps: 100,
+      slippageBps: 0,
+    });
+    expect(sell.ok).toBe(true);
+    if (!sell.ok) return;
+    expect(sell.value.trade.closedQuantity).toBe(1);
+    expect(sell.value.trade.realizedPnl).toBeCloseTo(7.9, 10);
+    expect(sell.value.portfolio.cash).toBeCloseTo(1_007.9, 10);
+
+    const metrics = calculateMetrics(
+      [
+        { at: 1, equity: 999 },
+        { at: 2, equity: 1_007.9 },
+      ],
+      [buy.value.trade, sell.value.trade],
+      1_000,
+    );
+    expect(metrics.winRate).toBe(1);
+    expect(metrics.profitFactor).toBeNull();
+    expect(metrics.fees).toBeCloseTo(2.1, 10);
+    expect(metrics.realizedPnl).toBeCloseTo(7.9, 10);
+    expect(metrics.unrealizedPnl).toBeCloseTo(0, 10);
+    expect(metrics.realizedPnl + metrics.unrealizedPnl).toBeCloseTo(
+      metrics.pnl,
+      10,
+    );
   });
 });
 
@@ -322,6 +389,82 @@ describe("replayBacktest", () => {
     expect(result.value.trades).toHaveLength(0);
     expect(result.value.finalPortfolio.positionQuantity).toBe(0);
     expect(result.value.finalPortfolio.cash).toBe(10_000);
+  });
+
+  it("réutilise les indicateurs préparés au lieu de les recalculer par scénario", async () => {
+    const cachedSignal: Strategy = {
+      id: "cached-signal",
+      evaluate: (context) => {
+        const shouldBuy = context.indicators.rsi === 10;
+        const result = createSignal({
+          strategyId: "cached-signal",
+          productId: context.productId,
+          side: shouldBuy ? "BUY" : "HOLD",
+          confidence: shouldBuy ? 1 : 0,
+          suggestedSize: shouldBuy ? 0.1 : 0,
+          reasonCode: "TEST_PREPARED_INDICATORS",
+        });
+        return result.ok
+          ? result
+          : {
+              ok: false as const,
+              error: {
+                code: "INVALID_STRATEGY_SIGNAL" as const,
+                strategyId: "cached-signal",
+                cause: result.error,
+              },
+            };
+      },
+    };
+    const registry = createStrategyRegistry([cachedSignal]);
+    if (!registry.ok) throw new Error("invalid registry fixture");
+    const candles: Candle[] = [100, 101, 102, 103, 104].map(
+      (price, index) => ({
+        start: index * 60_000,
+        open: price,
+        high: price + 1,
+        low: price - 1,
+        close: price,
+        volume: 10,
+      }),
+    );
+    const indicatorConfig = {
+      rsiPeriod: 2,
+      emaFastPeriod: 2,
+      emaSlowPeriod: 3,
+      atrPeriod: 2,
+    };
+    const prepared: PreparedBacktestIndicators = {
+      config: indicatorConfig,
+      snapshots: candles.map((candle, index) =>
+        index < 2
+          ? null
+          : {
+              snapshotId: `prepared-${index}`,
+              candleClosedAt: candle.start,
+              rsi: index === 2 ? 10 : 50,
+              emaFast: 1,
+              emaSlow: 2,
+              macd: -1,
+              atr: 1,
+            },
+      ),
+    };
+
+    const result = await replayBacktest(
+      candles,
+      {
+        ...backtestConfig(registry.value),
+        runId: "prepared-run",
+        indicators: indicatorConfig,
+      },
+      prepared,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.trades).toHaveLength(1);
+    expect(result.value.trades[0]?.fill.executedAt).toBe(candles[3]?.start);
   });
 });
 

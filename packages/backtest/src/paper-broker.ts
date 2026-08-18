@@ -20,6 +20,7 @@ export interface PaperPortfolio {
 
 export interface PaperTrade {
   readonly fill: Fill;
+  readonly closedQuantity: number;
   readonly realizedPnl: number;
 }
 
@@ -59,12 +60,16 @@ export const executePaperOrder = (
   const price = marketPrice * (1 + direction * (config.slippageBps / 10_000));
   const fee = price * intent.quantity * (config.feeBps / 10_000);
   const notional = price * intent.quantity;
-  if (intent.side === "BUY" && notional + fee > portfolio.cash + Number.EPSILON) {
+  const cashTolerance =
+    Math.max(1, Math.abs(portfolio.cash)) * Number.EPSILON * 16;
+  const positionTolerance =
+    Math.max(1, Math.abs(portfolio.positionQuantity)) * Number.EPSILON * 16;
+  if (intent.side === "BUY" && notional + fee > portfolio.cash + cashTolerance) {
     return err({ code: "INSUFFICIENT_CASH" });
   }
   if (
     intent.side === "SELL" &&
-    intent.quantity > portfolio.positionQuantity + Number.EPSILON
+    intent.quantity > portfolio.positionQuantity + positionTolerance
   ) {
     return err({ code: "INSUFFICIENT_POSITION" });
   }
@@ -91,15 +96,19 @@ export const executePaperOrder = (
       : current > 0
         ? (price - portfolio.averagePrice) * closedQuantity
         : (portfolio.averagePrice - price) * closedQuantity;
-  const realizedPnl = grossRealized - fee;
-  const nextQuantity = current + delta;
+  const realizedPnl = closedQuantity === 0 ? 0 : grossRealized - fee;
+  const rawNextQuantity = current + delta;
+  const nextQuantity =
+    Math.abs(rawNextQuantity) <= positionTolerance ? 0 : rawNextQuantity;
 
   let averagePrice = portfolio.averagePrice;
   if (sameDirection) {
     averagePrice =
       nextQuantity === 0
         ? 0
-        : (Math.abs(current) * portfolio.averagePrice + Math.abs(delta) * price) /
+        : (Math.abs(current) * portfolio.averagePrice +
+            Math.abs(delta) * price +
+            (intent.side === "BUY" ? fee : 0)) /
           Math.abs(nextQuantity);
   } else if (nextQuantity === 0) {
     averagePrice = 0;
@@ -108,14 +117,16 @@ export const executePaperOrder = (
   }
 
   const cashDelta = intent.side === "BUY" ? -(notional + fee) : notional - fee;
+  const rawCash = portfolio.cash + cashDelta;
+  const cash = Math.abs(rawCash) <= cashTolerance ? 0 : rawCash;
   return ok(
     Object.freeze({
       portfolio: Object.freeze({
-        cash: portfolio.cash + cashDelta,
+        cash,
         positionQuantity: nextQuantity,
         averagePrice,
       }),
-      trade: Object.freeze({ fill: fill.value, realizedPnl }),
+      trade: Object.freeze({ fill: fill.value, closedQuantity, realizedPnl }),
     }),
   );
 };

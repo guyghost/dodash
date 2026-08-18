@@ -17,6 +17,13 @@ position et les achats par le cash frais inclus ; le broker papier ne peut donc
 introduire ni short ni levier absents de l’exécution cible. Les frais et le
 slippage sont identiques entre scénarios et explicitement reportés.
 
+La comptabilité des positions intègre les frais d’achat au prix de revient. Un
+fill d’ouverture n’est pas une perte clôturée : win rate et profit factor ne
+consomment que les fills réduisant une position. Le PnL total est rapproché du
+PnL réalisé et latent, et la somme des frais est exposée séparément. Cette revue
+interdit ainsi qu’un profit factor apparemment favorable masque une position
+ouverte fortement perdante.
+
 La comparaison couvre chaque stratégie seule, leur ensemble et un buy-and-hold
 sur le même dataset. Un run réussi n’est qu’un signal d’évaluation : aucune
 métrique ni classement ne déclenche `LIVE_TRADING_ENABLED`, ne démarre l’Agent

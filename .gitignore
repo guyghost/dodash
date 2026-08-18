@@ -4,6 +4,7 @@ node_modules/
 dist/
 coverage/
 .wrangler/
+.artifacts/
 .dev.vars
 .env
 .env.*

@@ -38,6 +38,9 @@ provenance n’est pas un backtest valide.
    synthétique ou levier implicite n’est autorisé.
 5. `computingMetrics` calcule les métriques de la stratégie et le benchmark
    buy-and-hold sur exactement les mêmes bornes, frais et capital initial.
+   Les frais d’entrée sont intégrés au prix de revient moyen. Seuls les fills
+   qui réduisent une position entrent dans le win rate et le profit factor.
+   Le rapport sépare PnL réalisé et latent.
 6. Aucun état ni effet du backtest ne peut appeler l’adapter d’exécution live.
 
 ## Invariants
@@ -54,3 +57,5 @@ provenance n’est pas un backtest valide.
 10. Le rapport expose rendement, PnL, drawdown, Sharpe, nombre de fills,
     rendement buy-and-hold et rendement excédentaire ; aucune métrique isolée ne
     suffit à autoriser le live.
+11. À chaque fin de run, `pnl = realizedPnl + unrealizedPnl` à la tolérance
+    numérique près ; les frais totaux correspondent à la somme exacte des fills.

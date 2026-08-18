@@ -7,6 +7,9 @@ export interface EquityPoint {
 
 export interface BacktestMetrics {
   readonly pnl: number;
+  readonly realizedPnl: number;
+  readonly unrealizedPnl: number;
+  readonly fees: number;
   readonly totalReturn: number;
   readonly winRate: number;
   readonly profitFactor: number | null;
@@ -32,15 +35,17 @@ export const calculateMetrics = (
   const pnl = finalEquity - initialCapital;
   const totalReturn = initialCapital === 0 ? 0 : pnl / initialCapital;
 
-  const realized = trades
-    .map((trade) => trade.realizedPnl)
-    .filter((value) => value !== 0);
+  const closedTrades = trades.filter((trade) => trade.closedQuantity > 0);
+  const realized = closedTrades.map((trade) => trade.realizedPnl);
   const wins = realized.filter((value) => value > 0);
   const losses = realized.filter((value) => value < 0);
   const grossProfit = wins.reduce((sum, value) => sum + value, 0);
   const grossLoss = Math.abs(losses.reduce((sum, value) => sum + value, 0));
-  const winRate = realized.length === 0 ? 0 : wins.length / realized.length;
+  const winRate = closedTrades.length === 0 ? 0 : wins.length / closedTrades.length;
   const profitFactor = grossLoss === 0 ? null : grossProfit / grossLoss;
+  const realizedPnl = realized.reduce((sum, value) => sum + value, 0);
+  const unrealizedPnl = pnl - realizedPnl;
+  const fees = trades.reduce((sum, trade) => sum + trade.fill.fee, 0);
 
   const returns: number[] = [];
   for (let index = 1; index < equityCurve.length; index += 1) {
@@ -67,6 +72,9 @@ export const calculateMetrics = (
 
   return Object.freeze({
     pnl,
+    realizedPnl,
+    unrealizedPnl,
+    fees,
     totalReturn,
     winRate,
     profitFactor,
