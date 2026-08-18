@@ -4,6 +4,9 @@ Worker Cloudflare stateless qui expose les outils MCP `get_candles` et
 `get_ticker`. Les routes internes utilisent le même adaptateur déterministe pour
 l’Agent de trading.
 
+Les timestamps de chandelles sont normalisés en millisecondes Unix à la
+frontière Coinbase, comme dans le reste du domaine.
+
 ## Configuration locale
 
 1. Remplacer l’identifiant KV factice de `wrangler.jsonc` lors du provisioning.

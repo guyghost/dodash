@@ -69,7 +69,10 @@ describe("CoinbaseMarketData", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.productId).toBe("BTC-USD");
-    expect(result.value.candles.map((candle) => candle.start)).toEqual([60, 120]);
+    expect(result.value.candles.map((candle) => candle.start)).toEqual([
+      60_000,
+      120_000,
+    ]);
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("granularity=ONE_MINUTE");
   });

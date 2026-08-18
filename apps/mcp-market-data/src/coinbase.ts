@@ -157,7 +157,7 @@ export class CoinbaseMarketData {
     const cacheKey = [
       "market",
       "candles",
-      "v1",
+      "v2",
       productResult.value,
       request.timeframe,
       start,
@@ -216,7 +216,7 @@ export class CoinbaseMarketData {
     const candles: Candle[] = [];
     for (const raw of parsed.candles) {
       const candleResult = createCandle({
-        start: raw.start,
+        start: raw.start * 1_000,
         open: raw.open,
         high: raw.high,
         low: raw.low,
