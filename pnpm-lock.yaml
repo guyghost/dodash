@@ -35,6 +35,28 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(vite@8.2.1)
 
+  packages/backtest:
+    dependencies:
+      '@dodash/allocator':
+        specifier: workspace:*
+        version: link:../allocator
+      '@dodash/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@dodash/indicators-prolog':
+        specifier: workspace:*
+        version: link:../indicators-prolog
+      '@dodash/risk':
+        specifier: workspace:*
+        version: link:../risk
+      '@dodash/strategies':
+        specifier: workspace:*
+        version: link:../strategies
+    devDependencies:
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(vite@8.2.1)
+
   packages/domain:
     devDependencies:
       vitest:
