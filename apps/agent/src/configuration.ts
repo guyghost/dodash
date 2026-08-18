@@ -24,7 +24,7 @@ export interface AgentConfiguration {
   readonly initialCapital: number;
   readonly maxDecisionNotional: number;
   readonly minNetQuantity: number;
-  readonly executionMode: "paper";
+  readonly executionMode: "paper" | "live";
   readonly indicators: IndicatorConfig;
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
@@ -85,7 +85,7 @@ const inputSchema = z.object({
   initialCapital: z.number().positive().default(10_000),
   maxDecisionNotional: z.number().positive().default(2_000),
   minNetQuantity: z.number().nonnegative().default(0.000_001),
-  executionMode: z.literal("paper").default("paper"),
+  executionMode: z.enum(["paper", "live"]).default("paper"),
   indicators: indicatorSchema.default(DEFAULT_INDICATOR_CONFIG),
   risk: riskSchema.default({
     maxOrderNotional: 2_000,

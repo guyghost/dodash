@@ -1,5 +1,5 @@
 import { executePaperOrder } from "@dodash/backtest";
-import { err, ok, type OrderIntent } from "@dodash/domain";
+import { err, ok, type OrderIntent, type Result } from "@dodash/domain";
 import {
   type ControlPermissions,
   type TradingCycleEvent,
@@ -11,6 +11,15 @@ import {
   parseAgentConfiguration,
   type AgentConfiguration,
 } from "./configuration.js";
+import {
+  COINBASE_CREATE_ORDER_PATH,
+  coinbaseOrderPath,
+  createCoinbaseAuthorization,
+  getCoinbaseOrder,
+  resolveCoinbaseSettings,
+  submitCoinbaseOrder,
+  type CoinbaseExecutionSettings,
+} from "./coinbase-execution.js";
 import { runTradingCycle } from "./interpreter.js";
 import { createTradingMachineSession, type PersistedTradingMachine } from "./machine-session.js";
 import { fetchMarketSnapshot } from "./market-service.js";
@@ -23,6 +32,7 @@ import {
 } from "./state.js";
 import type {
   CycleArtifacts,
+  ExecutionAuthorization,
   OrderSubmission,
   TradingCycleEffects,
 } from "./types.js";
@@ -30,6 +40,10 @@ import type {
 export interface TradingEnv extends Env {
   readonly INTERNAL_SERVICE_TOKEN: string;
   readonly CONTROL_API_TOKEN: string;
+  readonly LIVE_TRADING_ENABLED?: string;
+  readonly COINBASE_API_BASE_URL?: string;
+  readonly COINBASE_API_KEY_ID?: string;
+  readonly COINBASE_API_PRIVATE_KEY?: string;
 }
 
 export type AgentCommandResult =
@@ -40,6 +54,7 @@ export type AgentCommandResult =
         readonly code:
           | "INVALID_CONFIGURATION"
           | "INVALID_STATE"
+          | "LIVE_EXECUTION_UNAVAILABLE"
           | "NOT_CONFIGURED";
       };
     };
@@ -54,6 +69,18 @@ const executionError = (
   code: "ORDER_REJECTED" | "ORDER_OUTCOME_UNKNOWN",
   retryable: boolean,
 ): WorkflowError => ({ phase: "execution", code, retryable });
+
+const authenticationError = (): WorkflowError => ({
+  phase: "authorization",
+  code: "AUTHENTICATION_FAILURE",
+  retryable: false,
+});
+
+const reconciliationError = (retryable = true): WorkflowError => ({
+  phase: "reconciliation",
+  code: "RECONCILIATION_FAILURE",
+  retryable,
+});
 
 const parseJson = <T>(raw: string): T | null => {
   try {
@@ -122,6 +149,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     const currentPhase = this.state.machine?.value ?? "stopped";
     if (currentPhase !== "stopped") {
       return { ok: false, error: { code: "INVALID_STATE" } };
+    }
+
+    if (
+      configuration.value.executionMode === "live" &&
+      !resolveCoinbaseSettings(this.env).ok
+    ) {
+      return { ok: false, error: { code: "LIVE_EXECUTION_UNAVAILABLE" } };
     }
 
     if (
@@ -300,6 +334,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   private createEffects(configuration: AgentConfiguration): TradingCycleEffects {
+    const liveSettings =
+      configuration.executionMode === "live"
+        ? resolveCoinbaseSettings(this.env)
+        : null;
     return {
       fetchMarketData: async (config, triggeredAt) =>
         fetchMarketSnapshot(
@@ -325,12 +363,46 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       persistOrderIntent: async (cycleId, intent) =>
         this.persistOrderIntent(cycleId, intent),
       authorize: async () => {
-        const issuedAt = Date.now();
-        return ok({ issuedAt, expiresAt: issuedAt + 60_000 });
+        if (configuration.executionMode === "paper") {
+          const issuedAt = Date.now();
+          return ok({ issuedAt, expiresAt: issuedAt + 60_000 });
+        }
+        if (liveSettings === null || !liveSettings.ok) {
+          return err(authenticationError());
+        }
+        return createCoinbaseAuthorization(
+          liveSettings.value,
+          "POST",
+          COINBASE_CREATE_ORDER_PATH,
+        );
       },
-      submitOrder: async (intent, _authorization, marketPrice, portfolio, at) =>
-        this.submitPaperOrder(intent, marketPrice, portfolio, at, configuration),
-      reconcileOrder: async (intent) => this.reconcilePaperOrder(intent),
+      submitOrder: async (intent, authorization, marketPrice, portfolio, at) => {
+        if (configuration.executionMode === "paper") {
+          return this.submitPaperOrder(
+            intent,
+            marketPrice,
+            portfolio,
+            at,
+            configuration,
+          );
+        }
+        if (liveSettings === null || !liveSettings.ok) {
+          return {
+            status: "REJECTED",
+            error: authenticationError(),
+          };
+        }
+        return this.submitLiveOrder(liveSettings.value, intent, authorization);
+      },
+      reconcileOrder: async (intent, portfolio) => {
+        if (configuration.executionMode === "paper") {
+          return this.reconcilePaperOrder(intent);
+        }
+        if (liveSettings === null || !liveSettings.ok) {
+          return err(reconciliationError());
+        }
+        return this.reconcileLiveOrder(liveSettings.value, intent, portfolio);
+      },
       cancelCurrentEffect: async () => {
         try {
           await this.removeIntervalSchedule();
@@ -529,6 +601,118 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         retryable: true,
       });
     }
+  }
+
+  private loadExchangeOrderId(clientOrderId: string): string | null {
+    const row = this.sql<{ exchange_order_id: string | null }>`
+      SELECT exchange_order_id FROM dodash_orders
+      WHERE client_order_id = ${clientOrderId}
+      LIMIT 1
+    `.at(0);
+    return row?.exchange_order_id ?? null;
+  }
+
+  private persistLiveOrderResult(
+    intent: OrderIntent,
+    submission: OrderSubmission,
+  ): Result<void, WorkflowError> {
+    try {
+      const exchangeOrderId =
+        "exchangeOrderId" in submission
+          ? submission.exchangeOrderId ?? null
+          : null;
+      const status =
+        submission.status === "CONFIRMED"
+          ? "CONFIRMED"
+          : submission.status === "REJECTED"
+            ? "REJECTED"
+            : exchangeOrderId === null
+              ? "OUTCOME_UNKNOWN"
+              : "ACKNOWLEDGED";
+      const executionJson =
+        submission.status === "UNKNOWN" ? null : JSON.stringify(submission);
+      const now = Date.now();
+      this.sql`
+        UPDATE dodash_orders SET
+          status = ${status},
+          exchange_order_id = COALESCE(${exchangeOrderId}, exchange_order_id),
+          execution_json = ${executionJson},
+          updated_at = ${now}
+        WHERE client_order_id = ${intent.clientOrderId}
+      `;
+      return ok(undefined);
+    } catch {
+      return err(storageError());
+    }
+  }
+
+  private async submitLiveOrder(
+    settings: CoinbaseExecutionSettings,
+    intent: OrderIntent,
+    authorization: ExecutionAuthorization,
+  ): Promise<OrderSubmission> {
+    const submission = await submitCoinbaseOrder(settings, intent, authorization);
+    const persisted = this.persistLiveOrderResult(intent, submission);
+    if (persisted.ok || submission.status !== "UNKNOWN") return submission;
+    return {
+      status: "UNKNOWN",
+      error: executionError("ORDER_OUTCOME_UNKNOWN", true),
+    };
+  }
+
+  private async reconcileLiveOrder(
+    settings: CoinbaseExecutionSettings,
+    intent: OrderIntent,
+    portfolio: TradingAgentState["portfolio"],
+  ): Promise<Result<OrderSubmission, WorkflowError>> {
+    let exchangeOrderId = this.loadExchangeOrderId(intent.clientOrderId);
+    if (exchangeOrderId === null) {
+      const replayAuthorization = createCoinbaseAuthorization(
+        settings,
+        "POST",
+        COINBASE_CREATE_ORDER_PATH,
+      );
+      if (!replayAuthorization.ok) return err(reconciliationError(false));
+
+      const replay = await submitCoinbaseOrder(
+        settings,
+        intent,
+        replayAuthorization.value,
+      );
+      if (replay.status === "REJECTED") {
+        const persisted = this.persistLiveOrderResult(intent, replay);
+        return persisted.ok ? ok(replay) : err(reconciliationError());
+      }
+      if (replay.status === "CONFIRMED") {
+        const persisted = this.persistLiveOrderResult(intent, replay);
+        return persisted.ok ? ok(replay) : err(reconciliationError());
+      }
+      exchangeOrderId = replay.exchangeOrderId ?? null;
+      if (exchangeOrderId === null) return err(reconciliationError());
+      if (!this.persistLiveOrderResult(intent, replay).ok) {
+        return err(reconciliationError());
+      }
+    }
+
+    const path = coinbaseOrderPath(exchangeOrderId);
+    const lookupAuthorization = createCoinbaseAuthorization(
+      settings,
+      "GET",
+      path,
+    );
+    if (!lookupAuthorization.ok) return err(reconciliationError(false));
+    const reconciled = await getCoinbaseOrder(
+      settings,
+      intent,
+      exchangeOrderId,
+      lookupAuthorization.value,
+      portfolio,
+    );
+    if (!reconciled.ok) return reconciled;
+    if (!this.persistLiveOrderResult(intent, reconciled.value).ok) {
+      return err(reconciliationError());
+    }
+    return reconciled;
   }
 
   private async persistCycle(

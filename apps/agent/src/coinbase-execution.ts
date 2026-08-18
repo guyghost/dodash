@@ -41,6 +41,13 @@ export interface CoinbaseRequestDependencies {
   readonly nonce?: () => string;
 }
 
+export const coinbaseOrderPath = (exchangeOrderId: string): string => {
+  if (exchangeOrderId.trim().length === 0) {
+    throw new Error("INVALID_COINBASE_ORDER_ID");
+  }
+  return `${COINBASE_CREATE_ORDER_PATH}/historical/${encodeURIComponent(exchangeOrderId)}`;
+};
+
 export type CoinbaseSettingsInput = {
   readonly LIVE_TRADING_ENABLED?: string;
   readonly COINBASE_API_BASE_URL?: string;
@@ -449,7 +456,12 @@ export const getCoinbaseOrder = async (
   portfolio: PaperPortfolio,
   dependencies: CoinbaseRequestDependencies = {},
 ): Promise<Result<OrderSubmission, WorkflowError>> => {
-  const path = `${COINBASE_CREATE_ORDER_PATH}/historical/${encodeURIComponent(exchangeOrderId)}`;
+  let path: string;
+  try {
+    path = coinbaseOrderPath(exchangeOrderId);
+  } catch {
+    return err(reconciliationError("INVALID_RESPONSE", false));
+  }
   let target: ReturnType<typeof requestTarget>;
   try {
     target = requestTarget(settings, path);

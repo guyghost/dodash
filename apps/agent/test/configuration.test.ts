@@ -27,9 +27,15 @@ describe("parseAgentConfiguration", () => {
     });
   });
 
-  it("keeps live execution closed until its adapter is configured", () => {
-    expect(
-      parseAgentConfiguration({ productId: "BTC-USD", executionMode: "live" }),
-    ).toEqual({ ok: false, error: { code: "INVALID_CONFIGURATION" } });
+  it("models live execution without accepting credentials in the configuration", () => {
+    const result = parseAgentConfiguration({
+      productId: "BTC-USD",
+      executionMode: "live",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.executionMode).toBe("live");
+    expect(result.value).not.toHaveProperty("apiKeyId");
+    expect(result.value).not.toHaveProperty("privateKeyPem");
   });
 });
