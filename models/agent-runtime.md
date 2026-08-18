@@ -16,7 +16,7 @@ est persistée après chaque événement ; elle seule sélectionne l’effet sui
 | `persistingOrderIntent` | transaction SQLite de l’intention | `ORDER_INTENT_PERSISTED`, `ORDER_INTENT_FAILED` |
 | `authorizing` | autorisation éphémère de l’adapter | `AUTHORIZATION_READY`, `AUTHORIZATION_FAILED` |
 | `submittingOrder` | exécution paper ou Coinbase | `ORDER_CONFIRMED`, `ORDER_REJECTED`, `ORDER_OUTCOME_UNKNOWN` |
-| `reconcilingOrder` | lecture par `clientOrderId` | `ORDER_RECONCILED`, `RECONCILIATION_FAILED` |
+| `reconcilingOrder` | résolution idempotente par `clientOrderId`, puis lecture de l’ordre | `ORDER_RECONCILED`, `RECONCILIATION_FAILED` |
 | `cancelling` | annulation de l’effet non soumis | `EFFECT_CANCELLED`, `EFFECT_CANCEL_FAILED` |
 | `persisting` | transaction SQLite de l’issue | `PERSIST_SUCCEEDED`, `PERSIST_FAILED` |
 
@@ -42,3 +42,23 @@ jour d’état provenant d’une connexion cliente sont rejetées synchroniqueme
 
 Une instance est nommée par une clé stable dérivée de `(produit × stratégies)`.
 La configuration n’est modifiable que lorsque la machine est `stopped`.
+
+## Adapter Coinbase live
+
+Le mode `live` n’est activable que si le Worker confirme explicitement
+`LIVE_TRADING_ENABLED=true` et dispose, côté serveur, d’une clé CDP ES256 avec
+les permissions nécessaires. La configuration, l’état synchronisé et SQLite ne
+contiennent jamais la clé privée ni un JWT.
+
+Chaque appel Coinbase reçoit un JWT neuf, signé pour la méthode, l’hôte et le
+chemin exacts. Sa durée de vie est au plus de 120 secondes et son nonce est
+unique. L’intention persistée est envoyée comme ordre market IOC, avec
+`client_order_id` comme clé d’idempotence.
+
+Une réponse Coinbase explicite `success=false` ou un HTTP 4xx non ambigu produit
+un rejet. Une coupure réseau, un timeout ou un HTTP 5xx après le début d’un POST
+produit toujours une issue inconnue. La réconciliation rejoue alors le même POST
+avec le même `client_order_id` — Coinbase retourne l’ordre existant au lieu d’en
+créer un second — puis lit son statut avec son `order_id`. Seul un ordre terminal
+(`FILLED`, ou terminal sans quantité exécutée) ferme la réconciliation ; les
+statuts intermédiaires restent retryables.
