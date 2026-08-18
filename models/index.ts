@@ -1,3 +1,12 @@
+export { backtestRunMachine } from "./backtest-run.machine.js";
+export type {
+  BacktestError,
+  BacktestErrorCode,
+  BacktestPermissions,
+  BacktestRunContext,
+  BacktestRunEvent,
+  BacktestRunInput,
+} from "./backtest-run.types.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
 export type {
   ControlPermissions,
@@ -12,4 +21,3 @@ export type {
   WorkflowErrorCode,
   WorkflowPhase,
 } from "./trading-cycle.types.js";
-
