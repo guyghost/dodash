@@ -55,7 +55,11 @@ export type OrderSubmission =
       readonly fill: Fill | null;
     }
   | { readonly status: "REJECTED"; readonly error: WorkflowError }
-  | { readonly status: "UNKNOWN"; readonly error: WorkflowError };
+  | {
+      readonly status: "UNKNOWN";
+      readonly exchangeOrderId?: string;
+      readonly error: WorkflowError;
+    };
 
 export interface TradingCycleEffects {
   fetchMarketData(
