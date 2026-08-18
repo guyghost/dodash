@@ -31,7 +31,9 @@ export interface PaperExecution {
 export type PaperBrokerError =
   | { readonly code: "INVALID_BROKER_CONFIG" }
   | { readonly code: "INVALID_MARKET_PRICE" }
-  | { readonly code: "INVALID_FILL_RESULT" };
+  | { readonly code: "INVALID_FILL_RESULT" }
+  | { readonly code: "INSUFFICIENT_CASH" }
+  | { readonly code: "INSUFFICIENT_POSITION" };
 
 const validConfig = (config: PaperBrokerConfig): boolean =>
   Number.isFinite(config.feeBps) &&
@@ -56,6 +58,16 @@ export const executePaperOrder = (
   const direction = intent.side === "BUY" ? 1 : -1;
   const price = marketPrice * (1 + direction * (config.slippageBps / 10_000));
   const fee = price * intent.quantity * (config.feeBps / 10_000);
+  const notional = price * intent.quantity;
+  if (intent.side === "BUY" && notional + fee > portfolio.cash + Number.EPSILON) {
+    return err({ code: "INSUFFICIENT_CASH" });
+  }
+  if (
+    intent.side === "SELL" &&
+    intent.quantity > portfolio.positionQuantity + Number.EPSILON
+  ) {
+    return err({ code: "INSUFFICIENT_POSITION" });
+  }
   const fill = createFill({
     fillId: `paper:${intent.clientOrderId}:${executedAt}`,
     clientOrderId: intent.clientOrderId,
@@ -95,9 +107,7 @@ export const executePaperOrder = (
     averagePrice = price;
   }
 
-  const cashDelta = intent.side === "BUY"
-    ? -(price * intent.quantity + fee)
-    : price * intent.quantity - fee;
+  const cashDelta = intent.side === "BUY" ? -(notional + fee) : notional - fee;
   return ok(
     Object.freeze({
       portfolio: Object.freeze({
@@ -109,4 +119,3 @@ export const executePaperOrder = (
     }),
   );
 };
-

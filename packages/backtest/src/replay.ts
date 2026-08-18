@@ -5,6 +5,7 @@ import {
   validateCandleSeries,
   type Candle,
   type MarketValidationError,
+  type OrderIntent,
   type ProductId,
   type Result,
 } from "@dodash/domain";
@@ -67,6 +68,28 @@ const validConfig = (config: BacktestConfig): boolean =>
   Number.isFinite(config.minNetQuantity) &&
   config.minNetQuantity >= 0;
 
+const capSpotOrder = (
+  order: OrderIntent,
+  portfolio: PaperPortfolio,
+  marketPrice: number,
+  broker: PaperBrokerConfig,
+  minNetQuantity: number,
+): OrderIntent | null => {
+  const direction = order.side === "BUY" ? 1 : -1;
+  const executionPrice =
+    marketPrice * (1 + direction * (broker.slippageBps / 10_000));
+  const feeRate = broker.feeBps / 10_000;
+  const availableQuantity =
+    order.side === "BUY"
+      ? portfolio.cash / (executionPrice * (1 + feeRate))
+      : Math.max(0, portfolio.positionQuantity);
+  const quantity = Math.min(order.quantity, availableQuantity);
+  if (!Number.isFinite(quantity) || quantity <= minNetQuantity) return null;
+  return quantity === order.quantity
+    ? order
+    : Object.freeze({ ...order, quantity });
+};
+
 export const replayBacktest = async (
   candles: readonly Candle[],
   config: BacktestConfig,
@@ -86,15 +109,50 @@ export const replayBacktest = async (
     averagePrice: 0,
   };
   const trades: PaperTrade[] = [];
-  const equityCurve: EquityPoint[] = validated.value
-    .slice(0, Math.max(0, warmup - 1))
-    .map((candle) => ({ at: candle.start, equity: config.initialCapital }));
+  const equityCurve: EquityPoint[] = [];
   let previousIndicators: IndicatorSnapshot | null = null;
   let lastTradeAt: number | null = null;
+  let pendingOrders: readonly OrderIntent[] = [];
 
-  for (let index = warmup - 1; index < validated.value.length; index += 1) {
+  for (let index = 0; index < validated.value.length; index += 1) {
     const candle = validated.value[index];
     if (candle === undefined) continue;
+
+    for (const pendingOrder of pendingOrders) {
+      const order = capSpotOrder(
+        pendingOrder,
+        portfolio,
+        candle.open,
+        config.broker,
+        config.minNetQuantity,
+      );
+      if (order === null) continue;
+      const execution = executePaperOrder(
+        portfolio,
+        order,
+        candle.open,
+        candle.start,
+        config.broker,
+      );
+      if (!execution.ok) {
+        return err({ code: "BROKER_FAILURE", cause: execution.error });
+      }
+      portfolio = execution.value.portfolio;
+      trades.push(execution.value.trade);
+      lastTradeAt = candle.start;
+    }
+    pendingOrders = [];
+
+    if (index < warmup - 1) {
+      equityCurve.push(
+        Object.freeze({
+          at: candle.start,
+          equity: portfolio.cash + portfolio.positionQuantity * candle.close,
+        }),
+      );
+      continue;
+    }
+
     const history = validated.value.slice(0, index + 1);
     const indicatorResult = await computeIndicators(history, config.indicators);
     if (!indicatorResult.ok) {
@@ -125,6 +183,7 @@ export const replayBacktest = async (
       return err({ code: "ALLOCATION_FAILURE", cause: allocation.error });
     }
 
+    const approvedOrders: OrderIntent[] = [];
     for (const order of allocation.value.orders) {
       const equityBefore = portfolio.cash + portfolio.positionQuantity * candle.close;
       const risk = checkRisk(
@@ -142,21 +201,9 @@ export const replayBacktest = async (
       );
       if (!risk.ok) return err({ code: "RISK_FAILURE", cause: risk.error });
       if (risk.value.status === "REJECTED") continue;
-
-      const execution = executePaperOrder(
-        portfolio,
-        order,
-        candle.close,
-        candle.start,
-        config.broker,
-      );
-      if (!execution.ok) {
-        return err({ code: "BROKER_FAILURE", cause: execution.error });
-      }
-      portfolio = execution.value.portfolio;
-      trades.push(execution.value.trade);
-      lastTradeAt = candle.start;
+      approvedOrders.push(order);
     }
+    pendingOrders = Object.freeze(approvedOrders);
 
     equityCurve.push(
       Object.freeze({
@@ -179,4 +226,3 @@ export const replayBacktest = async (
     }),
   );
 };
-
