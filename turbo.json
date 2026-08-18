@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": ["WRANGLER_LOG_PATH"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -18,4 +19,3 @@
     }
   }
 }
-

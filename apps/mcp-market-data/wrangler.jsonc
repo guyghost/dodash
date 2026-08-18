@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dodash-mcp-market-data",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "COINBASE_API_BASE_URL": "https://api.coinbase.com",
+    "MARKET_CACHE_TTL_SECONDS": "30"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "MARKET_CACHE",
+      "id": "00000000000000000000000000000000"
+    }
+  ]
+}
+
