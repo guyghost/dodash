@@ -16,7 +16,10 @@ describe("TradingMachineSession", () => {
 
     const restored = createTradingMachineSession(input, persisted);
     expect(restored.phase).toBe("waiting");
-    restored.send({ type: "KILL_SWITCH_ENGAGED" });
+    restored.send({
+      type: "KILL_SWITCH_ENGAGED",
+      permissions: { canControl: true, canTrade: true },
+    });
     expect(restored.phase).toBe("cancelling");
     restored.stop();
   });

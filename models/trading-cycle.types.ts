@@ -115,10 +115,16 @@ export type TradingCycleEvent =
       readonly type: "START_REQUESTED";
       readonly permissions: ControlPermissions;
     }
-  | { readonly type: "STOP_REQUESTED" }
-  | { readonly type: "KILL_SWITCH_ENGAGED" }
+  | {
+      readonly type: "STOP_REQUESTED";
+      readonly permissions: ControlPermissions;
+    }
+  | {
+      readonly type: "KILL_SWITCH_ENGAGED";
+      readonly permissions: ControlPermissions;
+    }
   | { readonly type: "PERMISSION_REVOKED" }
-  | { readonly type: "RESET" }
+  | { readonly type: "RESET"; readonly permissions: ControlPermissions }
   | { readonly type: "SCHEDULE_SUCCEEDED"; readonly nextWakeAt: number }
   | { readonly type: "SCHEDULE_FAILED"; readonly error: WorkflowError }
   | {
@@ -178,4 +184,3 @@ export type TradingCycleEvent =
   | { readonly type: "EFFECT_CANCELLED" }
   | { readonly type: "EFFECT_CANCEL_FAILED"; readonly error: WorkflowError }
   | { readonly type: "RETRY_TIMER_ELAPSED" };
-

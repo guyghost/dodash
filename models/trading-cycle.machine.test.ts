@@ -155,7 +155,7 @@ describe("tradingCycleMachine", () => {
         type: "ORDER_OUTCOME_UNKNOWN",
         error: error("execution", "ORDER_OUTCOME_UNKNOWN", true),
       },
-      { type: "STOP_REQUESTED" },
+      { type: "STOP_REQUESTED", permissions: permission },
     );
 
     expect(actor.getSnapshot().value).toBe("reconcilingOrder");
@@ -208,7 +208,7 @@ describe("tradingCycleMachine", () => {
       actor,
       { type: "START_REQUESTED", permissions: permission },
       { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
-      { type: "KILL_SWITCH_ENGAGED" },
+      { type: "KILL_SWITCH_ENGAGED", permissions: permission },
     );
 
     expect(actor.getSnapshot().value).toBe("cancelling");
@@ -231,5 +231,24 @@ describe("tradingCycleMachine", () => {
 
     expect(actor.getSnapshot().value).toBe("retryingPersistence");
     expect(actor.getSnapshot().context.attempts.persistence).toBe(1);
+  });
+
+  it("refuse les commandes de contrôle sans permission", () => {
+    const actor = createTradingActor();
+    send(
+      actor,
+      { type: "START_REQUESTED", permissions: permission },
+      { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
+      {
+        type: "KILL_SWITCH_ENGAGED",
+        permissions: { canControl: false, canTrade: true },
+      },
+    );
+
+    expect(actor.getSnapshot().value).toBe("waiting");
+    expect(actor.getSnapshot().context.shutdownMode).toBe("none");
+    expect(actor.getSnapshot().context.lastError?.code).toBe(
+      "CONTROL_PERMISSION_REQUIRED",
+    );
   });
 });

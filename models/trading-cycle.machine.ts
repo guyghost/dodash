@@ -41,6 +41,11 @@ export const tradingCycleMachine = setup({
       event.type === "START_REQUESTED" &&
       event.permissions.canControl &&
       event.permissions.canTrade,
+    canControl: ({ event }) =>
+      (event.type === "STOP_REQUESTED" ||
+        event.type === "KILL_SWITCH_ENGAGED" ||
+        event.type === "RESET") &&
+      event.permissions.canControl,
     isNewAlarm: ({ context, event }) =>
       event.type === "ALARM_FIRED" && event.cycleId !== context.cycleId,
     isFreshMarketData: ({ context, event }) =>
@@ -113,6 +118,13 @@ export const tradingCycleMachine = setup({
           retryable: false,
         },
       };
+    }),
+    recordControlDenied: assign({
+      lastError: {
+        phase: "cancellation",
+        code: "CONTROL_PERMISSION_REQUIRED",
+        retryable: false,
+      },
     }),
     recordSchedule: assign(({ context, event }) =>
       event.type === "SCHEDULE_SUCCEEDED"
@@ -330,8 +342,14 @@ export const tradingCycleMachine = setup({
   }),
   initial: "stopped",
   on: {
-    STOP_REQUESTED: { actions: "requestStop" },
-    KILL_SWITCH_ENGAGED: { actions: "requestKillSwitch" },
+    STOP_REQUESTED: [
+      { guard: "canControl", actions: "requestStop" },
+      { actions: "recordControlDenied" },
+    ],
+    KILL_SWITCH_ENGAGED: [
+      { guard: "canControl", actions: "requestKillSwitch" },
+      { actions: "recordControlDenied" },
+    ],
     PERMISSION_REVOKED: { actions: "revokePermission" },
   },
   states: {
@@ -345,10 +363,14 @@ export const tradingCycleMachine = setup({
           },
           { actions: "recordStartDenied" },
         ],
-        KILL_SWITCH_ENGAGED: {
-          target: "halted",
-          actions: "requestKillSwitch",
-        },
+        KILL_SWITCH_ENGAGED: [
+          {
+            guard: "canControl",
+            target: "halted",
+            actions: "requestKillSwitch",
+          },
+          { actions: "recordControlDenied" },
+        ],
       },
     },
     scheduling: {
@@ -675,12 +697,26 @@ export const tradingCycleMachine = setup({
     },
     failed: {
       on: {
-        RESET: { target: "stopped", actions: "resetMachine" },
+        RESET: [
+          {
+            guard: "canControl",
+            target: "stopped",
+            actions: "resetMachine",
+          },
+          { actions: "recordControlDenied" },
+        ],
       },
     },
     halted: {
       on: {
-        RESET: { target: "stopped", actions: "resetMachine" },
+        RESET: [
+          {
+            guard: "canControl",
+            target: "stopped",
+            actions: "resetMachine",
+          },
+          { actions: "recordControlDenied" },
+        ],
       },
     },
   },
