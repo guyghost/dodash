@@ -1,0 +1,707 @@
+import {
+  dashboardSessionMachine,
+  type DashboardDirectCommand,
+  type DashboardError,
+  type DashboardRemotePhase,
+} from "@dodash/models";
+import { createActor, type SnapshotFrom } from "xstate";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+
+import {
+  DashboardRequestError,
+  createHttpGateway,
+  type AgentStateView,
+  type CycleView,
+  type DashboardGateway,
+  type StartConfiguration,
+} from "./dashboard-api.js";
+import { createDemoGateway } from "./demo-gateway.js";
+
+const PIPELINE = [
+  { phase: "fetchingMarketData", label: "Marché", color: "teal" },
+  { phase: "computingIndicators", label: "Indicateurs", color: "purple" },
+  { phase: "evaluatingStrategies", label: "Stratégies", color: "green" },
+  { phase: "allocating", label: "Allocation", color: "green" },
+  { phase: "checkingRisk", label: "Risque", color: "red" },
+  { phase: "submittingOrder", label: "Exécution", color: "red" },
+  { phase: "persisting", label: "Persistance", color: "blue" },
+] as const;
+
+const permissions = Object.freeze({ canControl: true, canTrade: true });
+const money = new Intl.NumberFormat("fr-FR", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 2,
+});
+const quantity = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 8 });
+const compactDate = new Intl.DateTimeFormat("fr-FR", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+const phaseLabel = (phase: DashboardRemotePhase | null): string =>
+  phase === null
+    ? "hors ligne"
+    : phase.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+
+const toDashboardError = (error: unknown): DashboardError =>
+  error instanceof DashboardRequestError
+    ? error.dashboardError
+    : { code: "REQUEST_FAILED", retryable: true };
+
+const outcomeClass = (outcome: string): string => {
+  if (outcome === "ORDER_CONFIRMED") return "positive";
+  if (outcome === "RISK_REJECTED" || outcome === "FAILED") return "negative";
+  return "neutral";
+};
+
+function SectionHeading({
+  index,
+  title,
+  detail,
+}: {
+  readonly index: string;
+  readonly title: string;
+  readonly detail: string;
+}) {
+  return (
+    <div className="section-heading">
+      <span>{index}</span>
+      <strong>{title}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  accent,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly accent?: string;
+}) {
+  return (
+    <div className={`metric ${accent ?? ""}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+export function App() {
+  const actor = useMemo(
+    () =>
+      createActor(dashboardSessionMachine, {
+        input: { defaultAgentName: "btc-usd--multi" },
+      }),
+    [],
+  );
+  const [snapshot, setSnapshot] = useState<
+    SnapshotFrom<typeof dashboardSessionMachine>
+  >(actor.getSnapshot());
+  const [agent, setAgent] = useState<AgentStateView | null>(null);
+  const [cycles, setCycles] = useState<readonly CycleView[]>([]);
+  const [agentName, setAgentName] = useState("btc-usd--multi");
+  const [apiBaseUrl, setApiBaseUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [productId, setProductId] = useState("BTC-USD");
+  const [timeframe, setTimeframe] = useState("FIVE_MINUTE");
+  const [executionMode, setExecutionMode] = useState<"paper" | "live">("paper");
+  const [strategyIds, setStrategyIds] = useState<readonly string[]>([
+    "rsi-reversion",
+    "ema-cross",
+    "breakout",
+  ]);
+  const [liveConfirmation, setLiveConfirmation] = useState("");
+  const gatewayRef = useRef<DashboardGateway | null>(null);
+  const inFlightRef = useRef<string | null>(null);
+  const pendingStartRef = useRef<StartConfiguration | undefined>(undefined);
+
+  useEffect(() => {
+    actor.start();
+    const subscription = actor.subscribe(setSnapshot);
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [actor]);
+
+  useEffect(() => {
+    const state = String(snapshot.value);
+    if (state === "ready" || state === "disconnected" || state === "error") {
+      inFlightRef.current = null;
+      return;
+    }
+    const gateway = gatewayRef.current;
+    const target = snapshot.context.agentName;
+    if (gateway === null || target === null) return;
+    const key = `${state}:${snapshot.context.pendingCommand ?? "none"}`;
+    if (inFlightRef.current === key) return;
+    inFlightRef.current = key;
+
+    const fail = (error: unknown) => {
+      actor.send({ type: "REQUEST_FAILED", error: toDashboardError(error) });
+    };
+    if (state === "loading" || state === "refreshing") {
+      void Promise.all([gateway.loadState(target), gateway.loadCycles(target)])
+        .then(([nextAgent, nextCycles]) => {
+          actor.send({
+            type: "STATE_LOADED",
+            remotePhase: nextAgent.phase,
+            remoteUpdatedAt: nextAgent.updatedAt,
+          });
+          if (String(actor.getSnapshot().value) === "ready") {
+            setAgent(nextAgent);
+            setCycles(nextCycles);
+          }
+        })
+        .catch(fail);
+      return;
+    }
+    if (state === "commanding" && snapshot.context.pendingCommand !== null) {
+      const command = snapshot.context.pendingCommand;
+      void gateway
+        .command(
+          target,
+          command,
+          command === "start" ? pendingStartRef.current : undefined,
+        )
+        .then(async (nextAgent) => {
+          const nextCycles = await gateway.loadCycles(target);
+          actor.send({
+            type: "COMMAND_SUCCEEDED",
+            remotePhase: nextAgent.phase,
+            remoteUpdatedAt: nextAgent.updatedAt,
+          });
+          if (String(actor.getSnapshot().value) === "ready") {
+            setAgent(nextAgent);
+            setCycles(nextCycles);
+          }
+          pendingStartRef.current = undefined;
+        })
+        .catch(fail);
+    }
+  }, [actor, snapshot]);
+
+  useEffect(() => {
+    if (snapshot.value !== "ready") return;
+    const timer = globalThis.setInterval(() => {
+      if (actor.getSnapshot().value === "ready") {
+        actor.send({ type: "REFRESH_REQUESTED" });
+      }
+    }, 15_000);
+    return () => globalThis.clearInterval(timer);
+  }, [actor, snapshot.value]);
+
+  const connect = (event: FormEvent) => {
+    event.preventDefault();
+    gatewayRef.current = createHttpGateway(apiBaseUrl, token);
+    actor.send({
+      type: "CONNECT_REQUESTED",
+      agentName,
+      credentialPresent: token.trim().length > 0,
+    });
+  };
+
+  const connectDemo = () => {
+    gatewayRef.current = createDemoGateway();
+    actor.send({
+      type: "CONNECT_REQUESTED",
+      agentName: "btc-usd--multi",
+      credentialPresent: true,
+    });
+  };
+
+  const issueCommand = (command: DashboardDirectCommand) => {
+    if (command === "start") {
+      pendingStartRef.current = {
+        productId,
+        timeframe,
+        strategyIds,
+        executionMode,
+      };
+    }
+    actor.send({ type: "COMMAND_REQUESTED", command, permissions });
+  };
+
+  const toggleStrategy = (strategyId: string) => {
+    setStrategyIds((current) =>
+      current.includes(strategyId)
+        ? current.filter((item) => item !== strategyId)
+        : [...current, strategyId],
+    );
+  };
+
+  const busy =
+    snapshot.value === "loading" ||
+    snapshot.value === "refreshing" ||
+    snapshot.value === "commanding";
+  const ready =
+    snapshot.value === "ready" ||
+    snapshot.value === "confirmingKill" ||
+    snapshot.value === "commanding" ||
+    snapshot.value === "refreshing";
+  const activePipeline = PIPELINE.findIndex((item) => item.phase === agent?.phase);
+  const liveStartBlocked = executionMode === "live" && liveConfirmation !== "LIVE";
+  const markPrice = agent?.lastCycle?.marketPrice ?? null;
+  const equity =
+    agent === null
+      ? null
+      : agent.portfolio.cash +
+        agent.portfolio.positionQuantity *
+          (markPrice ?? agent.portfolio.averagePrice);
+
+  return (
+    <main className="dashboard-shell">
+      <header className="masthead">
+        <p className="eyebrow">OBSERVATOIRE · EDGE COMPUTING · CLOUDFLARE</p>
+        <div className="masthead-row">
+          <div>
+            <h1>
+              DoDash
+              <br />
+              Trading Agent
+            </h1>
+            <p className="dek">
+              Piloter la boucle, lire les signaux et garder chaque transition
+              sous contrôle.
+            </p>
+          </div>
+          <div className="connection-stamp" aria-live="polite">
+            <span>SESSION</span>
+            <strong>
+              {ready ? "CONNECTÉE" : busy ? "CHARGEMENT" : "VERROUILLÉE"}
+            </strong>
+            <small>{snapshot.context.agentName ?? "aucune cible"}</small>
+          </div>
+        </div>
+        <div className="rule" />
+        <div className="legend" aria-label="Légende système">
+          <span><i className="orange" />Agent</span>
+          <span><i className="teal" />Marché</span>
+          <span><i className="purple" />Indicateurs</span>
+          <span><i className="green" />Stratégies</span>
+          <span><i className="red" />Décision</span>
+          <span><i className="blue" />Persistance</span>
+        </div>
+      </header>
+
+      {!ready ? (
+        <section className="access-section">
+          <SectionHeading
+            index="01"
+            title="ACCÈS"
+            detail="OUVRIR UNE SESSION ÉPHÉMÈRE"
+          />
+          <div className="access-grid">
+            <form className="paper-card access-card" onSubmit={connect}>
+              <span className="card-label orange-bg">CONNEXION AU PROXY</span>
+              <h2>Choisir l’agent</h2>
+              <p>
+                Le token reste en mémoire vive. Il n’est ni stocké, ni placé
+                dans l’URL.
+              </p>
+              <label>
+                Cible
+                <input
+                  value={agentName}
+                  onChange={(event) => setAgentName(event.target.value)}
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                Base API
+                <input
+                  value={apiBaseUrl}
+                  onChange={(event) => setApiBaseUrl(event.target.value)}
+                  placeholder="même origine"
+                  inputMode="url"
+                />
+              </label>
+              <label>
+                Token dashboard
+                <input
+                  value={token}
+                  onChange={(event) => setToken(event.target.value)}
+                  type="password"
+                  autoComplete="off"
+                />
+              </label>
+              {snapshot.context.lastError !== null && (
+                <p className="error-note" role="alert">
+                  {snapshot.context.lastError.code}
+                </p>
+              )}
+              <div className="button-row">
+                <button className="button primary" type="submit" disabled={busy}>
+                  Connecter
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={connectDemo}
+                  disabled={busy}
+                >
+                  Voir la démo
+                </button>
+              </div>
+            </form>
+            <aside className="paper-card access-note">
+              <span className="card-label green-bg">FRONTIÈRE SÛRE</span>
+              <h2>Le modèle décide</h2>
+              <p>
+                Le dashboard ne modifie jamais l’état affiché avant la réponse
+                du Durable Object. Une commande est un événement typé, pas une
+                instruction libre.
+              </p>
+              <ol>
+                <li>Authentifier le proxy</li>
+                <li>Valider l’état distant</li>
+                <li>Émettre une commande autorisée</li>
+              </ol>
+            </aside>
+          </div>
+        </section>
+      ) : agent === null ? (
+        <section className="loading-panel" aria-live="polite">
+          Lecture de l’état durable…
+        </section>
+      ) : (
+        <>
+          <section>
+            <SectionHeading
+              index="01"
+              title="ÉTAT DU BOT"
+              detail="SOURCE : DURABLE OBJECT"
+            />
+            <div className="summary-grid">
+              <article className="paper-card agent-card">
+                <div className="card-topline">
+                  <span className="card-label orange-bg">TRADING AGENT</span>
+                  <span
+                    className={`phase-badge ${agent.enabled ? "online" : "offline"}`}
+                  >
+                    {phaseLabel(agent.phase)}
+                  </span>
+                </div>
+                <h2>{agent.configuration?.productId ?? "Non configuré"}</h2>
+                <p className="agent-meta">
+                  {agent.configuration?.executionMode.toUpperCase() ?? "—"} ·{" "}
+                  {agent.configuration?.timeframe.replaceAll("_", " ") ?? "—"}
+                </p>
+                <div className="metric-grid">
+                  <Metric
+                    label="ÉQUITÉ"
+                    value={equity === null ? "—" : money.format(equity)}
+                    accent="blue-text"
+                  />
+                  <Metric
+                    label="PNL JOUR"
+                    value={money.format(agent.dailyPnl)}
+                    accent={agent.dailyPnl >= 0 ? "green-text" : "red-text"}
+                  />
+                  <Metric
+                    label="POSITION"
+                    value={quantity.format(agent.portfolio.positionQuantity)}
+                  />
+                  <Metric
+                    label="PRIX MOYEN"
+                    value={money.format(agent.portfolio.averagePrice)}
+                  />
+                </div>
+              </article>
+
+              <article className="paper-card control-card">
+                <div className="card-topline">
+                  <span className="card-label red-bg">CONTRÔLE</span>
+                  <span className="sync-time">
+                    MAJ {compactDate.format(agent.updatedAt)}
+                  </span>
+                </div>
+                <h2>Piloter la boucle</h2>
+                <div className="control-buttons">
+                  <button
+                    className="button primary"
+                    onClick={() => issueCommand("tick")}
+                    disabled={busy || !agent.enabled}
+                  >
+                    Exécuter maintenant
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => issueCommand("stop")}
+                    disabled={busy || !agent.enabled}
+                  >
+                    Arrêter
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => issueCommand("reset")}
+                    disabled={
+                      busy ||
+                      (agent.phase !== "failed" && agent.phase !== "halted")
+                    }
+                  >
+                    Réinitialiser
+                  </button>
+                  <button
+                    className="button danger"
+                    onClick={() =>
+                      actor.send({
+                        type: "KILL_CONFIRMATION_REQUESTED",
+                        permissions,
+                      })
+                    }
+                    disabled={busy || !agent.enabled}
+                  >
+                    Kill switch
+                  </button>
+                </div>
+                <p className="next-wake">
+                  Prochain réveil :{" "}
+                  {agent.nextWakeAt === null
+                    ? "aucun"
+                    : compactDate.format(agent.nextWakeAt)}
+                </p>
+                <button
+                  className="text-button"
+                  onClick={() => actor.send({ type: "DISCONNECT_REQUESTED" })}
+                >
+                  Fermer la session
+                </button>
+              </article>
+            </div>
+          </section>
+
+          <section>
+            <SectionHeading
+              index="02"
+              title="BOUCLE D’EXÉCUTION"
+              detail="UNE TRANSITION À LA FOIS"
+            />
+            <div
+              className="pipeline"
+              aria-label={`Phase courante : ${phaseLabel(agent.phase)}`}
+            >
+              {PIPELINE.map((item, index) => (
+                <div
+                  key={item.phase}
+                  className={`pipeline-step ${item.color} ${
+                    index === activePipeline ? "active" : ""
+                  }`}
+                >
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <strong>{item.label}</strong>
+                  <small>{index === activePipeline ? "EN COURS" : "CONTRÔLÉ"}</small>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="detail-grid">
+            <div>
+              <SectionHeading
+                index="03"
+                title="STRATÉGIES"
+                detail="SIGNAUX NORMALISÉS"
+              />
+              <div className="strategy-list">
+                {(agent.configuration?.strategyIds ?? []).map((strategy) => (
+                  <article className="paper-card strategy-card" key={strategy}>
+                    <span className="card-label green-bg">ACTIVE</span>
+                    <h3>{strategy}</h3>
+                    <p>
+                      Évalue les mêmes chandelles, puis transmet un signal typé
+                      à l’allocateur.
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </div>
+            <div>
+              <SectionHeading
+                index="04"
+                title="INDICATEURS"
+                detail="CALCUL PUR PROLOG"
+              />
+              <article className="paper-card indicator-card">
+                {agent.indicators === null ? (
+                  <p>Aucun snapshot calculé.</p>
+                ) : (
+                  <dl>
+                    <div><dt>RSI</dt><dd>{agent.indicators.rsi.toFixed(2)}</dd></div>
+                    <div><dt>EMA RAPIDE</dt><dd>{money.format(agent.indicators.emaFast)}</dd></div>
+                    <div><dt>EMA LENTE</dt><dd>{money.format(agent.indicators.emaSlow)}</dd></div>
+                    <div><dt>MACD</dt><dd>{agent.indicators.macd.toFixed(2)}</dd></div>
+                    <div><dt>ATR</dt><dd>{agent.indicators.atr.toFixed(2)}</dd></div>
+                  </dl>
+                )}
+              </article>
+            </div>
+          </section>
+
+          {!agent.enabled && agent.phase === "stopped" && (
+            <section>
+              <SectionHeading
+                index="05"
+                title="DÉMARRAGE"
+                detail="CONFIGURATION STRUCTURÉE"
+              />
+              <article className="paper-card start-card">
+                <div className="start-fields">
+                  <label>
+                    Produit
+                    <input
+                      value={productId}
+                      onChange={(event) =>
+                        setProductId(event.target.value.toUpperCase())
+                      }
+                    />
+                  </label>
+                  <label>
+                    Timeframe
+                    <select
+                      value={timeframe}
+                      onChange={(event) => setTimeframe(event.target.value)}
+                    >
+                      <option value="ONE_MINUTE">1 minute</option>
+                      <option value="FIVE_MINUTE">5 minutes</option>
+                      <option value="ONE_HOUR">1 heure</option>
+                      <option value="ONE_DAY">1 jour</option>
+                    </select>
+                  </label>
+                  <label>
+                    Exécution
+                    <select
+                      value={executionMode}
+                      onChange={(event) =>
+                        setExecutionMode(event.target.value as "paper" | "live")
+                      }
+                    >
+                      <option value="paper">Paper</option>
+                      <option value="live">Live</option>
+                    </select>
+                  </label>
+                </div>
+                <fieldset>
+                  <legend>Stratégies</legend>
+                  {["rsi-reversion", "ema-cross", "breakout"].map((strategy) => (
+                    <label className="check-label" key={strategy}>
+                      <input
+                        type="checkbox"
+                        checked={strategyIds.includes(strategy)}
+                        onChange={() => toggleStrategy(strategy)}
+                      />
+                      {strategy}
+                    </label>
+                  ))}
+                </fieldset>
+                {executionMode === "live" && (
+                  <label className="live-confirmation">
+                    Confirmer en saisissant LIVE
+                    <input
+                      value={liveConfirmation}
+                      onChange={(event) => setLiveConfirmation(event.target.value)}
+                      autoComplete="off"
+                    />
+                  </label>
+                )}
+                <button
+                  className="button primary"
+                  onClick={() => issueCommand("start")}
+                  disabled={
+                    busy || strategyIds.length === 0 || liveStartBlocked
+                  }
+                >
+                  Démarrer l’agent
+                </button>
+              </article>
+            </section>
+          )}
+
+          <section>
+            <SectionHeading
+              index="06"
+              title="HISTORIQUE"
+              detail="CYCLES PERSISTÉS SQLITE"
+            />
+            <div className="paper-card table-card">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cycle</th>
+                    <th>Déclenché</th>
+                    <th>Issue</th>
+                    <th>Phase finale</th>
+                    <th>Durée</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cycles.map((cycle) => (
+                    <tr key={cycle.cycleId}>
+                      <td><code>{cycle.cycleId}</code></td>
+                      <td>{compactDate.format(cycle.triggeredAt)}</td>
+                      <td>
+                        <span className={`outcome ${outcomeClass(cycle.outcome)}`}>
+                          {cycle.outcome}
+                        </span>
+                      </td>
+                      <td>{cycle.phase}</td>
+                      <td>
+                        {cycle.completedAt === null
+                          ? "—"
+                          : `${(
+                              (cycle.completedAt - cycle.triggeredAt) /
+                              1_000
+                            ).toFixed(1)} s`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {cycles.length === 0 && (
+                <p className="empty-state">Aucun cycle persisté.</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
+      {snapshot.value === "confirmingKill" && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="paper-card kill-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="kill-title"
+          >
+            <span className="card-label red-bg">ACTION TERMINALE</span>
+            <h2 id="kill-title">Engager le kill switch ?</h2>
+            <p>
+              Le cycle actif sera annulé ou réconcilié selon sa phase. Un reset
+              autorisé sera requis avant tout redémarrage.
+            </p>
+            <div className="button-row">
+              <button
+                className="button danger"
+                onClick={() => actor.send({ type: "KILL_CONFIRMED", permissions })}
+              >
+                Confirmer le kill
+              </button>
+              <button
+                className="button secondary"
+                onClick={() => actor.send({ type: "KILL_CANCELLED" })}
+              >
+                Annuler
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </main>
+  );
+}
