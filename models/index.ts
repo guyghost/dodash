@@ -7,6 +7,19 @@ export type {
   BacktestRunEvent,
   BacktestRunInput,
 } from "./backtest-run.types.js";
+export { dashboardSessionMachine } from "./dashboard-session.machine.js";
+export { DASHBOARD_REMOTE_PHASES } from "./dashboard-session.types.js";
+export type {
+  DashboardCommand,
+  DashboardDirectCommand,
+  DashboardError,
+  DashboardErrorCode,
+  DashboardPermissions,
+  DashboardRemotePhase,
+  DashboardSessionContext,
+  DashboardSessionEvent,
+  DashboardSessionInput,
+} from "./dashboard-session.types.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
 export type {
   ControlPermissions,
