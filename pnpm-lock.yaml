@@ -95,6 +95,18 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.2.0)(vite@6.4.2(@types/node@26.2.0)(lightningcss@1.33.0)(yaml@2.9.0))
 
+  apps/dashboard-api:
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^5.20260817.1
+        version: 5.20260817.1
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(yaml@2.9.0))
+      wrangler:
+        specifier: ^4.123.0
+        version: 4.123.0(@cloudflare/workers-types@5.20260817.1)
+
   apps/mcp-market-data:
     dependencies:
       '@dodash/domain':

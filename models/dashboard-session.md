@@ -33,6 +33,38 @@ jamais l’état du bot : il affiche uniquement une réponse validée du Worker 
 - `kill` ne peut pas être envoyé par `COMMAND_REQUESTED` : il exige les deux
   événements de confirmation dédiés.
 
+### Contrat HTTP du proxy dashboard
+
+Le proxy est stateless : il traduit une requête dashboard validée en un appel
+au service binding Agent. Il ne possède donc pas de machine d'état distincte.
+
+| Route dashboard | Méthode | Route Agent | Corps |
+| --- | --- | --- | --- |
+| `/api/agents/:name/state` | `GET` | `/api/agents/:name/state` | interdit |
+| `/api/agents/:name/cycles` | `GET` | `/api/agents/:name/cycles` | interdit |
+| `/api/agents/:name/start` | `POST` | `/api/agents/:name/start` | JSON borné requis |
+| `/api/agents/:name/stop` | `POST` | `/api/agents/:name/stop` | interdit |
+| `/api/agents/:name/reset` | `POST` | `/api/agents/:name/reset` | interdit |
+| `/api/agents/:name/tick` | `POST` | `/api/agents/:name/tick` | interdit |
+| `/api/agents/:name/kill` | `POST` | `/api/agents/:name/kill` | interdit |
+
+Avant l'effet réseau, le proxy doit :
+
+1. accepter uniquement une requête same-origin et les routes/méthodes ci-dessus ;
+2. comparer le Bearer dashboard à `DASHBOARD_ACCESS_TOKEN` sans branchement
+   dépendant du contenu ;
+3. valider et réencoder le nom d'Agent ;
+4. refuser un corps supérieur à 16 KiB et tout corps inattendu ;
+5. supprimer les headers entrants, puis injecter uniquement
+   `Authorization: Bearer <CONTROL_API_TOKEN>` et, si nécessaire,
+   `Content-Type: application/json` ;
+6. borner la réponse Agent à 1 MiB et ne jamais refléter un secret.
+
+Les statuts de frontière sont déterministes : `401` credential absent/invalide,
+`403` origine navigateur étrangère, `404` route inconnue, `405` méthode
+interdite, `413` requête/réponse hors limite, `502` échec du service Agent et
+`503` secret interne absent ou trop faible.
+
 ## Invariants
 
 1. Aucun secret ou Bearer token ne vit dans le contexte XState, l’URL ou le
@@ -42,3 +74,6 @@ jamais l’état du bot : il affiche uniquement une réponse validée du Worker 
    `canControl`.
 4. Une requête en vol est représentée par un état explicite.
 5. Une erreur de commande conserve le dernier état distant confirmé.
+6. Le proxy ne transmet aucun header fourni par le navigateur au service Agent.
+7. Le proxy n'accepte aucun chemin ou verbe libre et ne réessaie jamais une
+   commande mutante.
