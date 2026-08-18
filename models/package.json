@@ -1,0 +1,23 @@
+{
+  "name": "@dodash/models",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "xstate": "^5.32.5"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}
