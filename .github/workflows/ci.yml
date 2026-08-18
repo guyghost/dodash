@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_workers:
+        description: Deploy the three Cloudflare Workers after verification
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  WRANGLER_LOG_PATH: /tmp/dodash-wrangler.log
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm --filter @dodash/dashboard test:sites
+
+  deploy-workers:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_workers
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Deploy market data Worker
+        run: pnpm --filter @dodash/mcp-market-data exec wrangler deploy
+      - name: Deploy Trading Agent Worker
+        run: pnpm --filter @dodash/agent exec wrangler deploy
+      - name: Deploy dashboard API Worker
+        run: pnpm --filter @dodash/dashboard-api exec wrangler deploy

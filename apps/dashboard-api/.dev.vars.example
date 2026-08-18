@@ -1,0 +1,2 @@
+DASHBOARD_ACCESS_TOKEN=replace-with-at-least-32-random-characters
+CONTROL_API_TOKEN=replace-with-the-agent-control-token
