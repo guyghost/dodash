@@ -1,5 +1,6 @@
 import { createOrderIntent, err, ok, type Result } from "@dodash/domain";
 import type { IndicatorConfig } from "@dodash/indicators-prolog";
+import type { ProtectiveExitPolicy } from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
 import {
   createBreakoutStrategy,
@@ -29,6 +30,7 @@ export interface BacktestSuiteConfig {
   readonly indicators: IndicatorConfig;
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
+  readonly protectiveExit?: ProtectiveExitPolicy;
 }
 
 export interface BuyHoldBenchmark {
@@ -44,6 +46,7 @@ export interface BacktestScenarioSummary {
   readonly metrics: BacktestMetrics;
   readonly finalPortfolio: PaperPortfolio;
   readonly excessReturn: number;
+  readonly protectiveExitCount: number;
 }
 
 export interface BacktestSuiteReport {
@@ -181,6 +184,9 @@ export const runBacktestSuite = async (
         strategies: registry.value,
         risk: config.risk,
         broker: config.broker,
+        ...(config.protectiveExit === undefined
+          ? {}
+          : { protectiveExit: config.protectiveExit }),
       },
       preparedIndicators.value,
     );
@@ -199,6 +205,7 @@ export const runBacktestSuite = async (
         metrics: replay.value.metrics,
         finalPortfolio: replay.value.finalPortfolio,
         excessReturn: replay.value.metrics.totalReturn - benchmark.totalReturn,
+        protectiveExitCount: replay.value.protectiveExits.length,
       }),
     );
   }

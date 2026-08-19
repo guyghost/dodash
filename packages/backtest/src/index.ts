@@ -34,6 +34,7 @@ export type {
   BacktestConfig,
   BacktestReplayError,
   BacktestResult,
+  ProtectiveExitExecution,
 } from "./replay.js";
 export { runBacktestSuite } from "./suite.js";
 export type {

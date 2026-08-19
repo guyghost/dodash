@@ -47,6 +47,7 @@ const main = async (): Promise<void> => {
       takeProfitBps: 300,
     }),
     broker: Object.freeze({ feeBps: 6, slippageBps: 2 }),
+    protectiveExit: Object.freeze({ mode: "NONE" as const }),
   });
   const result = await runModeledBacktest(dataset.value, config);
   if (!result.ok) throw new Error(JSON.stringify(result.error));
