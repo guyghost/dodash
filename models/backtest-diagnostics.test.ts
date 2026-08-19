@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { summarizeBacktestDiagnostics } from "./backtest-diagnostics.js";
+import {
+  extractBacktestDiagnosticSamples,
+  summarizeBacktestDiagnostics,
+} from "./backtest-diagnostics.js";
 
 describe("backtest exposure diagnostics", () => {
   it("résume les signaux actifs par stratégie avec des quantiles interpolés", () => {
@@ -148,6 +151,66 @@ describe("backtest exposure diagnostics", () => {
           },
         },
       },
+    });
+  });
+
+  it("projette les notionnels actifs bruts dans l'ordre d'évaluation", () => {
+    const result = extractBacktestDiagnosticSamples([
+      {
+        strategyId: "rsi",
+        side: "BUY",
+        confidence: 0.5,
+        suggestedSize: 2,
+        referencePrice: 100,
+      },
+      {
+        strategyId: "ema",
+        side: "SELL",
+        confidence: 0.25,
+        suggestedSize: 4,
+        referencePrice: 200,
+      },
+      {
+        strategyId: "rsi",
+        side: "HOLD",
+        confidence: 0,
+        suggestedSize: 0,
+        referencePrice: 150,
+      },
+      {
+        strategyId: "rsi",
+        side: "SELL",
+        confidence: 0.75,
+        suggestedSize: 2,
+        referencePrice: 200,
+      },
+    ]);
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        requestedNotionalByStrategy: [
+          { strategyId: "ema", values: [200] },
+          { strategyId: "rsi", values: [100, 300] },
+        ],
+      },
+    });
+  });
+
+  it("refuse de projeter une observation de signal invalide", () => {
+    expect(
+      extractBacktestDiagnosticSamples([
+        {
+          strategyId: "rsi",
+          side: "BUY",
+          confidence: Number.NaN,
+          suggestedSize: 1,
+          referencePrice: 100,
+        },
+      ]),
+    ).toEqual({
+      ok: false,
+      error: { code: "INVALID_SIGNAL_DIAGNOSTIC_OBSERVATION" },
     });
   });
 

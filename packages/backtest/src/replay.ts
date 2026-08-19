@@ -19,12 +19,14 @@ import {
 } from "@dodash/indicators-prolog";
 import {
   createExecutionSchedule,
+  extractBacktestDiagnosticSamples,
   isValidProtectiveExitPolicy,
   protectiveOrderMachine,
   resolveRiskEvaluationTimestamp,
   summarizeBacktestDiagnostics,
   type ActiveProtectiveExitPolicy,
   type AllocationDiagnosticObservation,
+  type BacktestDiagnosticSamples,
   type BacktestDiagnostics,
   type BacktestDiagnosticsError,
   type ExecutionScheduleError,
@@ -62,6 +64,7 @@ export interface BacktestConfig {
 
 export interface BacktestReplayOptions {
   readonly executionCandles?: readonly Candle[];
+  readonly includeDiagnosticSamples?: boolean;
 }
 
 export interface ProtectiveExitExecution extends ProtectiveExitResolution {
@@ -80,6 +83,7 @@ export interface BacktestResult {
   readonly processedCandles: number;
   readonly protectiveExits: readonly ProtectiveExitExecution[];
   readonly diagnostics: BacktestDiagnostics;
+  readonly diagnosticSamples: BacktestDiagnosticSamples | null;
 }
 
 export type BacktestReplayError =
@@ -576,6 +580,16 @@ export const replayBacktest = async (
   if (!diagnostics.ok) {
     return err({ code: "DIAGNOSTICS_FAILURE", cause: diagnostics.error });
   }
+  const diagnosticSamples =
+    options?.includeDiagnosticSamples === true
+      ? extractBacktestDiagnosticSamples(signalDiagnosticObservations)
+      : null;
+  if (diagnosticSamples !== null && !diagnosticSamples.ok) {
+    return err({
+      code: "DIAGNOSTICS_FAILURE",
+      cause: diagnosticSamples.error,
+    });
+  }
   const metrics = calculateMetrics(equityCurve, trades, config.initialCapital);
   return ok(
     Object.freeze({
@@ -587,6 +601,8 @@ export const replayBacktest = async (
       processedCandles: validated.value.length,
       protectiveExits: Object.freeze(protectiveExits),
       diagnostics: diagnostics.value,
+      diagnosticSamples:
+        diagnosticSamples === null ? null : diagnosticSamples.value,
     }),
   );
 };

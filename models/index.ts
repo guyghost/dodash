@@ -37,10 +37,15 @@ export type {
   ConfidenceCalibrationSelection,
   ConfidenceCalibrationSelectionResult,
 } from "./confidence-calibration.js";
-export { summarizeBacktestDiagnostics } from "./backtest-diagnostics.js";
+export {
+  extractBacktestDiagnosticSamples,
+  summarizeBacktestDiagnostics,
+} from "./backtest-diagnostics.js";
 export type {
   AllocationDiagnosticObservation,
   AllocationDiagnostics,
+  BacktestDiagnosticSamples,
+  BacktestDiagnosticSamplesResult,
   BacktestDiagnostics,
   BacktestDiagnosticsError,
   BacktestDiagnosticsErrorCode,
@@ -50,6 +55,7 @@ export type {
   SignalDiagnosticObservation,
   SignalDiagnostics,
   StrategySignalDiagnostics,
+  StrategyRequestedNotionalSamples,
 } from "./backtest-diagnostics.types.js";
 export type {
   BacktestError,

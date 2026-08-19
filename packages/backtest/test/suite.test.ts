@@ -9,6 +9,19 @@ import * as backtest from "../src/index.js";
 const product = createProductId("BTC-USD");
 if (!product.ok) throw new Error("invalid product fixture");
 
+const linearQuantile = (values: readonly number[], probability: number): number => {
+  const sorted = [...values].sort((left, right) => left - right);
+  const position = (sorted.length - 1) * probability;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+  const lower = sorted[lowerIndex];
+  const upper = sorted[upperIndex];
+  if (lower === undefined || upper === undefined) {
+    throw new Error("empty quantile fixture");
+  }
+  return lower + (upper - lower) * (position - lowerIndex);
+};
+
 const suiteFixture = () => {
   const candles: Candle[] = Array.from({ length: 40 }, (_, index) => ({
     start: Date.UTC(2025, 0, 1 + index),
@@ -321,6 +334,43 @@ describe("backtest suite", () => {
       first.value.scenarios.find((scenario) => scenario.id === "ensemble")
         ?.diagnostics.signals.byStrategy.map(({ strategyId }) => strategyId),
     ).toEqual(["breakout", "ema-cross", "rsi-reversion"]);
+    expect(
+      first.value.scenarios.every(
+        (scenario) => scenario.diagnosticSamples === null,
+      ),
+    ).toBe(true);
+  });
+
+  it("capture les échantillons diagnostiques uniquement sur demande", async () => {
+    const { dataset, config } = suiteFixture();
+    const result = await backtest.runBacktestSuite(dataset, config, {
+      includeDiagnosticSamples: true,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const scenario of result.value.scenarios) {
+      expect(scenario.diagnosticSamples).not.toBeNull();
+      for (const strategy of scenario.diagnostics.signals.byStrategy) {
+        const samples = scenario.diagnosticSamples?.requestedNotionalByStrategy.find(
+          ({ strategyId }) => strategyId === strategy.strategyId,
+        );
+        expect(samples?.values).toHaveLength(strategy.activeSignalCount);
+        if (samples === undefined || samples.values.length === 0) continue;
+        expect(Math.min(...samples.values)).toBe(
+          strategy.requestedNotional.min,
+        );
+        expect(Math.max(...samples.values)).toBe(
+          strategy.requestedNotional.max,
+        );
+        expect(linearQuantile(samples.values, 0.5)).toBe(
+          strategy.requestedNotional.median,
+        );
+        expect(linearQuantile(samples.values, 0.95)).toBe(
+          strategy.requestedNotional.p95,
+        );
+      }
+    }
   });
 
   it("calibre uniquement EMA et breakout sans créer de nouveaux signaux", async () => {

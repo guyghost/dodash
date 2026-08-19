@@ -39,3 +39,16 @@ observations déjà validées par les domaines stratégie, allocation et risque,
 puis consomme le résumé du modèle. Une erreur de résumé emprunte le chemin
 d’échec déterministe existant ; aucun fallback, retry ou texte libre ne décide
 de poursuivre.
+
+La capture brute est volontairement opt-in. Elle réutilise exactement les
+observations validées du résumé, exclut `HOLD`, conserve l'ordre temporel et
+refuse toute valeur non finie ou négative. Une erreur de projection emprunte
+le même échec `DIAGNOSTICS_FAILURE`; elle n'est jamais masquée par un tableau
+vide. La suite propage l'option à tous ses scénarios et expose soit une projection
+complète, soit `null`, sans état intermédiaire ambigu. Les tests rapprochent les
+échantillons du résumé R7 afin d'interdire une seconde définition implicite du
+notionnel demandé.
+
+Cette donnée supplémentaire reste une intention calculée au close primaire. Sa
+présence n'autorise aucune transition live et ne doit pas être activée dans les
+artefacts généraux pour lesquels les distributions agrégées suffisent.

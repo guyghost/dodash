@@ -54,6 +54,15 @@ export interface BacktestDiagnostics {
   readonly allocation: AllocationDiagnostics;
 }
 
+export interface StrategyRequestedNotionalSamples {
+  readonly strategyId: string;
+  readonly values: readonly number[];
+}
+
+export interface BacktestDiagnosticSamples {
+  readonly requestedNotionalByStrategy: readonly StrategyRequestedNotionalSamples[];
+}
+
 export type BacktestDiagnosticsErrorCode =
   | "INVALID_SIGNAL_DIAGNOSTIC_OBSERVATION"
   | "INVALID_ALLOCATION_DIAGNOSTIC_OBSERVATION";
@@ -64,4 +73,8 @@ export interface BacktestDiagnosticsError {
 
 export type BacktestDiagnosticsResult =
   | { readonly ok: true; readonly value: BacktestDiagnostics }
+  | { readonly ok: false; readonly error: BacktestDiagnosticsError };
+
+export type BacktestDiagnosticSamplesResult =
+  | { readonly ok: true; readonly value: BacktestDiagnosticSamples }
   | { readonly ok: false; readonly error: BacktestDiagnosticsError };

@@ -1,6 +1,7 @@
 import type {
   AllocationDiagnosticObservation,
   AllocationDiagnostics,
+  BacktestDiagnosticSamplesResult,
   BacktestDiagnosticsErrorCode,
   BacktestDiagnosticsResult,
   NumericDistribution,
@@ -17,7 +18,7 @@ const validConfidence = (value: number): boolean =>
 
 const failure = (
   code: BacktestDiagnosticsErrorCode,
-): BacktestDiagnosticsResult =>
+): Extract<BacktestDiagnosticsResult, { readonly ok: false }> =>
   Object.freeze({ ok: false as const, error: Object.freeze({ code }) });
 
 const quantile = (sorted: readonly number[], probability: number): number | null => {
@@ -87,6 +88,41 @@ const validAllocationObservation = (
       tolerance(observation.requestedNetNotional) &&
   observation.riskApprovedNotional <=
     observation.allocatedNotional + tolerance(observation.allocatedNotional);
+
+export const extractBacktestDiagnosticSamples = (
+  signalObservations: readonly SignalDiagnosticObservation[],
+): BacktestDiagnosticSamplesResult => {
+  if (!signalObservations.every(validSignalObservation)) {
+    return failure("INVALID_SIGNAL_DIAGNOSTIC_OBSERVATION");
+  }
+  const strategyIds = [
+    ...new Set(signalObservations.map(({ strategyId }) => strategyId)),
+  ].sort();
+  return Object.freeze({
+    ok: true as const,
+    value: Object.freeze({
+      requestedNotionalByStrategy: Object.freeze(
+        strategyIds.map((strategyId) =>
+          Object.freeze({
+            strategyId,
+            values: Object.freeze(
+              signalObservations
+                .filter(
+                  (observation) =>
+                    observation.strategyId === strategyId &&
+                    observation.side !== "HOLD",
+                )
+                .map(
+                  ({ suggestedSize, confidence, referencePrice }) =>
+                    suggestedSize * confidence * referencePrice,
+                ),
+            ),
+          }),
+        ),
+      ),
+    }),
+  });
+};
 
 export const summarizeBacktestDiagnostics = (
   signalObservations: readonly SignalDiagnosticObservation[],

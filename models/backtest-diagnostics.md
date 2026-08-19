@@ -37,6 +37,14 @@ observation, ses quatre valeurs statistiques sont `null`. La médiane et le p95
 utilisent l’interpolation linéaire à la position `(n - 1) × q` dans la série
 triée, avec `q = 0.5` ou `0.95`.
 
+Pour les études pré-enregistrées qui doivent auditer une convention de quantile,
+le replay peut recevoir l'option explicite `includeDiagnosticSamples`. Elle
+ajoute alors une projection `diagnosticSamples` contenant, pour chaque stratégie
+triée, les seuls notionnels demandés actifs dans l'ordre d'évaluation. L'option
+est `false` par défaut et la projection vaut alors `null` : les résultats et
+artefacts ordinaires ne grossissent pas implicitement. Cette projection ne
+modifie ni le résumé R7 existant, ni les signaux, ni l'allocation, ni les fills.
+
 ## Mesures d’allocation par scénario
 
 Pour chaque opportunité nette, le replay observe successivement :
@@ -89,3 +97,7 @@ remplacer une valeur invalide par zéro.
    observations.
 6. Les statistiques décrivent des intentions au close primaire ; elles ne sont
    ni des fills, ni une preuve de liquidité, ni une autorisation de trading live.
+7. Si les échantillons sont demandés, chaque tableau a exactement
+   `activeSignalCount` valeurs finies et positives ou nulles et reproduit le
+   `count`, le `min`, la médiane R7, le p95 R7 et le `max` du résumé.
+8. Sans option explicite, `diagnosticSamples = null` au niveau replay et suite.

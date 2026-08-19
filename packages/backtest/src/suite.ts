@@ -3,6 +3,7 @@ import type { IndicatorConfig } from "@dodash/indicators-prolog";
 import {
   isConfidenceCalibrationProfile,
   summarizeProtectiveExits,
+  type BacktestDiagnosticSamples,
   type BacktestDiagnostics,
   type ConfidenceCalibrationProfile,
   type ProtectiveExitPolicy,
@@ -44,6 +45,7 @@ export interface BacktestSuiteConfig {
 
 export interface BacktestSuiteOptions {
   readonly executionDataset?: HistoricalDataset;
+  readonly includeDiagnosticSamples?: boolean;
 }
 
 export interface BuyHoldBenchmark {
@@ -64,6 +66,7 @@ export interface BacktestScenarioSummary {
   readonly takeProfitExitCount: number;
   readonly ambiguousExitCount: number;
   readonly diagnostics: BacktestDiagnostics;
+  readonly diagnosticSamples: BacktestDiagnosticSamples | null;
 }
 
 export interface BacktestSuiteReport {
@@ -260,9 +263,12 @@ export const runBacktestSuite = async (
           : { protectiveExit: config.protectiveExit }),
       },
       preparedIndicators.value,
-      options?.executionDataset === undefined
-        ? undefined
-        : { executionCandles: options.executionDataset.candles },
+      {
+        ...(options?.executionDataset === undefined
+          ? {}
+          : { executionCandles: options.executionDataset.candles }),
+        includeDiagnosticSamples: options?.includeDiagnosticSamples === true,
+      },
     );
     if (!replay.ok) {
       return err({
@@ -284,6 +290,7 @@ export const runBacktestSuite = async (
         excessReturn: replay.value.metrics.totalReturn - benchmark.totalReturn,
         ...protectiveExitCounts,
         diagnostics: replay.value.diagnostics,
+        diagnosticSamples: replay.value.diagnosticSamples,
       }),
     );
   }
