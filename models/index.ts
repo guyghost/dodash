@@ -21,6 +21,31 @@ export {
   CONFIDENCE_QUANTILE_SENSITIVITY_POLICY,
   estimateQuantile,
 } from "./confidence-quantile-sensitivity.js";
+export {
+  assessConfidenceQuantileSampleSizeAudit,
+  assessLessCorrelatedReplicationSources,
+  classifyConfidenceQuantileRankResolution,
+  CONFIDENCE_QUANTILE_DISCRETE_ESTIMATORS,
+  CONFIDENCE_QUANTILE_RANK_RESOLUTIONS,
+  CONFIDENCE_QUANTILE_SAMPLE_SIZE_EXPECTED_RUN_KEYS,
+  CONFIDENCE_QUANTILE_SAMPLE_SIZE_POPULATIONS,
+} from "./confidence-quantile-sample-size.js";
+export type {
+  ConfidenceQuantileDiscreteEstimator,
+  ConfidenceQuantileRankPosition,
+  ConfidenceQuantileRankResolution,
+  ConfidenceQuantileSampleSizeAssessment,
+  ConfidenceQuantileSampleSizeCase,
+  ConfidenceQuantileSampleSizeObservation,
+  ConfidenceQuantileSampleSizePopulation,
+  ConfidenceQuantileSampleSizeProtocolEvidence,
+  ConfidenceQuantileSampleSizeResult,
+  ConfidenceQuantileSampleSizeSummary,
+  LessCorrelatedAssetUniverse,
+  LessCorrelatedReplicationSource,
+  LessCorrelatedReplicationSourceAssessment,
+  LessCorrelatedReplicationSourceResult,
+} from "./confidence-quantile-sample-size.js";
 export type {
   ConfidenceQuantileEstimator,
   ConfidenceQuantileEstimatorAssessment,
