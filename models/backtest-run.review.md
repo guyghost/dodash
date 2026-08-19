@@ -58,6 +58,12 @@ compensation et celui des opportunités nettes après compensation, distingue
 faible confiance, plafond d’allocation et rejet risque, et ne présente jamais un
 notionnel au close comme un fill observé.
 
+La calibration de confiance est revue séparément dans
+`confidence-calibration.review.md`. Le profil est une transformation pure et
+fermée, appliquée uniquement à EMA et breakout. Le rapport distingue exposition
+demandée, turnover effectivement rempli et frais ; il ne choisit jamais un
+profil sur le PnL du holdout.
+
 La résolution multi-timeframe est revue dans `execution-resolution.review.md`.
 La série fine n’est jamais une seconde série de décision : elle ne peut produire
 que les événements `CANDLE_OPENED` et `CANDLE_RANGE_REPLAYED` d’un acteur

@@ -14,6 +14,7 @@
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "run:coinbase": "pnpm build && node dist/cli.js",
+    "study:confidence-calibration": "node scripts/confidence-calibration-walkforward.mjs",
     "test": "vitest run"
   },
   "dependencies": {

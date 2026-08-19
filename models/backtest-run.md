@@ -125,8 +125,8 @@ la validation des deux datasets demandés.
 8. Le portefeuille Coinbase Spot ne peut avoir ni cash ni quantité négatifs.
 9. Tous les scénarios comparés partagent le même dataset et les mêmes coûts.
 10. Le rapport expose rendement, PnL, drawdown, Sharpe, nombre de fills,
-    rendement buy-and-hold et rendement excédentaire ; aucune métrique isolée ne
-    suffit à autoriser le live.
+    notionnel échangé brut, turnover, rendement buy-and-hold et rendement
+    excédentaire ; aucune métrique isolée ne suffit à autoriser le live.
 11. À chaque fin de run, `pnl = realizedPnl + unrealizedPnl` à la tolérance
     numérique près ; les frais totaux correspondent à la somme exacte des fills.
 12. À sizing, datasets et coûts identiques, `NONE` conserve exactement les
@@ -148,5 +148,9 @@ la validation des deux datasets demandés.
     `protectiveExitCount = stopLossExitCount + takeProfitExitCount` et
     `0 <= ambiguousExitCount <= stopLossExitCount`.
 20. Tout résumé de diagnostic respecte les compteurs, taux, distributions et
-    relations d’ordre de `backtest-diagnostics.md` ; une observation invalide
+    relations d'ordre de `backtest-diagnostics.md` ; une observation invalide
     fait échouer le replay.
+21. Le turnover est la somme des notionnels absolus de fills divisée par le
+    capital initial. Il est nul sans fill et fini pour tout replay valide.
+22. Toute calibration de confiance respecte `confidence-calibration.md` ; RSI
+    reste en identité et le profil comparé ne modifie ni direction ni sizing.

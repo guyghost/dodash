@@ -21,6 +21,7 @@ describe("backtest CLI options", () => {
     expect(result.value.timeframe).toBe("ONE_DAY");
     expect(result.value.executionTimeframe).toBeNull();
     expect(result.value.targetSignalNotional).toBe(1_000);
+    expect(result.value.confidenceCalibration).toBe("IDENTITY");
     expect(result.value.protectiveExit).toEqual({ mode: "NONE" });
     expect(result.value.startAt).toBe(Date.UTC(2025, 7, 18));
     expect(result.value.endAt).toBe(Date.UTC(2026, 7, 18));
@@ -29,6 +30,23 @@ describe("backtest CLI options", () => {
     );
     expect(backtest.createBacktestRunId(result.value)).toBe(
       "bt:BTC-USD:ONE_DAY:notional:1000:1755475200000:1787011200000",
+    );
+  });
+
+  it("fige une calibration non identité dans le manifeste", () => {
+    const result = backtest.parseBacktestCliOptions(
+      ["--confidence-calibration", "POWER_THIRD"],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.confidenceCalibration).toBe("POWER_THIRD");
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-confidence-power-third-2025-08-18-2026-08-18.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:confidence:POWER_THIRD:1755475200000:1787011200000",
     );
   });
 
@@ -111,6 +129,15 @@ describe("backtest CLI options", () => {
       ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
     },
   );
+
+  it("refuse un profil de calibration inconnu", () => {
+    expect(
+      backtest.parseBacktestCliOptions(
+        ["--confidence-calibration", "POWER_FIFTH"],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
 
   it("refuse une résolution égale ou plus grossière", () => {
     expect(

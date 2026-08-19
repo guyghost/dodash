@@ -10,6 +10,8 @@ export interface BacktestMetrics {
   readonly realizedPnl: number;
   readonly unrealizedPnl: number;
   readonly fees: number;
+  readonly grossTradedNotional: number;
+  readonly turnover: number;
   readonly totalReturn: number;
   readonly winRate: number;
   readonly profitFactor: number | null;
@@ -46,6 +48,11 @@ export const calculateMetrics = (
   const realizedPnl = realized.reduce((sum, value) => sum + value, 0);
   const unrealizedPnl = pnl - realizedPnl;
   const fees = trades.reduce((sum, trade) => sum + trade.fill.fee, 0);
+  const grossTradedNotional = trades.reduce(
+    (sum, trade) => sum + Math.abs(trade.fill.price * trade.fill.quantity),
+    0,
+  );
+  const turnover = initialCapital === 0 ? 0 : grossTradedNotional / initialCapital;
 
   const returns: number[] = [];
   for (let index = 1; index < equityCurve.length; index += 1) {
@@ -75,6 +82,8 @@ export const calculateMetrics = (
     realizedPnl,
     unrealizedPnl,
     fees,
+    grossTradedNotional,
+    turnover,
     totalReturn,
     winRate,
     profitFactor,

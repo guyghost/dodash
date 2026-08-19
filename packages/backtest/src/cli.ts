@@ -54,6 +54,7 @@ const main = async (): Promise<void> => {
     maxDecisionNotional: 2_000,
     minNetQuantity: 0.000_001,
     targetSignalNotional: options.value.targetSignalNotional,
+    confidenceCalibration: options.value.confidenceCalibration,
     indicators: DEFAULT_INDICATOR_CONFIG,
     risk: Object.freeze({
       maxOrderNotional: 2_000,
@@ -91,6 +92,7 @@ const main = async (): Promise<void> => {
   }
   console.log(`Protective exit: ${options.value.protectiveExit.mode}`);
   console.log(`Target signal notional: ${options.value.targetSignalNotional}`);
+  console.log(`Confidence calibration: ${options.value.confidenceCalibration}`);
   console.log(
     `Benchmark buy-and-hold: ${percent(result.value.report.benchmark.totalReturn)}`,
   );

@@ -8,6 +8,8 @@ import {
 } from "@dodash/domain";
 import {
   isValidProtectiveExitPolicy,
+  isConfidenceCalibrationProfile,
+  type ConfidenceCalibrationProfile,
   type ProtectiveExitPolicy,
 } from "@dodash/models";
 
@@ -48,6 +50,7 @@ export interface BacktestCliOptions {
   readonly timeframe: Timeframe;
   readonly executionTimeframe: Timeframe | null;
   readonly targetSignalNotional: number;
+  readonly confidenceCalibration: ConfidenceCalibrationProfile;
   readonly startAt: number;
   readonly endAt: number;
   readonly outputPath: string;
@@ -68,6 +71,9 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
     ...(options.executionTimeframe === null
       ? []
       : ["exec", options.executionTimeframe]),
+    ...(options.confidenceCalibration === "IDENTITY"
+      ? []
+      : ["confidence", options.confidenceCalibration]),
     ...(options.protectiveExit.mode === "NONE"
       ? []
       : [
@@ -105,6 +111,7 @@ export const parseBacktestCliOptions = (
     "--timeframe",
     "--execution-timeframe",
     "--target-signal-notional",
+    "--confidence-calibration",
     "--protective-exit",
     "--stop-loss-bps",
     "--take-profit-bps",
@@ -177,6 +184,12 @@ export const parseBacktestCliOptions = (
   if (!Number.isFinite(targetSignalNotional) || targetSignalNotional <= 0) {
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
+  const confidenceCalibrationRaw =
+    values.get("--confidence-calibration") ?? "IDENTITY";
+  if (!isConfidenceCalibrationProfile(confidenceCalibrationRaw)) {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+  const confidenceCalibration = confidenceCalibrationRaw;
 
   const latestClosedBoundary = Math.floor(now / duration) * duration;
   const startAt = values.has("--start")
@@ -201,18 +214,23 @@ export const parseBacktestCliOptions = (
   const executionSuffix =
     executionTimeframe === null ? "" : `-exec-${executionTimeframe}`;
   const notionalSuffix = `-notional-${targetSignalNotional}`;
+  const confidenceSuffix =
+    confidenceCalibration === "IDENTITY"
+      ? ""
+      : `-confidence-${confidenceCalibration.toLowerCase().replaceAll("_", "-")}`;
   const protectiveSuffix =
     protectiveExit.mode === "NONE"
       ? ""
       : `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`;
   const outputPath = values.get("--output") ??
-    `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${protectiveSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
+    `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${confidenceSuffix}${protectiveSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
   return ok(
     Object.freeze({
       productId: product.value,
       timeframe: timeframeRaw,
       executionTimeframe,
       targetSignalNotional,
+      confidenceCalibration,
       startAt,
       endAt,
       outputPath,

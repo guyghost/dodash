@@ -323,6 +323,55 @@ describe("backtest suite", () => {
     ).toEqual(["breakout", "ema-cross", "rsi-reversion"]);
   });
 
+  it("calibre uniquement EMA et breakout sans créer de nouveaux signaux", async () => {
+    const { dataset, config } = suiteFixture();
+    const identity = await backtest.runBacktestSuite(dataset, config);
+    const calibrated = await backtest.runBacktestSuite(dataset, {
+      ...config,
+      confidenceCalibration: "POWER_THIRD",
+    });
+
+    expect(identity.ok).toBe(true);
+    expect(calibrated.ok).toBe(true);
+    if (!identity.ok || !calibrated.ok) return;
+
+    const identityRsi = identity.value.scenarios.find(
+      ({ id }) => id === "rsi-reversion",
+    );
+    const calibratedRsi = calibrated.value.scenarios.find(
+      ({ id }) => id === "rsi-reversion",
+    );
+    expect(calibratedRsi).toEqual(identityRsi);
+
+    for (const scenarioId of ["ema-cross", "breakout"] as const) {
+      const raw = identity.value.scenarios.find(({ id }) => id === scenarioId);
+      const transformed = calibrated.value.scenarios.find(
+        ({ id }) => id === scenarioId,
+      );
+      expect(raw).toBeDefined();
+      expect(transformed).toBeDefined();
+      if (raw === undefined || transformed === undefined) continue;
+      const rawSignals = raw.diagnostics.signals.byStrategy[0];
+      const transformedSignals = transformed.diagnostics.signals.byStrategy[0];
+      expect(transformedSignals?.activeSignalCount).toBe(
+        rawSignals?.activeSignalCount,
+      );
+      expect(transformedSignals?.buySignalCount).toBe(
+        rawSignals?.buySignalCount,
+      );
+      expect(transformedSignals?.sellSignalCount).toBe(
+        rawSignals?.sellSignalCount,
+      );
+      if ((rawSignals?.activeSignalCount ?? 0) > 0) {
+        expect(
+          transformedSignals?.requestedNotional.median,
+        ).toBeGreaterThanOrEqual(
+          rawSignals?.requestedNotional.median ?? Number.POSITIVE_INFINITY,
+        );
+      }
+    }
+  });
+
   it("refuse un notionnel cible invalide", async () => {
     const { dataset, config } = suiteFixture();
 
@@ -330,6 +379,19 @@ describe("backtest suite", () => {
       ...config,
       targetSignalNotional: 0,
     });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "INVALID_SUITE_CONFIG" },
+    });
+  });
+
+  it("refuse un profil de calibration inconnu", async () => {
+    const { dataset, config } = suiteFixture();
+    const result = await backtest.runBacktestSuite(dataset, {
+      ...config,
+      confidenceCalibration: "POWER_FIFTH",
+    } as unknown as backtest.BacktestSuiteConfig);
 
     expect(result).toEqual({
       ok: false,

@@ -1,4 +1,21 @@
 export { backtestRunMachine } from "./backtest-run.machine.js";
+export {
+  calibrateConfidence,
+  CONFIDENCE_CALIBRATION_PROFILES,
+  isConfidenceCalibrationProfile,
+  selectConfidenceCalibrationProfile,
+} from "./confidence-calibration.js";
+export type {
+  CalibratedStrategyId,
+  ConfidenceCalibrationCandidateSummary,
+  ConfidenceCalibrationDevelopmentObservation,
+  ConfidenceCalibrationErrorCode,
+  ConfidenceCalibrationIneligibilityReason,
+  ConfidenceCalibrationProfile,
+  ConfidenceCalibrationResult,
+  ConfidenceCalibrationSelection,
+  ConfidenceCalibrationSelectionResult,
+} from "./confidence-calibration.js";
 export { summarizeBacktestDiagnostics } from "./backtest-diagnostics.js";
 export type {
   AllocationDiagnosticObservation,

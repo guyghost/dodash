@@ -1,8 +1,10 @@
 import { createOrderIntent, err, ok, type Result } from "@dodash/domain";
 import type { IndicatorConfig } from "@dodash/indicators-prolog";
 import {
+  isConfidenceCalibrationProfile,
   summarizeProtectiveExits,
   type BacktestDiagnostics,
+  type ConfidenceCalibrationProfile,
   type ProtectiveExitPolicy,
 } from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
@@ -14,6 +16,7 @@ import {
   type Strategy,
 } from "@dodash/strategies";
 
+import { withConfidenceCalibration } from "./confidence-calibrated-strategy.js";
 import type { HistoricalDataset } from "./coinbase-history.js";
 import type { BacktestMetrics } from "./metrics.js";
 import {
@@ -32,6 +35,7 @@ export interface BacktestSuiteConfig {
   readonly maxDecisionNotional: number;
   readonly minNetQuantity: number;
   readonly targetSignalNotional: number;
+  readonly confidenceCalibration?: ConfidenceCalibrationProfile;
   readonly indicators: IndicatorConfig;
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
@@ -94,7 +98,9 @@ const validConfig = (config: BacktestSuiteConfig): boolean =>
   Number.isFinite(config.minNetQuantity) &&
   config.minNetQuantity >= 0 &&
   Number.isFinite(config.targetSignalNotional) &&
-  config.targetSignalNotional > 0;
+  config.targetSignalNotional > 0 &&
+  (config.confidenceCalibration === undefined ||
+    isConfidenceCalibrationProfile(config.confidenceCalibration));
 
 const compatibleExecutionDataset = (
   primary: HistoricalDataset,
@@ -119,19 +125,34 @@ const strategiesById = (
 ): Readonly<Record<string, Strategy>> => {
   const size = (strategy: Strategy): Strategy =>
     withTargetSignalNotional(strategy, config.targetSignalNotional);
+  const calibrate = (strategy: Strategy): Strategy =>
+    withConfidenceCalibration(
+      strategy,
+      config.confidenceCalibration ?? "IDENTITY",
+    );
   return Object.freeze({
-    "rsi-reversion": size(createRsiReversionStrategy({
-      oversold: 30,
-      overbought: 70,
-      baseSize: config.targetSignalNotional,
-    })),
-    "ema-cross": size(createEmaCrossStrategy({
-      baseSize: config.targetSignalNotional,
-    })),
-    breakout: size(createBreakoutStrategy({
-      lookback: 20,
-      baseSize: config.targetSignalNotional,
-    })),
+    "rsi-reversion": size(
+      createRsiReversionStrategy({
+        oversold: 30,
+        overbought: 70,
+        baseSize: config.targetSignalNotional,
+      }),
+    ),
+    "ema-cross": size(
+      calibrate(
+        createEmaCrossStrategy({
+          baseSize: config.targetSignalNotional,
+        }),
+      ),
+    ),
+    breakout: size(
+      calibrate(
+        createBreakoutStrategy({
+          lookback: 20,
+          baseSize: config.targetSignalNotional,
+        }),
+      ),
+    ),
   });
 };
 
