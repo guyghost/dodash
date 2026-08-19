@@ -74,6 +74,12 @@ La confirmation de queue est revue dans
 relatif sont figés avant les nouveaux datasets ; un dépassement peut réfuter la
 queue mais ne modifie pas le verdict médian historique.
 
+La sensibilité aux estimateurs est revue dans
+`confidence-quantile-sensitivity.review.md`. Elle exige les distributions
+brutes, conserve une médiane et des bornes communes, puis applique à GRT/MANA la
+convention choisie avant leur chargement. Un désaccord XTZ/ZEC reste descriptif
+et ne peut piloter une transition de sélection.
+
 La résolution multi-timeframe est revue dans `execution-resolution.review.md`.
 La série fine n’est jamais une seconde série de décision : elle ne peut produire
 que les événements `CANDLE_OPENED` et `CANDLE_RANGE_REPLAYED` d’un acteur

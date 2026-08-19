@@ -15,6 +15,21 @@ export {
   assessConfidenceCalibrationTailConfirmation,
   CONFIDENCE_CALIBRATION_TAIL_POLICY,
 } from "./confidence-calibration-tail-confirmation.js";
+export {
+  assessConfidenceQuantileSensitivity,
+  CONFIDENCE_QUANTILE_ESTIMATORS,
+  CONFIDENCE_QUANTILE_SENSITIVITY_POLICY,
+  estimateQuantile,
+} from "./confidence-quantile-sensitivity.js";
+export type {
+  ConfidenceQuantileEstimator,
+  ConfidenceQuantileEstimatorAssessment,
+  ConfidenceQuantileSensitivityAssessment,
+  ConfidenceQuantileSensitivityFailureReason,
+  ConfidenceQuantileSensitivityObservation,
+  ConfidenceQuantileSensitivityResult,
+  QuantileEstimateResult,
+} from "./confidence-quantile-sensitivity.js";
 export type {
   ConfidenceCalibrationTailConfirmationAssessment,
   ConfidenceCalibrationTailConfirmationFailureReason,

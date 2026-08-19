@@ -160,3 +160,7 @@ la validation des deux datasets demandés.
 24. Toute confirmation de queue respecte
     `confidence-calibration-tail-confirmation.md` ; elle étend la confirmation
     médiane sans en réinterpréter rétroactivement le verdict.
+25. Toute étude de sensibilité aux quantiles respecte
+    `confidence-quantile-sensitivity.md` ; ses échantillons bruts sont opt-in,
+    l'estimateur externe est figé avant les nouveaux actifs et la borne relative
+    reste inchangée.
