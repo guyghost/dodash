@@ -16,6 +16,7 @@ Avant `START_REQUESTED`, l’opérateur fige un manifeste contenant :
 - capital initial, limites d’allocation et de risque ;
 - frais et slippage du broker papier ;
 - politique protectrice `NONE`, `FIXED_BPS` ou `ATR_MULTIPLE` ;
+- dataset d’exécution facultatif, timeframe plus fin et empreinte SHA-256 ;
 - politique d’exécution `NEXT_CANDLE_OPEN` et marché `SPOT_LONG_ONLY`.
 
 Le même dataset et les mêmes paramètres non stratégiques sont utilisés pour
@@ -47,6 +48,8 @@ provenance n’est pas un backtest valide.
    acteur décrit par `protective-order.md`. Le gap est résolu avant les ordres
    de stratégie de l’open, puis la plage high/low après leur exécution. Le
    rapport compte séparément les sorties stop et objectif.
+8. Une résolution plus fine suit `execution-resolution.md`. Elle ne change ni
+   l’horloge de décision, ni les indicateurs, ni la progression primaire.
 
 ## Invariants
 
@@ -67,3 +70,7 @@ provenance n’est pas un backtest valide.
 12. `NONE` conserve exactement les trades, portefeuilles et métriques historiques.
 13. Un trigger protecteur ne peut vendre que la quantité Spot effectivement
     détenue et clôt toujours cette quantité en totalité.
+14. Une série d’exécution explicite partitionne et reconstruit exactement
+    l’O/H/L/C de chaque bougie primaire avant le premier fill.
+15. Aucun ordre de stratégie ne peut être créé ou exécuté à l’ouverture d’une
+    sous-bougie autre que la première du groupe primaire.

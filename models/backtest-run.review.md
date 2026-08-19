@@ -37,3 +37,9 @@ la convention pessimiste lorsque high et low touchent les deux seuils, les gaps,
 l’ordre entre trigger et ordre de stratégie, le réarmement après ajout et
 l’annulation après clôture. Aucun high/low ne peut déclencher un bracket qui
 n’était pas armé avant la phase correspondante.
+
+La résolution multi-timeframe est revue dans `execution-resolution.review.md`.
+La série fine n’est jamais une seconde série de décision : elle ne peut produire
+que les événements `CANDLE_OPENED` et `CANDLE_RANGE_REPLAYED` d’un acteur
+protecteur déjà gouverné par le modèle. Alignement, couverture et agrégation
+sont validés avant replay ; toute incohérence est terminale et sans retry.
