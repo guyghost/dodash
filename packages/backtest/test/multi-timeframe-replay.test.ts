@@ -191,6 +191,48 @@ describe("multi-timeframe protective replay", () => {
     expect(fine).toEqual(daily);
   });
 
+  it("évalue le risque après une sortie fine sans dernier trade futur", async () => {
+    const buyEveryClose: Strategy = {
+      id: "buy-every-close",
+      evaluate: (context) => {
+        const result = createSignal({
+          strategyId: "buy-every-close",
+          productId: context.productId,
+          side: "BUY",
+          confidence: 1,
+          suggestedSize: 1,
+          reasonCode: "TEST_BUY",
+        });
+        return result.ok
+          ? result
+          : {
+              ok: false as const,
+              error: {
+                code: "INVALID_STRATEGY_SIGNAL" as const,
+                strategyId: "buy-every-close",
+                cause: result.error,
+              },
+            };
+      },
+    };
+    const everyCloseRegistry = createStrategyRegistry([buyEveryClose]);
+    if (!everyCloseRegistry.ok) throw new Error("invalid strategy fixture");
+
+    const result = await replayBacktest(
+      primaryCandles,
+      { ...config, strategies: everyCloseRegistry.value },
+      prepared,
+      { executionCandles },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.protectiveExits[0]?.triggeredAt).toBe(780_000);
+    expect(result.value.trades.some((trade) => trade.fill.executedAt === 960_000)).toBe(
+      true,
+    );
+  });
+
   it("refuse une série fine incomplète avant le replay", async () => {
     const result = await replayBacktest(primaryCandles, config, prepared, {
       executionCandles: executionCandles.slice(0, -1),

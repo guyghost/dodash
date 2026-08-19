@@ -64,6 +64,14 @@ const oneToOneSchedule = (
     ),
   });
 
+export const resolveRiskEvaluationTimestamp = (
+  primaryCandleStart: number,
+  lastTradeAt: number | null,
+): number =>
+  lastTradeAt === null
+    ? primaryCandleStart
+    : Math.max(primaryCandleStart, lastTradeAt);
+
 export const createExecutionSchedule = (
   primaryCandles: readonly ExecutionCandle[],
   executionCandles?: readonly ExecutionCandle[],

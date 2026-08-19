@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createExecutionSchedule } from "./execution-resolution.js";
+import {
+  createExecutionSchedule,
+  resolveRiskEvaluationTimestamp,
+} from "./execution-resolution.js";
 import type { ExecutionCandle } from "./execution-resolution.types.js";
 
 const executionCandles: readonly ExecutionCandle[] = Object.freeze([
@@ -97,5 +100,13 @@ describe("createExecutionSchedule", () => {
       ok: false,
       error: { code: "NON_UNIFORM_PRIMARY_INTERVAL" },
     });
+  });
+});
+
+describe("resolveRiskEvaluationTimestamp", () => {
+  it("conserve l’horloge primaire ou la relève au dernier fill consommé", () => {
+    expect(resolveRiskEvaluationTimestamp(1_000, null)).toBe(1_000);
+    expect(resolveRiskEvaluationTimestamp(1_000, 900)).toBe(1_000);
+    expect(resolveRiskEvaluationTimestamp(1_000, 1_500)).toBe(1_500);
   });
 });

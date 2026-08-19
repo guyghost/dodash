@@ -20,7 +20,10 @@ export type {
   DashboardSessionEvent,
   DashboardSessionInput,
 } from "./dashboard-session.types.js";
-export { createExecutionSchedule } from "./execution-resolution.js";
+export {
+  createExecutionSchedule,
+  resolveRiskEvaluationTimestamp,
+} from "./execution-resolution.js";
 export type {
   ExecutionCandle,
   ExecutionSchedule,
