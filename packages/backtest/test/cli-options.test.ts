@@ -19,10 +19,15 @@ describe("backtest CLI options", () => {
     if (!result.ok) return;
     expect(result.value.productId).toBe("BTC-USD");
     expect(result.value.timeframe).toBe("ONE_DAY");
+    expect(result.value.executionTimeframe).toBeNull();
+    expect(result.value.protectiveExit).toEqual({ mode: "NONE" });
     expect(result.value.startAt).toBe(Date.UTC(2025, 7, 18));
     expect(result.value.endAt).toBe(Date.UTC(2026, 7, 18));
     expect(result.value.outputPath).toBe(
       ".artifacts/backtests/BTC-USD-ONE_DAY-2025-08-18-2026-08-18.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:1755475200000:1787011200000",
     );
   });
 
@@ -37,6 +42,87 @@ describe("backtest CLI options", () => {
       endAt: Date.UTC(2025, 0, 1),
       outputPath: "report.json",
     });
+  });
+
+  it("accepte le séparateur initial transmis par pnpm", () => {
+    const result = backtest.parseBacktestCliOptions(
+      ["--", "--product", "ETC-USD"],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok && result.value.productId).toBe("ETC-USD");
+    expect(
+      backtest.parseBacktestCliOptions(
+        ["--product", "ETC-USD", "--", "ignored"],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
+
+  it("fige une résolution fine et un bracket fixe dans le manifeste", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--timeframe",
+        "ONE_DAY",
+        "--execution-timeframe",
+        "SIX_HOUR",
+        "--protective-exit",
+        "FIXED_BPS",
+        "--stop-loss-bps",
+        "150",
+        "--take-profit-bps",
+        "300",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.executionTimeframe).toBe("SIX_HOUR");
+    expect(result.value.protectiveExit).toEqual({
+      mode: "FIXED_BPS",
+      stopLossBps: 150,
+      takeProfitBps: 300,
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-exec-SIX_HOUR-fixed-150-300-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:exec:SIX_HOUR:protective:FIXED_BPS:150:300:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse une résolution égale ou plus grossière", () => {
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--timeframe",
+          "ONE_HOUR",
+          "--execution-timeframe",
+          "SIX_HOUR",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
+
+  it("refuse un bracket partiel ou des seuils avec NONE", () => {
+    expect(
+      backtest.parseBacktestCliOptions(
+        ["--protective-exit", "FIXED_BPS", "--stop-loss-bps", "150"],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        ["--protective-exit", "NONE", "--stop-loss-bps", "150"],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
   });
 
   it("rejette une borne inconnue ou une fenêtre inversée", () => {

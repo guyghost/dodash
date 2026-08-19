@@ -3,7 +3,10 @@ import { dirname, resolve } from "node:path";
 
 import { DEFAULT_INDICATOR_CONFIG } from "@dodash/indicators-prolog";
 
-import { parseBacktestCliOptions } from "./cli-options.js";
+import {
+  createBacktestRunId,
+  parseBacktestCliOptions,
+} from "./cli-options.js";
 import { loadCoinbaseHistoricalDataset } from "./coinbase-history.js";
 import { runModeledBacktest } from "./modeled-run.js";
 import type { BacktestSuiteConfig } from "./suite.js";
@@ -14,21 +17,32 @@ const main = async (): Promise<void> => {
   const options = parseBacktestCliOptions(process.argv.slice(2));
   if (!options.ok) throw new Error(options.error.code);
 
-  const dataset = await loadCoinbaseHistoricalDataset({
-    productId: options.value.productId,
-    timeframe: options.value.timeframe,
-    startAt: options.value.startAt,
-    endAt: options.value.endAt,
-  });
-  if (!dataset.ok) throw new Error(JSON.stringify(dataset.error));
+  const loadDataset = (timeframe: typeof options.value.timeframe) =>
+    loadCoinbaseHistoricalDataset({
+      productId: options.value.productId,
+      timeframe,
+      startAt: options.value.startAt,
+      endAt: options.value.endAt,
+    });
+  const [dataset, executionDatasetResult] = await Promise.all([
+    loadDataset(options.value.timeframe),
+    options.value.executionTimeframe === null
+      ? Promise.resolve(null)
+      : loadDataset(options.value.executionTimeframe),
+  ]);
+  if (!dataset.ok) {
+    throw new Error(JSON.stringify({ dataset: "PRIMARY", cause: dataset.error }));
+  }
+  if (executionDatasetResult !== null && !executionDatasetResult.ok) {
+    throw new Error(
+      JSON.stringify({ dataset: "EXECUTION", cause: executionDatasetResult.error }),
+    );
+  }
+  const executionDataset = executionDatasetResult?.ok
+    ? executionDatasetResult.value
+    : null;
 
-  const runId = [
-    "bt",
-    options.value.productId,
-    options.value.timeframe,
-    options.value.startAt,
-    options.value.endAt,
-  ].join(":");
+  const runId = createBacktestRunId(options.value);
   const config: BacktestSuiteConfig = Object.freeze({
     runId,
     agentId: "dodash-backtest",
@@ -47,9 +61,13 @@ const main = async (): Promise<void> => {
       takeProfitBps: 300,
     }),
     broker: Object.freeze({ feeBps: 6, slippageBps: 2 }),
-    protectiveExit: Object.freeze({ mode: "NONE" as const }),
+    protectiveExit: options.value.protectiveExit,
   });
-  const result = await runModeledBacktest(dataset.value, config);
+  const result = await runModeledBacktest(
+    dataset.value,
+    config,
+    executionDataset === null ? undefined : { executionDataset },
+  );
   if (!result.ok) throw new Error(JSON.stringify(result.error));
 
   const artifact = Object.freeze({
@@ -64,6 +82,10 @@ const main = async (): Promise<void> => {
   await writeFile(outputPath, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
 
   console.log(`Dataset: ${dataset.value.datasetId}`);
+  if (executionDataset !== null) {
+    console.log(`Execution dataset: ${executionDataset.datasetId}`);
+  }
+  console.log(`Protective exit: ${options.value.protectiveExit.mode}`);
   console.log(
     `Benchmark buy-and-hold: ${percent(result.value.report.benchmark.totalReturn)}`,
   );

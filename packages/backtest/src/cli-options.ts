@@ -6,6 +6,10 @@ import {
   type Result,
   type Timeframe,
 } from "@dodash/domain";
+import {
+  isValidProtectiveExitPolicy,
+  type ProtectiveExitPolicy,
+} from "@dodash/models";
 
 const timeframeMs: Readonly<Record<Timeframe, number>> = Object.freeze({
   ONE_MINUTE: 60_000,
@@ -42,25 +46,71 @@ const formatUtcDate = (timestamp: number): string =>
 export interface BacktestCliOptions {
   readonly productId: ProductId;
   readonly timeframe: Timeframe;
+  readonly executionTimeframe: Timeframe | null;
   readonly startAt: number;
   readonly endAt: number;
   readonly outputPath: string;
+  readonly protectiveExit: BacktestCliProtectiveExitPolicy;
 }
 
+export type BacktestCliProtectiveExitPolicy = Extract<
+  ProtectiveExitPolicy,
+  { readonly mode: "NONE" } | { readonly mode: "FIXED_BPS" }
+>;
+
 export type BacktestCliOptionsError = { readonly code: "INVALID_CLI_OPTIONS" };
+
+export const createBacktestRunId = (options: BacktestCliOptions): string => {
+  const manifestParts: readonly (string | number)[] = [
+    ...(options.executionTimeframe === null
+      ? []
+      : ["exec", options.executionTimeframe]),
+    ...(options.protectiveExit.mode === "NONE"
+      ? []
+      : [
+          "protective",
+          options.protectiveExit.mode,
+          options.protectiveExit.stopLossBps,
+          options.protectiveExit.takeProfitBps,
+        ]),
+  ];
+  return [
+    "bt",
+    options.productId,
+    options.timeframe,
+    ...manifestParts,
+    options.startAt,
+    options.endAt,
+  ].join(":");
+};
 
 export const parseBacktestCliOptions = (
   args: readonly string[],
   now = Date.now(),
 ): Result<BacktestCliOptions, BacktestCliOptionsError> => {
-  if (!Number.isSafeInteger(now) || now < 0 || args.length % 2 !== 0) {
+  const normalizedArgs = args[0] === "--" ? args.slice(1) : args;
+  if (
+    !Number.isSafeInteger(now) ||
+    now < 0 ||
+    normalizedArgs.length % 2 !== 0
+  ) {
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
   const values = new Map<string, string>();
-  const allowed = new Set(["--product", "--timeframe", "--start", "--end", "--output"]);
-  for (let index = 0; index < args.length; index += 2) {
-    const key = args[index];
-    const value = args[index + 1];
+  const allowed = new Set([
+    "--product",
+    "--timeframe",
+    "--execution-timeframe",
+    "--protective-exit",
+    "--stop-loss-bps",
+    "--take-profit-bps",
+    "--start",
+    "--end",
+    "--output",
+  ]);
+  for (let index = 0; index < normalizedArgs.length; index += 2) {
+    const key = normalizedArgs[index];
+    const value = normalizedArgs[index + 1];
     if (
       key === undefined ||
       value === undefined ||
@@ -76,6 +126,47 @@ export const parseBacktestCliOptions = (
   const timeframeRaw = values.get("--timeframe") ?? "ONE_DAY";
   if (!isTimeframe(timeframeRaw)) return err({ code: "INVALID_CLI_OPTIONS" });
   const duration = timeframeMs[timeframeRaw];
+  const executionTimeframeRaw = values.get("--execution-timeframe");
+  const executionTimeframe =
+    executionTimeframeRaw === undefined || !isTimeframe(executionTimeframeRaw)
+      ? null
+      : executionTimeframeRaw;
+  if (
+    (executionTimeframeRaw !== undefined && executionTimeframe === null) ||
+    (executionTimeframe !== null &&
+      (timeframeMs[executionTimeframe] >= duration ||
+        duration % timeframeMs[executionTimeframe] !== 0))
+  ) {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+
+  const protectiveMode = values.get("--protective-exit") ?? "NONE";
+  const stopLossRaw = values.get("--stop-loss-bps");
+  const takeProfitRaw = values.get("--take-profit-bps");
+  let protectiveExit: BacktestCliProtectiveExitPolicy;
+  if (protectiveMode === "NONE") {
+    if (stopLossRaw !== undefined || takeProfitRaw !== undefined) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    protectiveExit = Object.freeze({ mode: "NONE" as const });
+  } else if (
+    protectiveMode === "FIXED_BPS" &&
+    stopLossRaw !== undefined &&
+    takeProfitRaw !== undefined
+  ) {
+    const candidate = Object.freeze({
+      mode: "FIXED_BPS" as const,
+      stopLossBps: Number(stopLossRaw),
+      takeProfitBps: Number(takeProfitRaw),
+    });
+    if (!isValidProtectiveExitPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    protectiveExit = candidate;
+  } else {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+
   const latestClosedBoundary = Math.floor(now / duration) * duration;
   const startAt = values.has("--start")
     ? parseUtcDate(values.get("--start") as string)
@@ -96,16 +187,23 @@ export const parseBacktestCliOptions = (
   ) {
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
-  const outputPath =
-    values.get("--output") ??
-    `.artifacts/backtests/${product.value}-${timeframeRaw}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
+  const executionSuffix =
+    executionTimeframe === null ? "" : `-exec-${executionTimeframe}`;
+  const protectiveSuffix =
+    protectiveExit.mode === "NONE"
+      ? ""
+      : `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`;
+  const outputPath = values.get("--output") ??
+    `.artifacts/backtests/${product.value}-${timeframeRaw}${executionSuffix}${protectiveSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
   return ok(
     Object.freeze({
       productId: product.value,
       timeframe: timeframeRaw,
+      executionTimeframe,
       startAt,
       endAt,
       outputPath,
+      protectiveExit,
     }),
   );
 };

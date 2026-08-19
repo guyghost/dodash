@@ -9,6 +9,7 @@ import type { HistoricalDataset } from "./coinbase-history.js";
 import {
   runBacktestSuite,
   type BacktestSuiteConfig,
+  type BacktestSuiteOptions,
   type BacktestSuiteReport,
 } from "./suite.js";
 
@@ -27,6 +28,7 @@ export type ModeledBacktestError =
 export const runModeledBacktest = async (
   dataset: HistoricalDataset,
   config: BacktestSuiteConfig,
+  options?: BacktestSuiteOptions,
 ): Promise<Result<ModeledBacktestResult, ModeledBacktestError>> => {
   const actor = createActor(backtestRunMachine, {
     input: { maxLoadRetries: 0 },
@@ -43,12 +45,14 @@ export const runModeledBacktest = async (
     type: "HISTORICAL_DATA_READY",
     datasetId: dataset.datasetId,
     candleCount: dataset.candles.length,
+    executionDatasetId: options?.executionDataset?.datasetId ?? null,
+    executionCandleCount: options?.executionDataset?.candles.length ?? 0,
   });
   if (!actor.getSnapshot().matches("replaying")) {
     return err({ code: "BACKTEST_WORKFLOW_STATE_INVALID" });
   }
 
-  const suite = await runBacktestSuite(dataset, config);
+  const suite = await runBacktestSuite(dataset, config, options);
   if (!suite.ok) {
     actor.send({
       type: "REPLAY_FAILED",

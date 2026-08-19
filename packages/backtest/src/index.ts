@@ -6,10 +6,14 @@ export type {
   CoinbaseHistoricalRequest,
   HistoricalDataset,
 } from "./coinbase-history.js";
-export { parseBacktestCliOptions } from "./cli-options.js";
+export {
+  createBacktestRunId,
+  parseBacktestCliOptions,
+} from "./cli-options.js";
 export type {
   BacktestCliOptions,
   BacktestCliOptionsError,
+  BacktestCliProtectiveExitPolicy,
 } from "./cli-options.js";
 export { runModeledBacktest } from "./modeled-run.js";
 export type {
@@ -42,6 +46,7 @@ export type {
   BacktestScenarioSummary,
   BacktestSuiteConfig,
   BacktestSuiteError,
+  BacktestSuiteOptions,
   BacktestSuiteReport,
   BuyHoldBenchmark,
 } from "./suite.js";

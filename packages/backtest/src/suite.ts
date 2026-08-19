@@ -33,6 +33,10 @@ export interface BacktestSuiteConfig {
   readonly protectiveExit?: ProtectiveExitPolicy;
 }
 
+export interface BacktestSuiteOptions {
+  readonly executionDataset?: HistoricalDataset;
+}
+
 export interface BuyHoldBenchmark {
   readonly pnl: number;
   readonly totalReturn: number;
@@ -52,6 +56,9 @@ export interface BacktestScenarioSummary {
 export interface BacktestSuiteReport {
   readonly runId: string;
   readonly dataset: Omit<HistoricalDataset, "candles"> & { readonly candleCount: number };
+  readonly executionDataset:
+    | (Omit<HistoricalDataset, "candles"> & { readonly candleCount: number })
+    | null;
   readonly config: BacktestSuiteConfig;
   readonly benchmark: BuyHoldBenchmark;
   readonly scenarios: readonly BacktestScenarioSummary[];
@@ -59,6 +66,7 @@ export interface BacktestSuiteReport {
 
 export type BacktestSuiteError =
   | { readonly code: "INVALID_SUITE_CONFIG" }
+  | { readonly code: "INVALID_EXECUTION_DATASET" }
   | { readonly code: "INVALID_STRATEGY_REGISTRY" }
   | { readonly code: "INDICATOR_PREPARATION_FAILED"; readonly cause: unknown }
   | {
@@ -78,6 +86,24 @@ const validConfig = (config: BacktestSuiteConfig): boolean =>
   config.minNetQuantity >= 0 &&
   Number.isFinite(config.baseSize) &&
   config.baseSize > 0;
+
+const compatibleExecutionDataset = (
+  primary: HistoricalDataset,
+  execution: HistoricalDataset,
+): boolean =>
+  execution.productId === primary.productId &&
+  execution.startAt === primary.startAt &&
+  execution.endAt === primary.endAt &&
+  execution.datasetId.trim().length > 0 &&
+  execution.sha256.trim().length > 0 &&
+  execution.candles.length > 0;
+
+const datasetMetadata = (
+  dataset: HistoricalDataset,
+): Omit<HistoricalDataset, "candles"> & { readonly candleCount: number } => {
+  const { candles, ...metadata } = dataset;
+  return Object.freeze({ ...metadata, candleCount: candles.length });
+};
 
 const strategiesById = (
   config: BacktestSuiteConfig,
@@ -135,9 +161,16 @@ const benchmarkBuyAndHold = (
 export const runBacktestSuite = async (
   dataset: HistoricalDataset,
   config: BacktestSuiteConfig,
+  options?: BacktestSuiteOptions,
 ): Promise<Result<BacktestSuiteReport, BacktestSuiteError>> => {
   if (!validConfig(config) || dataset.candles.length === 0) {
     return err({ code: "INVALID_SUITE_CONFIG" });
+  }
+  if (
+    options?.executionDataset !== undefined &&
+    !compatibleExecutionDataset(dataset, options.executionDataset)
+  ) {
+    return err({ code: "INVALID_EXECUTION_DATASET" });
   }
   const benchmark = benchmarkBuyAndHold(dataset, config);
   if (benchmark === null) return err({ code: "INVALID_SUITE_CONFIG" });
@@ -189,6 +222,9 @@ export const runBacktestSuite = async (
           : { protectiveExit: config.protectiveExit }),
       },
       preparedIndicators.value,
+      options?.executionDataset === undefined
+        ? undefined
+        : { executionCandles: options.executionDataset.candles },
     );
     if (!replay.ok) {
       return err({
@@ -210,14 +246,14 @@ export const runBacktestSuite = async (
     );
   }
 
-  const { candles: _candles, ...datasetMetadata } = dataset;
   return ok(
     Object.freeze({
       runId: config.runId,
-      dataset: Object.freeze({
-        ...datasetMetadata,
-        candleCount: dataset.candles.length,
-      }),
+      dataset: datasetMetadata(dataset),
+      executionDataset:
+        options?.executionDataset === undefined
+          ? null
+          : datasetMetadata(options.executionDataset),
       config: Object.freeze({ ...config }),
       benchmark,
       scenarios: Object.freeze(scenarios),

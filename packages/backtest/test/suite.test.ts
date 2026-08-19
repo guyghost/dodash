@@ -51,6 +51,56 @@ const suiteFixture = () => {
   return { dataset, config };
 };
 
+const executionDatasetFor = (
+  dataset: backtest.HistoricalDataset,
+): backtest.HistoricalDataset => {
+  const candles: Candle[] = dataset.candles.flatMap((primary) => [
+    {
+      start: primary.start,
+      open: primary.open,
+      high: primary.open + 0.25,
+      low: primary.open - 0.25,
+      close: primary.open,
+      volume: 2.5,
+    },
+    {
+      start: primary.start + 21_600_000,
+      open: primary.open,
+      high: primary.high,
+      low: primary.open,
+      close: primary.open + 0.5,
+      volume: 2.5,
+    },
+    {
+      start: primary.start + 43_200_000,
+      open: primary.open + 0.5,
+      high: primary.open + 0.5,
+      low: primary.low,
+      close: primary.open - 0.5,
+      volume: 2.5,
+    },
+    {
+      start: primary.start + 64_800_000,
+      open: primary.open - 0.5,
+      high: primary.open,
+      low: primary.open - 0.5,
+      close: primary.close,
+      volume: 2.5,
+    },
+  ]);
+  return {
+    datasetId: "dataset-160-six-hour-candles",
+    sha256: "b".repeat(64),
+    source: "coinbase",
+    endpoint: dataset.endpoint,
+    productId: dataset.productId,
+    timeframe: "SIX_HOUR",
+    startAt: dataset.startAt,
+    endAt: dataset.endAt,
+    candles,
+  };
+};
+
 describe("backtest suite", () => {
   it("expose le runner comparatif", () => {
     expect(typeof (backtest as Record<string, unknown>).runBacktestSuite).toBe(
@@ -180,6 +230,49 @@ describe("backtest suite", () => {
     expect(result.value.workflow.context.metricsId).toBe(
       `${config.runId}:metrics`,
     );
+    expect(result.value.workflow.context.executionDatasetId).toBeNull();
+    expect(result.value.workflow.context.executionCandleCount).toBe(0);
+    expect(result.value.report.executionDataset).toBeNull();
+  });
+
+  it("propage le dataset d’exécution dans le workflow et le rapport", async () => {
+    const { dataset, config } = suiteFixture();
+    const executionDataset = executionDatasetFor(dataset);
+
+    const result = await backtest.runModeledBacktest(dataset, config, {
+      executionDataset,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.workflow.context.executionDatasetId).toBe(
+      executionDataset.datasetId,
+    );
+    expect(result.value.workflow.context.executionCandleCount).toBe(
+      executionDataset.candles.length,
+    );
+    expect(result.value.report.executionDataset).toMatchObject({
+      datasetId: executionDataset.datasetId,
+      sha256: executionDataset.sha256,
+      timeframe: "SIX_HOUR",
+      candleCount: executionDataset.candles.length,
+    });
+  });
+
+  it("refuse un dataset d’exécution d’un autre produit", async () => {
+    const { dataset, config } = suiteFixture();
+    const executionDataset = executionDatasetFor(dataset);
+    const otherProduct = createProductId("ETH-USD");
+    if (!otherProduct.ok) throw new Error("invalid product fixture");
+
+    const result = await backtest.runBacktestSuite(dataset, config, {
+      executionDataset: { ...executionDataset, productId: otherProduct.value },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "INVALID_EXECUTION_DATASET" },
+    });
   });
 
   it("compare chaque stratégie, l’ensemble et le buy-and-hold déterministement", async () => {
