@@ -29,3 +29,11 @@ sur le même dataset. Un run réussi n’est qu’un signal d’évaluation : au
 métrique ni classement ne déclenche `LIVE_TRADING_ENABLED`, ne démarre l’Agent
 ou ne crée un ordre. Erreurs, retries et annulation restent pilotés par la
 machine XState ; le LLM ne décide d’aucune transition.
+
+La politique protectrice est revue séparément dans
+`protective-order.review.md`. Le mode `NONE` est le chemin de compatibilité et
+doit rester identique aux rapports existants. Les modes actifs rendent explicite
+la convention pessimiste lorsque high et low touchent les deux seuils, les gaps,
+l’ordre entre trigger et ordre de stratégie, le réarmement après ajout et
+l’annulation après clôture. Aucun high/low ne peut déclencher un bracket qui
+n’était pas armé avant la phase correspondante.

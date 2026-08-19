@@ -15,6 +15,7 @@ Avant `START_REQUESTED`, l’opérateur fige un manifeste contenant :
 - stratégies et paramètres d’indicateurs ;
 - capital initial, limites d’allocation et de risque ;
 - frais et slippage du broker papier ;
+- politique protectrice `NONE`, `FIXED_BPS` ou `ATR_MULTIPLE` ;
 - politique d’exécution `NEXT_CANDLE_OPEN` et marché `SPOT_LONG_ONLY`.
 
 Le même dataset et les mêmes paramètres non stratégiques sont utilisés pour
@@ -42,6 +43,10 @@ provenance n’est pas un backtest valide.
    qui réduisent une position entrent dans le win rate et le profit factor.
    Le rapport sépare PnL réalisé et latent.
 6. Aucun état ni effet du backtest ne peut appeler l’adapter d’exécution live.
+7. Lorsqu’une politique protectrice est active, chaque position longue crée un
+   acteur décrit par `protective-order.md`. Le gap est résolu avant les ordres
+   de stratégie de l’open, puis la plage high/low après leur exécution. Le
+   rapport compte séparément les sorties stop et objectif.
 
 ## Invariants
 
@@ -59,3 +64,6 @@ provenance n’est pas un backtest valide.
     suffit à autoriser le live.
 11. À chaque fin de run, `pnl = realizedPnl + unrealizedPnl` à la tolérance
     numérique près ; les frais totaux correspondent à la somme exacte des fills.
+12. `NONE` conserve exactement les trades, portefeuilles et métriques historiques.
+13. Un trigger protecteur ne peut vendre que la quantité Spot effectivement
+    détenue et clôt toujours cette quantité en totalité.
