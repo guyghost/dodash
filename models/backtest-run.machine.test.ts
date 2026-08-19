@@ -31,6 +31,8 @@ describe("backtestRunMachine", () => {
       type: "HISTORICAL_DATA_READY",
       datasetId: "dataset-1",
       candleCount: 100,
+      executionDatasetId: null,
+      executionCandleCount: 0,
     });
     actor.send({ type: "REPLAY_PROGRESS", processedCandles: 50 });
     actor.send({ type: "REPLAY_COMPLETED", tradesId: "trades-1", tradeCount: 4 });
@@ -38,6 +40,66 @@ describe("backtestRunMachine", () => {
 
     expect(actor.getSnapshot().value).toBe("completed");
     expect(actor.getSnapshot().context.processedCandles).toBe(100);
+    expect(actor.getSnapshot().context.executionDatasetId).toBeNull();
+    expect(actor.getSnapshot().context.executionCandleCount).toBe(0);
+  });
+
+  it("mémorise une provenance d’exécution complète", () => {
+    const actor = createBacktest();
+    actor.send({
+      type: "START_REQUESTED",
+      runId: "run-1",
+      permissions: { canRunBacktest: true },
+    });
+    actor.send({
+      type: "HISTORICAL_DATA_READY",
+      datasetId: "dataset-1",
+      candleCount: 100,
+      executionDatasetId: "execution-dataset-1",
+      executionCandleCount: 400,
+    });
+
+    expect(actor.getSnapshot().value).toBe("replaying");
+    expect(actor.getSnapshot().context.executionDatasetId).toBe(
+      "execution-dataset-1",
+    );
+    expect(actor.getSnapshot().context.executionCandleCount).toBe(400);
+  });
+
+  it("refuse une provenance d’exécution partielle", () => {
+    const actor = createBacktest();
+    actor.send({
+      type: "START_REQUESTED",
+      runId: "run-1",
+      permissions: { canRunBacktest: true },
+    });
+    actor.send({
+      type: "HISTORICAL_DATA_READY",
+      datasetId: "dataset-1",
+      candleCount: 100,
+      executionDatasetId: "execution-dataset-1",
+      executionCandleCount: 0,
+    });
+
+    expect(actor.getSnapshot().value).toBe("failed");
+    expect(actor.getSnapshot().context.lastError?.code).toBe(
+      "INVALID_HISTORICAL_DATA",
+    );
+
+    const missingId = createBacktest();
+    missingId.send({
+      type: "START_REQUESTED",
+      runId: "run-2",
+      permissions: { canRunBacktest: true },
+    });
+    missingId.send({
+      type: "HISTORICAL_DATA_READY",
+      datasetId: "dataset-1",
+      candleCount: 100,
+      executionDatasetId: null,
+      executionCandleCount: 400,
+    });
+    expect(missingId.getSnapshot().value).toBe("failed");
   });
 
   it("borne les retries de chargement", () => {
@@ -72,6 +134,8 @@ describe("backtestRunMachine", () => {
       type: "HISTORICAL_DATA_READY",
       datasetId: "dataset-1",
       candleCount: 100,
+      executionDatasetId: null,
+      executionCandleCount: 0,
     });
     actor.send({ type: "CANCEL_REQUESTED" });
     expect(actor.getSnapshot().value).toBe("cancelling");
@@ -79,4 +143,3 @@ describe("backtestRunMachine", () => {
     expect(actor.getSnapshot().value).toBe("cancelled");
   });
 });
-

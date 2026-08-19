@@ -23,6 +23,8 @@ export interface BacktestRunContext {
   readonly runId: string | null;
   readonly datasetId: string | null;
   readonly candleCount: number;
+  readonly executionDatasetId: string | null;
+  readonly executionCandleCount: number;
   readonly processedCandles: number;
   readonly tradesId: string | null;
   readonly tradeCount: number;
@@ -44,6 +46,8 @@ export type BacktestRunEvent =
       readonly type: "HISTORICAL_DATA_READY";
       readonly datasetId: string;
       readonly candleCount: number;
+      readonly executionDatasetId: string | null;
+      readonly executionCandleCount: number;
     }
   | { readonly type: "HISTORICAL_DATA_FAILED"; readonly error: BacktestError }
   | { readonly type: "RETRY_TIMER_ELAPSED" }
@@ -61,4 +65,3 @@ export type BacktestRunEvent =
   | { readonly type: "METRICS_FAILED"; readonly error: BacktestError }
   | { readonly type: "EFFECT_CANCELLED" }
   | { readonly type: "EFFECT_CANCEL_FAILED"; readonly error: BacktestError };
-

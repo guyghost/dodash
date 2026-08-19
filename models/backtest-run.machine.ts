@@ -10,6 +10,16 @@ import type {
 const eventError = (event: BacktestRunEvent): BacktestError | null =>
   "error" in event ? event.error : null;
 
+const validExecutionDatasetReference = (
+  datasetId: string | null,
+  candleCount: number,
+): boolean =>
+  datasetId === null
+    ? candleCount === 0
+    : datasetId.trim().length > 0 &&
+      Number.isSafeInteger(candleCount) &&
+      candleCount > 0;
+
 export const backtestRunMachine = setup({
   types: {
     context: {} as BacktestRunContext,
@@ -29,7 +39,11 @@ export const backtestRunMachine = setup({
       event.type === "HISTORICAL_DATA_READY" &&
       event.datasetId.trim().length > 0 &&
       Number.isSafeInteger(event.candleCount) &&
-      event.candleCount > 0,
+      event.candleCount > 0 &&
+      validExecutionDatasetReference(
+        event.executionDatasetId,
+        event.executionCandleCount,
+      ),
     validProgress: ({ context, event }) =>
       event.type === "REPLAY_PROGRESS" &&
       Number.isSafeInteger(event.processedCandles) &&
@@ -44,6 +58,8 @@ export const backtestRunMachine = setup({
             runId: event.runId,
             datasetId: null,
             candleCount: 0,
+            executionDatasetId: null,
+            executionCandleCount: 0,
             processedCandles: 0,
             tradesId: null,
             tradeCount: 0,
@@ -62,7 +78,12 @@ export const backtestRunMachine = setup({
     }),
     recordDataset: assign(({ event }) =>
       event.type === "HISTORICAL_DATA_READY"
-        ? { datasetId: event.datasetId, candleCount: event.candleCount }
+        ? {
+            datasetId: event.datasetId,
+            candleCount: event.candleCount,
+            executionDatasetId: event.executionDatasetId,
+            executionCandleCount: event.executionCandleCount,
+          }
         : {},
     ),
     recordInvalidDataset: assign({
@@ -97,6 +118,8 @@ export const backtestRunMachine = setup({
     runId: null,
     datasetId: null,
     candleCount: 0,
+    executionDatasetId: null,
+    executionCandleCount: 0,
     processedCandles: 0,
     tradesId: null,
     tradeCount: 0,
@@ -166,4 +189,3 @@ export const backtestRunMachine = setup({
     failed: { type: "final" },
   },
 });
-
