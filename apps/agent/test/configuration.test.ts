@@ -27,6 +27,33 @@ describe("parseAgentConfiguration", () => {
     });
   });
 
+  it("inclut la force de tendance dans le warmup minimal", () => {
+    const result = parseAgentConfiguration({
+      productId: "BTC-USD",
+      candleLimit: 19,
+      strategyIds: ["rsi-reversion"],
+      indicators: {
+        rsiPeriod: 2,
+        emaFastPeriod: 1,
+        emaSlowPeriod: 2,
+        atrPeriod: 2,
+        historicalVolatilityPeriod: 2,
+        momentumPeriod: 1,
+        returnPeriods: [1],
+        vwapPeriod: 2,
+        relativeVolumePeriod: 1,
+        volumeSpikeThreshold: 2,
+        volumeTrendPeriod: 2,
+        trendStrengthPeriod: 10,
+      },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "INSUFFICIENT_CANDLE_LIMIT" },
+    });
+  });
+
   it("models live execution without accepting credentials in the configuration", () => {
     const result = parseAgentConfiguration({
       productId: "BTC-USD",

@@ -21,6 +21,18 @@ const snapshot = (overrides: Partial<IndicatorSnapshot> = {}): IndicatorSnapshot
   emaSlow: 100,
   macd: 0,
   atr: 2,
+  historicalVolatility: 0,
+  momentum: 0,
+  periodicReturns: { "1": 0 },
+  ohlcvVwap: 100,
+  tradeVwap: null,
+  orderBookVwap: null,
+  bidAskSpread: null,
+  relativeVolume: 1,
+  volumeSpike: false,
+  volumeTrend: 0,
+  vwapDeviation: 0,
+  trendStrength: 0,
   ...overrides,
 });
 
@@ -102,4 +114,3 @@ describe("strategies", () => {
     });
   });
 });
-

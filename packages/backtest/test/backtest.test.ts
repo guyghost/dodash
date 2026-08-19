@@ -24,6 +24,21 @@ import {
 const product = createProductId("BTC-USD");
 if (!product.ok) throw new Error("invalid product fixture");
 
+const testIndicatorConfig = {
+  rsiPeriod: 2,
+  emaFastPeriod: 2,
+  emaSlowPeriod: 3,
+  atrPeriod: 2,
+  historicalVolatilityPeriod: 2,
+  momentumPeriod: 1,
+  returnPeriods: [1],
+  vwapPeriod: 2,
+  relativeVolumePeriod: 1,
+  volumeSpikeThreshold: 2,
+  volumeTrendPeriod: 2,
+  trendStrengthPeriod: 1,
+} as const;
+
 const order = (side: "BUY" | "SELL", quantity = 1): OrderIntent => {
   const result = createOrderIntent({
     clientOrderId: `${side}-${quantity}`,
@@ -218,12 +233,7 @@ describe("replayBacktest", () => {
       initialCapital: 10_000,
       maxDecisionNotional: 5_000,
       minNetQuantity: 0.0001,
-      indicators: {
-        rsiPeriod: 2,
-        emaFastPeriod: 2,
-        emaSlowPeriod: 3,
-        atrPeriod: 2,
-      },
+      indicators: testIndicatorConfig,
       strategies: registry.value,
       risk: {
         maxOrderNotional: 5_000,
@@ -428,12 +438,7 @@ describe("replayBacktest", () => {
         volume: 10,
       }),
     );
-    const indicatorConfig = {
-      rsiPeriod: 2,
-      emaFastPeriod: 2,
-      emaSlowPeriod: 3,
-      atrPeriod: 2,
-    };
+    const indicatorConfig = testIndicatorConfig;
     const prepared: PreparedBacktestIndicators = {
       config: indicatorConfig,
       snapshots: candles.map((candle, index) =>
@@ -447,6 +452,18 @@ describe("replayBacktest", () => {
               emaSlow: 2,
               macd: -1,
               atr: 1,
+              historicalVolatility: 0,
+              momentum: 1,
+              periodicReturns: { "1": 0.01 },
+              ohlcvVwap: 1,
+              tradeVwap: null,
+              orderBookVwap: null,
+              bidAskSpread: null,
+              relativeVolume: 1,
+              volumeSpike: false,
+              volumeTrend: 0,
+              vwapDeviation: 0,
+              trendStrength: 100,
             },
       ),
     };
@@ -475,12 +492,7 @@ const backtestConfig = (strategies: StrategyRegistry) => ({
   initialCapital: 10_000,
   maxDecisionNotional: 5_000,
   minNetQuantity: 0.0001,
-  indicators: {
-    rsiPeriod: 2,
-    emaFastPeriod: 2,
-    emaSlowPeriod: 3,
-    atrPeriod: 2,
-  },
+  indicators: testIndicatorConfig,
   strategies,
   risk: {
     maxOrderNotional: 5_000,

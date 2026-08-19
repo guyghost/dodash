@@ -24,6 +24,10 @@ last_n(List, Count, Last) :-
   take_n(Count, Reversed, TakenReversed),
   reverse_list(TakenReversed, Last).
 
+first_value([Value|_], Value).
+last_value([Value], Value).
+last_value([_|Tail], Value) :- last_value(Tail, Value).
+
 deltas([_], []).
 deltas([First, Second|Tail], [Delta|Deltas]) :-
   Delta is Second - First,
@@ -41,3 +45,37 @@ split_gains_losses([Delta|Tail], [Gain|Gains], [Loss|Losses]) :-
   Loss is -Delta,
   split_gains_losses(Tail, Gains, Losses).
 
+sum_squared_deviations([], _, 0).
+sum_squared_deviations([Value|Tail], Mean, Sum) :-
+  Difference is Value - Mean,
+  sum_squared_deviations(Tail, Mean, TailSum),
+  Sum is Difference * Difference + TailSum.
+
+sum_indexed_products(Values, Sum) :-
+  sum_indexed_products_acc(Values, 0, 0, Sum).
+sum_indexed_products_acc([], _, Accumulator, Accumulator).
+sum_indexed_products_acc([Value|Tail], Index, Accumulator, Sum) :-
+  NextAccumulator is Accumulator + Index * Value,
+  NextIndex is Index + 1,
+  sum_indexed_products_acc(Tail, NextIndex, NextAccumulator, Sum).
+
+weighted_sums([], [], 0, 0).
+weighted_sums([Value|Values], [Weight|Weights], WeightedSum, WeightSum) :-
+  weighted_sums(Values, Weights, TailWeightedSum, TailWeightSum),
+  WeightedSum is Value * Weight + TailWeightedSum,
+  WeightSum is Weight + TailWeightSum.
+
+max_list_value([Value|Tail], Maximum) :- max_list_acc(Tail, Value, Maximum).
+max_list_acc([], Accumulator, Accumulator).
+max_list_acc([Value|Tail], Accumulator, Maximum) :-
+  max_value(Value, Accumulator, Next),
+  max_list_acc(Tail, Next, Maximum).
+
+min_list_value([Value|Tail], Minimum) :- min_list_acc(Tail, Value, Minimum).
+min_list_acc([], Accumulator, Accumulator).
+min_list_acc([Value|Tail], Accumulator, Minimum) :-
+  Value < Accumulator,
+  !,
+  min_list_acc(Tail, Value, Minimum).
+min_list_acc([_|Tail], Accumulator, Minimum) :-
+  min_list_acc(Tail, Accumulator, Minimum).

@@ -1,5 +1,6 @@
 import {
   DEFAULT_INDICATOR_CONFIG,
+  requiredIndicatorCandles,
   type IndicatorConfig,
 } from "@dodash/indicators-prolog";
 import { createProductId, err, ok, type ProductId, type Result, type Timeframe } from "@dodash/domain";
@@ -49,6 +50,49 @@ const indicatorSchema = z
       .positive()
       .default(DEFAULT_INDICATOR_CONFIG.emaSlowPeriod),
     atrPeriod: z.number().int().positive().default(DEFAULT_INDICATOR_CONFIG.atrPeriod),
+    historicalVolatilityPeriod: z
+      .number()
+      .int()
+      .min(2)
+      .default(DEFAULT_INDICATOR_CONFIG.historicalVolatilityPeriod),
+    momentumPeriod: z
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_INDICATOR_CONFIG.momentumPeriod),
+    returnPeriods: z
+      .array(z.number().int().positive())
+      .min(1)
+      .refine((periods) =>
+        periods.every(
+          (period, index) => index === 0 || period > (periods[index - 1] ?? 0),
+        ),
+      )
+      .default([...DEFAULT_INDICATOR_CONFIG.returnPeriods]),
+    vwapPeriod: z
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_INDICATOR_CONFIG.vwapPeriod),
+    relativeVolumePeriod: z
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_INDICATOR_CONFIG.relativeVolumePeriod),
+    volumeSpikeThreshold: z
+      .number()
+      .positive()
+      .default(DEFAULT_INDICATOR_CONFIG.volumeSpikeThreshold),
+    volumeTrendPeriod: z
+      .number()
+      .int()
+      .min(2)
+      .default(DEFAULT_INDICATOR_CONFIG.volumeTrendPeriod),
+    trendStrengthPeriod: z
+      .number()
+      .int()
+      .positive()
+      .default(DEFAULT_INDICATOR_CONFIG.trendStrengthPeriod),
   })
   .refine((value) => value.emaFastPeriod < value.emaSlowPeriod);
 
@@ -86,7 +130,10 @@ const inputSchema = z.object({
   maxDecisionNotional: z.number().positive().default(2_000),
   minNetQuantity: z.number().nonnegative().default(0.000_001),
   executionMode: z.enum(["paper", "live"]).default("paper"),
-  indicators: indicatorSchema.default(DEFAULT_INDICATOR_CONFIG),
+  indicators: indicatorSchema.default({
+    ...DEFAULT_INDICATOR_CONFIG,
+    returnPeriods: [...DEFAULT_INDICATOR_CONFIG.returnPeriods],
+  }),
   risk: riskSchema.default({
     maxOrderNotional: 2_000,
     maxPositionNotional: 10_000,
@@ -109,9 +156,7 @@ export const parseAgentConfiguration = (
   if (!product.ok) return err({ code: "INVALID_PRODUCT_ID" });
 
   const requiredCandles = Math.max(
-    parsed.data.indicators.rsiPeriod + 1,
-    parsed.data.indicators.emaSlowPeriod,
-    parsed.data.indicators.atrPeriod,
+    requiredIndicatorCandles(parsed.data.indicators),
     parsed.data.strategyIds.includes("breakout") ? 21 : 0,
   );
   if (parsed.data.candleLimit < requiredCandles) {
@@ -123,7 +168,10 @@ export const parseAgentConfiguration = (
       ...parsed.data,
       productId: product.value,
       strategyIds: Object.freeze([...new Set(parsed.data.strategyIds)].sort()) as readonly StrategyId[],
-      indicators: Object.freeze({ ...parsed.data.indicators }),
+      indicators: Object.freeze({
+        ...parsed.data.indicators,
+        returnPeriods: Object.freeze([...parsed.data.indicators.returnPeriods]),
+      }),
       risk: Object.freeze({ ...parsed.data.risk }),
       broker: Object.freeze({ ...parsed.data.broker }),
     }),

@@ -11,6 +11,7 @@ import {
 } from "@dodash/domain";
 import {
   computeIndicators,
+  requiredIndicatorCandles,
   type IndicatorConfig,
   type IndicatorError,
   type IndicatorSnapshot,
@@ -80,6 +81,18 @@ const validPreparedIndicators = (
   prepared.config.emaFastPeriod === config.emaFastPeriod &&
   prepared.config.emaSlowPeriod === config.emaSlowPeriod &&
   prepared.config.atrPeriod === config.atrPeriod &&
+  prepared.config.historicalVolatilityPeriod ===
+    config.historicalVolatilityPeriod &&
+  prepared.config.momentumPeriod === config.momentumPeriod &&
+  prepared.config.returnPeriods.length === config.returnPeriods.length &&
+  prepared.config.returnPeriods.every(
+    (period, index) => period === config.returnPeriods[index],
+  ) &&
+  prepared.config.vwapPeriod === config.vwapPeriod &&
+  prepared.config.relativeVolumePeriod === config.relativeVolumePeriod &&
+  prepared.config.volumeSpikeThreshold === config.volumeSpikeThreshold &&
+  prepared.config.volumeTrendPeriod === config.volumeTrendPeriod &&
+  prepared.config.trendStrengthPeriod === config.trendStrengthPeriod &&
   prepared.snapshots.length === candles.length &&
   prepared.snapshots.every((snapshot, index) =>
     index < warmup - 1
@@ -118,11 +131,7 @@ export const replayBacktest = async (
   const validated = validateCandleSeries(candles);
   if (!validated.ok) return err({ code: "INVALID_CANDLES", cause: validated.error });
 
-  const warmup = Math.max(
-    config.indicators.rsiPeriod + 1,
-    config.indicators.emaSlowPeriod,
-    config.indicators.atrPeriod,
-  );
+  const warmup = requiredIndicatorCandles(config.indicators);
   if (
     preparedIndicators !== undefined &&
     !validPreparedIndicators(

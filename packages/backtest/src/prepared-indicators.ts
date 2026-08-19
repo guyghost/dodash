@@ -10,6 +10,7 @@ import {
   IndicatorConfig,
   IndicatorError,
   IndicatorSnapshot,
+  requiredIndicatorCandles,
 } from "@dodash/indicators-prolog";
 
 export interface PreparedBacktestIndicators {
@@ -27,11 +28,7 @@ export const prepareBacktestIndicators = async (
 ): Promise<Result<PreparedBacktestIndicators, PreparedBacktestIndicatorsError>> => {
   const validated = validateCandleSeries(candles);
   if (!validated.ok) return err({ code: "INVALID_PREPARED_CANDLES" });
-  const warmup = Math.max(
-    config.rsiPeriod + 1,
-    config.emaSlowPeriod,
-    config.atrPeriod,
-  );
+  const warmup = requiredIndicatorCandles(config);
   const snapshots: (IndicatorSnapshot | null)[] = validated.value.map(() => null);
   for (let index = warmup - 1; index < validated.value.length; index += 1) {
     const result = await computeIndicators(validated.value.slice(0, index + 1), config);
@@ -42,7 +39,10 @@ export const prepareBacktestIndicators = async (
   }
   return ok(
     Object.freeze({
-      config: Object.freeze({ ...config }),
+      config: Object.freeze({
+        ...config,
+        returnPeriods: Object.freeze([...config.returnPeriods]),
+      }),
       snapshots: Object.freeze(snapshots),
     }),
   );

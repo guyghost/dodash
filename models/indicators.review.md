@@ -19,6 +19,7 @@
 | RVOL | référence passée uniquement, volume courant exclu | Oui |
 | VWAP transactions et VWAP carnet | sources et sorties distinctes | Oui |
 | Force de tendance plate | ADX borné, valeur `0` | Oui |
+| Historique supérieur au warmup ADX | fenêtre glissante des `2 × période` dernières chandelles | Oui |
 | Parse Prolog impossible | `PROLOG_PARSE_ERROR` | Oui |
 | Query sans solution | `PROLOG_QUERY_FAILED` | Oui |
 | Limite du moteur atteinte | `PROLOG_LIMIT_EXCEEDED` | Oui |

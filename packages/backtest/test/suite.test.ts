@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { createProductId, type Candle } from "@dodash/domain";
+import { DEFAULT_INDICATOR_CONFIG } from "@dodash/indicators-prolog";
+import { createStrategyRegistry } from "@dodash/strategies";
 
 import * as backtest from "../src/index.js";
 
@@ -34,12 +36,7 @@ const suiteFixture = () => {
     maxDecisionNotional: 2_000,
     minNetQuantity: 0.000_001,
     baseSize: 0.01,
-    indicators: {
-      rsiPeriod: 14,
-      emaFastPeriod: 12,
-      emaSlowPeriod: 26,
-      atrPeriod: 14,
-    },
+    indicators: DEFAULT_INDICATOR_CONFIG,
     risk: {
       maxOrderNotional: 2_000,
       maxPositionNotional: 10_000,
@@ -90,6 +87,14 @@ describe("backtest suite", () => {
       emaFastPeriod: 2,
       emaSlowPeriod: 3,
       atrPeriod: 2,
+      historicalVolatilityPeriod: 2,
+      momentumPeriod: 1,
+      returnPeriods: [1],
+      vwapPeriod: 2,
+      relativeVolumePeriod: 1,
+      volumeSpikeThreshold: 2,
+      volumeTrendPeriod: 2,
+      trendStrengthPeriod: 1,
     });
 
     expect(result.ok).toBe(true);
@@ -99,6 +104,66 @@ describe("backtest suite", () => {
     expect(result.value.snapshots.slice(2).map((snapshot) => snapshot?.candleClosedAt)).toEqual(
       candles.slice(2).map((candle) => candle.start),
     );
+  });
+
+  it("attend le warmup ADX complet avant de pré-calculer", async () => {
+    const candles: Candle[] = Array.from({ length: 8 }, (_, index) => ({
+      start: index * 60_000,
+      open: 100 + index,
+      high: 101 + index,
+      low: 99 + index,
+      close: 100 + index,
+      volume: 10,
+    }));
+
+    const result = await backtest.prepareBacktestIndicators(candles, {
+      rsiPeriod: 2,
+      emaFastPeriod: 1,
+      emaSlowPeriod: 2,
+      atrPeriod: 2,
+      historicalVolatilityPeriod: 2,
+      momentumPeriod: 1,
+      returnPeriods: [1],
+      vwapPeriod: 2,
+      relativeVolumePeriod: 1,
+      volumeSpikeThreshold: 2,
+      volumeTrendPeriod: 2,
+      trendStrengthPeriod: 4,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.snapshots.slice(0, 7)).toEqual(Array(7).fill(null));
+    expect(result.value.snapshots[7]?.candleClosedAt).toBe(candles[7]?.start);
+  });
+
+  it("refuse un cache préparé avec une configuration étendue différente", async () => {
+    const { dataset, config } = suiteFixture();
+    const prepared = await backtest.prepareBacktestIndicators(
+      dataset.candles,
+      config.indicators,
+    );
+    const registry = createStrategyRegistry([]);
+    if (!prepared.ok || !registry.ok) throw new Error("invalid prepared fixture");
+
+    const result = await backtest.replayBacktest(
+      dataset.candles,
+      {
+        ...config,
+        productId: dataset.productId,
+        indicators: {
+          ...config.indicators,
+          volumeSpikeThreshold: config.indicators.volumeSpikeThreshold + 1,
+        },
+        strategies: registry.value,
+      },
+      prepared.value,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "INVALID_PREPARED_INDICATORS" },
+    });
   });
 
   it("termine le workflow XState avec les artefacts du rapport", async () => {

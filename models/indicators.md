@@ -55,7 +55,7 @@ Le moteur transforme une série OHLCV validée et, facultativement, des transact
 - Un pic de volume est vrai si le volume relatif est supérieur ou égal au seuil configuré.
 - La tendance du volume est la pente de régression linéaire des volumes, normalisée par leur moyenne ; elle est exprimée en variation relative par chandelle.
 - La déviation VWAP vaut `close courant / ohlcvVwap - 1`.
-- La force de tendance est l’ADX de Wilder sur la période configurée, borné entre `0` et `100`.
+- La force de tendance est l’ADX de Wilder sur la période configurée, borné entre `0` et `100`. Le snapshot utilise une fenêtre glissante des `2 × période` dernières chandelles : les premiers `p` mouvements initialisent les lissages directionnels, puis les `p` valeurs DX initialisent et produisent l’ADX courant.
 - Un indicateur dont le dénominateur de volume est nul vaut `null`. Les sorties transactions/carnet/spread valent aussi `null` lorsque leur source facultative est absente ou vide.
 
 ## Invariants
@@ -67,3 +67,4 @@ Le moteur transforme une série OHLCV validée et, facultativement, des transact
 5. Aucun indicateur n’utilise une chandelle future ; le RVOL exclut explicitement le volume courant de sa référence.
 6. L’identifiant du snapshot couvre les bougies, la configuration et le contexte microstructurel fournis.
 7. Les règles `.pl` sont la source éditable ; leur représentation TypeScript embarquée est générée et vérifiée.
+8. Les prédicats à fenêtre fixe ne reçoivent que leur fenêtre utile ; EMA et ATR de Wilder conservent l’historique requis par leur lissage.
