@@ -1,5 +1,17 @@
 export { backtestRunMachine } from "./backtest-run.machine.js";
 export {
+  assessConfidenceCalibrationConfirmation,
+  CONFIDENCE_CALIBRATION_CONFIRMATION_PROFILES,
+} from "./confidence-calibration-confirmation.js";
+export type {
+  ConfidenceCalibrationConfirmationAssessment,
+  ConfidenceCalibrationConfirmationFailureReason,
+  ConfidenceCalibrationConfirmationObservation,
+  ConfidenceCalibrationConfirmationProfile,
+  ConfidenceCalibrationConfirmationResult,
+  ConfidenceCalibrationConfirmationRunInvariant,
+} from "./confidence-calibration-confirmation.js";
+export {
   calibrateConfidence,
   CONFIDENCE_CALIBRATION_PROFILES,
   isConfidenceCalibrationProfile,

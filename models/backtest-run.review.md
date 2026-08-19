@@ -64,6 +64,11 @@ fermée, appliquée uniquement à EMA et breakout. Le rapport distingue expositi
 demandée, turnover effectivement rempli et frais ; il ne choisit jamais un
 profil sur le PnL du holdout.
 
+La confirmation externe est revue dans
+`confidence-calibration-confirmation.review.md`. Le profil sélectionné et les
+seuils restent figés ; une preuve manquante ou un changement des signaux/RSI est
+une erreur d'évidence, pas une réfutation exploitable.
+
 La résolution multi-timeframe est revue dans `execution-resolution.review.md`.
 La série fine n’est jamais une seconde série de décision : elle ne peut produire
 que les événements `CANDLE_OPENED` et `CANDLE_RANGE_REPLAYED` d’un acteur

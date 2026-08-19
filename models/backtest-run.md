@@ -154,3 +154,6 @@ la validation des deux datasets demandés.
     capital initial. Il est nul sans fill et fini pour tout replay valide.
 22. Toute calibration de confiance respecte `confidence-calibration.md` ; RSI
     reste en identité et le profil comparé ne modifie ni direction ni sizing.
+23. Toute confirmation cross-actifs respecte
+    `confidence-calibration-confirmation.md` ; un invariant violé invalide la
+    preuve et ne peut être transformé en verdict négatif valide.
