@@ -24,6 +24,35 @@ chaque stratégie isolée, l’ensemble de stratégies et le benchmark buy-and-h
 Le rapport final restitue le manifeste et l’empreinte : un résultat sans
 provenance n’est pas un backtest valide.
 
+## Entrée CLI multi-timeframe
+
+Le CLI accepte un `--execution-timeframe` facultatif. Lorsqu’il est présent,
+sa durée doit être strictement inférieure à celle de `--timeframe` et la durée
+primaire doit en être un multiple entier. Le produit et les bornes UTC restent
+ceux du dataset primaire.
+
+La politique protectrice du CLI est explicite :
+
+- sans option, `NONE` conserve le comportement historique ;
+- `--protective-exit FIXED_BPS` exige simultanément `--stop-loss-bps` et
+  `--take-profit-bps`, puis applique les bornes de `protective-order.md` ;
+- des valeurs de seuil avec `NONE`, un seul seuil, un timeframe secondaire
+  égal ou plus grossier, ou un ratio non entier rendent les options invalides.
+
+Le nom de rapport et le `runId` encodent toute résolution ou politique active
+afin que deux manifestes différents ne partagent pas implicitement le même
+artefact. Le chemin et le `runId` historiques restent inchangés lorsque la
+résolution secondaire est absente et que la politique vaut `NONE`.
+Un unique séparateur initial `--`, transmis conventionnellement par un lanceur
+de script, est ignoré avant l’analyse des paires option/valeur. Toute occurrence
+à une autre position reste invalide.
+
+`HISTORICAL_DATA_READY` transporte toujours la provenance primaire et une paire
+secondaire explicite : `(executionDatasetId = null, executionCandleCount = 0)`
+ou `(identifiant non vide, compteur strictement positif)`. Une paire mixte est
+invalide et mène à `failed`. Le replay ne démarre qu’après la disponibilité et
+la validation des deux datasets demandés.
+
 ## Effets
 
 1. `loadingHistoricalData` appelle uniquement la frontière de données de marché.
@@ -50,6 +79,9 @@ provenance n’est pas un backtest valide.
    rapport compte séparément les sorties stop et objectif.
 8. Une résolution plus fine suit `execution-resolution.md`. Elle ne change ni
    l’horloge de décision, ni les indicateurs, ni la progression primaire.
+9. Le shell CLI charge le dataset primaire et, s’il est demandé, le dataset
+   d’exécution. Toute erreur de l’un ou l’autre devient un échec de chargement ;
+   le CLI n’invente aucune bougie et ne dégrade pas silencieusement la résolution.
 
 ## Invariants
 
@@ -74,3 +106,7 @@ provenance n’est pas un backtest valide.
     l’O/H/L/C de chaque bougie primaire avant le premier fill.
 15. Aucun ordre de stratégie ne peut être créé ou exécuté à l’ouverture d’une
     sous-bougie autre que la première du groupe primaire.
+16. Le contexte terminal expose les identifiants et compteurs des deux datasets ;
+    le rapport expose en plus leurs empreintes, timeframes et bornes.
+17. L’absence de dataset d’exécution est représentée explicitement par `null`
+    dans le rapport et par la paire `null/0` dans le contexte du workflow.

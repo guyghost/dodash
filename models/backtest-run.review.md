@@ -43,3 +43,19 @@ La série fine n’est jamais une seconde série de décision : elle ne peut pro
 que les événements `CANDLE_OPENED` et `CANDLE_RANGE_REPLAYED` d’un acteur
 protecteur déjà gouverné par le modèle. Alignement, couverture et agrégation
 sont validés avant replay ; toute incohérence est terminale et sans retry.
+
+L’entrée CLI couvre les combinaisons nominales et invalides : compatibilité
+historique sans option, résolution strictement plus fine à ratio entier,
+politique `FIXED_BPS` avec deux seuils valides, seuil manquant, seuil fourni avec
+`NONE`, timeframe égal ou plus grossier et ratio non entier. Le parseur reste un
+cœur pur ; le chargement Coinbase et l’écriture du rapport restent dans le shell.
+Le séparateur initial `--` des lanceurs de scripts est accepté sans élargir la
+grammaire : un séparateur répété ou placé au milieu des options est rejeté.
+
+La provenance secondaire ne crée ni nouvel état ni transition implicite. La
+garde de `HISTORICAL_DATA_READY` accepte uniquement une paire secondaire absente
+(`null/0`) ou complète (identifiant non vide/compteur positif). Le contexte
+terminal mémorise cette paire, tandis que le rapport restitue les métadonnées et
+l’empreinte complètes. L’échec de chargement de l’un des datasets emprunte le
+chemin `HISTORICAL_DATA_FAILED` existant ; aucun fallback vers la résolution
+primaire seule n’est permis.

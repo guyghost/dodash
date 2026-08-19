@@ -61,6 +61,13 @@ Pour chaque bougie primaire :
    les indicateurs primaires et produire la décision pour l’ouverture primaire
    suivante.
 
+Le snapshot de risque de cette décision conserve le timestamp primaire
+historique tant qu’aucun fill fin ne lui est postérieur. Si une sortie
+protectrice a été horodatée dans une sous-bougie ultérieure, son champ `now`
+devient `max(primary.start, lastTradeAt)`. Le risque n’observe ainsi jamais un
+dernier trade futur, tout en laissant le chemin sans fill intrajournalier
+strictement inchangé.
+
 Un trigger protecteur utilise le timestamp et le prix de référence de la
 sous-bougie qui l’a déclenché. Les frais et le slippage restent ceux du broker
 papier.
@@ -88,3 +95,5 @@ valeurs, sans I/O, horloge, réseau ou état mutable.
    portefeuille, point d’equity ou métrique.
 9. Une série secondaire invalide échoue avant le premier effet de replay.
 10. La résolution plus fine n’active jamais le trading live.
+11. Chaque snapshot de risque respecte `now >= lastTradeAt`; une correction de
+    causalité n’avance l’horloge que jusqu’au dernier fill déjà consommé.

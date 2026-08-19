@@ -16,6 +16,7 @@
 | Gap sur première sous-bougie | trigger avant ordre de stratégie primaire |
 | Achat à l’open primaire | bracket armé avant la première plage fine |
 | Trigger dans une sous-bougie ultérieure | fill au timestamp fin, aucune stratégie |
+| Décision primaire après un fill fin | `risk.now = max(primary.start, lastTradeAt)` |
 | Position survivante au jour | acteur poursuit sur les sous-bougies suivantes |
 | Politique `NONE` avec résolution fine | résultat historique identique |
 | Erreur de planning | replay fermé, aucun retry implicite |
@@ -26,6 +27,12 @@ allocation quatre fois par jour lorsqu’un manifeste quotidien demande
 uniquement une meilleure fidélité d’exécution. Puisque seuls `open`, `high` et
 `low` sont consommés par les événements protecteurs, une divergence de volume
 entre granularités n’est pas autorisée à piloter l’état du replay.
+
+La revue de causalité couvre le cas où un fill protecteur de 06:00, 12:00 ou
+18:00 précède la décision de fin de journée mais porte un timestamp supérieur
+au `start` primaire historique. Le snapshot de risque est relevé au dernier fill
+déjà consommé, jamais au-delà. Sans fill fin postérieur, son timestamp reste
+identique au replay 1:1, y compris avec un cooldown non nul.
 
 Le planning est produit par une fonction pure retournant un résultat typé. Le
 shell du replay valide les séries de marché, consomme les groupes dans l’ordre
