@@ -16,6 +16,7 @@
     "run:coinbase": "pnpm build && node dist/cli.js",
     "study:confidence-confirmation": "node scripts/confidence-calibration-confirmation.mjs",
     "study:confidence-tail-confirmation": "node scripts/confidence-calibration-tail-confirmation.mjs",
+    "study:confidence-quantile-sensitivity": "node scripts/confidence-quantile-sensitivity.mjs",
     "study:confidence-calibration": "node scripts/confidence-calibration-walkforward.mjs",
     "test": "vitest run"
   },
