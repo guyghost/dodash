@@ -18,9 +18,11 @@ import {
   type IndicatorSnapshot,
 } from "@dodash/indicators-prolog";
 import {
+  createExecutionSchedule,
   isValidProtectiveExitPolicy,
   protectiveOrderMachine,
   type ActiveProtectiveExitPolicy,
+  type ExecutionScheduleError,
   type ProtectiveExitPolicy,
   type ProtectiveExitResolution,
 } from "@dodash/models";
@@ -52,6 +54,10 @@ export interface BacktestConfig {
   readonly protectiveExit?: ProtectiveExitPolicy;
 }
 
+export interface BacktestReplayOptions {
+  readonly executionCandles?: readonly Candle[];
+}
+
 export interface ProtectiveExitExecution extends ProtectiveExitResolution {
   readonly positionId: string;
   readonly quantity: number;
@@ -72,6 +78,10 @@ export interface BacktestResult {
 export type BacktestReplayError =
   | { readonly code: "INVALID_BACKTEST_CONFIG" }
   | { readonly code: "INVALID_CANDLES"; readonly cause: MarketValidationError }
+  | {
+      readonly code: "INVALID_EXECUTION_CANDLES";
+      readonly cause: MarketValidationError | ExecutionScheduleError;
+    }
   | { readonly code: "INVALID_PREPARED_INDICATORS" }
   | { readonly code: "INDICATOR_FAILURE"; readonly cause: IndicatorError }
   | { readonly code: "STRATEGY_FAILURE"; readonly cause: StrategyError }
@@ -151,10 +161,31 @@ export const replayBacktest = async (
   candles: readonly Candle[],
   config: BacktestConfig,
   preparedIndicators?: PreparedBacktestIndicators,
+  options?: BacktestReplayOptions,
 ): Promise<Result<BacktestResult, BacktestReplayError>> => {
   if (!validConfig(config)) return err({ code: "INVALID_BACKTEST_CONFIG" });
   const validated = validateCandleSeries(candles);
   if (!validated.ok) return err({ code: "INVALID_CANDLES", cause: validated.error });
+  const validatedExecution =
+    options?.executionCandles === undefined
+      ? undefined
+      : validateCandleSeries(options.executionCandles);
+  if (validatedExecution !== undefined && !validatedExecution.ok) {
+    return err({
+      code: "INVALID_EXECUTION_CANDLES",
+      cause: validatedExecution.error,
+    });
+  }
+  const executionSchedule = createExecutionSchedule(
+    validated.value,
+    validatedExecution?.value,
+  );
+  if (!executionSchedule.ok) {
+    return err({
+      code: "INVALID_EXECUTION_CANDLES",
+      cause: executionSchedule.error,
+    });
+  }
 
   const warmup = requiredIndicatorCandles(config.indicators);
   if (
@@ -288,124 +319,138 @@ export const replayBacktest = async (
   for (let index = 0; index < validated.value.length; index += 1) {
     const candle = validated.value[index];
     if (candle === undefined) continue;
-
-    const actorAtOpen = protectiveState.actor;
-    if (actorAtOpen !== null) {
-      if (!actorAtOpen.getSnapshot().matches({ armed: "awaitingOpen" })) {
-        return err({
-          code: "PROTECTIVE_ORDER_FAILURE",
-          cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
-        });
-      }
-      actorAtOpen.send({
-        type: "CANDLE_OPENED",
-        start: candle.start,
-        open: candle.open,
+    const executionBucket = executionSchedule.value.buckets[index];
+    if (executionBucket === undefined) {
+      return err({
+        code: "INVALID_EXECUTION_CANDLES",
+        cause: { code: "MISALIGNED_EXECUTION_RANGE" },
       });
-      const failure = actorFailure() ?? executeTriggeredProtectiveExit(candle);
-      if (failure !== null) return err(failure);
     }
 
-    for (const pendingOrder of pendingOrders) {
-      const positionBefore = portfolio.positionQuantity;
-      const order = capSpotOrder(
-        pendingOrder,
-        portfolio,
-        candle.open,
-        config.broker,
-        config.minNetQuantity,
-      );
-      if (order === null) continue;
-      const execution = executePaperOrder(
-        portfolio,
-        order,
-        candle.open,
-        candle.start,
-        config.broker,
-      );
-      if (!execution.ok) {
-        return err({ code: "BROKER_FAILURE", cause: execution.error });
-      }
-      portfolio = execution.value.portfolio;
-      trades.push(execution.value.trade);
-      lastTradeAt = candle.start;
-
-      if (activeProtectivePolicy !== null) {
-        const positionAfter = portfolio.positionQuantity;
-        const tolerance =
-          Math.max(1, Math.abs(positionBefore), Math.abs(positionAfter)) *
-          Number.EPSILON *
-          16;
-        if (positionAfter === 0) {
-          const actorToCancel = protectiveState.actor;
-          if (actorToCancel !== null) {
-            actorToCancel.send({
-              type: "CANCEL_REQUESTED",
-              reason: "POSITION_CLOSED",
-            });
-            if (!actorToCancel.getSnapshot().matches("cancelled")) {
-              return err({
-                code: "PROTECTIVE_ORDER_FAILURE",
-                cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
-              });
-            }
-            protectiveState.actor = null;
-          }
-        } else if (positionAfter > positionBefore + tolerance) {
-          const actorToIncrease = protectiveState.actor;
-          if (actorToIncrease === null) {
-            const failure = armProtectivePosition(
-              candle,
-              previousIndicators?.atr ?? null,
-            );
-            if (failure !== null) return err(failure);
-          } else {
-            actorToIncrease.send({
-              type: "POSITION_INCREASED",
-              quantity: positionAfter,
-              averageEntryPrice: portfolio.averagePrice,
-              atr: previousIndicators?.atr ?? null,
-              updatedAt: candle.start,
-            });
-            const failure = actorFailure();
-            if (failure !== null) return err(failure);
-          }
-        } else if (positionAfter < positionBefore - tolerance) {
-          const actorToReduce = protectiveState.actor;
-          if (actorToReduce === null) {
-            return err({
-              code: "PROTECTIVE_ORDER_FAILURE",
-              cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
-            });
-          }
-          actorToReduce.send({
-            type: "POSITION_REDUCED",
-            quantity: positionAfter,
-            updatedAt: candle.start,
+    for (const [executionIndex, executionCandle] of
+      executionBucket.executionCandles.entries()) {
+      const actorAtOpen = protectiveState.actor;
+      if (actorAtOpen !== null) {
+        if (!actorAtOpen.getSnapshot().matches({ armed: "awaitingOpen" })) {
+          return err({
+            code: "PROTECTIVE_ORDER_FAILURE",
+            cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
           });
-          const failure = actorFailure();
-          if (failure !== null) return err(failure);
         }
-      }
-    }
-    pendingOrders = [];
-
-    const actorAtRange = protectiveState.actor;
-    if (actorAtRange !== null) {
-      if (!actorAtRange.getSnapshot().matches({ armed: "awaitingRange" })) {
-        return err({
-          code: "PROTECTIVE_ORDER_FAILURE",
-          cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
+        actorAtOpen.send({
+          type: "CANDLE_OPENED",
+          start: executionCandle.start,
+          open: executionCandle.open,
         });
+        const failure =
+          actorFailure() ?? executeTriggeredProtectiveExit(executionCandle);
+        if (failure !== null) return err(failure);
       }
-      actorAtRange.send({
-        type: "CANDLE_RANGE_REPLAYED",
-        start: candle.start,
-        high: candle.high,
-        low: candle.low,
-      });
-      const failure = actorFailure() ?? executeTriggeredProtectiveExit(candle);
-      if (failure !== null) return err(failure);
+
+      if (executionIndex === 0) {
+        for (const pendingOrder of pendingOrders) {
+          const positionBefore = portfolio.positionQuantity;
+          const order = capSpotOrder(
+            pendingOrder,
+            portfolio,
+            executionCandle.open,
+            config.broker,
+            config.minNetQuantity,
+          );
+          if (order === null) continue;
+          const execution = executePaperOrder(
+            portfolio,
+            order,
+            executionCandle.open,
+            executionCandle.start,
+            config.broker,
+          );
+          if (!execution.ok) {
+            return err({ code: "BROKER_FAILURE", cause: execution.error });
+          }
+          portfolio = execution.value.portfolio;
+          trades.push(execution.value.trade);
+          lastTradeAt = executionCandle.start;
+
+          if (activeProtectivePolicy !== null) {
+            const positionAfter = portfolio.positionQuantity;
+            const tolerance =
+              Math.max(1, Math.abs(positionBefore), Math.abs(positionAfter)) *
+              Number.EPSILON *
+              16;
+            if (positionAfter === 0) {
+              const actorToCancel = protectiveState.actor;
+              if (actorToCancel !== null) {
+                actorToCancel.send({
+                  type: "CANCEL_REQUESTED",
+                  reason: "POSITION_CLOSED",
+                });
+                if (!actorToCancel.getSnapshot().matches("cancelled")) {
+                  return err({
+                    code: "PROTECTIVE_ORDER_FAILURE",
+                    cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
+                  });
+                }
+                protectiveState.actor = null;
+              }
+            } else if (positionAfter > positionBefore + tolerance) {
+              const actorToIncrease = protectiveState.actor;
+              if (actorToIncrease === null) {
+                const failure = armProtectivePosition(
+                  executionCandle,
+                  previousIndicators?.atr ?? null,
+                );
+                if (failure !== null) return err(failure);
+              } else {
+                actorToIncrease.send({
+                  type: "POSITION_INCREASED",
+                  quantity: positionAfter,
+                  averageEntryPrice: portfolio.averagePrice,
+                  atr: previousIndicators?.atr ?? null,
+                  updatedAt: executionCandle.start,
+                });
+                const failure = actorFailure();
+                if (failure !== null) return err(failure);
+              }
+            } else if (positionAfter < positionBefore - tolerance) {
+              const actorToReduce = protectiveState.actor;
+              if (actorToReduce === null) {
+                return err({
+                  code: "PROTECTIVE_ORDER_FAILURE",
+                  cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
+                });
+              }
+              actorToReduce.send({
+                type: "POSITION_REDUCED",
+                quantity: positionAfter,
+                updatedAt: executionCandle.start,
+              });
+              const failure = actorFailure();
+              if (failure !== null) return err(failure);
+            }
+          }
+        }
+        pendingOrders = [];
+      }
+
+      const actorAtRange = protectiveState.actor;
+      if (actorAtRange !== null) {
+        if (!actorAtRange.getSnapshot().matches({ armed: "awaitingRange" })) {
+          return err({
+            code: "PROTECTIVE_ORDER_FAILURE",
+            cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
+          });
+        }
+        actorAtRange.send({
+          type: "CANDLE_RANGE_REPLAYED",
+          start: executionCandle.start,
+          high: executionCandle.high,
+          low: executionCandle.low,
+        });
+        const failure =
+          actorFailure() ?? executeTriggeredProtectiveExit(executionCandle);
+        if (failure !== null) return err(failure);
+      }
     }
 
     if (index < warmup - 1) {

@@ -32,6 +32,7 @@ export type {
 export { replayBacktest } from "./replay.js";
 export type {
   BacktestConfig,
+  BacktestReplayOptions,
   BacktestReplayError,
   BacktestResult,
   ProtectiveExitExecution,
