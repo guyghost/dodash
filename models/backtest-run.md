@@ -100,6 +100,8 @@ la validation des deux datasets demandés.
    Les frais d’entrée sont intégrés au prix de revient moyen. Seuls les fills
    qui réduisent une position entrent dans le win rate et le profit factor.
    Le rapport sépare PnL réalisé et latent.
+   Il restitue aussi la projection définie dans `backtest-diagnostics.md` pour
+   expliquer la transformation signal → allocation → approbation risque.
 6. Aucun état ni effet du backtest ne peut appeler l’adapter d’exécution live.
 7. Lorsqu’une politique protectrice est active, chaque position longue crée un
    acteur décrit par `protective-order.md`. Le gap est résolu avant les ordres
@@ -145,3 +147,6 @@ la validation des deux datasets demandés.
 19. Pour chaque scénario,
     `protectiveExitCount = stopLossExitCount + takeProfitExitCount` et
     `0 <= ambiguousExitCount <= stopLossExitCount`.
+20. Tout résumé de diagnostic respecte les compteurs, taux, distributions et
+    relations d’ordre de `backtest-diagnostics.md` ; une observation invalide
+    fait échouer le replay.

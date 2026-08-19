@@ -22,10 +22,15 @@ import {
   isValidProtectiveExitPolicy,
   protectiveOrderMachine,
   resolveRiskEvaluationTimestamp,
+  summarizeBacktestDiagnostics,
   type ActiveProtectiveExitPolicy,
+  type AllocationDiagnosticObservation,
+  type BacktestDiagnostics,
+  type BacktestDiagnosticsError,
   type ExecutionScheduleError,
   type ProtectiveExitPolicy,
   type ProtectiveExitResolution,
+  type SignalDiagnosticObservation,
 } from "@dodash/models";
 import { checkRisk, type RiskConfig, type RiskError } from "@dodash/risk";
 import type { StrategyError, StrategyRegistry } from "@dodash/strategies";
@@ -74,6 +79,7 @@ export interface BacktestResult {
   readonly finalPortfolio: PaperPortfolio;
   readonly processedCandles: number;
   readonly protectiveExits: readonly ProtectiveExitExecution[];
+  readonly diagnostics: BacktestDiagnostics;
 }
 
 export type BacktestReplayError =
@@ -89,7 +95,8 @@ export type BacktestReplayError =
   | { readonly code: "ALLOCATION_FAILURE"; readonly cause: AllocationError }
   | { readonly code: "RISK_FAILURE"; readonly cause: RiskError }
   | { readonly code: "BROKER_FAILURE"; readonly cause: PaperBrokerError }
-  | { readonly code: "PROTECTIVE_ORDER_FAILURE"; readonly cause: unknown };
+  | { readonly code: "PROTECTIVE_ORDER_FAILURE"; readonly cause: unknown }
+  | { readonly code: "DIAGNOSTICS_FAILURE"; readonly cause: BacktestDiagnosticsError };
 
 const validProtectivePolicy = (policy: ProtectiveExitPolicy | undefined): boolean =>
   policy === undefined ||
@@ -217,6 +224,8 @@ export const replayBacktest = async (
   const protectiveState: { actor: ProtectiveActor | null } = { actor: null };
   let protectivePositionSequence = 0;
   const protectiveExits: ProtectiveExitExecution[] = [];
+  const signalDiagnosticObservations: SignalDiagnosticObservation[] = [];
+  const allocationDiagnosticObservations: AllocationDiagnosticObservation[] = [];
 
   const actorFailure = (): BacktestReplayError | null => {
     const actor = protectiveState.actor;
@@ -483,6 +492,17 @@ export const replayBacktest = async (
     if (!signalResult.ok) {
       return err({ code: "STRATEGY_FAILURE", cause: signalResult.error });
     }
+    for (const signal of signalResult.value) {
+      signalDiagnosticObservations.push(
+        Object.freeze({
+          strategyId: signal.strategyId,
+          side: signal.side,
+          confidence: signal.confidence,
+          suggestedSize: signal.suggestedSize,
+          referencePrice: candle.close,
+        }),
+      );
+    }
 
     const allocation = allocateSignals({
       agentId: config.agentId,
@@ -497,6 +517,14 @@ export const replayBacktest = async (
     if (!allocation.ok) {
       return err({ code: "ALLOCATION_FAILURE", cause: allocation.error });
     }
+    const requestedNetQuantity = Math.abs(
+      allocation.value.netQuantities[config.productId] ?? 0,
+    );
+    const requestedNetNotional = requestedNetQuantity * candle.close;
+    const allocatedNotional = allocation.value.orders.reduce(
+      (total, order) => total + order.quantity * candle.close,
+      0,
+    );
 
     const approvedOrders: OrderIntent[] = [];
     for (const order of allocation.value.orders) {
@@ -518,6 +546,18 @@ export const replayBacktest = async (
       if (risk.value.status === "REJECTED") continue;
       approvedOrders.push(order);
     }
+    if (requestedNetQuantity > config.minNetQuantity) {
+      allocationDiagnosticObservations.push(
+        Object.freeze({
+          requestedNetNotional,
+          allocatedNotional,
+          riskApprovedNotional: approvedOrders.reduce(
+            (total, order) => total + order.quantity * candle.close,
+            0,
+          ),
+        }),
+      );
+    }
     pendingOrders = Object.freeze(approvedOrders);
 
     equityCurve.push(
@@ -529,6 +569,13 @@ export const replayBacktest = async (
     previousIndicators = indicatorResult.value;
   }
 
+  const diagnostics = summarizeBacktestDiagnostics(
+    signalDiagnosticObservations,
+    allocationDiagnosticObservations,
+  );
+  if (!diagnostics.ok) {
+    return err({ code: "DIAGNOSTICS_FAILURE", cause: diagnostics.error });
+  }
   const metrics = calculateMetrics(equityCurve, trades, config.initialCapital);
   return ok(
     Object.freeze({
@@ -539,6 +586,7 @@ export const replayBacktest = async (
       finalPortfolio: Object.freeze({ ...portfolio }),
       processedCandles: validated.value.length,
       protectiveExits: Object.freeze(protectiveExits),
+      diagnostics: diagnostics.value,
     }),
   );
 };

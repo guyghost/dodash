@@ -310,6 +310,17 @@ describe("backtest suite", () => {
       ),
     ).toBe(true);
     expect(first.value.config.targetSignalNotional).toBe(1_000);
+    expect(
+      first.value.scenarios.every(
+        (scenario) =>
+          scenario.diagnostics.signals.byStrategy.length ===
+            scenario.strategyIds.length,
+      ),
+    ).toBe(true);
+    expect(
+      first.value.scenarios.find((scenario) => scenario.id === "ensemble")
+        ?.diagnostics.signals.byStrategy.map(({ strategyId }) => strategyId),
+    ).toEqual(["breakout", "ema-cross", "rsi-reversion"]);
   });
 
   it("refuse un notionnel cible invalide", async () => {

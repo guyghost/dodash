@@ -1,4 +1,18 @@
 export { backtestRunMachine } from "./backtest-run.machine.js";
+export { summarizeBacktestDiagnostics } from "./backtest-diagnostics.js";
+export type {
+  AllocationDiagnosticObservation,
+  AllocationDiagnostics,
+  BacktestDiagnostics,
+  BacktestDiagnosticsError,
+  BacktestDiagnosticsErrorCode,
+  BacktestDiagnosticsResult,
+  DiagnosticSignalSide,
+  NumericDistribution,
+  SignalDiagnosticObservation,
+  SignalDiagnostics,
+  StrategySignalDiagnostics,
+} from "./backtest-diagnostics.types.js";
 export type {
   BacktestError,
   BacktestErrorCode,

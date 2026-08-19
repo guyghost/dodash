@@ -253,6 +253,27 @@ describe("replayBacktest", () => {
     expect(result.value.trades.length).toBeGreaterThan(0);
     expect(result.value.equityCurve).toHaveLength(candles.length);
     expect(Number.isFinite(result.value.metrics.pnl)).toBe(true);
+    expect(result.value.diagnostics.signals.byStrategy).toEqual([
+      expect.objectContaining({
+        strategyId: "flip",
+        evaluationCount: 5,
+        activeSignalCount: 5,
+        buySignalCount: 3,
+        sellSignalCount: 2,
+        activeSignalRate: 1,
+      }),
+    ]);
+    expect(
+      result.value.diagnostics.signals.byStrategy[0]?.requestedNotional.median,
+    ).toBeCloseTo(10.4, 10);
+    expect(result.value.diagnostics.allocation).toMatchObject({
+      opportunityCount: 5,
+      cappedCount: 0,
+      capRate: 0,
+      riskEvaluationCount: 5,
+      riskRejectedCount: 0,
+      riskRejectionRate: 0,
+    });
   });
 
   it("exécute une décision uniquement à l’ouverture de la bougie suivante", async () => {

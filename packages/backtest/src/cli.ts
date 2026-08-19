@@ -12,6 +12,10 @@ import { runModeledBacktest } from "./modeled-run.js";
 import type { BacktestSuiteConfig } from "./suite.js";
 
 const percent = (value: number): string => `${(value * 100).toFixed(2)}%`;
+const diagnosticValue = (value: number | null): string =>
+  value === null ? "n/a" : value.toFixed(2);
+const diagnosticPercent = (value: number | null): string =>
+  value === null ? "n/a" : `${(value * 100).toFixed(4)}%`;
 
 const main = async (): Promise<void> => {
   const options = parseBacktestCliOptions(process.argv.slice(2));
@@ -92,8 +96,13 @@ const main = async (): Promise<void> => {
   );
   for (const scenario of result.value.report.scenarios) {
     console.log(
-      `${scenario.id}: return=${percent(scenario.metrics.totalReturn)} excess=${percent(scenario.excessReturn)} drawdown=${percent(scenario.metrics.maxDrawdown)} trades=${scenario.tradeCount} stops=${scenario.stopLossExitCount} takes=${scenario.takeProfitExitCount} ambiguous=${scenario.ambiguousExitCount}`,
+      `${scenario.id}: return=${percent(scenario.metrics.totalReturn)} excess=${percent(scenario.excessReturn)} drawdown=${percent(scenario.metrics.maxDrawdown)} trades=${scenario.tradeCount} stops=${scenario.stopLossExitCount} takes=${scenario.takeProfitExitCount} ambiguous=${scenario.ambiguousExitCount} cap=${percent(scenario.diagnostics.allocation.capRate)} risk-reject=${percent(scenario.diagnostics.allocation.riskRejectionRate)}`,
     );
+    for (const signal of scenario.diagnostics.signals.byStrategy) {
+      console.log(
+        `  ${signal.strategyId}: active=${signal.activeSignalCount}/${signal.evaluationCount} confidence-p50=${diagnosticPercent(signal.confidence.median)} confidence-p95=${diagnosticPercent(signal.confidence.p95)} requested-p50=${diagnosticValue(signal.requestedNotional.median)} requested-p95=${diagnosticValue(signal.requestedNotional.p95)}`,
+      );
+    }
   }
   console.log(`Report: ${outputPath}`);
 };

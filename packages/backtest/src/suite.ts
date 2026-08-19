@@ -2,6 +2,7 @@ import { createOrderIntent, err, ok, type Result } from "@dodash/domain";
 import type { IndicatorConfig } from "@dodash/indicators-prolog";
 import {
   summarizeProtectiveExits,
+  type BacktestDiagnostics,
   type ProtectiveExitPolicy,
 } from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
@@ -58,6 +59,7 @@ export interface BacktestScenarioSummary {
   readonly stopLossExitCount: number;
   readonly takeProfitExitCount: number;
   readonly ambiguousExitCount: number;
+  readonly diagnostics: BacktestDiagnostics;
 }
 
 export interface BacktestSuiteReport {
@@ -260,6 +262,7 @@ export const runBacktestSuite = async (
         finalPortfolio: replay.value.finalPortfolio,
         excessReturn: replay.value.metrics.totalReturn - benchmark.totalReturn,
         ...protectiveExitCounts,
+        diagnostics: replay.value.diagnostics,
       }),
     );
   }

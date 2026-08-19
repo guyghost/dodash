@@ -52,6 +52,12 @@ exactement une fois à `STOP_LOSS` ou `TAKE_PROFIT`, tandis que
 `AMBIGUOUS_STOP_FIRST` contribue aussi au sous-compteur ambigu. La somme des deux
 catégories égale le total protecteur et l’ambiguïté ne peut excéder les stops.
 
+Le diagnostic d’exposition est revu séparément dans
+`backtest-diagnostics.review.md`. Il conserve le grain des signaux avant
+compensation et celui des opportunités nettes après compensation, distingue
+faible confiance, plafond d’allocation et rejet risque, et ne présente jamais un
+notionnel au close comme un fill observé.
+
 La résolution multi-timeframe est revue dans `execution-resolution.review.md`.
 La série fine n’est jamais une seconde série de décision : elle ne peut produire
 que les événements `CANDLE_OPENED` et `CANDLE_RANGE_REPLAYED` d’un acteur
