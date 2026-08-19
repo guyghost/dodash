@@ -20,6 +20,15 @@ export type {
   DashboardSessionEvent,
   DashboardSessionInput,
 } from "./dashboard-session.types.js";
+export { createExecutionSchedule } from "./execution-resolution.js";
+export type {
+  ExecutionCandle,
+  ExecutionSchedule,
+  ExecutionScheduleBucket,
+  ExecutionScheduleError,
+  ExecutionScheduleErrorCode,
+  ExecutionScheduleResult,
+} from "./execution-resolution.types.js";
 export { protectiveOrderMachine } from "./protective-order.machine.js";
 export {
   createProtectiveOrderPlan,
