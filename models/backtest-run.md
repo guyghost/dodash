@@ -157,3 +157,6 @@ la validation des deux datasets demandés.
 23. Toute confirmation cross-actifs respecte
     `confidence-calibration-confirmation.md` ; un invariant violé invalide la
     preuve et ne peut être transformé en verdict négatif valide.
+24. Toute confirmation de queue respecte
+    `confidence-calibration-tail-confirmation.md` ; elle étend la confirmation
+    médiane sans en réinterpréter rétroactivement le verdict.

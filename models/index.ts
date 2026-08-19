@@ -12,6 +12,15 @@ export type {
   ConfidenceCalibrationConfirmationRunInvariant,
 } from "./confidence-calibration-confirmation.js";
 export {
+  assessConfidenceCalibrationTailConfirmation,
+  CONFIDENCE_CALIBRATION_TAIL_POLICY,
+} from "./confidence-calibration-tail-confirmation.js";
+export type {
+  ConfidenceCalibrationTailConfirmationAssessment,
+  ConfidenceCalibrationTailConfirmationFailureReason,
+  ConfidenceCalibrationTailConfirmationResult,
+} from "./confidence-calibration-tail-confirmation.js";
+export {
   calibrateConfidence,
   CONFIDENCE_CALIBRATION_PROFILES,
   isConfidenceCalibrationProfile,

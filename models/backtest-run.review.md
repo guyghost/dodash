@@ -69,6 +69,11 @@ La confirmation externe est revue dans
 seuils restent figés ; une preuve manquante ou un changement des signaux/RSI est
 une erreur d'évidence, pas une réfutation exploitable.
 
+La confirmation de queue est revue dans
+`confidence-calibration-tail-confirmation.review.md`. Ses plafonds absolu et
+relatif sont figés avant les nouveaux datasets ; un dépassement peut réfuter la
+queue mais ne modifie pas le verdict médian historique.
+
 La résolution multi-timeframe est revue dans `execution-resolution.review.md`.
 La série fine n’est jamais une seconde série de décision : elle ne peut produire
 que les événements `CANDLE_OPENED` et `CANDLE_RANGE_REPLAYED` d’un acteur
