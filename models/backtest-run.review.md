@@ -30,6 +30,15 @@ métrique ni classement ne déclenche `LIVE_TRADING_ENABLED`, ne démarre l’Ag
 ou ne crée un ordre. Erreurs, retries et annulation restent pilotés par la
 machine XState ; le LLM ne décide d’aucune transition.
 
+Le sizing comparatif est revu comme un cœur pur. Une valeur cible ou un prix
+nul, négatif, infini ou `NaN`, ainsi qu’une quantité calculée non finie ou nulle,
+est refusé. `HOLD` reste nul ; un signal actif est converti au prix primaire
+visible, puis seulement pondéré par la confiance et borné par l’allocator. Les
+ventes restent plafonnées à la position Spot et les achats au cash. Dans
+l’ensemble, plusieurs signaux peuvent s’additionner ou se compenser, mais le cap
+de décision reste souverain. Ainsi deux actifs de prix très différents partent
+du même budget de signal sans prétendre garantir le même fill notionnel.
+
 La politique protectrice est revue séparément dans
 `protective-order.review.md`. Le mode `NONE` est le chemin de compatibilité et
 doit rester identique aux rapports existants. Les modes actifs rendent explicite
@@ -38,19 +47,26 @@ l’ordre entre trigger et ordre de stratégie, le réarmement après ajout et
 l’annulation après clôture. Aucun high/low ne peut déclencher un bracket qui
 n’était pas armé avant la phase correspondante.
 
+Le résumé ne mélange plus les causes protectrices : chaque résolution contribue
+exactement une fois à `STOP_LOSS` ou `TAKE_PROFIT`, tandis que
+`AMBIGUOUS_STOP_FIRST` contribue aussi au sous-compteur ambigu. La somme des deux
+catégories égale le total protecteur et l’ambiguïté ne peut excéder les stops.
+
 La résolution multi-timeframe est revue dans `execution-resolution.review.md`.
 La série fine n’est jamais une seconde série de décision : elle ne peut produire
 que les événements `CANDLE_OPENED` et `CANDLE_RANGE_REPLAYED` d’un acteur
 protecteur déjà gouverné par le modèle. Alignement, couverture et agrégation
 sont validés avant replay ; toute incohérence est terminale et sans retry.
 
-L’entrée CLI couvre les combinaisons nominales et invalides : compatibilité
-historique sans option, résolution strictement plus fine à ratio entier,
+L’entrée CLI couvre les combinaisons nominales et invalides : notionnel par
+défaut ou explicite strictement positif, résolution strictement plus fine à ratio entier,
 politique `FIXED_BPS` avec deux seuils valides, seuil manquant, seuil fourni avec
 `NONE`, timeframe égal ou plus grossier et ratio non entier. Le parseur reste un
 cœur pur ; le chargement Coinbase et l’écriture du rapport restent dans le shell.
 Le séparateur initial `--` des lanceurs de scripts est accepté sans élargir la
 grammaire : un séparateur répété ou placé au milieu des options est rejeté.
+Le notionnel est toujours encodé dans l’identité et le chemin du run : modifier
+le budget de signal ne peut ni écraser ni usurper un artefact legacy.
 
 La provenance secondaire ne crée ni nouvel état ni transition implicite. La
 garde de `HISTORICAL_DATA_READY` accepte uniquement une paire secondaire absente

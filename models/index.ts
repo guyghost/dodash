@@ -38,15 +38,18 @@ export {
   isValidProtectiveExitPolicy,
   resolveProtectiveOpen,
   resolveProtectiveRange,
+  summarizeProtectiveExits,
 } from "./protective-order.js";
 export type {
   ActiveProtectiveExitPolicy,
   CreateProtectiveOrderPlanInput,
   ProtectiveCancelReason,
   ProtectiveExitKind,
+  ProtectiveExitCounts,
   ProtectiveExitPolicy,
   ProtectiveExitReason,
   ProtectiveExitResolution,
+  ProtectiveExitSummaryInput,
   ProtectiveNoTrigger,
   ProtectiveOpen,
   ProtectiveOrderContext,
@@ -59,6 +62,12 @@ export type {
   ProtectiveResolution,
   ProtectiveResult,
 } from "./protective-order.types.js";
+export { resolveTargetSignalQuantity } from "./signal-sizing.js";
+export type {
+  SignalSizingError,
+  SignalSizingErrorCode,
+  SignalSizingResult,
+} from "./signal-sizing.types.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
 export type {
   ControlPermissions,

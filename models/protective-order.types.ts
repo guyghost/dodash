@@ -40,6 +40,18 @@ export interface ProtectiveExitResolution {
   readonly triggeredAt: number;
 }
 
+export interface ProtectiveExitSummaryInput {
+  readonly kind: ProtectiveExitKind;
+  readonly reason: ProtectiveExitReason;
+}
+
+export interface ProtectiveExitCounts {
+  readonly protectiveExitCount: number;
+  readonly stopLossExitCount: number;
+  readonly takeProfitExitCount: number;
+  readonly ambiguousExitCount: number;
+}
+
 export interface ProtectiveNoTrigger {
   readonly status: "NOT_TRIGGERED";
 }

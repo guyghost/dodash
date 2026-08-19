@@ -49,7 +49,7 @@ const main = async (): Promise<void> => {
     initialCapital: 10_000,
     maxDecisionNotional: 2_000,
     minNetQuantity: 0.000_001,
-    baseSize: 0.01,
+    targetSignalNotional: options.value.targetSignalNotional,
     indicators: DEFAULT_INDICATOR_CONFIG,
     risk: Object.freeze({
       maxOrderNotional: 2_000,
@@ -86,12 +86,13 @@ const main = async (): Promise<void> => {
     console.log(`Execution dataset: ${executionDataset.datasetId}`);
   }
   console.log(`Protective exit: ${options.value.protectiveExit.mode}`);
+  console.log(`Target signal notional: ${options.value.targetSignalNotional}`);
   console.log(
     `Benchmark buy-and-hold: ${percent(result.value.report.benchmark.totalReturn)}`,
   );
   for (const scenario of result.value.report.scenarios) {
     console.log(
-      `${scenario.id}: return=${percent(scenario.metrics.totalReturn)} excess=${percent(scenario.excessReturn)} drawdown=${percent(scenario.metrics.maxDrawdown)} trades=${scenario.tradeCount}`,
+      `${scenario.id}: return=${percent(scenario.metrics.totalReturn)} excess=${percent(scenario.excessReturn)} drawdown=${percent(scenario.metrics.maxDrawdown)} trades=${scenario.tradeCount} stops=${scenario.stopLossExitCount} takes=${scenario.takeProfitExitCount} ambiguous=${scenario.ambiguousExitCount}`,
     );
   }
   console.log(`Report: ${outputPath}`);

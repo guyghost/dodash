@@ -1,6 +1,9 @@
 import { createOrderIntent, err, ok, type Result } from "@dodash/domain";
 import type { IndicatorConfig } from "@dodash/indicators-prolog";
-import type { ProtectiveExitPolicy } from "@dodash/models";
+import {
+  summarizeProtectiveExits,
+  type ProtectiveExitPolicy,
+} from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
 import {
   createBreakoutStrategy,
@@ -19,6 +22,7 @@ import {
 } from "./paper-broker.js";
 import { prepareBacktestIndicators } from "./prepared-indicators.js";
 import { replayBacktest } from "./replay.js";
+import { withTargetSignalNotional } from "./target-notional-strategy.js";
 
 export interface BacktestSuiteConfig {
   readonly runId: string;
@@ -26,7 +30,7 @@ export interface BacktestSuiteConfig {
   readonly initialCapital: number;
   readonly maxDecisionNotional: number;
   readonly minNetQuantity: number;
-  readonly baseSize: number;
+  readonly targetSignalNotional: number;
   readonly indicators: IndicatorConfig;
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
@@ -51,6 +55,9 @@ export interface BacktestScenarioSummary {
   readonly finalPortfolio: PaperPortfolio;
   readonly excessReturn: number;
   readonly protectiveExitCount: number;
+  readonly stopLossExitCount: number;
+  readonly takeProfitExitCount: number;
+  readonly ambiguousExitCount: number;
 }
 
 export interface BacktestSuiteReport {
@@ -84,8 +91,8 @@ const validConfig = (config: BacktestSuiteConfig): boolean =>
   config.maxDecisionNotional > 0 &&
   Number.isFinite(config.minNetQuantity) &&
   config.minNetQuantity >= 0 &&
-  Number.isFinite(config.baseSize) &&
-  config.baseSize > 0;
+  Number.isFinite(config.targetSignalNotional) &&
+  config.targetSignalNotional > 0;
 
 const compatibleExecutionDataset = (
   primary: HistoricalDataset,
@@ -107,16 +114,24 @@ const datasetMetadata = (
 
 const strategiesById = (
   config: BacktestSuiteConfig,
-): Readonly<Record<string, Strategy>> =>
-  Object.freeze({
-    "rsi-reversion": createRsiReversionStrategy({
+): Readonly<Record<string, Strategy>> => {
+  const size = (strategy: Strategy): Strategy =>
+    withTargetSignalNotional(strategy, config.targetSignalNotional);
+  return Object.freeze({
+    "rsi-reversion": size(createRsiReversionStrategy({
       oversold: 30,
       overbought: 70,
-      baseSize: config.baseSize,
-    }),
-    "ema-cross": createEmaCrossStrategy({ baseSize: config.baseSize }),
-    breakout: createBreakoutStrategy({ lookback: 20, baseSize: config.baseSize }),
+      baseSize: config.targetSignalNotional,
+    })),
+    "ema-cross": size(createEmaCrossStrategy({
+      baseSize: config.targetSignalNotional,
+    })),
+    breakout: size(createBreakoutStrategy({
+      lookback: 20,
+      baseSize: config.targetSignalNotional,
+    })),
   });
+};
 
 const benchmarkBuyAndHold = (
   dataset: HistoricalDataset,
@@ -233,6 +248,9 @@ export const runBacktestSuite = async (
         cause: replay.error,
       });
     }
+    const protectiveExitCounts = summarizeProtectiveExits(
+      replay.value.protectiveExits,
+    );
     scenarios.push(
       Object.freeze({
         id: definition.id,
@@ -241,7 +259,7 @@ export const runBacktestSuite = async (
         metrics: replay.value.metrics,
         finalPortfolio: replay.value.finalPortfolio,
         excessReturn: replay.value.metrics.totalReturn - benchmark.totalReturn,
-        protectiveExitCount: replay.value.protectiveExits.length,
+        ...protectiveExitCounts,
       }),
     );
   }

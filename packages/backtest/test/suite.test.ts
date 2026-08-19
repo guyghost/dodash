@@ -35,7 +35,7 @@ const suiteFixture = () => {
     initialCapital: 10_000,
     maxDecisionNotional: 2_000,
     minNetQuantity: 0.000_001,
-    baseSize: 0.01,
+    targetSignalNotional: 1_000,
     indicators: DEFAULT_INDICATOR_CONFIG,
     risk: {
       maxOrderNotional: 2_000,
@@ -301,5 +301,28 @@ describe("backtest suite", () => {
     expect(first.value.scenarios.every((scenario) => Number.isFinite(scenario.excessReturn))).toBe(
       true,
     );
+    expect(
+      first.value.scenarios.every(
+        (scenario) =>
+          scenario.protectiveExitCount ===
+            scenario.stopLossExitCount + scenario.takeProfitExitCount &&
+          scenario.ambiguousExitCount <= scenario.stopLossExitCount,
+      ),
+    ).toBe(true);
+    expect(first.value.config.targetSignalNotional).toBe(1_000);
+  });
+
+  it("refuse un notionnel cible invalide", async () => {
+    const { dataset, config } = suiteFixture();
+
+    const result = await backtest.runBacktestSuite(dataset, {
+      ...config,
+      targetSignalNotional: 0,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "INVALID_SUITE_CONFIG" },
+    });
   });
 });

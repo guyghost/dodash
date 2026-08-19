@@ -47,6 +47,7 @@ export interface BacktestCliOptions {
   readonly productId: ProductId;
   readonly timeframe: Timeframe;
   readonly executionTimeframe: Timeframe | null;
+  readonly targetSignalNotional: number;
   readonly startAt: number;
   readonly endAt: number;
   readonly outputPath: string;
@@ -62,6 +63,8 @@ export type BacktestCliOptionsError = { readonly code: "INVALID_CLI_OPTIONS" };
 
 export const createBacktestRunId = (options: BacktestCliOptions): string => {
   const manifestParts: readonly (string | number)[] = [
+    "notional",
+    options.targetSignalNotional,
     ...(options.executionTimeframe === null
       ? []
       : ["exec", options.executionTimeframe]),
@@ -101,6 +104,7 @@ export const parseBacktestCliOptions = (
     "--product",
     "--timeframe",
     "--execution-timeframe",
+    "--target-signal-notional",
     "--protective-exit",
     "--stop-loss-bps",
     "--take-profit-bps",
@@ -167,6 +171,13 @@ export const parseBacktestCliOptions = (
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
 
+  const targetSignalNotional = Number(
+    values.get("--target-signal-notional") ?? "1000",
+  );
+  if (!Number.isFinite(targetSignalNotional) || targetSignalNotional <= 0) {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+
   const latestClosedBoundary = Math.floor(now / duration) * duration;
   const startAt = values.has("--start")
     ? parseUtcDate(values.get("--start") as string)
@@ -189,17 +200,19 @@ export const parseBacktestCliOptions = (
   }
   const executionSuffix =
     executionTimeframe === null ? "" : `-exec-${executionTimeframe}`;
+  const notionalSuffix = `-notional-${targetSignalNotional}`;
   const protectiveSuffix =
     protectiveExit.mode === "NONE"
       ? ""
       : `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`;
   const outputPath = values.get("--output") ??
-    `.artifacts/backtests/${product.value}-${timeframeRaw}${executionSuffix}${protectiveSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
+    `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${protectiveSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
   return ok(
     Object.freeze({
       productId: product.value,
       timeframe: timeframeRaw,
       executionTimeframe,
+      targetSignalNotional,
       startAt,
       endAt,
       outputPath,

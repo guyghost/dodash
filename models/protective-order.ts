@@ -2,12 +2,33 @@ import type {
   ActiveProtectiveExitPolicy,
   CreateProtectiveOrderPlanInput,
   ProtectiveExitResolution,
+  ProtectiveExitCounts,
+  ProtectiveExitSummaryInput,
   ProtectiveOpen,
   ProtectiveOrderPlan,
   ProtectiveRange,
   ProtectiveResolution,
   ProtectiveResult,
 } from "./protective-order.types.js";
+
+export const summarizeProtectiveExits = (
+  exits: readonly ProtectiveExitSummaryInput[],
+): ProtectiveExitCounts => {
+  let stopLossExitCount = 0;
+  let takeProfitExitCount = 0;
+  let ambiguousExitCount = 0;
+  for (const exit of exits) {
+    if (exit.kind === "STOP_LOSS") stopLossExitCount += 1;
+    else takeProfitExitCount += 1;
+    if (exit.reason === "AMBIGUOUS_STOP_FIRST") ambiguousExitCount += 1;
+  }
+  return Object.freeze({
+    protectiveExitCount: stopLossExitCount + takeProfitExitCount,
+    stopLossExitCount,
+    takeProfitExitCount,
+    ambiguousExitCount,
+  });
+};
 
 const ok = <T>(value: T): ProtectiveResult<T> =>
   Object.freeze({ ok: true as const, value });

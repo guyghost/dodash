@@ -20,14 +20,15 @@ describe("backtest CLI options", () => {
     expect(result.value.productId).toBe("BTC-USD");
     expect(result.value.timeframe).toBe("ONE_DAY");
     expect(result.value.executionTimeframe).toBeNull();
+    expect(result.value.targetSignalNotional).toBe(1_000);
     expect(result.value.protectiveExit).toEqual({ mode: "NONE" });
     expect(result.value.startAt).toBe(Date.UTC(2025, 7, 18));
     expect(result.value.endAt).toBe(Date.UTC(2026, 7, 18));
     expect(result.value.outputPath).toBe(
-      ".artifacts/backtests/BTC-USD-ONE_DAY-2025-08-18-2026-08-18.json",
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-2025-08-18-2026-08-18.json",
     );
     expect(backtest.createBacktestRunId(result.value)).toBe(
-      "bt:BTC-USD:ONE_DAY:1755475200000:1787011200000",
+      "bt:BTC-USD:ONE_DAY:notional:1000:1755475200000:1787011200000",
     );
   });
 
@@ -62,6 +63,8 @@ describe("backtest CLI options", () => {
   it("fige une résolution fine et un bracket fixe dans le manifeste", () => {
     const result = backtest.parseBacktestCliOptions(
       [
+        "--target-signal-notional",
+        "750.5",
         "--timeframe",
         "ONE_DAY",
         "--execution-timeframe",
@@ -83,18 +86,31 @@ describe("backtest CLI options", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.executionTimeframe).toBe("SIX_HOUR");
+    expect(result.value.targetSignalNotional).toBe(750.5);
     expect(result.value.protectiveExit).toEqual({
       mode: "FIXED_BPS",
       stopLossBps: 150,
       takeProfitBps: 300,
     });
     expect(result.value.outputPath).toBe(
-      ".artifacts/backtests/BTC-USD-ONE_DAY-exec-SIX_HOUR-fixed-150-300-2025-01-01-2026-01-01.json",
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-750.5-exec-SIX_HOUR-fixed-150-300-2025-01-01-2026-01-01.json",
     );
     expect(backtest.createBacktestRunId(result.value)).toBe(
-      "bt:BTC-USD:ONE_DAY:exec:SIX_HOUR:protective:FIXED_BPS:150:300:1735689600000:1767225600000",
+      "bt:BTC-USD:ONE_DAY:notional:750.5:exec:SIX_HOUR:protective:FIXED_BPS:150:300:1735689600000:1767225600000",
     );
   });
+
+  it.each(["0", "-1", "NaN", "Infinity"])(
+    "refuse le notionnel cible invalide %s",
+    (value) => {
+      expect(
+        backtest.parseBacktestCliOptions(
+          ["--target-signal-notional", value],
+          Date.UTC(2026, 7, 18),
+        ),
+      ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    },
+  );
 
   it("refuse une résolution égale ou plus grossière", () => {
     expect(
