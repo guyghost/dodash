@@ -20,6 +20,33 @@ export type {
   DashboardSessionEvent,
   DashboardSessionInput,
 } from "./dashboard-session.types.js";
+export { protectiveOrderMachine } from "./protective-order.machine.js";
+export {
+  createProtectiveOrderPlan,
+  isValidProtectiveExitPolicy,
+  resolveProtectiveOpen,
+  resolveProtectiveRange,
+} from "./protective-order.js";
+export type {
+  ActiveProtectiveExitPolicy,
+  CreateProtectiveOrderPlanInput,
+  ProtectiveCancelReason,
+  ProtectiveExitKind,
+  ProtectiveExitPolicy,
+  ProtectiveExitReason,
+  ProtectiveExitResolution,
+  ProtectiveNoTrigger,
+  ProtectiveOpen,
+  ProtectiveOrderContext,
+  ProtectiveOrderError,
+  ProtectiveOrderErrorCode,
+  ProtectiveOrderEvent,
+  ProtectiveOrderInput,
+  ProtectiveOrderPlan,
+  ProtectiveRange,
+  ProtectiveResolution,
+  ProtectiveResult,
+} from "./protective-order.types.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
 export type {
   ControlPermissions,
