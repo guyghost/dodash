@@ -93,9 +93,16 @@ const readStartBody = async (request: Request): Promise<Uint8Array> => {
   return bytes;
 };
 
-const hasUnexpectedBody = (request: Request): boolean => {
+const hasUnexpectedBody = async (request: Request): Promise<boolean> => {
   const declared = Number(request.headers.get("content-length"));
-  return request.body !== null || (Number.isFinite(declared) && declared > 0);
+  if (Number.isFinite(declared) && declared > 0) return true;
+  if (request.body === null) return false;
+  try {
+    await readBoundedBody(request.body, request.headers.get("content-length"), 0);
+    return false;
+  } catch {
+    return true;
+  }
 };
 
 const forwardResponse = async (response: Response): Promise<Response> => {
@@ -157,7 +164,7 @@ export const handleDashboardApiRequest = async (
         ? error("REQUEST_TOO_LARGE", 413)
         : error("INVALID_REQUEST", 400);
     }
-  } else if (hasUnexpectedBody(request)) {
+  } else if (await hasUnexpectedBody(request)) {
     await request.body?.cancel("body forbidden");
     return error("UNEXPECTED_BODY", 400);
   }

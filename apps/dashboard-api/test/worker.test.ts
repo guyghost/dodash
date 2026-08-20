@@ -111,6 +111,23 @@ describe("dashboard Agent proxy", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("accepts an explicitly streamed but empty command body", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.method).toBe("POST");
+      expect(upstream.body).toBeNull();
+      return Response.json({ ok: true });
+    });
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc/tick", {
+        method: "POST",
+        body: new Uint8Array(),
+      }),
+      createEnv(fetcher),
+    );
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it("rejects invalid, oversized, or unexpected bodies before the effect", async () => {
     const env = createEnv();
     const responses = await Promise.all([
