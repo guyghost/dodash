@@ -100,7 +100,7 @@ const parseJson = <T>(raw: string): T | null => {
 export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   override initialState = INITIAL_AGENT_STATE;
 
-  override async onStart(): Promise<void> {
+  private ensureTradingPersistenceSchema(): void {
     this.sql`
       CREATE TABLE IF NOT EXISTS dodash_cycles (
         cycle_id TEXT PRIMARY KEY,
@@ -125,6 +125,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         updated_at INTEGER NOT NULL
       )
     `;
+  }
+
+  override async onStart(): Promise<void> {
+    this.ensureTradingPersistenceSchema();
 
     if (this.state.enabled && this.state.configuration !== null) {
       await this.ensureIntervalSchedule(this.state.configuration.intervalSeconds);
@@ -148,6 +152,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     configurationInput: unknown,
     permissions: ControlPermissions,
   ): Promise<AgentCommandResult> {
+    this.ensureTradingPersistenceSchema();
     const configuration = parseAgentConfiguration(configurationInput);
     if (!configuration.ok) {
       return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
@@ -228,6 +233,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   async resetAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
+    this.ensureTradingPersistenceSchema();
     if (this.state.machine === null || this.state.configuration === null) {
       return { ok: false, error: { code: "NOT_CONFIGURED" } };
     }
@@ -248,6 +254,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   async runNow(): Promise<AgentCommandResult> {
+    this.ensureTradingPersistenceSchema();
     if (this.state.configuration === null || this.state.machine === null) {
       return { ok: false, error: { code: "NOT_CONFIGURED" } };
     }
@@ -256,6 +263,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   async scheduledTick(): Promise<void> {
+    this.ensureTradingPersistenceSchema();
     if (!this.state.enabled) return;
     await this.runCurrent(true);
   }
@@ -265,6 +273,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   listRecentCycles(limit = 50): readonly Record<string, unknown>[] {
+    this.ensureTradingPersistenceSchema();
     const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
     return this.sql<Record<string, string | number | null>>`
       SELECT cycle_id, triggered_at, completed_at, phase, outcome,
@@ -276,6 +285,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   private async control(event: TradingCycleEvent): Promise<AgentCommandResult> {
+    this.ensureTradingPersistenceSchema();
     if (this.state.machine === null || this.state.configuration === null) {
       return { ok: false, error: { code: "NOT_CONFIGURED" } };
     }
