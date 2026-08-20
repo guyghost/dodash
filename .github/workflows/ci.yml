@@ -33,10 +33,8 @@ jobs:
           node-version: 22
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-      - run: pnpm test
-      - run: pnpm build
-      - run: pnpm --filter @dodash/dashboard test:sites
+      - name: Run the pre-push quality gate
+        run: pnpm verify:push
 
   deploy-workers:
     if: github.event_name == 'workflow_dispatch' && inputs.deploy_workers

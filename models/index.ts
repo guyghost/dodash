@@ -136,6 +136,15 @@ export type {
   ExecutionScheduleResult,
 } from "./execution-resolution.types.js";
 export { protectiveOrderMachine } from "./protective-order.machine.js";
+export { qualityGateMachine } from "./quality-gate.machine.js";
+export type {
+  QualityGateContext,
+  QualityGateError,
+  QualityGateErrorCode,
+  QualityGateEvent,
+  QualityGateSource,
+  QualityGateStage,
+} from "./quality-gate.types.js";
 export {
   createProtectiveOrderPlan,
   isValidProtectiveExitPolicy,
