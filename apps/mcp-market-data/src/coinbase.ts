@@ -135,7 +135,7 @@ export class CoinbaseMarketData {
       1,
       Math.min(3_600, Math.floor(options.cacheTtlSeconds)),
     );
-    this.#fetch = options.fetch ?? fetch;
+    this.#fetch = (options.fetch ?? globalThis.fetch).bind(globalThis);
     this.#now = options.now ?? Date.now;
   }
 

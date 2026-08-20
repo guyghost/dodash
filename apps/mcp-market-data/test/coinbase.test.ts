@@ -54,6 +54,32 @@ const createClient = (
 };
 
 describe("CoinbaseMarketData", () => {
+  it("invokes the platform fetch with its required global receiver", async () => {
+    const platformFetch = vi.fn(function (this: unknown) {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      return Promise.resolve(Response.json(candleResponse));
+    });
+    vi.stubGlobal("fetch", platformFetch);
+    try {
+      const client = new CoinbaseMarketData({
+        baseUrl: "https://api.coinbase.test/",
+        cache: new MemoryCache(),
+        cacheTtlSeconds: 30,
+        now: () => 180_000,
+      });
+      const result = await client.getCandles({
+        productId: "BTC-USD",
+        timeframe: "ONE_MINUTE",
+        limit: 2,
+        end: 180,
+      });
+      expect(result.ok).toBe(true);
+      expect(platformFetch).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("validates and sorts candles before returning them", async () => {
     const { client, fetchMock } = createClient(
       Response.json(candleResponse),
