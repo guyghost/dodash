@@ -198,6 +198,8 @@ export class CoinbaseMarketData {
         JSON.stringify({
           event: "coinbase_candles_fetch_failed",
           errorType: caught instanceof Error ? caught.name : "UnknownError",
+          errorMessage:
+            caught instanceof Error ? caught.message.slice(0, 200) : undefined,
         }),
       );
       return err({ code: "NETWORK_UNAVAILABLE" });
