@@ -86,11 +86,23 @@ export const fetchMarketSnapshot = async (
         end: Math.floor(closedBoundary / 1_000),
       }),
     });
-  } catch {
+  } catch (caught) {
+    console.warn(
+      JSON.stringify({
+        event: "market_service_fetch_failed",
+        errorType: caught instanceof Error ? caught.name : "UnknownError",
+      }),
+    );
     return err(error("NETWORK_UNAVAILABLE", true));
   }
 
   if (!response.ok) {
+    console.warn(
+      JSON.stringify({
+        event: "market_service_response_failed",
+        status: response.status,
+      }),
+    );
     await response.body?.cancel().catch(() => undefined);
     return err(
       response.status === 429

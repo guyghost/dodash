@@ -193,11 +193,23 @@ export class CoinbaseMarketData {
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(10_000),
       });
-    } catch {
+    } catch (caught) {
+      console.warn(
+        JSON.stringify({
+          event: "coinbase_candles_fetch_failed",
+          errorType: caught instanceof Error ? caught.name : "UnknownError",
+        }),
+      );
       return err({ code: "NETWORK_UNAVAILABLE" });
     }
 
     if (!response.ok) {
+      console.warn(
+        JSON.stringify({
+          event: "coinbase_candles_response_failed",
+          status: response.status,
+        }),
+      );
       const error = responseError(response);
       await response.body?.cancel().catch(() => undefined);
       return err(error);
