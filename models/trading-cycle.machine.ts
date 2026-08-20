@@ -48,6 +48,10 @@ export const tradingCycleMachine = setup({
       event.permissions.canControl,
     isNewAlarm: ({ context, event }) =>
       event.type === "ALARM_FIRED" && event.cycleId !== context.cycleId,
+    isDuplicateDecisionCandle: ({ context, event }) =>
+      event.type === "MARKET_DATA_READY" &&
+      context.lastDecisionCandleClosedAt !== null &&
+      event.candleClosedAt <= context.lastDecisionCandleClosedAt,
     isFreshMarketData: ({ context, event }) =>
       event.type === "MARKET_DATA_READY" &&
       context.triggeredAt !== null &&
@@ -162,6 +166,15 @@ export const tradingCycleMachine = setup({
       }),
     }),
     recordMarketData: assign(({ context, event }) =>
+      event.type === "MARKET_DATA_READY"
+        ? {
+            marketSnapshotId: event.snapshotId,
+            lastDecisionCandleClosedAt: event.candleClosedAt,
+            attempts: { ...context.attempts, marketData: 0 },
+          }
+        : {},
+    ),
+    recordDuplicateMarketData: assign(({ context, event }) =>
       event.type === "MARKET_DATA_READY"
         ? {
             marketSnapshotId: event.snapshotId,
@@ -326,6 +339,7 @@ export const tradingCycleMachine = setup({
     triggeredAt: null,
     nextWakeAt: null,
     marketSnapshotId: null,
+    lastDecisionCandleClosedAt: input.lastDecisionCandleClosedAt ?? null,
     indicatorsId: null,
     signalsId: null,
     decisionId: null,
@@ -426,6 +440,11 @@ export const tradingCycleMachine = setup({
       on: {
         MARKET_DATA_READY: [
           {
+            guard: "isDuplicateDecisionCandle",
+            target: "persisting",
+            actions: ["recordDuplicateMarketData", "markNoAction"],
+          },
+          {
             guard: "isFreshMarketData",
             target: "computingIndicators",
             actions: "recordMarketData",
@@ -437,7 +456,7 @@ export const tradingCycleMachine = setup({
           },
           {
             target: "persisting",
-            actions: ["recordStaleMarketData", "markFailed"],
+            actions: ["recordStaleMarketData", "markNoAction"],
           },
         ],
         MARKET_DATA_FAILED: [

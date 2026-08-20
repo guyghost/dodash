@@ -35,12 +35,23 @@ export const createTradingMachineSession = (
   input: TradingCycleInput,
   persisted?: PersistedTradingMachine,
 ): TradingMachineSession => {
-  const restored =
+  const normalizedPersisted =
     persisted === undefined
       ? undefined
+      : {
+          ...persisted,
+          context: {
+            ...persisted.context,
+            lastDecisionCandleClosedAt:
+              persisted.context.lastDecisionCandleClosedAt ?? null,
+          },
+        };
+  const restored =
+    normalizedPersisted === undefined
+      ? undefined
       : tradingCycleMachine.resolveState({
-          value: persisted.value,
-          context: structuredClone(persisted.context),
+          value: normalizedPersisted.value,
+          context: structuredClone(normalizedPersisted.context),
         });
   const actor = createActor(tradingCycleMachine, {
     input,

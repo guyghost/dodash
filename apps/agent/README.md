@@ -46,5 +46,15 @@ requête utilise un JWT ES256 neuf, valable au plus deux minutes. Ni la clé ni 
 JWT ne sont persistés dans l’état Agent ou SQLite.
 
 Une configuration de démarrage peut alors choisir `"executionMode": "live"`.
-Les intentions restent idempotentes grâce à `client_order_id`; un timeout ou une
-réponse ambiguë déclenche une réconciliation avant toute décision terminale.
+L'admission live n'accepte que `GRT-USD`, `MANA-USD`, `XTZ-USD` et `ZEC-USD`
+avec la politique figée `CONFIDENCE_POWER_THIRD_2026_08` : décision quotidienne,
+trois stratégies, notionnel de signal 1 000 USD, ordre et décision plafonnés à
+600 USD, capital virtuel 10 000 USD et perte journalière 1 000 USD par Agent.
+Une divergence est refusée avant le démarrage de la machine.
+
+Les intentions restent idempotentes grâce à `client_order_id`; un timeout ou
+une réponse ambiguë déclenche une réconciliation avant toute décision
+terminale. Les quantités sont arrondies vers le bas aux incréments Coinbase
+pré-enregistrés. Le portefeuille et les limites sont virtuels par Agent : ils
+n'agrègent pas les positions externes du compte. Les stop/take calculés restent
+indicatifs et aucun ordre protecteur Coinbase n'est attaché par cette version.

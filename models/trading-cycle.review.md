@@ -8,7 +8,8 @@
 | Permission de contrôle absente | reste `stopped` avec code fermé | Couvert |
 | Permission de trading absente | reste `stopped` avec code fermé | Couvert |
 | Alarme dupliquée | reste `waiting` | Couvert |
-| Données périmées | retry borné puis persistance d’échec | Couvert |
+| Données périmées | retry borné puis `NO_ACTION`, persistance et replanification | Couvert |
+| Bougie déjà traitée | persistance `NO_ACTION`, aucun calcul ni ordre | Couvert par la politique live |
 | Signal HOLD / aucune allocation | persistance `NO_ACTION`, aucun ordre | Couvert |
 | Risque refusé | persistance `RISK_REJECTED`, aucun ordre | Couvert |
 | JWT invalide/expiré | régénération bornée | Couvert |
@@ -27,10 +28,11 @@
 - Les adapters ne choisissent jamais la prochaine phase ; ils traduisent une réponse externe en événement typé.
 - La machine ne calcule ni indicateur, ni signal, ni sizing. Elle appelle le cœur pur et consomme son résultat.
 - Une exécution réessayée réutilise le `clientOrderId` déjà persisté et fabrique un nouveau JWT.
+- Une clôture de bougie enregistrée n'est jamais évaluée une seconde fois,
+  même après un reset ou un redémarrage live.
 - La réconciliation interroge Coinbase par identifiant client avant toute nouvelle tentative.
 - `failed` et `halted` n’ont aucune transition automatique.
 
 ## Avis de revue
 
 Le modèle couvre le chemin nominal, les erreurs externes et déterministes, les annulations, les retries bornés, les permissions et les états terminaux. Les transitions sont pilotées uniquement par des événements discriminés ; aucun texte libre ni sortie LLM n’est accepté comme événement de contrôle.
-

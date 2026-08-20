@@ -98,6 +98,40 @@ describe("tradingCycleMachine", () => {
     expect(actor.getSnapshot().context.lastError?.code).toBe("DUPLICATE_ALARM");
   });
 
+  it("persiste NO_ACTION sans recalculer une bougie déjà traitée", () => {
+    const actor = createTradingActor();
+    send(
+      actor,
+      { type: "START_REQUESTED", permissions: permission },
+      { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
+      { type: "ALARM_FIRED", cycleId: "cycle-1", triggeredAt: 10_000 },
+      {
+        type: "MARKET_DATA_READY",
+        snapshotId: "market-1",
+        candleClosedAt: 9_500,
+      },
+      { type: "INDICATORS_COMPUTED", indicatorsId: "indicators-1" },
+      { type: "STRATEGIES_EVALUATED", signalsId: "signals-1" },
+      {
+        type: "ALLOCATION_COMPLETED",
+        decisionId: "decision-1",
+        orderCount: 0,
+      },
+      { type: "PERSIST_SUCCEEDED" },
+      { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 20_000 },
+      { type: "ALARM_FIRED", cycleId: "cycle-2", triggeredAt: 20_000 },
+      {
+        type: "MARKET_DATA_READY",
+        snapshotId: "market-1-again",
+        candleClosedAt: 9_500,
+      },
+    );
+
+    expect(actor.getSnapshot().value).toBe("persisting");
+    expect(actor.getSnapshot().context.outcome).toBe("NO_ACTION");
+    expect(actor.getSnapshot().context.indicatorsId).toBeNull();
+  });
+
   it("rejette les données périmées avant tout calcul", () => {
     const actor = createTradingActor();
     send(
@@ -117,6 +151,43 @@ describe("tradingCycleMachine", () => {
     expect(actor.getSnapshot().context.lastError?.code).toBe(
       "STALE_MARKET_DATA",
     );
+  });
+
+  it("replanifie sans calcul après épuisement des retries de fraîcheur", () => {
+    const actor = createTradingActor();
+    send(
+      actor,
+      { type: "START_REQUESTED", permissions: permission },
+      { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
+      { type: "ALARM_FIRED", cycleId: "cycle-stale", triggeredAt: 200_000 },
+    );
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      send(
+        actor,
+        {
+          type: "MARKET_DATA_READY",
+          snapshotId: `stale-${attempt}`,
+          candleClosedAt: 1,
+        },
+        { type: "RETRY_TIMER_ELAPSED" },
+      );
+    }
+    actor.send({
+      type: "MARKET_DATA_READY",
+      snapshotId: "stale-final",
+      candleClosedAt: 1,
+    });
+
+    expect(actor.getSnapshot().value).toBe("persisting");
+    expect(actor.getSnapshot().context.outcome).toBe("NO_ACTION");
+    expect(actor.getSnapshot().context.indicatorsId).toBeNull();
+
+    send(
+      actor,
+      { type: "PERSIST_SUCCEEDED" },
+      { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 300_000 },
+    );
+    expect(actor.getSnapshot().value).toBe("waiting");
   });
 
   it("persiste l’intention avant d’autoriser la soumission", () => {

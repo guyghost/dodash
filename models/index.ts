@@ -106,6 +106,11 @@ export type {
   BacktestRunInput,
 } from "./backtest-run.types.js";
 export { dashboardSessionMachine } from "./dashboard-session.machine.js";
+export { resolveDailyRiskWindow } from "./daily-risk.js";
+export type {
+  DailyRiskAssessment,
+  DailyRiskWindow,
+} from "./daily-risk.js";
 export { DASHBOARD_REMOTE_PHASES } from "./dashboard-session.types.js";
 export type {
   DashboardCommand,
@@ -167,6 +172,22 @@ export type {
   SignalSizingResult,
 } from "./signal-sizing.types.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
+export {
+  assessLiveTradingAgentIdentity,
+  assessLiveTradingPolicy,
+  liveTradingAgentName,
+  LIVE_TRADING_POLICY,
+  LIVE_TRADING_POLICY_ID,
+  LIVE_TRADING_PRODUCTS,
+} from "./live-trading-policy.js";
+export type {
+  LiveTradingAdmission,
+  LiveTradingCandidate,
+  LiveTradingIdentityAdmission,
+  LiveTradingProduct,
+  LiveTradingRiskPolicy,
+  LiveTradingSizingPolicy,
+} from "./live-trading-policy.js";
 export type {
   ControlPermissions,
   CycleOutcome,

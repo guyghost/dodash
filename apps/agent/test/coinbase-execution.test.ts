@@ -94,6 +94,39 @@ describe("Coinbase execution adapter", () => {
     });
   });
 
+  it("rounds a confirmed live product quantity down to its Coinbase base increment", async () => {
+    const grt = createProductId("GRT-USD");
+    if (!grt.ok) throw new Error("invalid GRT fixture");
+    const grtIntent = Object.freeze({
+      ...intent,
+      productId: grt.value,
+      quantity: 42.1234,
+    });
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        success: true,
+        success_response: {
+          order_id: "exchange-order-grt",
+          product_id: "GRT-USD",
+          side: "BUY",
+          client_order_id: grtIntent.clientOrderId,
+        },
+      }),
+    );
+
+    await submitCoinbaseOrder(
+      settings,
+      grtIntent,
+      authorizationFor("POST", COINBASE_CREATE_ORDER_PATH),
+      { fetch: fetchMock, now: () => NOW },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      order_configuration: { market_market_ioc: { base_size: "42.12" } },
+    });
+  });
+
   it("treats network and 5xx outcomes as unknown", async () => {
     const authorization = authorizationFor("POST", COINBASE_CREATE_ORDER_PATH);
     const network = await submitCoinbaseOrder(settings, intent, authorization, {

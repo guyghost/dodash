@@ -7,7 +7,7 @@ import {
   type OrderIntent,
   type Result,
 } from "@dodash/domain";
-import type { WorkflowError } from "@dodash/models";
+import { LIVE_TRADING_POLICY, type WorkflowError } from "@dodash/models";
 import { z } from "zod";
 
 import { readBoundedJson } from "./bounded-json.js";
@@ -246,6 +246,19 @@ const decimalString = (value: number): string => {
   return `${digits.slice(0, decimalAt)}.${digits.slice(decimalAt)}`;
 };
 
+const coinbaseBaseSize = (productId: string, quantity: number): string => {
+  const increments = LIVE_TRADING_POLICY.baseIncrements as Readonly<
+    Record<string, number>
+  >;
+  const increment = increments[productId];
+  if (increment === undefined) return decimalString(quantity);
+  const incrementString = decimalString(increment);
+  const decimals = incrementString.split(".")[1]?.length ?? 0;
+  const units = Math.floor(quantity / increment + 1e-9);
+  if (units <= 0) throw new Error("QUANTITY_BELOW_BASE_INCREMENT");
+  return (units * increment).toFixed(decimals);
+};
+
 const safeFetch = async (
   url: string,
   init: RequestInit,
@@ -299,7 +312,9 @@ export const submitCoinbaseOrder = async (
       product_id: intent.productId,
       side: intent.side,
       order_configuration: {
-        market_market_ioc: { base_size: decimalString(intent.quantity) },
+        market_market_ioc: {
+          base_size: coinbaseBaseSize(intent.productId, intent.quantity),
+        },
       },
     });
   } catch {

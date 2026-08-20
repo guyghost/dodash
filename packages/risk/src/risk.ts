@@ -24,6 +24,7 @@ export type RiskReasonCode =
   | "KILL_SWITCH_ACTIVE"
   | "DAILY_LOSS_LIMIT"
   | "COOLDOWN_ACTIVE"
+  | "SPOT_SHORT_FORBIDDEN"
   | "ORDER_NOTIONAL_LIMIT"
   | "POSITION_NOTIONAL_LIMIT"
   | "GROSS_EXPOSURE_LIMIT";
@@ -97,8 +98,13 @@ export const checkRisk = (
   }
 
   const signedQuantity = intent.side === "BUY" ? intent.quantity : -intent.quantity;
+  const projectedPositionQuantity =
+    snapshot.currentPositionQuantity + signedQuantity;
+  if (projectedPositionQuantity < -1e-12) {
+    return ok({ status: "REJECTED", reasonCode: "SPOT_SHORT_FORBIDDEN" });
+  }
   const projectedPositionNotional =
-    Math.abs(snapshot.currentPositionQuantity + signedQuantity) * snapshot.marketPrice;
+    Math.abs(projectedPositionQuantity) * snapshot.marketPrice;
   if (projectedPositionNotional > config.maxPositionNotional) {
     return ok({ status: "REJECTED", reasonCode: "POSITION_NOTIONAL_LIMIT" });
   }
@@ -130,4 +136,3 @@ export const checkRisk = (
     }),
   );
 };
-

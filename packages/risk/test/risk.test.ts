@@ -93,5 +93,17 @@ describe("checkRisk", () => {
     );
     expect(result.ok && result.value.status).toBe("APPROVED");
   });
-});
 
+  it("refuse une vente qui créerait une position short sur le spot", () => {
+    const sell = { ...intent, side: "SELL" as const };
+    const result = checkRisk(
+      sell,
+      { ...snapshot, currentPositionQuantity: 0.005 },
+      config,
+    );
+    expect(result.ok && result.value).toEqual({
+      status: "REJECTED",
+      reasonCode: "SPOT_SHORT_FORBIDDEN",
+    });
+  });
+});

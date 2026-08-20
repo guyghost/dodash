@@ -1,5 +1,6 @@
 import {
   DASHBOARD_REMOTE_PHASES,
+  LIVE_TRADING_POLICY,
   type DashboardDirectCommand,
   type DashboardError,
   type DashboardRemotePhase,
@@ -56,6 +57,21 @@ export interface StartConfiguration {
   readonly strategyIds: readonly string[];
   readonly executionMode: "paper" | "live";
 }
+
+export const createStartConfiguration = (
+  input: StartConfiguration,
+): StartConfiguration =>
+  input.executionMode === "paper"
+    ? Object.freeze({
+        ...input,
+        strategyIds: Object.freeze([...input.strategyIds]),
+      })
+    : Object.freeze({
+        productId: input.productId,
+        timeframe: LIVE_TRADING_POLICY.timeframe,
+        strategyIds: LIVE_TRADING_POLICY.strategyIds,
+        executionMode: "live" as const,
+      });
 
 export interface DashboardGateway {
   loadState(agentName: string): Promise<AgentStateView>;

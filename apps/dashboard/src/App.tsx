@@ -1,5 +1,7 @@
 import {
   dashboardSessionMachine,
+  LIVE_TRADING_POLICY,
+  LIVE_TRADING_PRODUCTS,
   type DashboardDirectCommand,
   type DashboardError,
   type DashboardRemotePhase,
@@ -9,6 +11,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import {
   DashboardRequestError,
+  createStartConfiguration,
   createHttpGateway,
   type AgentStateView,
   type CycleView,
@@ -218,12 +221,12 @@ export function App() {
 
   const issueCommand = (command: DashboardDirectCommand) => {
     if (command === "start") {
-      pendingStartRef.current = {
+      pendingStartRef.current = createStartConfiguration({
         productId,
         timeframe,
         strategyIds,
         executionMode,
-      };
+      });
     }
     actor.send({ type: "COMMAND_REQUESTED", command, permissions });
   };
@@ -234,6 +237,17 @@ export function App() {
         ? current.filter((item) => item !== strategyId)
         : [...current, strategyId],
     );
+  };
+
+  const selectExecutionMode = (mode: "paper" | "live") => {
+    setExecutionMode(mode);
+    setLiveConfirmation("");
+    if (mode !== "live") return;
+    setTimeframe(LIVE_TRADING_POLICY.timeframe);
+    setStrategyIds(LIVE_TRADING_POLICY.strategyIds);
+    if (!LIVE_TRADING_PRODUCTS.some((candidate) => candidate === productId)) {
+      setProductId("GRT-USD");
+    }
   };
 
   const busy =
@@ -555,17 +569,29 @@ export function App() {
                 <div className="start-fields">
                   <label>
                     Produit
-                    <input
-                      value={productId}
-                      onChange={(event) =>
-                        setProductId(event.target.value.toUpperCase())
-                      }
-                    />
+                    {executionMode === "live" ? (
+                      <select
+                        value={productId}
+                        onChange={(event) => setProductId(event.target.value)}
+                      >
+                        {LIVE_TRADING_PRODUCTS.map((product) => (
+                          <option key={product} value={product}>{product}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        value={productId}
+                        onChange={(event) =>
+                          setProductId(event.target.value.toUpperCase())
+                        }
+                      />
+                    )}
                   </label>
                   <label>
                     Timeframe
                     <select
                       value={timeframe}
+                      disabled={executionMode === "live"}
                       onChange={(event) => setTimeframe(event.target.value)}
                     >
                       <option value="ONE_MINUTE">1 minute</option>
@@ -579,7 +605,9 @@ export function App() {
                     <select
                       value={executionMode}
                       onChange={(event) =>
-                        setExecutionMode(event.target.value as "paper" | "live")
+                        selectExecutionMode(
+                          event.target.value as "paper" | "live",
+                        )
                       }
                     >
                       <option value="paper">Paper</option>
@@ -594,6 +622,7 @@ export function App() {
                       <input
                         type="checkbox"
                         checked={strategyIds.includes(strategy)}
+                        disabled={executionMode === "live"}
                         onChange={() => toggleStrategy(strategy)}
                       />
                       {strategy}

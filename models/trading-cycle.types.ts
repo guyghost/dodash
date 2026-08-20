@@ -84,6 +84,7 @@ export interface TradingCycleInput {
   readonly agentId: string;
   readonly strategyIds: readonly string[];
   readonly maxMarketStalenessMs?: number;
+  readonly lastDecisionCandleClosedAt?: number | null;
   readonly retryLimits?: Partial<RetryLimits>;
 }
 
@@ -95,6 +96,7 @@ export interface TradingCycleContext {
   readonly triggeredAt: number | null;
   readonly nextWakeAt: number | null;
   readonly marketSnapshotId: string | null;
+  readonly lastDecisionCandleClosedAt: number | null;
   readonly indicatorsId: string | null;
   readonly signalsId: string | null;
   readonly decisionId: string | null;

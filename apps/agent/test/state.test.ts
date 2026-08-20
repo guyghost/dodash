@@ -2,7 +2,10 @@ import type { TradingCycleContext } from "@dodash/models";
 import { describe, expect, it } from "vitest";
 
 import type { PersistedTradingMachine } from "../src/machine-session.js";
-import { resolveCycleInvocation } from "../src/state.js";
+import { parseAgentConfiguration } from "../src/configuration.js";
+import * as stateModule from "../src/state.js";
+
+const { resolveCycleInvocation } = stateModule;
 
 const context = (overrides: Partial<TradingCycleContext> = {}): TradingCycleContext => ({
   agentId: "agent-1",
@@ -12,6 +15,7 @@ const context = (overrides: Partial<TradingCycleContext> = {}): TradingCycleCont
   triggeredAt: 100,
   nextWakeAt: null,
   marketSnapshotId: null,
+  lastDecisionCandleClosedAt: null,
   indicatorsId: null,
   signalsId: null,
   decisionId: null,
@@ -73,6 +77,62 @@ describe("resolveCycleInvocation", () => {
       loadCycleId: null,
       cycleId: "cycle-old",
       triggeredAt: 100,
+    });
+  });
+});
+
+describe("live start continuity", () => {
+  const liveConfiguration = (productId: "GRT-USD" | "MANA-USD") => {
+    const result = parseAgentConfiguration({ productId, executionMode: "live" });
+    if (!result.ok) throw new Error("invalid live fixture");
+    return result.value;
+  };
+
+  const resolve = (productId: "GRT-USD" | "MANA-USD") => {
+    const exported = stateModule as Record<string, unknown>;
+    expect(typeof exported.resolveLiveStartContinuity).toBe("function");
+    if (typeof exported.resolveLiveStartContinuity !== "function") return null;
+    return (
+      exported.resolveLiveStartContinuity as (
+        current: Record<string, unknown>,
+        next: ReturnType<typeof liveConfiguration>,
+      ) => Record<string, unknown>
+    )(
+      {
+        configuration: liveConfiguration("GRT-USD"),
+        machine: machine("stopped", { lastDecisionCandleClosedAt: 123_000 }),
+        portfolio: { cash: 9_400, positionQuantity: 100, averagePrice: 0.006 },
+        dailyRiskWindow: { utcDayStart: 86_400_000, openingEquity: 10_000 },
+        dailyPnl: -540,
+        lastTradeAt: 120_000,
+        previousIndicators: null,
+        lastCycle: null,
+      },
+      liveConfiguration(productId),
+    );
+  };
+
+  it("preserves the live portfolio and decision candle for the same product", () => {
+    expect(resolve("GRT-USD")).toEqual({
+      portfolio: { cash: 9_400, positionQuantity: 100, averagePrice: 0.006 },
+      dailyRiskWindow: { utcDayStart: 86_400_000, openingEquity: 10_000 },
+      dailyPnl: -540,
+      lastTradeAt: 120_000,
+      previousIndicators: null,
+      lastCycle: null,
+      lastDecisionCandleClosedAt: 123_000,
+    });
+  });
+
+  it("starts a distinct live product from its configured capital", () => {
+    expect(resolve("MANA-USD")).toEqual({
+      portfolio: { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+      dailyRiskWindow: null,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      previousIndicators: null,
+      lastCycle: null,
+      lastDecisionCandleClosedAt: null,
     });
   });
 });

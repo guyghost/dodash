@@ -1,6 +1,7 @@
 export { calculateMetrics } from "./metrics.js";
 export type { BacktestMetrics, EquityPoint } from "./metrics.js";
 export { withConfidenceCalibration } from "./confidence-calibrated-strategy.js";
+export { withTargetSignalNotional } from "./target-notional-strategy.js";
 export { loadCoinbaseHistoricalDataset } from "./coinbase-history.js";
 export type {
   CoinbaseHistoricalError,

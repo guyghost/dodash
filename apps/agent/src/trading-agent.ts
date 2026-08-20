@@ -1,13 +1,16 @@
 import { executePaperOrder } from "@dodash/backtest";
 import { err, ok, type OrderIntent, type Result } from "@dodash/domain";
 import {
+  assessLiveTradingAgentIdentity,
   type ControlPermissions,
+  resolveDailyRiskWindow,
   type TradingCycleEvent,
   type WorkflowError,
 } from "@dodash/models";
 import { Agent } from "agents";
 
 import {
+  admitAgentConfiguration,
   parseAgentConfiguration,
   type AgentConfiguration,
 } from "./configuration.js";
@@ -27,6 +30,7 @@ import {
   INITIAL_AGENT_STATE,
   machineIsEnabled,
   resolveCycleInvocation,
+  resolveLiveStartContinuity,
   type CycleSummary,
   type TradingAgentState,
 } from "./state.js";
@@ -54,6 +58,9 @@ export type AgentCommandResult =
         readonly code:
           | "INVALID_CONFIGURATION"
           | "INVALID_STATE"
+          | "LIVE_PRODUCT_NOT_ALLOWED"
+          | "LIVE_POLICY_MISMATCH"
+          | "LIVE_AGENT_NAME_MISMATCH"
           | "LIVE_EXECUTION_UNAVAILABLE"
           | "NOT_CONFIGURED";
       };
@@ -151,6 +158,20 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       return { ok: false, error: { code: "INVALID_STATE" } };
     }
 
+    const admission = admitAgentConfiguration(configuration.value);
+    if (admission.status === "REJECTED") {
+      return { ok: false, error: { code: admission.reasonCode } };
+    }
+    if (configuration.value.executionMode === "live") {
+      const identityAdmission = assessLiveTradingAgentIdentity(
+        configuration.value.productId,
+        this.name,
+      );
+      if (identityAdmission.status === "REJECTED") {
+        return { ok: false, error: { code: identityAdmission.reasonCode } };
+      }
+    }
+
     if (
       configuration.value.executionMode === "live" &&
       !resolveCoinbaseSettings(this.env).ok
@@ -165,9 +186,17 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       await this.cancelSchedule(this.state.schedule.id);
     }
 
+    const continuity = resolveLiveStartContinuity(
+      this.state,
+      configuration.value,
+    );
+
     const session = createTradingMachineSession({
       agentId: this.name,
       strategyIds: configuration.value.strategyIds,
+      maxMarketStalenessMs: configuration.value.maxMarketStalenessMs,
+      lastDecisionCandleClosedAt:
+        continuity.lastDecisionCandleClosedAt,
     });
     session.send({ type: "START_REQUESTED", permissions });
     const machine = session.record;
@@ -175,6 +204,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
     this.setState({
       ...INITIAL_AGENT_STATE,
+      ...continuity,
       configuration: configuration.value,
       machine,
       enabled: machineIsEnabled(machine.value),
@@ -182,11 +212,6 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         this.state.schedule?.intervalSeconds === configuration.value.intervalSeconds
           ? this.state.schedule
           : null,
-      portfolio: {
-        cash: configuration.value.initialCapital,
-        positionQuantity: 0,
-        averagePrice: 0,
-      },
       updatedAt: Date.now(),
     });
 
@@ -210,6 +235,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       {
         agentId: this.name,
         strategyIds: this.state.configuration.strategyIds,
+        maxMarketStalenessMs:
+          this.state.configuration.maxMarketStalenessMs,
       },
       this.state.machine,
     );
@@ -256,6 +283,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       {
         agentId: this.name,
         strategyIds: this.state.configuration.strategyIds,
+        maxMarketStalenessMs:
+          this.state.configuration.maxMarketStalenessMs,
       },
       this.state.machine,
     );
@@ -292,6 +321,16 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       identity.loadCycleId === null
         ? null
         : this.loadArtifacts(identity.loadCycleId);
+    const knownPrice = this.state.lastCycle?.marketPrice ?? null;
+    const startingEquity =
+      this.state.portfolio.cash +
+      this.state.portfolio.positionQuantity *
+        (knownPrice ?? this.state.portfolio.averagePrice);
+    const dailyRiskAtStart = resolveDailyRiskWindow(
+      this.state.dailyRiskWindow ?? null,
+      identity.triggeredAt,
+      startingEquity,
+    );
     const result = await runTradingCycle({
       agentId: this.name,
       configuration,
@@ -299,7 +338,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       artifacts,
       previousIndicators: this.state.previousIndicators,
       portfolio: this.state.portfolio,
-      dailyPnl: this.state.dailyPnl,
+      dailyPnl: dailyRiskAtStart.dailyPnl,
       lastTradeAt: this.state.lastTradeAt,
       triggeredAt: identity.triggeredAt,
       cycleId: identity.cycleId,
@@ -310,8 +349,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     const lastPrice = result.artifacts?.market?.candles.at(-1)?.close ?? null;
     const equity =
       lastPrice === null
-        ? configuration.initialCapital + this.state.dailyPnl
+        ? startingEquity
         : result.portfolio.cash + result.portfolio.positionQuantity * lastPrice;
+    const dailyRisk = resolveDailyRiskWindow(
+      dailyRiskAtStart.window,
+      identity.triggeredAt,
+      equity,
+    );
     const executed = result.artifacts?.execution !== undefined;
     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
     this.setState({
@@ -319,7 +363,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       machine: result.machine,
       enabled: machineIsEnabled(result.machine.value),
       portfolio: result.portfolio,
-      dailyPnl: equity - configuration.initialCapital,
+      dailyRiskWindow: dailyRisk.window,
+      dailyPnl: dailyRisk.dailyPnl,
       lastTradeAt: executed
         ? result.artifacts?.triggeredAt ?? this.state.lastTradeAt
         : this.state.lastTradeAt,

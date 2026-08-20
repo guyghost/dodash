@@ -5,6 +5,11 @@ import {
 } from "@dodash/indicators-prolog";
 import { createProductId, err, ok, type ProductId, type Result, type Timeframe } from "@dodash/domain";
 import type { PaperBrokerConfig } from "@dodash/backtest";
+import {
+  assessLiveTradingPolicy,
+  LIVE_TRADING_POLICY,
+  type LiveTradingAdmission,
+} from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
 import { z } from "zod";
 
@@ -16,16 +21,26 @@ export const STRATEGY_IDS = [
 
 export type StrategyId = (typeof STRATEGY_IDS)[number];
 
+export type AgentSizingPolicy =
+  | { readonly type: "NATIVE" }
+  | {
+      readonly type: "TARGET_SIGNAL_NOTIONAL";
+      readonly targetSignalNotional: number;
+      readonly confidenceCalibration: "POWER_THIRD";
+    };
+
 export interface AgentConfiguration {
   readonly productId: ProductId;
   readonly timeframe: Timeframe;
   readonly strategyIds: readonly StrategyId[];
   readonly intervalSeconds: number;
+  readonly maxMarketStalenessMs: number;
   readonly candleLimit: number;
   readonly initialCapital: number;
   readonly maxDecisionNotional: number;
   readonly minNetQuantity: number;
   readonly executionMode: "paper" | "live";
+  readonly sizingPolicy: AgentSizingPolicy;
   readonly indicators: IndicatorConfig;
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
@@ -111,6 +126,15 @@ const brokerSchema = z.object({
   slippageBps: z.number().nonnegative().max(9_999).default(2),
 });
 
+const sizingPolicySchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("NATIVE") }),
+  z.object({
+    type: z.literal("TARGET_SIGNAL_NOTIONAL"),
+    targetSignalNotional: z.number().positive(),
+    confidenceCalibration: z.literal("POWER_THIRD"),
+  }),
+]);
+
 const inputSchema = z.object({
   productId: z.string(),
   timeframe: z
@@ -125,11 +149,13 @@ const inputSchema = z.object({
     .default("ONE_MINUTE"),
   strategyIds: z.array(z.enum(STRATEGY_IDS)).min(1).max(3).default([...STRATEGY_IDS]),
   intervalSeconds: z.number().int().min(10).max(86_400).default(60),
+  maxMarketStalenessMs: z.number().int().positive().default(90_000),
   candleLimit: z.number().int().min(2).max(350).default(200),
   initialCapital: z.number().positive().default(10_000),
   maxDecisionNotional: z.number().positive().default(2_000),
   minNetQuantity: z.number().nonnegative().default(0.000_001),
   executionMode: z.enum(["paper", "live"]).default("paper"),
+  sizingPolicy: sizingPolicySchema.default({ type: "NATIVE" }),
   indicators: indicatorSchema.default({
     ...DEFAULT_INDICATOR_CONFIG,
     returnPeriods: [...DEFAULT_INDICATOR_CONFIG.returnPeriods],
@@ -146,10 +172,34 @@ const inputSchema = z.object({
   broker: brokerSchema.default({ feeBps: 6, slippageBps: 2 }),
 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const withLivePolicyDefaults = (input: unknown): unknown => {
+  if (!isRecord(input) || input.executionMode !== "live") return input;
+  const risk = isRecord(input.risk) ? input.risk : {};
+  const sizingPolicy = isRecord(input.sizingPolicy) ? input.sizingPolicy : {};
+  return {
+    timeframe: LIVE_TRADING_POLICY.timeframe,
+    strategyIds: [...LIVE_TRADING_POLICY.strategyIds],
+    intervalSeconds: LIVE_TRADING_POLICY.intervalSeconds,
+    maxMarketStalenessMs: LIVE_TRADING_POLICY.maxMarketStalenessMs,
+    candleLimit: LIVE_TRADING_POLICY.candleLimit,
+    initialCapital: LIVE_TRADING_POLICY.initialCapital,
+    maxDecisionNotional: LIVE_TRADING_POLICY.maxDecisionNotional,
+    minNetQuantity: LIVE_TRADING_POLICY.minNetQuantity,
+    ...input,
+    // Preserve nested live defaults while allowing explicit divergences to be
+    // surfaced by the admission model rather than silently overwritten.
+    sizingPolicy: { ...LIVE_TRADING_POLICY.sizingPolicy, ...sizingPolicy },
+    risk: { ...LIVE_TRADING_POLICY.risk, ...risk },
+  };
+};
+
 export const parseAgentConfiguration = (
   input: unknown,
 ): Result<AgentConfiguration, AgentConfigurationError> => {
-  const parsed = inputSchema.safeParse(input);
+  const parsed = inputSchema.safeParse(withLivePolicyDefaults(input));
   if (!parsed.success) return err({ code: "INVALID_CONFIGURATION" });
 
   const product = createProductId(parsed.data.productId);
@@ -177,3 +227,10 @@ export const parseAgentConfiguration = (
     }),
   );
 };
+
+export const admitAgentConfiguration = (
+  configuration: AgentConfiguration,
+): LiveTradingAdmission =>
+  configuration.executionMode === "paper"
+    ? { status: "APPROVED" }
+    : assessLiveTradingPolicy(configuration);

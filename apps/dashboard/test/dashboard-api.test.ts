@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DashboardRequestError,
+  createStartConfiguration,
   createHttpGateway,
   parseAgentState,
   parseCycles,
@@ -44,6 +45,32 @@ const state = {
 };
 
 describe("dashboard API boundary", () => {
+  it("freezes a live start to the confirmed daily strategy envelope", () => {
+    expect(
+      createStartConfiguration({
+        productId: "GRT-USD",
+        timeframe: "FIVE_MINUTE",
+        strategyIds: ["rsi-reversion"],
+        executionMode: "live",
+      }),
+    ).toEqual({
+      productId: "GRT-USD",
+      timeframe: "ONE_DAY",
+      strategyIds: ["breakout", "ema-cross", "rsi-reversion"],
+      executionMode: "live",
+    });
+  });
+
+  it("preserves an explicit paper start", () => {
+    const paper = {
+      productId: "BTC-USD",
+      timeframe: "FIVE_MINUTE",
+      strategyIds: ["rsi-reversion"],
+      executionMode: "paper" as const,
+    };
+    expect(createStartConfiguration(paper)).toEqual(paper);
+  });
+
   it("projects a validated Agent state", () => {
     expect(parseAgentState(state)).toMatchObject({
       phase: "waiting",

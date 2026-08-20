@@ -205,4 +205,88 @@ describe("runTradingCycle", () => {
     expect(fixture.intents).toHaveLength(0);
     expect(fixture.persistedCycles).toBe(1);
   });
+
+  it("does not recompute or trade a decision candle already persisted", async () => {
+    const config = configuration();
+    const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 9, 8, 7, 6, 5]),
+        source: "coinbase",
+        cached: false,
+      },
+      portfolio,
+    );
+    const persisted = readyMachine("agent-1", config.strategyIds);
+    const machine = {
+      ...persisted,
+      context: {
+        ...persisted.context,
+        lastDecisionCandleClosedAt: 360_000,
+      },
+    };
+
+    const result = await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine,
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt: 420_000,
+      cycleId: "cycle-duplicate-candle",
+      triggerAlarm: true,
+      effects: fixture.effects,
+    });
+
+    expect(result.machine.context.outcome).toBe("NO_ACTION");
+    expect(result.portfolio).toEqual(portfolio);
+    expect(result.previousIndicators).toBeNull();
+    expect(fixture.intents).toHaveLength(0);
+    expect(fixture.persistedCycles).toBe(1);
+  });
+
+  it("sizes active signals from the configured target notional", async () => {
+    const config = {
+      ...configuration(),
+      sizingPolicy: {
+        type: "TARGET_SIGNAL_NOTIONAL" as const,
+        targetSignalNotional: 1_000,
+        confidenceCalibration: "POWER_THIRD" as const,
+      },
+    };
+    const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 9, 8, 7, 6, 5]),
+        source: "coinbase",
+        cached: false,
+      },
+      portfolio,
+    );
+
+    await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine: readyMachine("agent-1", config.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt: 360_000,
+      cycleId: "cycle-target-sized",
+      triggerAlarm: true,
+      effects: fixture.effects,
+    });
+
+    expect(fixture.intents).toHaveLength(1);
+    expect(fixture.intents[0]?.quantity).toBe(200);
+  });
 });

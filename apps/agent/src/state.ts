@@ -1,6 +1,10 @@
 import type { PaperPortfolio } from "@dodash/backtest";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
-import type { CycleOutcome, WorkflowError } from "@dodash/models";
+import type {
+  CycleOutcome,
+  DailyRiskWindow,
+  WorkflowError,
+} from "@dodash/models";
 
 import type { AgentConfiguration } from "./configuration.js";
 import type { PersistedTradingMachine } from "./machine-session.js";
@@ -29,6 +33,7 @@ export interface TradingAgentState {
   readonly enabled: boolean;
   readonly schedule: AgentScheduleState | null;
   readonly portfolio: PaperPortfolio;
+  readonly dailyRiskWindow: DailyRiskWindow | null;
   readonly dailyPnl: number;
   readonly lastTradeAt: number | null;
   readonly previousIndicators: IndicatorSnapshot | null;
@@ -47,12 +52,69 @@ export const INITIAL_AGENT_STATE: TradingAgentState = Object.freeze({
     positionQuantity: 0,
     averagePrice: 0,
   }),
+  dailyRiskWindow: null,
   dailyPnl: 0,
   lastTradeAt: null,
   previousIndicators: null,
   lastCycle: null,
   updatedAt: 0,
 });
+
+export interface LiveStartContinuity {
+  readonly portfolio: PaperPortfolio;
+  readonly dailyRiskWindow: DailyRiskWindow | null;
+  readonly dailyPnl: number;
+  readonly lastTradeAt: number | null;
+  readonly previousIndicators: IndicatorSnapshot | null;
+  readonly lastCycle: CycleSummary | null;
+  readonly lastDecisionCandleClosedAt: number | null;
+}
+
+type ContinuityState = Pick<
+  TradingAgentState,
+  | "configuration"
+  | "machine"
+  | "portfolio"
+  | "dailyPnl"
+  | "lastTradeAt"
+  | "previousIndicators"
+  | "lastCycle"
+> & { readonly dailyRiskWindow?: DailyRiskWindow | null };
+
+export const resolveLiveStartContinuity = (
+  current: ContinuityState,
+  next: AgentConfiguration,
+): LiveStartContinuity => {
+  const preservesLiveState =
+    current.configuration?.executionMode === "live" &&
+    next.executionMode === "live" &&
+    current.configuration.productId === next.productId;
+  if (!preservesLiveState) {
+    return Object.freeze({
+      portfolio: Object.freeze({
+        cash: next.initialCapital,
+        positionQuantity: 0,
+        averagePrice: 0,
+      }),
+      dailyRiskWindow: null,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      previousIndicators: null,
+      lastCycle: null,
+      lastDecisionCandleClosedAt: null,
+    });
+  }
+  return Object.freeze({
+    portfolio: current.portfolio,
+    dailyRiskWindow: current.dailyRiskWindow ?? null,
+    dailyPnl: current.dailyPnl,
+    lastTradeAt: current.lastTradeAt,
+    previousIndicators: current.previousIndicators,
+    lastCycle: current.lastCycle,
+    lastDecisionCandleClosedAt:
+      current.machine?.context.lastDecisionCandleClosedAt ?? null,
+  });
+};
 
 export const machineIsEnabled = (phase: string): boolean =>
   phase !== "stopped" && phase !== "failed" && phase !== "halted";
