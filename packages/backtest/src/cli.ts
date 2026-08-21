@@ -67,6 +67,9 @@ const main = async (): Promise<void> => {
     }),
     broker: Object.freeze({ feeBps: 6, slippageBps: 2 }),
     protectiveExit: options.value.protectiveExit,
+    ...(options.value.regimeFilter === null
+      ? {}
+      : { regimeFilter: options.value.regimeFilter }),
   });
   const result = await runModeledBacktest(
     dataset.value,
@@ -91,6 +94,14 @@ const main = async (): Promise<void> => {
     console.log(`Execution dataset: ${executionDataset.datasetId}`);
   }
   console.log(`Protective exit: ${options.value.protectiveExit.mode}`);
+  if (options.value.regimeFilter !== null) {
+    const policy = options.value.regimeFilter;
+    console.log(
+      `Regime filter: EMA_THRESHOLD bps=${policy.thresholdBps} minObservations=${policy.minObservations} confirmationCount=${policy.confirmationCount}`,
+    );
+  } else {
+    console.log("Regime filter: NONE");
+  }
   console.log(`Target signal notional: ${options.value.targetSignalNotional}`);
   console.log(`Confidence calibration: ${options.value.confidenceCalibration}`);
   console.log(
@@ -100,6 +111,11 @@ const main = async (): Promise<void> => {
     console.log(
       `${scenario.id}: return=${percent(scenario.metrics.totalReturn)} excess=${percent(scenario.excessReturn)} drawdown=${percent(scenario.metrics.maxDrawdown)} trades=${scenario.tradeCount} stops=${scenario.stopLossExitCount} takes=${scenario.takeProfitExitCount} ambiguous=${scenario.ambiguousExitCount} cap=${percent(scenario.diagnostics.allocation.capRate)} risk-reject=${percent(scenario.diagnostics.allocation.riskRejectionRate)}`,
     );
+    if (scenario.regimeGating !== null) {
+      console.log(
+        `  regime-gating: final=${scenario.regimeGating.finalRegime ?? "warmingUp"} observations=${scenario.regimeGating.observationsFed} passed=${scenario.regimeGating.signalsPassed} filtered=${scenario.regimeGating.signalsFiltered}`,
+      );
+    }
     for (const signal of scenario.diagnostics.signals.byStrategy) {
       console.log(
         `  ${signal.strategyId}: active=${signal.activeSignalCount}/${signal.evaluationCount} confidence-p50=${diagnosticPercent(signal.confidence.median)} confidence-p95=${diagnosticPercent(signal.confidence.p95)} requested-p50=${diagnosticValue(signal.requestedNotional.median)} requested-p95=${diagnosticValue(signal.requestedNotional.p95)}`,

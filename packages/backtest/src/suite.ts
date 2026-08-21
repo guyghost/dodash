@@ -7,6 +7,7 @@ import {
   type BacktestDiagnostics,
   type ConfidenceCalibrationProfile,
   type ProtectiveExitPolicy,
+  type RegimeFilterPolicy,
 } from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
 import {
@@ -27,6 +28,7 @@ import {
 } from "./paper-broker.js";
 import { prepareBacktestIndicators } from "./prepared-indicators.js";
 import { replayBacktest } from "./replay.js";
+import type { RegimeGatingSummary } from "./replay.js";
 import { withTargetSignalNotional } from "./target-notional-strategy.js";
 
 export interface BacktestSuiteConfig {
@@ -41,6 +43,7 @@ export interface BacktestSuiteConfig {
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
   readonly protectiveExit?: ProtectiveExitPolicy;
+  readonly regimeFilter?: RegimeFilterPolicy;
 }
 
 export interface BacktestSuiteOptions {
@@ -67,6 +70,7 @@ export interface BacktestScenarioSummary {
   readonly ambiguousExitCount: number;
   readonly diagnostics: BacktestDiagnostics;
   readonly diagnosticSamples: BacktestDiagnosticSamples | null;
+  readonly regimeGating: RegimeGatingSummary | null;
 }
 
 export interface BacktestSuiteReport {
@@ -261,6 +265,9 @@ export const runBacktestSuite = async (
         ...(config.protectiveExit === undefined
           ? {}
           : { protectiveExit: config.protectiveExit }),
+        ...(config.regimeFilter === undefined
+          ? {}
+          : { regimeFilter: config.regimeFilter }),
       },
       preparedIndicators.value,
       {
@@ -291,6 +298,7 @@ export const runBacktestSuite = async (
         ...protectiveExitCounts,
         diagnostics: replay.value.diagnostics,
         diagnosticSamples: replay.value.diagnosticSamples,
+        regimeGating: replay.value.regimeGating,
       }),
     );
   }

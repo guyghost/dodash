@@ -21,8 +21,11 @@ import {
   createExecutionSchedule,
   extractBacktestDiagnosticSamples,
   isValidProtectiveExitPolicy,
+  isValidRegimeFilterPolicy,
   protectiveOrderMachine,
+  resolveRegimePermission,
   resolveRiskEvaluationTimestamp,
+  regimeFilterMachine,
   summarizeBacktestDiagnostics,
   type ActiveProtectiveExitPolicy,
   type AllocationDiagnosticObservation,
@@ -32,6 +35,8 @@ import {
   type ExecutionScheduleError,
   type ProtectiveExitPolicy,
   type ProtectiveExitResolution,
+  type RegimeFilterPolicy,
+  type RegimeKind,
   type SignalDiagnosticObservation,
 } from "@dodash/models";
 import { checkRisk, type RiskConfig, type RiskError } from "@dodash/risk";
@@ -60,6 +65,16 @@ export interface BacktestConfig {
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
   readonly protectiveExit?: ProtectiveExitPolicy;
+  readonly regimeFilter?: RegimeFilterPolicy;
+}
+
+export interface RegimeGatingSummary {
+  readonly policy: RegimeFilterPolicy;
+  readonly finalRegime: RegimeKind | null;
+  readonly observationsFed: number;
+  readonly signalsPassed: number;
+  readonly signalsFiltered: number;
+  readonly deniedByStrategy: Readonly<Record<string, number>>;
 }
 
 export interface BacktestReplayOptions {
@@ -84,6 +99,7 @@ export interface BacktestResult {
   readonly protectiveExits: readonly ProtectiveExitExecution[];
   readonly diagnostics: BacktestDiagnostics;
   readonly diagnosticSamples: BacktestDiagnosticSamples | null;
+  readonly regimeGating: RegimeGatingSummary | null;
 }
 
 export type BacktestReplayError =
@@ -100,6 +116,7 @@ export type BacktestReplayError =
   | { readonly code: "RISK_FAILURE"; readonly cause: RiskError }
   | { readonly code: "BROKER_FAILURE"; readonly cause: PaperBrokerError }
   | { readonly code: "PROTECTIVE_ORDER_FAILURE"; readonly cause: unknown }
+  | { readonly code: "REGIME_FILTER_FAILURE" }
   | { readonly code: "DIAGNOSTICS_FAILURE"; readonly cause: BacktestDiagnosticsError };
 
 const validProtectivePolicy = (policy: ProtectiveExitPolicy | undefined): boolean =>
@@ -116,7 +133,9 @@ const validConfig = (config: BacktestConfig): boolean =>
   config.maxDecisionNotional > 0 &&
   Number.isFinite(config.minNetQuantity) &&
   config.minNetQuantity >= 0 &&
-  validProtectivePolicy(config.protectiveExit);
+  validProtectivePolicy(config.protectiveExit) &&
+  (config.regimeFilter === undefined ||
+    isValidRegimeFilterPolicy(config.regimeFilter));
 
 const validPreparedIndicators = (
   prepared: PreparedBacktestIndicators,
@@ -230,6 +249,22 @@ export const replayBacktest = async (
   const protectiveExits: ProtectiveExitExecution[] = [];
   const signalDiagnosticObservations: SignalDiagnosticObservation[] = [];
   const allocationDiagnosticObservations: AllocationDiagnosticObservation[] = [];
+  const regimePolicy = config.regimeFilter ?? null;
+  const regimeActor =
+    regimePolicy === null
+      ? null
+      : createActor(regimeFilterMachine, { input: { policy: regimePolicy } });
+  regimeActor?.start();
+  const regimeCounters = {
+    observationsFed: 0,
+    signalsPassed: 0,
+    signalsFiltered: 0,
+  };
+  const deniedByStrategy = new Map<string, number>();
+  const countDenied = (strategyId: string): void => {
+    regimeCounters.signalsFiltered += 1;
+    deniedByStrategy.set(strategyId, (deniedByStrategy.get(strategyId) ?? 0) + 1);
+  };
 
   const actorFailure = (): BacktestReplayError | null => {
     const actor = protectiveState.actor;
@@ -508,11 +543,51 @@ export const replayBacktest = async (
       );
     }
 
+    let gatedSignals = signalResult.value;
+    if (regimeActor !== null) {
+      const indicatorSnapshot = indicatorResult.value;
+      if (
+        Number.isFinite(indicatorSnapshot.emaFast) &&
+        indicatorSnapshot.emaFast > 0 &&
+        Number.isFinite(indicatorSnapshot.emaSlow) &&
+        indicatorSnapshot.emaSlow > 0
+      ) {
+        regimeActor.send({
+          type: "CANDLE_CLOSED",
+          observation: {
+            start: indicatorSnapshot.candleClosedAt,
+            emaFast: indicatorSnapshot.emaFast,
+            emaSlow: indicatorSnapshot.emaSlow,
+          },
+        });
+        regimeCounters.observationsFed += 1;
+      }
+      const regimeSnapshot = regimeActor.getSnapshot();
+      if (regimeSnapshot.matches("failed")) {
+        return err({ code: "REGIME_FILTER_FAILURE" });
+      }
+      const activeRegime = regimeSnapshot.context.regime;
+      const allowedSignals = [];
+      for (const signal of signalResult.value) {
+        const permission =
+          activeRegime === null
+            ? null
+            : resolveRegimePermission(activeRegime, signal.strategyId);
+        if (permission !== null && permission.ok && permission.value) {
+          allowedSignals.push(signal);
+          regimeCounters.signalsPassed += 1;
+        } else {
+          countDenied(signal.strategyId);
+        }
+      }
+      gatedSignals = allowedSignals;
+    }
+
     const allocation = allocateSignals({
       agentId: config.agentId,
       cycleId: `${config.runId}:${candle.start}`,
       decisionId: `${config.runId}:decision:${candle.start}`,
-      signals: signalResult.value,
+      signals: gatedSignals,
       marketPrices: { [config.productId]: candle.close },
       capitalAvailable: Math.max(0, portfolio.cash),
       maxDecisionNotional: config.maxDecisionNotional,
@@ -590,6 +665,22 @@ export const replayBacktest = async (
       cause: diagnosticSamples.error,
     });
   }
+  const regimeGating: RegimeGatingSummary | null =
+    regimeActor === null
+      ? null
+      : Object.freeze({
+          policy: regimePolicy as RegimeFilterPolicy,
+          finalRegime: regimeActor.getSnapshot().context.regime ?? null,
+          observationsFed: regimeCounters.observationsFed,
+          signalsPassed: regimeCounters.signalsPassed,
+          signalsFiltered: regimeCounters.signalsFiltered,
+          deniedByStrategy: Object.freeze(
+            Object.fromEntries(deniedByStrategy),
+          ),
+        });
+  if (regimeActor !== null && regimeActor.getSnapshot().status !== "done") {
+    regimeActor.send({ type: "STOP_REQUESTED", reason: "SESSION_END" });
+  }
   const metrics = calculateMetrics(equityCurve, trades, config.initialCapital);
   return ok(
     Object.freeze({
@@ -603,6 +694,7 @@ export const replayBacktest = async (
       diagnostics: diagnostics.value,
       diagnosticSamples:
         diagnosticSamples === null ? null : diagnosticSamples.value,
+      regimeGating,
     }),
   );
 };

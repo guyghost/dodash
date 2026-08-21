@@ -9,8 +9,10 @@ import {
 import {
   isValidProtectiveExitPolicy,
   isConfidenceCalibrationProfile,
+  isValidRegimeFilterPolicy,
   type ConfidenceCalibrationProfile,
   type ProtectiveExitPolicy,
+  type RegimeFilterPolicy,
 } from "@dodash/models";
 
 const timeframeMs: Readonly<Record<Timeframe, number>> = Object.freeze({
@@ -55,6 +57,7 @@ export interface BacktestCliOptions {
   readonly endAt: number;
   readonly outputPath: string;
   readonly protectiveExit: BacktestCliProtectiveExitPolicy;
+  readonly regimeFilter: RegimeFilterPolicy | null;
 }
 
 export type BacktestCliProtectiveExitPolicy = Extract<
@@ -81,6 +84,14 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
           options.protectiveExit.mode,
           options.protectiveExit.stopLossBps,
           options.protectiveExit.takeProfitBps,
+        ]),
+    ...(options.regimeFilter === null
+      ? []
+      : [
+          "regime",
+          options.regimeFilter.thresholdBps,
+          options.regimeFilter.minObservations,
+          options.regimeFilter.confirmationCount,
         ]),
   ];
   return [
@@ -115,6 +126,10 @@ export const parseBacktestCliOptions = (
     "--protective-exit",
     "--stop-loss-bps",
     "--take-profit-bps",
+    "--regime-filter",
+    "--regime-threshold-bps",
+    "--regime-min-observations",
+    "--regime-confirmation-count",
     "--start",
     "--end",
     "--output",
@@ -178,6 +193,32 @@ export const parseBacktestCliOptions = (
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
 
+  const regimeMode = values.get("--regime-filter") ?? "NONE";
+  const regimeOptional = [
+    values.get("--regime-threshold-bps"),
+    values.get("--regime-min-observations"),
+    values.get("--regime-confirmation-count"),
+  ];
+  let regimeFilter: RegimeFilterPolicy | null;
+  if (regimeMode === "NONE") {
+    if (regimeOptional.some((value) => value !== undefined)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    regimeFilter = null;
+  } else if (regimeMode === "EMA_THRESHOLD") {
+    const candidate = Object.freeze({
+      thresholdBps: Number(regimeOptional[0] ?? "100"),
+      minObservations: Number(regimeOptional[1] ?? "5"),
+      confirmationCount: Number(regimeOptional[2] ?? "3"),
+    });
+    if (!isValidRegimeFilterPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    regimeFilter = candidate;
+  } else {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+
   const targetSignalNotional = Number(
     values.get("--target-signal-notional") ?? "1000",
   );
@@ -222,8 +263,12 @@ export const parseBacktestCliOptions = (
     protectiveExit.mode === "NONE"
       ? ""
       : `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`;
+  const regimeSuffix =
+    regimeFilter === null
+      ? ""
+      : `-regime-${regimeFilter.thresholdBps}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`;
   const outputPath = values.get("--output") ??
-    `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${confidenceSuffix}${protectiveSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
+    `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${confidenceSuffix}${protectiveSuffix}${regimeSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
   return ok(
     Object.freeze({
       productId: product.value,
@@ -235,6 +280,7 @@ export const parseBacktestCliOptions = (
       endAt,
       outputPath,
       protectiveExit,
+      regimeFilter,
     }),
   );
 };
