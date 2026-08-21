@@ -180,6 +180,27 @@ export type {
   SignalSizingErrorCode,
   SignalSizingResult,
 } from "./signal-sizing.types.js";
+export { regimeFilterMachine } from "./regime-filter.machine.js";
+export {
+  classifyRegimeObservation,
+  DEFAULT_REGIME_PERMISSIONS,
+  isValidRegimeFilterPolicy,
+  isValidRegimeObservation,
+  resolveRegimePermission,
+} from "./regime-filter.js";
+export type {
+  RegimeFilterContext,
+  RegimeFilterError,
+  RegimeFilterErrorCode,
+  RegimeFilterEvent,
+  RegimeFilterInput,
+  RegimeFilterPolicy,
+  RegimeFilterStopReason,
+  RegimeKind,
+  RegimeObservation,
+  RegimePermissions,
+  RegimePermissionsResult,
+} from "./regime-filter.types.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
 export {
   assessLiveTradingAgentIdentity,
