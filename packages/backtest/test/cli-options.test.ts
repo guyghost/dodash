@@ -244,4 +244,67 @@ describe("backtest CLI options", () => {
       ),
     ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
   });
+
+  it("fige le seuil BEARISH asymétrique dans le manifeste (RA5)", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--regime-filter",
+        "EMA_THRESHOLD",
+        "--regime-bearish-threshold-bps",
+        "200",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.regimeFilter).toEqual({
+      mode: "EMA_THRESHOLD",
+      thresholdBps: 100,
+      bearishThresholdBps: 200,
+      minObservations: 5,
+      confirmationCount: 3,
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-regime-100-200-5-3-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:regime:100:200:5:3:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse --regime-bearish-threshold-bps hors EMA_THRESHOLD (RA7)", () => {
+    expect(
+      backtest.parseBacktestCliOptions(
+        ["--regime-bearish-threshold-bps", "200"],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--regime-filter",
+          "EMA_SLOPE",
+          "--regime-bearish-threshold-bps",
+          "200",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--regime-filter",
+          "EMA_THRESHOLD",
+          "--regime-bearish-threshold-bps",
+          "0",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
 });

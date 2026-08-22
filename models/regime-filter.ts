@@ -31,7 +31,11 @@ export const isValidRegimeFilterPolicy = (
 ): boolean => {
   if (!hasValidSharedFields(policy)) return false;
   if (policy.mode === "EMA_THRESHOLD") {
-    return isValidBps(policy.thresholdBps);
+    return (
+      isValidBps(policy.thresholdBps) &&
+      (policy.bearishThresholdBps === undefined ||
+        isValidBps(policy.bearishThresholdBps))
+    );
   }
   if (policy.mode === "EMA_SLOPE") {
     return (
@@ -75,7 +79,12 @@ export const classifyRegimeObservation = (
   if (policy.mode === "EMA_THRESHOLD") {
     const threshold = 1 + policy.thresholdBps / 10_000;
     if (observation.emaFast > observation.emaSlow * threshold) return "BULLISH";
-    if (observation.emaFast < observation.emaSlow * (2 - threshold)) {
+    // Asymétrie v3 : sans `bearishThresholdBps`, `bearThreshold` est
+    // numériquement égal à `threshold` → classification bit-identique v1
+    // (inégalités strictes conservées, sans epsilon).
+    const bearThreshold =
+      1 + (policy.bearishThresholdBps ?? policy.thresholdBps) / 10_000;
+    if (observation.emaFast < observation.emaSlow * (2 - bearThreshold)) {
       return "BEARISH";
     }
     return "RANGE";

@@ -104,6 +104,9 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
         ? [
             "regime",
             options.regimeFilter.thresholdBps,
+            ...(options.regimeFilter.bearishThresholdBps === undefined
+              ? []
+              : [options.regimeFilter.bearishThresholdBps]),
             options.regimeFilter.minObservations,
             options.regimeFilter.confirmationCount,
           ]
@@ -150,6 +153,7 @@ export const parseBacktestCliOptions = (
     "--take-profit-bps",
     "--regime-filter",
     "--regime-threshold-bps",
+    "--regime-bearish-threshold-bps",
     "--regime-min-observations",
     "--regime-confirmation-count",
     "--regime-slope-bps",
@@ -241,6 +245,7 @@ export const parseBacktestCliOptions = (
   const regimeMinObservations = values.get("--regime-min-observations");
   const regimeConfirmationCount = values.get("--regime-confirmation-count");
   const regimeThresholdFlag = values.get("--regime-threshold-bps");
+  const regimeBearishThresholdFlag = values.get("--regime-bearish-threshold-bps");
   const regimeSlopeBpsFlag = values.get("--regime-slope-bps");
   const regimeSlopePeriodsFlag = values.get("--regime-slope-periods");
   const regimeSharedFlags = [regimeMinObservations, regimeConfirmationCount];
@@ -249,6 +254,7 @@ export const parseBacktestCliOptions = (
     if (
       regimeSharedFlags.some((value) => value !== undefined) ||
       regimeThresholdFlag !== undefined ||
+      regimeBearishThresholdFlag !== undefined ||
       regimeSlopeBpsFlag !== undefined ||
       regimeSlopePeriodsFlag !== undefined
     ) {
@@ -262,6 +268,9 @@ export const parseBacktestCliOptions = (
     const candidate = Object.freeze({
       mode: "EMA_THRESHOLD" as const,
       thresholdBps: Number(regimeThresholdFlag ?? "100"),
+      ...(regimeBearishThresholdFlag === undefined
+        ? {}
+        : { bearishThresholdBps: Number(regimeBearishThresholdFlag) }),
       minObservations: Number(regimeMinObservations ?? "5"),
       confirmationCount: Number(regimeConfirmationCount ?? "3"),
     });
@@ -270,7 +279,7 @@ export const parseBacktestCliOptions = (
     }
     regimeFilter = candidate;
   } else if (regimeMode === "EMA_SLOPE") {
-    if (regimeThresholdFlag !== undefined) {
+    if (regimeThresholdFlag !== undefined || regimeBearishThresholdFlag !== undefined) {
       return err({ code: "INVALID_CLI_OPTIONS" });
     }
     const candidate = Object.freeze({
@@ -341,7 +350,7 @@ export const parseBacktestCliOptions = (
     regimeFilter === null
       ? ""
       : regimeFilter.mode === "EMA_THRESHOLD"
-        ? `-regime-${regimeFilter.thresholdBps}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`
+        ? `-regime-${regimeFilter.thresholdBps}${regimeFilter.bearishThresholdBps === undefined ? "" : `-${regimeFilter.bearishThresholdBps}`}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`
         : `-regime-slope-${regimeFilter.slopeThresholdBps}-${regimeFilter.slopePeriods}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`;
   const outputPath = values.get("--output") ??
     `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${confidenceSuffix}${protectiveSuffix}${regimeSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;

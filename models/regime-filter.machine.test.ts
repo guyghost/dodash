@@ -74,6 +74,59 @@ describe("regime filter core", () => {
     ).toBe(false);
   });
 
+  it("RA2 : valide bearishThresholdBps seulement s'il est présent et borné", () => {
+    expect(
+      isValidRegimeFilterPolicy({ ...policy, bearishThresholdBps: 200 }),
+    ).toBe(true);
+    expect(
+      isValidRegimeFilterPolicy({ ...policy, bearishThresholdBps: 0 }),
+    ).toBe(false);
+    expect(
+      isValidRegimeFilterPolicy({ ...policy, bearishThresholdBps: 10_000 }),
+    ).toBe(false);
+    expect(
+      isValidRegimeFilterPolicy({ ...policy, bearishThresholdBps: 1.5 }),
+    ).toBe(true);
+  });
+
+  it("RA3 : l'asymétrie ne touche que la branche BEARISH", () => {
+    // gap ≈ −150 bps : BEARISH au seuil symétrique 100, RANGE au seuil bear 200.
+    const dip = { start: 1, emaFast: 98.5, emaSlow: 100 } as const;
+    const asymmetric = { ...policy, bearishThresholdBps: 200 };
+    expect(classifyRegimeObservation(policy, dip)).toBe("BEARISH");
+    expect(classifyRegimeObservation(asymmetric, dip)).toBe("RANGE");
+    // gap ≈ −300 bps : BEARISH dans les deux cas.
+    const trend = { start: 1, emaFast: 97, emaSlow: 100 } as const;
+    expect(classifyRegimeObservation(policy, trend)).toBe("BEARISH");
+    expect(classifyRegimeObservation(asymmetric, trend)).toBe("BEARISH");
+    // BULLISH/RANGE inchangés par l'asymétrie.
+    expect(classifyRegimeObservation(asymmetric, makeObservation(1, "BULLISH"))).toBe(
+      "BULLISH",
+    );
+    expect(classifyRegimeObservation(asymmetric, makeObservation(1, "RANGE"))).toBe(
+      "RANGE",
+    );
+  });
+
+  it("RA1 : bearishThresholdBps absent → classification bit-identique v1", () => {
+    const gaps = [
+      { emaFast: 102, emaSlow: 100 },
+      { emaFast: 99, emaSlow: 100 },
+      { emaFast: 97, emaSlow: 100 },
+      { emaFast: 100.5, emaSlow: 100 },
+      { emaFast: 98.9999999, emaSlow: 100 },
+    ];
+    for (const [index, gap] of gaps.entries()) {
+      const observation = { start: index + 1, ...gap } as RegimeObservation;
+      expect(classifyRegimeObservation(policy, observation)).toBe(
+        classifyRegimeObservation(
+          { ...policy, bearishThresholdBps: policy.thresholdBps },
+          observation,
+        ),
+      );
+    }
+  });
+
   it("rejette les observations invalides (timestamp régressif, EMA non finie)", () => {
     expect(isValidRegimeObservation(makeObservation(1, "RANGE"), null)).toBe(
       true,

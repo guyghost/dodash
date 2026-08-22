@@ -13,6 +13,13 @@ export type RegimeKind = "BULLISH" | "BEARISH" | "RANGE";
 export interface EmaThresholdRegimePolicy {
   readonly mode: "EMA_THRESHOLD";
   readonly thresholdBps: number;
+  /**
+   * Seuil BEARISH asymétrique (modèle `regime-asymmetry.md`).
+   * Absent → symétrie v1 (défaut = `thresholdBps`, classification
+   * bit-identique). Présent → seule la branche BEARISH est affectée ;
+   * l'ordre relatif avec `thresholdBps` n'est pas contraint.
+   */
+  readonly bearishThresholdBps?: number;
   readonly minObservations: number;
   readonly confirmationCount: number;
 }
