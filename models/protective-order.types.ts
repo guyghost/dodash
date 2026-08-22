@@ -28,7 +28,11 @@ export type ProtectiveExitPolicy =
       readonly stopAtrMultiple: number;
       readonly takeAtrMultiple: number;
     }
-  | { readonly mode: "TRAILING_BPS"; readonly trailBps: number }
+  | {
+      readonly mode: "TRAILING_BPS";
+      readonly trailBps: number;
+      readonly takeProfitBps?: number;
+    }
   | RegimeConditionalExitPolicy;
 
 export type ActiveProtectiveExitPolicy = Exclude<

@@ -375,5 +375,78 @@ describe("backtest CLI options", () => {
       ),
     ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
   });
+
+  it("accepte TRAILING_BPS + take optionnel et étend manifeste et suffixe (TT6)", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--protective-exit",
+        "TRAILING_BPS",
+        "--trail-bps",
+        "500",
+        "--take-profit-bps",
+        "600",
+        "--regime-filter",
+        "EMA_THRESHOLD",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.protectiveExit).toEqual({
+      mode: "TRAILING_BPS",
+      trailBps: 500,
+      takeProfitBps: 600,
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-trailing-500-600-regime-100-5-3-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:protective:trailing:500:600:regime:100:5:3:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse les takes TRAILING invalides (TT6)", () => {
+    const now = Date.UTC(2026, 7, 18);
+    const base = [
+      "--protective-exit",
+      "TRAILING_BPS",
+      "--trail-bps",
+      "300",
+      "--take-profit-bps",
+      "600",
+    ];
+    expect(
+      backtest.parseBacktestCliOptions(
+        [...base.slice(0, -1), "0"],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [...base.slice(0, -1), "100000"],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "TRAILING_BPS",
+          "--trail-bps",
+          "300",
+          "--take-profit-bps",
+          "600",
+          "--stop-loss-bps",
+          "400",
+        ],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
 });
 

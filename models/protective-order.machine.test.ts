@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import { protectiveOrderMachine } from "./protective-order.machine.js";
 import {
+  activeProtectivePolicyEquals,
   createProtectiveOrderPlan,
+  isValidProtectiveExitPolicy,
   resolveProtectiveOpen,
   resolveProtectiveRange,
 } from "./protective-order.js";
@@ -309,5 +311,179 @@ describe("trailing exit TRAILING_BPS", () => {
       ok: false,
       error: { code: "INVALID_PROTECTIVE_POLICY" },
     });
+  });
+});
+
+describe("trailing + take-profit combiné (TRAILING_BPS v2)", () => {
+  const trailingTakePolicy = {
+    mode: "TRAILING_BPS",
+    trailBps: 200,
+    takeProfitBps: 600,
+  } as const;
+
+  it("arme un plafond take-profit tout en gardant le ratchet (TT2/TT3)", () => {
+    const result = createProtectiveOrderPlan({
+      ...armEvent,
+      policy: trailingTakePolicy,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        positionId: "position-1",
+        quantity: 2,
+        averageEntryPrice: 100,
+        stopPrice: 100 * (1 - 200 / 10_000),
+        takeProfitPrice: 100 * (1 + 600 / 10_000),
+        anchorPrice: 100,
+        armedAt: 1_000,
+        policyMode: "TRAILING_BPS",
+      },
+    });
+  });
+
+  it("est bit-identique à v1 sans takeProfitBps (TT1)", () => {
+    const withoutTake = createProtectiveOrderPlan({
+      ...armEvent,
+      policy: { mode: "TRAILING_BPS", trailBps: 200 },
+    });
+    if (!withoutTake.ok) throw new Error("plan v1 attendu");
+
+    const actor = createActor(protectiveOrderMachine, {
+      input: { policy: { mode: "TRAILING_BPS", trailBps: 200 } },
+    }).start();
+    actor.send(armEvent);
+    actor.send({ type: "CANDLE_OPENED", start: 2_000, open: 101 });
+    actor.send({
+      type: "CANDLE_RANGE_REPLAYED",
+      start: 2_000,
+      high: 110,
+      low: 100.5,
+    });
+
+    expect(actor.getSnapshot().context.plan).toEqual({
+      ...withoutTake.value,
+      anchorPrice: 110,
+      stopPrice: 110 * (1 - 200 / 10_000),
+    });
+  });
+
+  it("sort au take-profit intrabar et termine sans ratchet (TT3)", () => {
+    const actor = createActor(protectiveOrderMachine, {
+      input: { policy: trailingTakePolicy },
+    }).start();
+    actor.send(armEvent);
+    actor.send({ type: "CANDLE_OPENED", start: 2_000, open: 101 });
+    actor.send({
+      type: "CANDLE_RANGE_REPLAYED",
+      start: 2_000,
+      high: 108,
+      low: 100.5,
+    });
+
+    const snapshot = actor.getSnapshot();
+    expect(snapshot.value).toBe("triggered");
+    expect(snapshot.context.resolution).toMatchObject({
+      kind: "TAKE_PROFIT",
+      reason: "INTRABAR",
+      referencePrice: 100 * (1 + 600 / 10_000),
+    });
+    expect(snapshot.context.plan?.anchorPrice).toBe(100);
+  });
+
+  it("résout un gap take-profit au prix d’ouverture", () => {
+    const result = createProtectiveOrderPlan({
+      ...armEvent,
+      policy: trailingTakePolicy,
+    });
+    if (!result.ok) throw new Error("plan attendu");
+
+    const open = resolveProtectiveOpen(result.value, {
+      start: 2_000,
+      open: 110,
+    });
+    expect(open).toEqual({
+      ok: true,
+      value: {
+        status: "TRIGGERED",
+        kind: "TAKE_PROFIT",
+        reason: "GAP_OPEN",
+        referencePrice: 110,
+        triggeredAt: 2_000,
+      },
+    });
+  });
+
+  it("choisit le stop en ambiguïté stop+TP (TT4)", () => {
+    const actor = createActor(protectiveOrderMachine, {
+      input: { policy: trailingTakePolicy },
+    }).start();
+    actor.send(armEvent);
+    actor.send({ type: "CANDLE_OPENED", start: 2_000, open: 101 });
+    actor.send({
+      type: "CANDLE_RANGE_REPLAYED",
+      start: 2_000,
+      high: 110,
+      low: 95,
+    });
+
+    const snapshot = actor.getSnapshot();
+    expect(snapshot.value).toBe("triggered");
+    expect(snapshot.context.resolution).toMatchObject({
+      kind: "STOP_LOSS",
+      reason: "AMBIGUOUS_STOP_FIRST",
+      referencePrice: 100 * (1 - 200 / 10_000),
+    });
+  });
+
+  it("rejette un take hors bornes au niveau politique (TT2)", () => {
+    expect(
+      isValidProtectiveExitPolicy({
+        mode: "TRAILING_BPS",
+        trailBps: 200,
+        takeProfitBps: 0,
+      }),
+    ).toBe(false);
+    expect(
+      isValidProtectiveExitPolicy({
+        mode: "TRAILING_BPS",
+        trailBps: 200,
+        takeProfitBps: 100_000,
+      }),
+    ).toBe(false);
+    expect(
+      isValidProtectiveExitPolicy({
+        mode: "TRAILING_BPS",
+        trailBps: 200,
+        takeProfitBps: 600,
+      }),
+    ).toBe(true);
+  });
+
+  it("distingue les politiques par le take (TT5)", () => {
+    expect(
+      activeProtectivePolicyEquals(
+        { mode: "TRAILING_BPS", trailBps: 200 },
+        { mode: "TRAILING_BPS", trailBps: 200 },
+      ),
+    ).toBe(true);
+    expect(
+      activeProtectivePolicyEquals(
+        { mode: "TRAILING_BPS", trailBps: 200, takeProfitBps: 600 },
+        { mode: "TRAILING_BPS", trailBps: 200, takeProfitBps: 600 },
+      ),
+    ).toBe(true);
+    expect(
+      activeProtectivePolicyEquals(
+        { mode: "TRAILING_BPS", trailBps: 200 },
+        { mode: "TRAILING_BPS", trailBps: 200, takeProfitBps: 600 },
+      ),
+    ).toBe(false);
+    expect(
+      activeProtectivePolicyEquals(
+        { mode: "TRAILING_BPS", trailBps: 200, takeProfitBps: 600 },
+        { mode: "TRAILING_BPS", trailBps: 200, takeProfitBps: 900 },
+      ),
+    ).toBe(false);
   });
 });

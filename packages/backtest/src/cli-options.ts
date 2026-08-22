@@ -90,7 +90,14 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
             options.protectiveExit.takeProfitBps,
           ]
         : options.protectiveExit.mode === "TRAILING_BPS"
-          ? ["protective", "trailing", options.protectiveExit.trailBps]
+          ? [
+              "protective",
+              "trailing",
+              options.protectiveExit.trailBps,
+              ...(options.protectiveExit.takeProfitBps === undefined
+                ? []
+                : [options.protectiveExit.takeProfitBps]),
+            ]
           : [
               "protective",
               "regime-exit",
@@ -251,12 +258,14 @@ export const parseBacktestCliOptions = (
   } else if (
     protectiveMode === "TRAILING_BPS" &&
     trailBpsRaw !== undefined &&
-    stopLossRaw === undefined &&
-    takeProfitRaw === undefined
+    stopLossRaw === undefined
   ) {
     const candidate = Object.freeze({
       mode: "TRAILING_BPS" as const,
       trailBps: Number(trailBpsRaw),
+      ...(takeProfitRaw === undefined
+        ? {}
+        : { takeProfitBps: Number(takeProfitRaw) }),
     });
     if (!isValidProtectiveExitPolicy(candidate)) {
       return err({ code: "INVALID_CLI_OPTIONS" });
@@ -371,7 +380,11 @@ export const parseBacktestCliOptions = (
       : protectiveExit.mode === "FIXED_BPS"
         ? `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`
         : protectiveExit.mode === "TRAILING_BPS"
-          ? `-trailing-${protectiveExit.trailBps}`
+          ? `-trailing-${protectiveExit.trailBps}${
+              protectiveExit.takeProfitBps === undefined
+                ? ""
+                : `-${protectiveExit.takeProfitBps}`
+            }`
           : `-regime-exit-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.stopLossBps : 0}-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.takeProfitBps : 0}`;
   const regimeSuffix =
     regimeFilter === null

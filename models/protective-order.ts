@@ -60,7 +60,13 @@ export const isValidProtectiveExitPolicy = (
       positiveFinite(policy.takeAtrMultiple)
     );
   }
-  return positiveFinite(policy.trailBps) && policy.trailBps < 10_000;
+  return (
+    positiveFinite(policy.trailBps) &&
+    policy.trailBps < 10_000 &&
+    (policy.takeProfitBps === undefined ||
+      (positiveFinite(policy.takeProfitBps) &&
+        policy.takeProfitBps < 100_000))
+  );
 };
 
 export const isValidRegimeExitArm = (arm: RegimeExitArm): boolean =>
@@ -111,7 +117,10 @@ export const activeProtectivePolicyEquals = (
     );
   }
   if (a.mode === "TRAILING_BPS" && b.mode === "TRAILING_BPS") {
-    return a.trailBps === b.trailBps;
+    return (
+      a.trailBps === b.trailBps &&
+      (a.takeProfitBps ?? null) === (b.takeProfitBps ?? null)
+    );
   }
   return false;
 };
@@ -144,13 +153,24 @@ export const createProtectiveOrderPlan = (
     if (!positiveFinite(stopPrice) || stopPrice >= input.averageEntryPrice) {
       return err("INVALID_PROTECTIVE_PLAN");
     }
+    const takeProfitPrice =
+      input.policy.takeProfitBps === undefined
+        ? null
+        : input.averageEntryPrice * (1 + input.policy.takeProfitBps / 10_000);
+    if (
+      takeProfitPrice !== null &&
+      (!positiveFinite(takeProfitPrice) ||
+        takeProfitPrice <= input.averageEntryPrice)
+    ) {
+      return err("INVALID_PROTECTIVE_PLAN");
+    }
     return ok(
       Object.freeze({
         positionId: input.positionId,
         quantity: input.quantity,
         averageEntryPrice: input.averageEntryPrice,
         stopPrice,
-        takeProfitPrice: null,
+        takeProfitPrice,
         anchorPrice: input.averageEntryPrice,
         armedAt: input.armedAt,
         policyMode: input.policy.mode,
