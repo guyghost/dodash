@@ -1,6 +1,6 @@
 # Exit protectif — trailing + take-profit combiné (TRAILING_BPS v2)
 
-Statut : PROPOSÉ
+Statut : MESURÉ
 Date : 2025-12-17
 Prérequis : `trailing-exit.md` (v1 mesurée : échec a priori, mais bull
 monotone au trail et bear privé de TP), `regime-exit.md` (V1 : le bras
@@ -93,7 +93,53 @@ de « trail insuffisant ».
   — return bull proportionnel inverse du take — et la piste suivante
   sera un TP plus large ou asymétrique.
 
-## 5. Hors périmètre
+## 5. Mesures et verdict
+
+Grille exécutée le 2025-12-17, gating EMA_THRESHOLD 100/5/3.
+
+| cell | trail | take | bull ret | bull dd | bear ret | bear dd |
+|------|-------|------|----------|---------|----------|---------|
+| C1 | 300 | 600 | +0,78 % | 1,40 % | +2,39 % | 3,39 % |
+| C2 | 300 | 900 | +1,62 % | 1,39 % | +1,49 % | 3,86 % |
+| C3 | 500 | 600 | −0,17 % | 2,61 % | +1,96 % | 4,41 % |
+| C4 | 500 | 900 | +1,05 % | 2,59 % | −0,68 % | 5,33 % |
+
+Takes (bull/bear) : C1 6/6, C2 4/2, C3 8/8, C4 6/4. Ambiguïtés ≈ 0.
+
+### Verdict : ÉCHEC a priori
+
+Aucune cellule n'atteint bull ≥ +3 % (max C2 +1,62 %). Contrôles
+cohérents : v1 T2/T3 déjà consignés, TT1 couverte par tests.
+
+### Lecture mécaniste
+
+1. **Le TP tronque la queue bull exactement comme le diagnostic
+   d'échec le prévoyait** : à trail 500, retour bull inverse du take —
+   T3 pur +2,61 %, take 900 → +1,05 %, take 600 → −0,17 %. Les 6–8
+   sorties TP du bull sont précisément les runs qui portaient tout
+   l'alpha ; les plafonder détruit la fenêtre.
+2. **Bear : le take restaure partiellement la récolte** (C1 +2,39 %
+   vs T2 +1,69 %) mais reste sous V1 (+3,63 %). Cause structurelle :
+   co-armé sur le même plan, le ratchet monte le stop pendant le
+   rallye — un repli mineur sort au stop ratcheté AVANT que le plafond
+   soit atteint. Trail et take se neutralisent : le trail convertit
+   les futures sorties TP en sorties stop à prix inférieur.
+3. **Conclusion structurelle** : l'hypothèse « un plan uniforme pour
+   les deux fenêtres » est épuisée. Chaque mécanisme domine sa
+   fenêtre isolément (bull = trail 500 pur +2,61 % ; bear = fixe
+   600/600 +3,63 %), mais leur combinaison sur le même plan est
+   destructrice dans les deux sens.
+
+### Piste suivante
+
+La synthèse correcte est **par régime, pas par champ** : bras bullish
+`TRAILING_BPS` 500 + bras bearish `FIXED_BPS` 600/600 dans
+`REGIME_CONDITIONAL` — gate symétrique V1 inchangé (v3 n'invalide pas
+les bras, seulement les seuils asymétriques). Attendu : bull ≈ T3
+(+2,61 %, juste sous la barre +3 % — barre à re-discuter au modèle),
+bear ≈ V1 (+3,63 %).
+
+## 6. Hors périmètre
 
 - TP dynamique, TP par régime, armes TRAILING dans REGIME_CONDITIONAL.
 - Trailing sur short.
