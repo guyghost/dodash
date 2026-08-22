@@ -68,16 +68,19 @@ describe("backtest exposure diagnostics", () => {
         requestedNetNotional: 100,
         allocatedNotional: 100,
         riskApprovedNotional: 100,
+        rejectedReasonCodes: [],
       },
       {
         requestedNetNotional: 1_000,
         allocatedNotional: 800,
         riskApprovedNotional: 800,
+        rejectedReasonCodes: [],
       },
       {
         requestedNetNotional: 500,
         allocatedNotional: 500,
         riskApprovedNotional: 0,
+        rejectedReasonCodes: ["SPOT_SHORT_FORBIDDEN", "DAILY_LOSS_LIMIT"],
       },
     ]);
 
@@ -90,6 +93,15 @@ describe("backtest exposure diagnostics", () => {
       riskEvaluationCount: 3,
       riskRejectedCount: 1,
       riskRejectionRate: 1 / 3,
+      riskRejectionReasons: {
+        KILL_SWITCH_ACTIVE: 0,
+        DAILY_LOSS_LIMIT: 1,
+        COOLDOWN_ACTIVE: 0,
+        SPOT_SHORT_FORBIDDEN: 1,
+        ORDER_NOTIONAL_LIMIT: 0,
+        POSITION_NOTIONAL_LIMIT: 0,
+        GROSS_EXPOSURE_LIMIT: 0,
+      },
       requestedNetNotional: {
         count: 3,
         min: 100,
@@ -128,6 +140,15 @@ describe("backtest exposure diagnostics", () => {
           riskEvaluationCount: 0,
           riskRejectedCount: 0,
           riskRejectionRate: 0,
+          riskRejectionReasons: {
+            KILL_SWITCH_ACTIVE: 0,
+            DAILY_LOSS_LIMIT: 0,
+            COOLDOWN_ACTIVE: 0,
+            SPOT_SHORT_FORBIDDEN: 0,
+            ORDER_NOTIONAL_LIMIT: 0,
+            POSITION_NOTIONAL_LIMIT: 0,
+            GROSS_EXPOSURE_LIMIT: 0,
+          },
           requestedNetNotional: {
             count: 0,
             min: null,
@@ -221,6 +242,23 @@ describe("backtest exposure diagnostics", () => {
           requestedNetNotional: 100,
           allocatedNotional: 101,
           riskApprovedNotional: 100,
+          rejectedReasonCodes: [],
+        },
+      ]),
+    ).toEqual({
+      ok: false,
+      error: { code: "INVALID_ALLOCATION_DIAGNOSTIC_OBSERVATION" },
+    });
+  });
+
+  it("refuse un motif de rejet hors du référentiel", () => {
+    expect(
+      summarizeBacktestDiagnostics([], [
+        {
+          requestedNetNotional: 100,
+          allocatedNotional: 100,
+          riskApprovedNotional: 100,
+          rejectedReasonCodes: ["NOT_A_REASON" as never],
         },
       ]),
     ).toEqual({

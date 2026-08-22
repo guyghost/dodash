@@ -1,3 +1,4 @@
+export { RISK_REJECTION_REASON_CODES } from "./backtest-diagnostics.types.js";
 export { backtestRunMachine } from "./backtest-run.machine.js";
 export {
   assessConfidenceCalibrationConfirmation,
@@ -92,6 +93,7 @@ export type {
   BacktestDiagnosticsResult,
   DiagnosticSignalSide,
   NumericDistribution,
+  RiskRejectionReasonCode,
   SignalDiagnosticObservation,
   SignalDiagnostics,
   StrategySignalDiagnostics,

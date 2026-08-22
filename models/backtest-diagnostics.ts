@@ -5,9 +5,11 @@ import type {
   BacktestDiagnosticsErrorCode,
   BacktestDiagnosticsResult,
   NumericDistribution,
+  RiskRejectionReasonCode,
   SignalDiagnosticObservation,
   StrategySignalDiagnostics,
 } from "./backtest-diagnostics.types.js";
+import { RISK_REJECTION_REASON_CODES } from "./backtest-diagnostics.types.js";
 
 const nonNegativeFinite = (value: number): boolean =>
   Number.isFinite(value) && value >= 0;
@@ -77,12 +79,16 @@ const validSignalObservation = (
   );
 };
 
+const validReasonCode = (code: string): code is RiskRejectionReasonCode =>
+  (RISK_REJECTION_REASON_CODES as readonly string[]).includes(code);
+
 const validAllocationObservation = (
   observation: AllocationDiagnosticObservation,
 ): boolean =>
   positiveFinite(observation.requestedNetNotional) &&
   nonNegativeFinite(observation.allocatedNotional) &&
   nonNegativeFinite(observation.riskApprovedNotional) &&
+  observation.rejectedReasonCodes.every(validReasonCode) &&
   observation.allocatedNotional <=
     observation.requestedNetNotional +
       tolerance(observation.requestedNetNotional) &&
@@ -175,6 +181,19 @@ export const summarizeBacktestDiagnostics = (
       riskApprovedNotional <
       allocatedNotional - tolerance(allocatedNotional),
   ).length;
+  const riskRejectionReasons = Object.freeze(
+    Object.fromEntries(
+      RISK_REJECTION_REASON_CODES.map((code) => [
+        code,
+        allocationObservations.reduce(
+          (total, { rejectedReasonCodes }) =>
+            total +
+            rejectedReasonCodes.filter((reason) => reason === code).length,
+          0,
+        ),
+      ]),
+    ),
+  ) as Readonly<Record<RiskRejectionReasonCode, number>>;
   const opportunityCount = allocationObservations.length;
   const allocation: AllocationDiagnostics = Object.freeze({
     opportunityCount,
@@ -186,6 +205,7 @@ export const summarizeBacktestDiagnostics = (
       riskEvaluated.length === 0
         ? 0
         : riskRejectedCount / riskEvaluated.length,
+    riskRejectionReasons,
     requestedNetNotional: distribution(
       allocationObservations.map(({ requestedNetNotional }) => requestedNetNotional),
     ),

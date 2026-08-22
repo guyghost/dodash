@@ -40,13 +40,28 @@ import {
   type ProtectiveExitResolution,
   type RegimeFilterPolicy,
   type RegimeKind,
+  type RiskRejectionReasonCode,
   type SignalDiagnosticObservation,
 } from "@dodash/models";
-import { checkRisk, type RiskConfig, type RiskError } from "@dodash/risk";
+import {
+  checkRisk,
+  type RiskConfig,
+  type RiskError,
+  type RiskReasonCode,
+} from "@dodash/risk";
 import type { StrategyError, StrategyRegistry } from "@dodash/strategies";
 import { createActor, type ActorRefFrom } from "xstate";
 
 import { calculateMetrics, type BacktestMetrics, type EquityPoint } from "./metrics.js";
+
+// INV (models/risk-rejection-diagnosis.md) : l'union miroir du modèle et
+// RiskReasonCode de @dodash/risk doivent rester alignées — verrou compilation.
+type RiskReasonCodesAligned = [RiskReasonCode] extends [RiskRejectionReasonCode]
+  ? [RiskRejectionReasonCode] extends [RiskReasonCode]
+    ? true
+    : never
+  : never;
+type RiskReasonCodesLock = RiskReasonCodesAligned extends true ? true : never;
 import {
   executePaperOrder,
   type PaperBrokerConfig,
@@ -654,6 +669,7 @@ export const replayBacktest = async (
     );
 
     const approvedOrders: OrderIntent[] = [];
+    const rejectedReasonCodes: RiskRejectionReasonCode[] = [];
     for (const order of allocation.value.orders) {
       const equityBefore = portfolio.cash + portfolio.positionQuantity * candle.close;
       const risk = checkRisk(
@@ -670,7 +686,10 @@ export const replayBacktest = async (
         config.risk,
       );
       if (!risk.ok) return err({ code: "RISK_FAILURE", cause: risk.error });
-      if (risk.value.status === "REJECTED") continue;
+      if (risk.value.status === "REJECTED") {
+        rejectedReasonCodes.push(risk.value.reasonCode);
+        continue;
+      }
       approvedOrders.push(order);
     }
     if (requestedNetQuantity > config.minNetQuantity) {
@@ -682,6 +701,7 @@ export const replayBacktest = async (
             (total, order) => total + order.quantity * candle.close,
             0,
           ),
+          rejectedReasonCodes: Object.freeze(rejectedReasonCodes),
         }),
       );
     }
