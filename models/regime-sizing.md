@@ -1,6 +1,6 @@
 # Sizing conditionné par régime — exposant de calibration par bras de régime
 
-Statut : MODÉLISÉ
+Statut : DÉCLASSÉ (D2-S exécuté le 2026-02-14, verdict W1∧W2∧W3∧WF2-S : DÉCLASSÉ)
 
 ## 1. Contexte et décision
 
@@ -183,14 +183,61 @@ train et de test, miroir D12) :
   (statique ET conditionné). Aucune conclusion « mieux » sans critère
   a priori rempli.
 
-## 8. Limites épistémiques et hors périmètre
+## 8. Résultats (D2-S, campagne du 2026-02-14)
 
+Grille annuelle `ret / dd` (%, config V1, 40 runs) :
+
+| Fenêtre | IDENTITY | HALF | THIRD | QUARTER |
+|---|---|---|---|---|
+| 2016 | 2,35 / 1,50 | 15,49 / 8,57 | 30,90 / 15,20 | 45,37 / 20,05 |
+| 2017 | 3,85 / 6,88 | 28,50 / 19,65 | 52,07 / 25,45 | 69,05 / 27,97 |
+| 2018 | 3,48 / 3,48 | 14,58 / 11,91 | 25,70 / 17,71 | 36,40 / 19,55 |
+| 2019 | −2,60 / 3,45 | −3,32 / 3,89 | −4,15 / 4,53 | −4,87 / 5,09 |
+| 2020 | 11,33 / 4,82 | 58,35 / 13,99 | 101,27 / 18,61 | 130,47 / 20,49 |
+| 2021 | −5,81 / 6,21 | −6,60 / 7,11 | −7,48 / 8,40 | −8,23 / 9,46 |
+| 2022 | −1,03 / 1,74 | −1,39 / 2,40 | −1,89 / 3,01 | −2,16 / 3,46 |
+| 2023 | 0,27 / 2,93 | 2,21 / 4,69 | 4,20 / 6,24 | 5,81 / 7,39 |
+| 2024 | 2,01 / 0,59 | 3,27 / 1,87 | 4,64 / 3,46 | 5,86 / 4,75 |
+| 2025 | 3,63 / 3,37 | 3,56 / 3,43 | 3,47 / 3,52 | 3,39 / 3,61 |
+
+- **WF2-S : PASS** — C_IDENTITY reproduit bit-pour-bit les baselines V1
+  (2023 +0,27 % dd 2,93 % ; 2025 +3,63 % dd 3,37 %). La mesure est
+  valide.
+- **Mécanisme du verdict** : la direction de H-S1 est confirmée en
+  in-sample (return bull croît avec l'exposant), mais la porte CS4
+  `dd ≤ 10 %` est le binding constraint — chaque candidat k ≠ IDENTITY
+  dépasse 10 % de drawdown sur au moins une fenêtre de chaque train
+  propre (ex. train 2016→2017 : HALF dd 8,57 % sur 2016 mais 19,65 % sur
+  2017). D'où `éligibles [aucun]` sur 9/9 trains → défaut IDENTITY.
+- **W1 : PASS** (IDENTITY sur 6/6 trains propres — trivial, par défaut).
+  **W2 : FAIL** (0/6, spread médian 0,00 % — mécanique : le sélectionné
+  EST C_IDENTITY). **W3 : PASS** (0 violation dd test).
+- **Verdict : DÉCLASSÉ** — H-S0 retenue. L'axe sizing par calibration
+  est fermé (statique D12 ET conditionné D2-S).
+- Info déploiement (hors verdict) : bull=QUARTER serait refusé par le
+  sélecteur déployé sur 4/10 fenêtres (riskRej 3–24 %, max 24,49 % en
+  2020) — confirme la non-déployabilité opérationnelle.
+- Annexes : fenêtres faibles (2019, 2021, 2022) dégradées
+  monotones avec k — le conditionnement bull n'aide pas hors bull ;
+  2025 quasi-neutre (léger décroissance).
+
+## 9. Limites épistémiques et hors périmètre
+
+- **Nature du déclassement** : non-éligibilité à la porte de risque
+  a priori (CS4-dd), pas défaite OOS d'un candidat sélectionné — le
+  signal directionnel de H-S1 n'a jamais été testé OOS parce qu'aucun
+  candidat conditionné n'a franchi la sélection. Toute réouverture de
+  l'axe sizing devra soit assouplir la contrainte dd (décision de
+  risque explicite, pas un ajustement implicite), soit découpler
+  notional et drawdown (ex. sizing vol-adjusté) — nouveaux cycles,
+  nouveaux modèles.
 - **Limite documentée** : l'espace de candidats (conditionnement bull)
   a été formulé après lecture de la grille D12 complète — le
   walk-forward protège contre la sélection du **paramètre** (exposant
   bull) mais pas contre la sélection de l'**hypothèse structurelle**.
   W2 mesure le transfert du conditionnement, pas un edge prouvé ex
   nihilo. Toute décision de déploiement devra le mentionner.
+  (Académique : W2 n'a jamais pu s'exécuter, voir §8.)
 - Hors périmètre : rsi-reversion (hors CalibratedStrategyId) ;
   conditionnement d'autres dimensions (exits, gate) — un seul levier
   par cycle ; implémentation live du recalibrage (posture : backtest
