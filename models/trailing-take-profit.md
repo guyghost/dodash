@@ -60,10 +60,10 @@ Toute la séquence d'évaluation existante s'applique sans changement :
 | # | Invariant |
 |---|-----------|
 | TT1 | `takeProfitBps` absent → plans, exits et métriques bit-identiques à v1 (T1–T3 reproductibles) |
-| TT2 | `takeProfitBps` présent : ∈ ]0, 100 000[, `takeProfitPrice > entrée` sinon plan invalide (`INVALID_PROTECTIVE_PLAN`) |
+| TT2 | `takeProfitBps` présent : ∈ ]0, 100 000[ validé au niveau **politique** (`INVALID_PROTECTIVE_POLICY`, comme FIXED) ; le plan revalide `takeProfitPrice > entrée` (`INVALID_PROTECTIVE_PLAN`) |
 | TT3 | Le TP ne modifie jamais le ratchet : anchor/stop évoluent comme en v1 jusqu'au premier exit (stop ou TP) |
 | TT4 | Ambiguïté intrabar stop+TP → STOP_LOSS `AMBIGUOUS_STOP_FIRST` (réutilise la sémantique FIXED existante, conservateur) |
-| TT5 | Égalité de politiques : trail ET take (présence + valeur) ; deux politiques différant seulement par take ne sont pas égales |
+| TT5 | Égalité de politiques : trail ET take, comparés par coalescence nulle (`(a.takeProfitBps ?? null) === (b.takeProfitBps ?? null)`) ; deux politiques différant seulement par take ne sont pas égales |
 | TT6 | CLI : `--take-profit-bps` sans mode protectif qui l'accepte → rejet ; manifeste/suffixe étendus seulement quand le flag est présent |
 | TT7 | Aucune transition machine ajoutée ; TP et trail restent des fonctions pures consommées par la machine ; aucun LLM |
 
@@ -72,7 +72,10 @@ Toute la séquence d'évaluation existante s'applique sans changement :
 Fenêtres bull/bear usuelles, gating régime identique V1 et T1–T3.
 Grille 2×2 : trailBps ∈ {300, 500} × takeProfitBps ∈ {600, 900}.
 Contrôles : mesures v1 T2/T3 (déjà consignées — pas de re-run, TT1
-couvre la bit-identité par tests).
+couvre la bit-identité par tests). Les `takes`/`stops` par fenêtre sont
+consignés a posteriori depuis les enregistrements de trades (aucun
+changement de schéma), pour distinguer « TP coupe le bull prématurément »
+de « trail insuffisant ».
 
 ### Critères de succès a priori (inchangés)
 
