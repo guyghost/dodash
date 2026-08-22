@@ -38,6 +38,7 @@ describe("protective order core", () => {
         averageEntryPrice: 100,
         stopPrice: 99,
         takeProfitPrice: 102,
+        anchorPrice: 100,
         armedAt: 1_000,
         policyMode: "FIXED_BPS",
       },
@@ -178,5 +179,135 @@ describe("protectiveOrderMachine", () => {
 
     expect(actor.getSnapshot().value).toBe("cancelled");
     expect(actor.getSnapshot().context.cancelReason).toBe("POSITION_CLOSED");
+  });
+});
+
+describe("trailing exit TRAILING_BPS", () => {
+  const trailingPolicy = { mode: "TRAILING_BPS", trailBps: 200 } as const;
+
+  it("dérive le stop initial depuis le trail, sans take-profit (TE5)", () => {
+    const result = createProtectiveOrderPlan({
+      ...armEvent,
+      policy: trailingPolicy,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        positionId: "position-1",
+        quantity: 2,
+        averageEntryPrice: 100,
+        stopPrice: 100 * (1 - 200 / 10_000),
+        takeProfitPrice: null,
+        anchorPrice: 100,
+        armedAt: 1_000,
+        policyMode: "TRAILING_BPS",
+      },
+    });
+    if (!result.ok) return;
+    const open = resolveProtectiveOpen(result.value, {
+      start: 2_000,
+      open: 150,
+    });
+    expect(open).toEqual({ ok: true, value: { status: "NOT_TRIGGERED" } });
+  });
+
+  it("ratchète l’anchor et le stop après évaluation complète (TE1/TE3)", () => {
+    const actor = createActor(protectiveOrderMachine, {
+      input: { policy: trailingPolicy },
+    }).start();
+    actor.send(armEvent);
+    actor.send({ type: "CANDLE_OPENED", start: 2_000, open: 101 });
+    actor.send({
+      type: "CANDLE_RANGE_REPLAYED",
+      start: 2_000,
+      high: 110,
+      low: 100.5,
+    });
+
+    const plan = actor.getSnapshot().context.plan;
+    expect(plan).toMatchObject({
+      anchorPrice: 110,
+      stopPrice: 110 * (1 - 200 / 10_000),
+    });
+  });
+
+  it("sort au niveau figé, sans ratchet intra-bougie (TE2)", () => {
+    const actor = createActor(protectiveOrderMachine, {
+      input: { policy: trailingPolicy },
+    }).start();
+    actor.send(armEvent);
+    actor.send({ type: "CANDLE_OPENED", start: 2_000, open: 100 });
+    actor.send({
+      type: "CANDLE_RANGE_REPLAYED",
+      start: 2_000,
+      high: 105,
+      low: 98,
+    });
+
+    expect(actor.getSnapshot().value).toBe("triggered");
+    expect(actor.getSnapshot().context.resolution).toMatchObject({
+      kind: "STOP_LOSS",
+      reason: "INTRABAR",
+      referencePrice: 100 * (1 - 200 / 10_000),
+    });
+  });
+
+  it("verrouille un gain après ratchet via gap open (TE1 bout-en-bout)", () => {
+    const actor = createActor(protectiveOrderMachine, {
+      input: { policy: trailingPolicy },
+    }).start();
+    actor.send(armEvent);
+    actor.send({ type: "CANDLE_OPENED", start: 2_000, open: 101 });
+    actor.send({
+      type: "CANDLE_RANGE_REPLAYED",
+      start: 2_000,
+      high: 110,
+      low: 100.5,
+    });
+    actor.send({ type: "CANDLE_OPENED", start: 3_000, open: 107 });
+
+    const snapshot = actor.getSnapshot();
+    expect(snapshot.value).toBe("triggered");
+    expect(snapshot.context.resolution?.referencePrice).toBe(107);
+    expect(snapshot.context.plan?.stopPrice).toBeGreaterThan(100);
+  });
+
+  it("réinitialise l’anchor au replan sur position augmentée (TE6)", () => {
+    const actor = createActor(protectiveOrderMachine, {
+      input: { policy: trailingPolicy },
+    }).start();
+    actor.send(armEvent);
+    actor.send({ type: "CANDLE_OPENED", start: 2_000, open: 101 });
+    actor.send({
+      type: "CANDLE_RANGE_REPLAYED",
+      start: 2_000,
+      high: 110,
+      low: 100.5,
+    });
+    actor.send({
+      type: "POSITION_INCREASED",
+      quantity: 3,
+      averageEntryPrice: 105,
+      atr: null,
+      updatedAt: 2_500,
+    });
+
+    expect(actor.getSnapshot().context.plan).toMatchObject({
+      anchorPrice: 105,
+      stopPrice: 105 * (1 - 200 / 10_000),
+    });
+  });
+
+  it("rejette une politique trailing invalide (TE8)", () => {
+    const result = createProtectiveOrderPlan({
+      ...armEvent,
+      policy: { mode: "TRAILING_BPS", trailBps: 0 },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "INVALID_PROTECTIVE_POLICY" },
+    });
   });
 });

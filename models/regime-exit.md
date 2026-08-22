@@ -49,9 +49,10 @@ extension mécanique ultérieure). Tous les bras sont **obligatoires** : pas de
 bras implicite, pas de défaut caché à la construction — les défauts
 appartiennent au CLI, pas au modèle.
 
-Contraintes : `0 < stopLossBps < 10 000`, `0 < takeProfitBps < 10 000` pour
-tout bras FIXED_BPS ; sinon `INVALID_PROTECTIVE_POLICY` avant tout armement
-(validation à la création de session, pas à la bougie).
+Contraintes (parité exacte avec `FIXED_BPS` v1) : `0 < stopLossBps < 10 000`
+et `0 < takeProfitBps < 100 000` pour tout bras FIXED_BPS ; sinon
+`INVALID_PROTECTIVE_POLICY` avant tout armement (validation à la création de
+session, pas à la bougie).
 
 ## Résolution du bras actif (fonction pure)
 

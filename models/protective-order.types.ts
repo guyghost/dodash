@@ -28,6 +28,7 @@ export type ProtectiveExitPolicy =
       readonly stopAtrMultiple: number;
       readonly takeAtrMultiple: number;
     }
+  | { readonly mode: "TRAILING_BPS"; readonly trailBps: number }
   | RegimeConditionalExitPolicy;
 
 export type ActiveProtectiveExitPolicy = Exclude<
@@ -40,7 +41,8 @@ export interface ProtectiveOrderPlan {
   readonly quantity: number;
   readonly averageEntryPrice: number;
   readonly stopPrice: number;
-  readonly takeProfitPrice: number;
+  readonly takeProfitPrice: number | null;
+  readonly anchorPrice: number;
   readonly armedAt: number;
   readonly policyMode: ActiveProtectiveExitPolicy["mode"];
 }

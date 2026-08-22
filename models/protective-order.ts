@@ -45,14 +45,23 @@ const validTimestamp = (value: number): boolean =>
 
 export const isValidProtectiveExitPolicy = (
   policy: ActiveProtectiveExitPolicy,
-): boolean =>
-  policy.mode === "FIXED_BPS"
-    ? positiveFinite(policy.stopLossBps) &&
+): boolean => {
+  if (policy.mode === "FIXED_BPS") {
+    return (
+      positiveFinite(policy.stopLossBps) &&
       policy.stopLossBps < 10_000 &&
       positiveFinite(policy.takeProfitBps) &&
       policy.takeProfitBps < 100_000
-    : positiveFinite(policy.stopAtrMultiple) &&
-      positiveFinite(policy.takeAtrMultiple);
+    );
+  }
+  if (policy.mode === "ATR_MULTIPLE") {
+    return (
+      positiveFinite(policy.stopAtrMultiple) &&
+      positiveFinite(policy.takeAtrMultiple)
+    );
+  }
+  return positiveFinite(policy.trailBps) && policy.trailBps < 10_000;
+};
 
 export const isValidRegimeExitArm = (arm: RegimeExitArm): boolean =>
   arm.mode === "NONE" ||
@@ -101,6 +110,9 @@ export const activeProtectivePolicyEquals = (
       a.takeAtrMultiple === b.takeAtrMultiple
     );
   }
+  if (a.mode === "TRAILING_BPS" && b.mode === "TRAILING_BPS") {
+    return a.trailBps === b.trailBps;
+  }
   return false;
 };
 
@@ -120,15 +132,35 @@ export const createProtectiveOrderPlan = (
   ) {
     return err("INVALID_PROTECTIVE_PLAN");
   }
-  const stopDistance =
+  const stopPrice =
     input.policy.mode === "FIXED_BPS"
-      ? input.averageEntryPrice * (input.policy.stopLossBps / 10_000)
-      : (input.atr as number) * input.policy.stopAtrMultiple;
+      ? input.averageEntryPrice -
+        input.averageEntryPrice * (input.policy.stopLossBps / 10_000)
+      : input.policy.mode === "TRAILING_BPS"
+        ? input.averageEntryPrice * (1 - input.policy.trailBps / 10_000)
+        : input.averageEntryPrice -
+          (input.atr as number) * input.policy.stopAtrMultiple;
+  if (input.policy.mode === "TRAILING_BPS") {
+    if (!positiveFinite(stopPrice) || stopPrice >= input.averageEntryPrice) {
+      return err("INVALID_PROTECTIVE_PLAN");
+    }
+    return ok(
+      Object.freeze({
+        positionId: input.positionId,
+        quantity: input.quantity,
+        averageEntryPrice: input.averageEntryPrice,
+        stopPrice,
+        takeProfitPrice: null,
+        anchorPrice: input.averageEntryPrice,
+        armedAt: input.armedAt,
+        policyMode: input.policy.mode,
+      }),
+    );
+  }
   const takeDistance =
     input.policy.mode === "FIXED_BPS"
       ? input.averageEntryPrice * (input.policy.takeProfitBps / 10_000)
       : (input.atr as number) * input.policy.takeAtrMultiple;
-  const stopPrice = input.averageEntryPrice - stopDistance;
   const takeProfitPrice = input.averageEntryPrice + takeDistance;
   if (
     !positiveFinite(stopPrice) ||
@@ -145,10 +177,31 @@ export const createProtectiveOrderPlan = (
       averageEntryPrice: input.averageEntryPrice,
       stopPrice,
       takeProfitPrice,
+      anchorPrice: input.averageEntryPrice,
       armedAt: input.armedAt,
       policyMode: input.policy.mode,
     }),
   );
+};
+
+export const advanceTrailingPlan = (
+  plan: ProtectiveOrderPlan,
+  policy: ActiveProtectiveExitPolicy,
+  candle: ProtectiveRange,
+): ProtectiveOrderPlan => {
+  if (
+    policy.mode !== "TRAILING_BPS" ||
+    plan.policyMode !== "TRAILING_BPS" ||
+    candle.high <= plan.anchorPrice
+  ) {
+    return plan;
+  }
+  const anchorPrice = candle.high;
+  const stopPrice = Math.max(
+    plan.stopPrice,
+    anchorPrice * (1 - policy.trailBps / 10_000),
+  );
+  return Object.freeze({ ...plan, anchorPrice, stopPrice });
 };
 
 const trigger = (
@@ -179,7 +232,8 @@ export const resolveProtectiveOpen = (
   if (candle.open <= plan.stopPrice) {
     return ok(trigger("STOP_LOSS", "GAP_OPEN", candle.open, candle.start));
   }
-  if (candle.open >= plan.takeProfitPrice) {
+  const takeProfitPrice = plan.takeProfitPrice;
+  if (takeProfitPrice !== null && candle.open >= takeProfitPrice) {
     return ok(trigger("TAKE_PROFIT", "GAP_OPEN", candle.open, candle.start));
   }
   return ok(Object.freeze({ status: "NOT_TRIGGERED" as const }));
@@ -199,7 +253,8 @@ export const resolveProtectiveRange = (
     return err("INVALID_PROTECTIVE_CANDLE");
   }
   const stopHit = candle.low <= plan.stopPrice;
-  const takeHit = candle.high >= plan.takeProfitPrice;
+  const takeProfitPrice = plan.takeProfitPrice;
+  const takeHit = takeProfitPrice !== null && candle.high >= takeProfitPrice;
   if (stopHit && takeHit) {
     return ok(
       trigger(
@@ -215,7 +270,7 @@ export const resolveProtectiveRange = (
   }
   if (takeHit) {
     return ok(
-      trigger("TAKE_PROFIT", "INTRABAR", plan.takeProfitPrice, candle.start),
+      trigger("TAKE_PROFIT", "INTRABAR", takeProfitPrice, candle.start),
     );
   }
   return ok(Object.freeze({ status: "NOT_TRIGGERED" as const }));

@@ -65,6 +65,7 @@ export type BacktestCliProtectiveExitPolicy = Extract<
   | { readonly mode: "NONE" }
   | { readonly mode: "FIXED_BPS" }
   | { readonly mode: "REGIME_CONDITIONAL" }
+  | { readonly mode: "TRAILING_BPS" }
 >;
 
 export type BacktestCliOptionsError = { readonly code: "INVALID_CLI_OPTIONS" };
@@ -88,16 +89,18 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
             options.protectiveExit.stopLossBps,
             options.protectiveExit.takeProfitBps,
           ]
-        : [
-            "protective",
-            "regime-exit",
-            options.protectiveExit.bearish.mode === "FIXED_BPS"
-              ? options.protectiveExit.bearish.stopLossBps
-              : 0,
-            options.protectiveExit.bearish.mode === "FIXED_BPS"
-              ? options.protectiveExit.bearish.takeProfitBps
-              : 0,
-          ]),
+        : options.protectiveExit.mode === "TRAILING_BPS"
+          ? ["protective", "trailing", options.protectiveExit.trailBps]
+          : [
+              "protective",
+              "regime-exit",
+              options.protectiveExit.bearish.mode === "FIXED_BPS"
+                ? options.protectiveExit.bearish.stopLossBps
+                : 0,
+              options.protectiveExit.bearish.mode === "FIXED_BPS"
+                ? options.protectiveExit.bearish.takeProfitBps
+                : 0,
+            ]),
     ...(options.regimeFilter === null
       ? []
       : options.regimeFilter.mode === "EMA_THRESHOLD"
@@ -151,6 +154,7 @@ export const parseBacktestCliOptions = (
     "--protective-exit",
     "--stop-loss-bps",
     "--take-profit-bps",
+    "--trail-bps",
     "--regime-filter",
     "--regime-threshold-bps",
     "--regime-bearish-threshold-bps",
@@ -197,16 +201,22 @@ export const parseBacktestCliOptions = (
   const protectiveMode = values.get("--protective-exit") ?? "NONE";
   const stopLossRaw = values.get("--stop-loss-bps");
   const takeProfitRaw = values.get("--take-profit-bps");
+  const trailBpsRaw = values.get("--trail-bps");
   let protectiveExit: BacktestCliProtectiveExitPolicy;
   if (protectiveMode === "NONE") {
-    if (stopLossRaw !== undefined || takeProfitRaw !== undefined) {
+    if (
+      stopLossRaw !== undefined ||
+      takeProfitRaw !== undefined ||
+      trailBpsRaw !== undefined
+    ) {
       return err({ code: "INVALID_CLI_OPTIONS" });
     }
     protectiveExit = Object.freeze({ mode: "NONE" as const });
   } else if (
     protectiveMode === "FIXED_BPS" &&
     stopLossRaw !== undefined &&
-    takeProfitRaw !== undefined
+    takeProfitRaw !== undefined &&
+    trailBpsRaw === undefined
   ) {
     const candidate = Object.freeze({
       mode: "FIXED_BPS" as const,
@@ -220,7 +230,8 @@ export const parseBacktestCliOptions = (
   } else if (
     protectiveMode === "REGIME_CONDITIONAL" &&
     stopLossRaw !== undefined &&
-    takeProfitRaw !== undefined
+    takeProfitRaw !== undefined &&
+    trailBpsRaw === undefined
   ) {
     const armedArm = Object.freeze({
       mode: "FIXED_BPS" as const,
@@ -237,6 +248,20 @@ export const parseBacktestCliOptions = (
       range: armedArm,
       warmUp: armedArm,
     });
+  } else if (
+    protectiveMode === "TRAILING_BPS" &&
+    trailBpsRaw !== undefined &&
+    stopLossRaw === undefined &&
+    takeProfitRaw === undefined
+  ) {
+    const candidate = Object.freeze({
+      mode: "TRAILING_BPS" as const,
+      trailBps: Number(trailBpsRaw),
+    });
+    if (!isValidProtectiveExitPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    protectiveExit = candidate;
   } else {
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
@@ -345,7 +370,9 @@ export const parseBacktestCliOptions = (
       ? ""
       : protectiveExit.mode === "FIXED_BPS"
         ? `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`
-        : `-regime-exit-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.stopLossBps : 0}-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.takeProfitBps : 0}`;
+        : protectiveExit.mode === "TRAILING_BPS"
+          ? `-trailing-${protectiveExit.trailBps}`
+          : `-regime-exit-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.stopLossBps : 0}-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.takeProfitBps : 0}`;
   const regimeSuffix =
     regimeFilter === null
       ? ""
