@@ -42,16 +42,19 @@ Cible v3 : bullish `TRAILING_BPS` 500, bearish/range/warmUp
 ### 2.2 Résolution et replan
 
 `resolveRegimeExitArm` retourne déjà tout bras non-NONE comme politique
-active : un bras TRAILING devient `ActiveProtectiveExitPolicy` et
-traverse le replan existant inchangé (comparaison d'égalité → cancel →
-re-arm). `replay.ts` : **zéro changement**. La machine protective :
+active : un bras TRAILING devient `ActiveProtectiveExitPolicy` (la
+variante du bras, sans take, est structurellement assignable au mode —
+`takeProfitBps` y est optionnel) et traverse le replan existant
+inchangé (comparaison d'égalité → cancel → re-arm). Aucun changement
+de signature. `replay.ts` : **zéro changement**. La machine protective :
 **zéro changement** (elle consomme une politique TRAILING depuis v1
 trailing — ratchet inclus via `advanceTrailingPlan`).
 
 ### 2.3 Validation
 
-`isValidRegimeExitArm` étend sa branche TRAILING (réutilise les bornes
-du mode : `trailBps ∈ ]0, 10 000[`).
+`isValidRegimeExitArm` étend sa branche TRAILING en **déléguant** à
+`isValidProtectiveExitPolicy` sur la politique active équivalente —
+bornes à source unique, pas de duplication des constantes.
 
 ### 2.4 CLI
 
@@ -75,7 +78,7 @@ du mode : `trailBps ∈ ]0, 10 000[`).
 | RC3 | Un plan issu d'un bras TRAILING obéit à tous les invariants TE du mode (ratchet post-évaluation, sortie au niveau figé, anchor au re-arm) |
 | RC4 | Changement de régime → replan au bras résolu uniquement si les politiques diffèrent (`activeProtectivePolicyEquals` couvre TRAILING depuis v2) ; même comportement armé→armé que armé→NONE |
 | RC5 | Tout re-arm (changement de régime ou position augmentée) repart de l'entrée courante : anchor réinitialisé (comportement TE6, déjà en place) |
-| RC6 | CLI : `--bull-trail-bps` accepté seulement en REGIME_CONDITIONAL ; manifeste/suffixe étendus seulement si présent |
+| RC6 | CLI : `--bull-trail-bps` accepté seulement en REGIME_CONDITIONAL **où le bras armé fixe (stop+take) reste requis** — le flag seul est insuffisant ; manifeste/suffixe étendus seulement si présent |
 | RC7 | Zéro nouvelle transition machine, zéro changement replay.ts ; les bras restent des données pures résolues par fonction pure ; aucun LLM |
 
 ## 4. Plan de mesure
