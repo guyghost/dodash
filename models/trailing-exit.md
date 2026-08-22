@@ -41,9 +41,12 @@ Nouveau membre de l'union `ProtectiveExitPolicy` :
 
 `ProtectiveOrderPlan` évolue :
 
-- `takeProfitPrice: number | null` (null en TRAILING_BPS, inchangé sinon).
+- `takeProfitPrice: number | null` (null en TRAILING_BPS, non-null et
+  inchangé pour FIXED_BPS / REGIME_CONDITIONAL ; toutes les comparaisons
+  existantes doivent garder le guard explicite).
 - `anchorPrice: number` — max des plus hauts observés, initialisé au prix
-  moyen d'entrée à l'armement/replan.
+  moyen d'entrée à l'armement/replan (chaque replan = nouvelle instance
+  de plan, anchor réinitialisé).
 
 Niveau de stop effectif à la bougie *t* (évaluation) :
 
@@ -79,7 +82,7 @@ réinitialisé** (parité RE4 : re-arm depuis l'entrée courante).
 
 | # | Invariant |
 |---|-----------|
-| TE1 | Stop monotone non-décroissant sur la vie du plan ; ne monte qu'après évaluation complète d'une bougie |
+| TE1 | Stop monotone non-décroissant **par instance de plan** (un replan POSITION_INCREASED démarre une nouvelle instance, cf. TE6) ; ne monte qu'après évaluation complète d'une bougie |
 | TE2 | L'évaluation d'une bougie utilise exclusivement le niveau figé avant cette bougie (pas de ratchet intra-bougie) |
 | TE3 | `anchorPrice` = max(prix moyen à l'armement/replan, highs des bougies entièrement évaluées) |
 | TE4 | TRAILING_BPS : sorties STOP_LOSS uniquement (GAP_OPEN / INTRABAR) ; aucune sortie TAKE_PROFIT ni AMBIGUOUS |
