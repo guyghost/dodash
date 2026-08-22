@@ -76,6 +76,13 @@ cela change uniquement le bras d'exit protectif et les statistiques de gating.
 | RA4 | Permissions et gating inchangés (aucune stratégie n'est (dés)autorisée par l'asymétrie) |
 | RA5 | Flag CLI absent → `runId` et chemin d'artefact bit-identiques v1 |
 | RA6 | Aucune décision d'état déléguée à un LLM ; la classification reste une fonction pure déterministe |
+| RA7 | `--regime-bearish-threshold-bps` rejeté si `--regime-filter` vaut `NONE` ou `EMA_SLOPE` (champ spécifique au mode, miroir de R6) |
+
+Précision flottante (RA1) : la branche EMA_THRESHOLD conserve les inégalités
+strictes v1, sans epsilon (contrairement à EMA_SLOPE), pour garantir la
+bit-identité lorsque le champ est absent. L'ordre relatif
+`bearishThresholdBps` vs `thresholdBps` n'est pas contraint (RA2) : une
+asymétrie inversée reste une politique valide à mesurer.
 
 ## 4. Plan de mesure (étude de sensibilité)
 
