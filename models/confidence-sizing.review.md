@@ -1,7 +1,7 @@
 # Revue — Sizing par calibration de confiance v1
 
 Verdict : APPROUVÉ AVEC CORRECTIONS
-Date : 2025-12-17
+Date : 2026-08-22 (corrigé en phase Verify, voir l'erratum ci-dessous)
 Revue de : `models/confidence-sizing.md`
 
 ## Vérifications effectuées (contre le code réel)
@@ -56,3 +56,25 @@ Revue de : `models/confidence-sizing.md`
 - [x] Cas limites : c=0, c=1, HOLD, erreurs — déjà couverts par les tests models
 - [x] Critères a priori définis avant mesure
 - [x] Aucune transition pilotée par texte libre / LLM
+
+## Erratum (phase Verify, 2026-08-22)
+
+La revue ci-dessus a été menée alors que la configuration de mesure
+était encore erronée sur deux points, découverts en Verify :
+
+1. **Bras V1** — la première grille utilisait bear/range/warmUp FIXED
+   **600/600** (bras de v3 indûment hérité). La baseline V1 n'était
+   pas reproductible (+3,63 % → −1,67 % en bull IDENTITY). Après
+   recoupement avec le checkpoint 006 (V1 mesuré via CLI
+   `--stop-loss-bps 300 --take-profit-bps 600`), correction en
+   **300/600** : la baseline est alors reproduite bit pour bit. La
+   vérification CS5-like « la mesure doit reproduire le champion avant
+   de mesurer la variation » mérite d'être un critère systématique des
+   campagnes de mesure.
+2. **Dates** — le doc initial datait la campagne du 2025-12-17 ;
+   les fenêtres réelles s'achèvent en 2026 (bear jusqu'au 2026-08-21).
+   Dates corrigées.
+
+Aucune des vérifications code (§ Vérifications) n'est affectée :
+elles portent sur `confidence-calibration.ts`,
+`confidence-calibrated-strategy.ts` et `suite.ts`, inchangés.
