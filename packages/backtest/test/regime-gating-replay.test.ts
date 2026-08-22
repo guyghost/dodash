@@ -109,6 +109,7 @@ const baseCandles: Candle[] = [
 ];
 
 const bullishPolicy = {
+  mode: "EMA_THRESHOLD",
   thresholdBps: 100,
   minObservations: 1,
   confirmationCount: 1,

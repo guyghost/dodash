@@ -16,6 +16,7 @@ import type {
 } from "./regime-filter.types.js";
 
 const policy = {
+  mode: "EMA_THRESHOLD",
   thresholdBps: 100,
   minObservations: 3,
   confirmationCount: 2,

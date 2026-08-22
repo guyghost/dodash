@@ -96,8 +96,12 @@ const main = async (): Promise<void> => {
   console.log(`Protective exit: ${options.value.protectiveExit.mode}`);
   if (options.value.regimeFilter !== null) {
     const policy = options.value.regimeFilter;
+    const params =
+      policy.mode === "EMA_THRESHOLD"
+        ? `bps=${policy.thresholdBps}`
+        : `slopeBps=${policy.slopeThresholdBps} slopePeriods=${policy.slopePeriods}`;
     console.log(
-      `Regime filter: EMA_THRESHOLD bps=${policy.thresholdBps} minObservations=${policy.minObservations} confirmationCount=${policy.confirmationCount}`,
+      `Regime filter: ${policy.mode} ${params} minObservations=${policy.minObservations} confirmationCount=${policy.confirmationCount}`,
     );
   } else {
     console.log("Regime filter: NONE");

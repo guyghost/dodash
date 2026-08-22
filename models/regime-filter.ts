@@ -13,16 +13,35 @@ export const DEFAULT_REGIME_PERMISSIONS: RegimePermissions = Object.freeze({
   RANGE: Object.freeze(["rsi-reversion"]),
 });
 
-export const isValidRegimeFilterPolicy = (
-  policy: RegimeFilterPolicy,
-): boolean =>
-  Number.isFinite(policy.thresholdBps) &&
-  policy.thresholdBps > 0 &&
-  policy.thresholdBps < 10_000 &&
+const hasValidSharedFields = (policy: RegimeFilterPolicy): boolean =>
   Number.isInteger(policy.minObservations) &&
   policy.minObservations >= 1 &&
   Number.isInteger(policy.confirmationCount) &&
   policy.confirmationCount >= 1;
+
+const isValidBps = (value: number): boolean =>
+  Number.isFinite(value) && value > 0 && value < 10_000;
+
+/**
+ * Validation par mode : les champs spécifiques à un mode ne doivent pas être
+ * utilisés par l'autre, et tout mode inconnu est rejeté (R6).
+ */
+export const isValidRegimeFilterPolicy = (
+  policy: RegimeFilterPolicy,
+): boolean => {
+  if (!hasValidSharedFields(policy)) return false;
+  if (policy.mode === "EMA_THRESHOLD") {
+    return isValidBps(policy.thresholdBps);
+  }
+  if (policy.mode === "EMA_SLOPE") {
+    return (
+      isValidBps(policy.slopeThresholdBps) &&
+      Number.isInteger(policy.slopePeriods) &&
+      policy.slopePeriods >= 1
+    );
+  }
+  return false;
+};
 
 export const isValidRegimeObservation = (
   observation: RegimeObservation,
@@ -36,15 +55,40 @@ export const isValidRegimeObservation = (
   Number.isFinite(observation.emaSlow) &&
   observation.emaSlow > 0;
 
+/**
+ * Classification d'une observation selon le mode de la politique.
+ *
+ * - EMA_THRESHOLD : écart instantané EMA fast/slow (v1, jamais `null`).
+ * - EMA_SLOPE : pente de l'EMA slow sur `slopePeriods` observations, mesurée
+ *   entre l'observation courante et `emaSlowHistory[0]`. Retourne `null`
+ *   (« pending ») tant que l'historique est insuffisant — ce n'est pas une
+ *   erreur (modèle regime-slope.md, invariants 10-13).
+ *
+ * @param emaSlowHistory Historique borné des EMA slow précédentes
+ *   (l'observation courante n'y est PAS encore). Ignéré en EMA_THRESHOLD.
+ */
 export const classifyRegimeObservation = (
   policy: RegimeFilterPolicy,
   observation: RegimeObservation,
-): RegimeKind => {
-  const threshold = 1 + policy.thresholdBps / 10_000;
-  if (observation.emaFast > observation.emaSlow * threshold) return "BULLISH";
-  if (observation.emaFast < observation.emaSlow * (2 - threshold)) {
-    return "BEARISH";
+  emaSlowHistory: readonly number[] = [],
+): RegimeKind | null => {
+  if (policy.mode === "EMA_THRESHOLD") {
+    const threshold = 1 + policy.thresholdBps / 10_000;
+    if (observation.emaFast > observation.emaSlow * threshold) return "BULLISH";
+    if (observation.emaFast < observation.emaSlow * (2 - threshold)) {
+      return "BEARISH";
+    }
+    return "RANGE";
   }
+  if (emaSlowHistory.length < policy.slopePeriods) return null;
+  const reference = emaSlowHistory[0];
+  if (reference === undefined || reference <= 0) return null;
+  const slopeBps = (observation.emaSlow / reference - 1) * 10_000;
+  // Inégalités strictes (au-seuil = RANGE) rendues robustes aux artefacts
+  // flottants (ex. 101/100 − 1 ≈ 100.0000000009 bps).
+  const epsilon = 1e-6;
+  if (slopeBps > policy.slopeThresholdBps + epsilon) return "BULLISH";
+  if (slopeBps < -(policy.slopeThresholdBps + epsilon)) return "BEARISH";
   return "RANGE";
 };
 

@@ -87,12 +87,21 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
         ]),
     ...(options.regimeFilter === null
       ? []
-      : [
-          "regime",
-          options.regimeFilter.thresholdBps,
-          options.regimeFilter.minObservations,
-          options.regimeFilter.confirmationCount,
-        ]),
+      : options.regimeFilter.mode === "EMA_THRESHOLD"
+        ? [
+            "regime",
+            options.regimeFilter.thresholdBps,
+            options.regimeFilter.minObservations,
+            options.regimeFilter.confirmationCount,
+          ]
+        : [
+            "regime",
+            "slope",
+            options.regimeFilter.slopeThresholdBps,
+            options.regimeFilter.slopePeriods,
+            options.regimeFilter.minObservations,
+            options.regimeFilter.confirmationCount,
+          ]),
   ];
   return [
     "bt",
@@ -130,6 +139,8 @@ export const parseBacktestCliOptions = (
     "--regime-threshold-bps",
     "--regime-min-observations",
     "--regime-confirmation-count",
+    "--regime-slope-bps",
+    "--regime-slope-periods",
     "--start",
     "--end",
     "--output",
@@ -194,22 +205,47 @@ export const parseBacktestCliOptions = (
   }
 
   const regimeMode = values.get("--regime-filter") ?? "NONE";
-  const regimeOptional = [
-    values.get("--regime-threshold-bps"),
-    values.get("--regime-min-observations"),
-    values.get("--regime-confirmation-count"),
-  ];
+  const regimeMinObservations = values.get("--regime-min-observations");
+  const regimeConfirmationCount = values.get("--regime-confirmation-count");
+  const regimeThresholdFlag = values.get("--regime-threshold-bps");
+  const regimeSlopeBpsFlag = values.get("--regime-slope-bps");
+  const regimeSlopePeriodsFlag = values.get("--regime-slope-periods");
+  const regimeSharedFlags = [regimeMinObservations, regimeConfirmationCount];
   let regimeFilter: RegimeFilterPolicy | null;
   if (regimeMode === "NONE") {
-    if (regimeOptional.some((value) => value !== undefined)) {
+    if (
+      regimeSharedFlags.some((value) => value !== undefined) ||
+      regimeThresholdFlag !== undefined ||
+      regimeSlopeBpsFlag !== undefined ||
+      regimeSlopePeriodsFlag !== undefined
+    ) {
       return err({ code: "INVALID_CLI_OPTIONS" });
     }
     regimeFilter = null;
   } else if (regimeMode === "EMA_THRESHOLD") {
+    if (regimeSlopeBpsFlag !== undefined || regimeSlopePeriodsFlag !== undefined) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
     const candidate = Object.freeze({
-      thresholdBps: Number(regimeOptional[0] ?? "100"),
-      minObservations: Number(regimeOptional[1] ?? "5"),
-      confirmationCount: Number(regimeOptional[2] ?? "3"),
+      mode: "EMA_THRESHOLD" as const,
+      thresholdBps: Number(regimeThresholdFlag ?? "100"),
+      minObservations: Number(regimeMinObservations ?? "5"),
+      confirmationCount: Number(regimeConfirmationCount ?? "3"),
+    });
+    if (!isValidRegimeFilterPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    regimeFilter = candidate;
+  } else if (regimeMode === "EMA_SLOPE") {
+    if (regimeThresholdFlag !== undefined) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    const candidate = Object.freeze({
+      mode: "EMA_SLOPE" as const,
+      slopeThresholdBps: Number(regimeSlopeBpsFlag ?? "200"),
+      slopePeriods: Number(regimeSlopePeriodsFlag ?? "10"),
+      minObservations: Number(regimeMinObservations ?? "5"),
+      confirmationCount: Number(regimeConfirmationCount ?? "3"),
     });
     if (!isValidRegimeFilterPolicy(candidate)) {
       return err({ code: "INVALID_CLI_OPTIONS" });
@@ -266,7 +302,9 @@ export const parseBacktestCliOptions = (
   const regimeSuffix =
     regimeFilter === null
       ? ""
-      : `-regime-${regimeFilter.thresholdBps}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`;
+      : regimeFilter.mode === "EMA_THRESHOLD"
+        ? `-regime-${regimeFilter.thresholdBps}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`
+        : `-regime-slope-${regimeFilter.slopeThresholdBps}-${regimeFilter.slopePeriods}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`;
   const outputPath = values.get("--output") ??
     `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${confidenceSuffix}${protectiveSuffix}${regimeSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
   return ok(

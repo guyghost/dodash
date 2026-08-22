@@ -189,6 +189,8 @@ export {
   resolveRegimePermission,
 } from "./regime-filter.js";
 export type {
+  EmaSlopeRegimePolicy,
+  EmaThresholdRegimePolicy,
   RegimeFilterContext,
   RegimeFilterError,
   RegimeFilterErrorCode,

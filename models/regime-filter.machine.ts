@@ -9,6 +9,7 @@ import type {
   RegimeFilterContext,
   RegimeFilterEvent,
   RegimeFilterInput,
+  RegimeFilterPolicy,
   RegimeKind,
 } from "./regime-filter.types.js";
 
@@ -18,8 +19,30 @@ const rawKind = (
 ): RegimeKind | null =>
   event.type === "CANDLE_CLOSED" &&
   isValidRegimeObservation(event.observation, context.lastObservationStart)
-    ? classifyRegimeObservation(context.policy, event.observation)
+    ? classifyRegimeObservation(
+        context.policy,
+        event.observation,
+        context.emaSlowHistory,
+      )
     : null;
+
+/** Taille max de l'historique EMA slow selon le mode (0 hors EMA_SLOPE). */
+const historyCap = (policy: RegimeFilterPolicy): number =>
+  policy.mode === "EMA_SLOPE" ? policy.slopePeriods : 0;
+
+/**
+ * Historique après intégration de l'EMA slow de l'observation courante
+ * (R1 : indépendant du résultat de classification ; R4 : borne stricte).
+ */
+const appendedHistory = (
+  context: RegimeFilterContext,
+  event: RegimeFilterEvent,
+): readonly number[] => {
+  if (event.type !== "CANDLE_CLOSED") return context.emaSlowHistory;
+  const cap = historyCap(context.policy);
+  if (cap === 0) return context.emaSlowHistory;
+  return [...context.emaSlowHistory, event.observation.emaSlow].slice(-cap);
+};
 
 const warmedUp = (context: RegimeFilterContext, raw: RegimeKind): boolean => {
   const streak = context.pendingKind === raw ? context.pendingCount + 1 : 1;
@@ -31,9 +54,6 @@ const warmedUp = (context: RegimeFilterContext, raw: RegimeKind): boolean => {
 
 const opposingStreak = (context: RegimeFilterContext, raw: RegimeKind): number =>
   context.opposingKind === raw ? context.opposingCount + 1 : 1;
-
-const observationStart = (event: RegimeFilterEvent): number | null =>
-  event.type === "CANDLE_CLOSED" ? event.observation.start : null;
 
 const isSwitchConfirmed = (
   context: RegimeFilterContext,
@@ -97,45 +117,62 @@ export const regimeFilterMachine = setup({
       lastError: { code: "INVALID_REGIME_OBSERVATION" },
     }),
     recordWarmingObservation: assign(({ context, event }) => {
+      if (event.type !== "CANDLE_CLOSED") return {};
+      // Base commune : comptée et historisée même si la classification est
+      // pending (R1). Les streaks de confirmation ne sont touchés que sur
+      // classification effective (R2 : le pending ne casse ni n'étend un
+      // streak en cours).
+      const base = {
+        observationCount: context.observationCount + 1,
+        lastObservationStart: event.observation.start,
+        emaSlowHistory: appendedHistory(context, event),
+      };
       const raw = rawKind(context, event);
-      if (raw === null) return {};
+      if (raw === null) return base;
       return {
+        ...base,
         pendingKind: raw,
         pendingCount:
           context.pendingKind === raw ? context.pendingCount + 1 : 1,
-        observationCount: context.observationCount + 1,
-        lastObservationStart: observationStart(event),
       };
     }),
     recordRegimeObservation: assign(({ context, event }) => {
+      if (event.type !== "CANDLE_CLOSED" || context.regime === null) return {};
+      const base = {
+        observationCount: context.observationCount + 1,
+        lastObservationStart: event.observation.start,
+        emaSlowHistory: appendedHistory(context, event),
+      };
       const raw = rawKind(context, event);
-      if (raw === null || context.regime === null) return {};
+      // Défensif : post-warm-up la classification n'est jamais pending (R3),
+      // l'historique est saturé dès la première entrée de régime.
+      if (raw === null) return base;
       if (raw === context.regime) {
-        return {
-          opposingKind: null,
-          opposingCount: 0,
-          observationCount: context.observationCount + 1,
-          lastObservationStart: observationStart(event),
-        };
+        return { ...base, opposingKind: null, opposingCount: 0 };
       }
       return {
+        ...base,
         opposingKind: raw,
         opposingCount: opposingStreak(context, raw),
-        observationCount: context.observationCount + 1,
-        lastObservationStart: observationStart(event),
       };
     }),
     recordRegimeEntry: assign(({ context, event }) => {
+      if (event.type !== "CANDLE_CLOSED") return {};
+      const base = {
+        observationCount: context.observationCount + 1,
+        lastObservationStart: event.observation.start,
+        emaSlowHistory: appendedHistory(context, event),
+      };
       const raw = rawKind(context, event);
-      if (raw === null) return {};
+      // Défensif : les gardes d'entrée exigent une classification effective.
+      if (raw === null) return base;
       return {
+        ...base,
         regime: raw,
         pendingKind: null,
         pendingCount: 0,
         opposingKind: null,
         opposingCount: 0,
-        observationCount: context.observationCount + 1,
-        lastObservationStart: observationStart(event),
       };
     }),
     recordStop: assign(({ event }) =>
@@ -153,6 +190,7 @@ export const regimeFilterMachine = setup({
     opposingKind: null,
     opposingCount: 0,
     lastObservationStart: null,
+    emaSlowHistory: [],
     lastError: null,
     stopReason: null,
   }),
