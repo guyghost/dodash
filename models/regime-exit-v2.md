@@ -77,8 +77,67 @@ proposition d'extension CLI (cycle Model→Review→Implement→Verify séparé)
 
 ## Mesures (Verify)
 
-_Tableau à compléter par `npx tsx scripts/regime-exit-sensitivity.ts`._
+`npx tsx scripts/regime-exit-sensitivity.ts` — ensemble, fenêtres fixes :
+
+### Bull 2023-08-21→2024-08-21
+
+| Cellule | range | bearish | return | dd | win | trades | stops | takes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A1 (=V1) | 300/600 | 300/600 | +0.27% | 2.93% | 44% | 50 | 5 | 4 |
+| A2 | 300/600 | 600/1200 | −0.12% | 4.78% | 56% | 50 | 4 | 5 |
+| B1 | NONE | 300/600 | +0.63% | 3.16% | 43% | 48 | 4 | 3 |
+| **B2** | NONE | 600/1200 | **+4.30%** | 5.75% | **70%** | 51 | 3 | 3 |
+| C1 | 600/1200 | 300/600 | +0.10% | 3.10% | 44% | 50 | 5 | 4 |
+| C2 | 600/1200 | 600/1200 | +0.09% | 5.10% | 58% | 53 | 5 | 4 |
+
+### Bear 2025-08-21→2026-08-21
+
+| Cellule | range | bearish | return | dd | win | trades | stops | takes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A1 (=V1) | 300/600 | 300/600 | +3.63% | 3.37% | 26% | 89 | 23 | 8 |
+| A2 | 300/600 | 600/1200 | −7.46% | 10.70% | 25% | 78 | 15 | 5 |
+| B1 | NONE | 300/600 | +2.90% | 4.25% | 26% | 85 | 20 | 6 |
+| B2 | NONE | 600/1200 | **−12.53%** | **14.19%** | 37% | 74 | 12 | 1 |
+| **C1** | 600/1200 | 300/600 | **+4.07%** | 3.84% | 29% | 89 | 22 | 8 |
+| C2 | 600/1200 | 600/1200 | −5.33% | 9.89% | 39% | 81 | 14 | 5 |
+
+Contrôle : A1 re-produit V1 bit-à-bit (artefacts `regime-exit-300-600-regime-100-5-3`).
 
 ## Verdict
 
-_À compléter après mesure._
+**Aucune cellule ne satisfait les critères a priori** (bull ≥ +3% ET bear > 0%
+ET dd bear ≤ 10%). Application des critères :
+
+- H1 invalidée : `range=NONE` ne retire qu'un stop bull sur cinq (B1 : +0.63%
+  vs +0.27%) — les stops destructeurs de valeur bull ne sont pas dans le bras
+  RANGE.
+- H2 confirmée : la dégradation bear de `range=NONE` est bornée et faible
+  (B1 : +2.90% vs +3.63%).
+- H3 invalidée côté bull : `range=600/1200` ne récupère rien (C1 : +0.10%) ;
+  en revanche C1 est le **meilleur bear mesuré** (+4.07%, dd 3.84%).
+
+Conclusions structurelles :
+
+1. **Le levier bull est le bras BEARISH, pas RANGE** : seul `bearish=600/1200`
+   récupère le potentiel bull (B2 : +4.30%, win 70%) — le classifieur
+   EMA_THRESHOLD étiquette BEARISH les creux d'une année haussière, et ce sont
+   exactement les entrées rsi-reversion stoppées qui auraient survécu au
+   rebond.
+2. **Ce levier est le même que celui qui protège le bear** : le stop BEARISH
+   serré qui détruit la valeur bull est celui qui sauve l'année bear (B2 :
+   −12.53%, dd 14.19%). Une politique statique de bras par régime ne peut pas
+   simultanément récupérer le bull et protéger le bear sur ce classifieur.
+3. Sensibilité bear au stop RANGE élargi : négative (A2/C2 < 0) — l'année bear
+   finit classée RANGE ; élargir RANGE déprotège la phase finale.
+
+Décision : **pas de changement CLI** (aucune politique retenue). V1
+(`bull=NONE`, autres 300/600) reste la configuration déployée ; C1
+(`range=600/1200`) est le seul candidat « orienté bear » si l'appétit de risque
+bull est déjà couvert par ailleurs.
+
+Pistes suivantes (hors périmètre de cette étude, à modéliser séparément si
+poursuivies) : améliorer la classification (creux bull vs tendance bear — par
+exemple seuil asymétrique ou régime à hystérésis), ou mécanisme de sortie
+différent (stop suiveur, sortie temporelle) qui ne soit pas un bracket fixe
+par régime.
+
