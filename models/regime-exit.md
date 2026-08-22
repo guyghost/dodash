@@ -86,7 +86,10 @@ Le régime actif est observé à la clôture de chaque bougie (event
    l'état ≤ N−1 — un plan déclenché à N l'est définitivement ;
 2. Signaux, ordres, exécutions (mécanique inchangée) ;
 3. Alimentation de l'observation régime N ;
-4. **Point de replan** : résoudre le bras actif `arm(N)` ;
+4. **Point de replan** : résoudre le bras actif `arm(N)` — lu depuis
+   `context.regime` de la machine régime, qui ne change qu'après une
+   transition **confirmée** (`confirmationCount` satisfait) ; une brute
+   isolée ne déclenche jamais de replan ;
    - si un plan est armé et `arm(N)` diffère **effectivement** du bras armé
      (mode ou paramètres) : `CANCEL_REQUESTED { reason: "REGIME_CHANGED" }`
      puis, si `arm(N) ≠ null`, armement immédiat d'un nouveau plan
@@ -112,8 +115,10 @@ réévaluée sous deux plans. Position fermée à N ⇒ actor déjà annulé
   (comparaison mode + paramètres, pas identité d'objet).
 - **RE4** — Un replan part toujours du prix d'entrée moyen et de la quantité
   courants ; jamais des niveaux de l'ancien plan.
-- **RE5** — Une seule évaluation protective par bougie par plan ; aucun
-  plan n'est appliqué rétroactivement à la bougie de sa création.
+- **RE5** — Deux chemins d'armement, deux sémantiques explicites : un plan
+  créé au point de replan (étape 4) n'est pas évalué contre la bougie N
+  (ni open ni range), il est effectif à partir de N+1 ; l'armement sur
+  fill conserve la sémantique v1 (range de la bougie d'armement rejoué).
 - **RE6** — Warm-up (régime `null`) suit le bras `warmUp` ; deny-by-default
   par défaut FIXE du CLI.
 - **RE7** — `REGIME_CONDITIONAL` exige un `regimeFilter` actif : une config
