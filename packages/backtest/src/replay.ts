@@ -25,6 +25,7 @@ import {
   isValidRegimeConditionalExitPolicy,
   isValidRegimeFilterPolicy,
   protectiveOrderMachine,
+  resolveDailyRiskWindow,
   resolveRegimeExitArm,
   resolveRegimePermission,
   resolveRiskEvaluationTimestamp,
@@ -32,6 +33,7 @@ import {
   regimeFilterMachine,
   summarizeBacktestDiagnostics,
   type ActiveProtectiveExitPolicy,
+  type DailyRiskWindow,
   type AllocationDiagnosticObservation,
   type BacktestDiagnosticSamples,
   type BacktestDiagnostics,
@@ -268,6 +270,7 @@ export const replayBacktest = async (
   const equityCurve: EquityPoint[] = [];
   let previousIndicators: IndicatorSnapshot | null = null;
   let lastTradeAt: number | null = null;
+  let dailyRiskWindow: DailyRiskWindow | null = null;
   let pendingOrders: readonly OrderIntent[] = [];
   const protectivePolicy = config.protectiveExit ?? ({ mode: "NONE" } as const);
   let activeProtectivePolicy: ActiveProtectiveExitPolicy | null =
@@ -677,6 +680,12 @@ export const replayBacktest = async (
     const approvedOrders: OrderIntent[] = [];
     const rejectedReasonCodes: RiskRejectionReasonCode[] = [];
     let spotInexecutableNotional = 0;
+    // Fenêtre daily-risk (models/daily-pnl-fidelity.md INV-P1) : roulée à
+    // chaque candle évalué, miroir du live qui roule à chaque cycle. En
+    // ONE_DAY aligné UTC, chaque candle rouvre la fenêtre (INV-P3).
+    const equityCandle = portfolio.cash + portfolio.positionQuantity * candle.close;
+    const dailyRisk = resolveDailyRiskWindow(dailyRiskWindow, candle.start, equityCandle);
+    dailyRiskWindow = dailyRisk.window;
     for (const order of allocation.value.orders) {
       // Pré-validation spot amont (models/spot-prevalidation.md) : un
       // ordre inexécutable est abandonné AVANT le risk engine et
@@ -696,14 +705,13 @@ export const replayBacktest = async (
         spotInexecutableNotional += order.quantity * candle.close;
         continue;
       }
-      const equityBefore = portfolio.cash + portfolio.positionQuantity * candle.close;
       const risk = checkRisk(
         order,
         {
           marketPrice: candle.close,
           currentPositionQuantity: portfolio.positionQuantity,
           otherExposureNotional: 0,
-          dailyPnl: equityBefore - config.initialCapital,
+          dailyPnl: dailyRisk.dailyPnl,
           lastTradeAt,
           now: resolveRiskEvaluationTimestamp(candle.start, lastTradeAt),
           killSwitchActive: false,
