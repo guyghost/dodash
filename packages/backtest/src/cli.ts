@@ -99,7 +99,9 @@ const main = async (): Promise<void> => {
     const armLabel = (arm: RegimeExitArm): string =>
       arm.mode === "NONE"
         ? "NONE"
-        : `FIXED ${arm.stopLossBps}/${arm.takeProfitBps}`;
+        : arm.mode === "TRAILING_BPS"
+          ? `TRAILING ${arm.trailBps}`
+          : `FIXED ${arm.stopLossBps}/${arm.takeProfitBps}`;
     console.log(
       `Protective exit: REGIME_CONDITIONAL bull=${armLabel(protective.bullish)} bear=${armLabel(protective.bearish)} range=${armLabel(protective.range)} warmUp=${armLabel(protective.warmUp)}`,
     );

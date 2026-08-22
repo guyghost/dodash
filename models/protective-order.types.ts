@@ -6,6 +6,10 @@ export type RegimeExitArm =
       readonly mode: "FIXED_BPS";
       readonly stopLossBps: number;
       readonly takeProfitBps: number;
+    }
+  | {
+      readonly mode: "TRAILING_BPS";
+      readonly trailBps: number;
     };
 
 export interface RegimeConditionalExitPolicy {

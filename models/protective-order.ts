@@ -71,10 +71,15 @@ export const isValidProtectiveExitPolicy = (
 
 export const isValidRegimeExitArm = (arm: RegimeExitArm): boolean =>
   arm.mode === "NONE" ||
-  (positiveFinite(arm.stopLossBps) &&
-    arm.stopLossBps < 10_000 &&
-    positiveFinite(arm.takeProfitBps) &&
-    arm.takeProfitBps < 100_000);
+  isValidProtectiveExitPolicy(
+    arm.mode === "FIXED_BPS"
+      ? {
+          mode: "FIXED_BPS",
+          stopLossBps: arm.stopLossBps,
+          takeProfitBps: arm.takeProfitBps,
+        }
+      : { mode: "TRAILING_BPS", trailBps: arm.trailBps },
+  );
 
 export const isValidRegimeConditionalExitPolicy = (
   policy: RegimeConditionalExitPolicy,

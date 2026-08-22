@@ -1,5 +1,7 @@
+import { createActor } from "xstate";
 import { describe, expect, it } from "vitest";
 
+import { protectiveOrderMachine } from "./protective-order.machine.js";
 import {
   activeProtectivePolicyEquals,
   isValidRegimeConditionalExitPolicy,
@@ -140,5 +142,104 @@ describe("activeProtectivePolicyEquals (RE3 : comparaison effective)", () => {
     expect(activeProtectivePolicyEquals(null, null)).toBe(true);
     expect(activeProtectivePolicyEquals(null, fixedArm(300, 600) as ActiveProtectiveExitPolicy)).toBe(false);
     expect(activeProtectivePolicyEquals(fixedArm(300, 600) as ActiveProtectiveExitPolicy, null)).toBe(false);
+  });
+});
+
+describe("bras hétérogènes par régime v3 (TRAILING bull)", () => {
+  const trailingArm: RegimeExitArm = { mode: "TRAILING_BPS", trailBps: 500 };
+  const v3Policy = policy({ bullish: trailingArm });
+  const armEvent = {
+    type: "ARM_REQUESTED",
+    positionId: "position-1",
+    quantity: 2,
+    averageEntryPrice: 100,
+    atr: 2,
+    armedAt: 1_000,
+  } as const;
+
+  it("valide le bras TRAILING aux bornes partagées du mode (RC2)", () => {
+    expect(isValidRegimeExitArm(trailingArm)).toBe(true);
+    expect(isValidRegimeConditionalExitPolicy(v3Policy)).toBe(true);
+    expect(isValidRegimeExitArm({ mode: "TRAILING_BPS", trailBps: 0 })).toBe(false);
+    expect(isValidRegimeExitArm({ mode: "TRAILING_BPS", trailBps: 10_000 })).toBe(false);
+    expect(isValidRegimeExitArm({ mode: "TRAILING_BPS", trailBps: Number.NaN })).toBe(false);
+    expect(
+      isValidRegimeConditionalExitPolicy(
+        policy({ bullish: { mode: "TRAILING_BPS", trailBps: 10_001 } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("résout BULLISH vers le bras TRAILING, le reste vers FIXED (v3 §2.2)", () => {
+    expect(resolveRegimeExitArm(v3Policy, "BULLISH")).toEqual({
+      mode: "TRAILING_BPS",
+      trailBps: 500,
+    });
+    expect(resolveRegimeExitArm(v3Policy, "BEARISH")).toEqual(fixedArm(300, 600));
+    expect(resolveRegimeExitArm(v3Policy, "RANGE")).toEqual(fixedArm(300, 600));
+    expect(resolveRegimeExitArm(v3Policy, null)).toEqual(fixedArm(300, 600));
+  });
+
+  it("identifie la politique résolue du bras via l’égalité de replan (RC4)", () => {
+    const resolved = resolveRegimeExitArm(v3Policy, "BULLISH") as ActiveProtectiveExitPolicy;
+    expect(
+      activeProtectivePolicyEquals(resolved, { mode: "TRAILING_BPS", trailBps: 500 }),
+    ).toBe(true);
+    expect(
+      activeProtectivePolicyEquals(
+        resolved,
+        { mode: "TRAILING_BPS", trailBps: 500, takeProfitBps: 600 },
+      ),
+    ).toBe(false);
+    expect(
+      activeProtectivePolicyEquals(resolved, { mode: "TRAILING_BPS", trailBps: 700 }),
+    ).toBe(false);
+    expect(
+      activeProtectivePolicyEquals(
+        resolved,
+        fixedArm(300, 600) as ActiveProtectiveExitPolicy,
+      ),
+    ).toBe(false);
+  });
+
+  it("le plan issu du bras TRAILING termine en triggered (RC3)", () => {
+    const resolved = resolveRegimeExitArm(v3Policy, "BULLISH");
+    if (resolved === null) throw new Error("bullish arm must resolve");
+    const actor = createActor(protectiveOrderMachine, {
+      input: { policy: resolved },
+    }).start();
+    actor.send(armEvent);
+    actor.send({ type: "CANDLE_OPENED", start: 2_000, open: 101 });
+    actor.send({
+      type: "CANDLE_RANGE_REPLAYED",
+      start: 2_000,
+      high: 110,
+      low: 90,
+    });
+
+    const snapshot = actor.getSnapshot();
+    expect(snapshot.value).toBe("triggered");
+    expect(snapshot.context.resolution).toMatchObject({ kind: "STOP_LOSS" });
+  });
+
+  it("au flip de régime : cancel puis re-arm sur un nouvel acteur, anchor réinitialisé (RC5)", () => {
+    const bear = resolveRegimeExitArm(v3Policy, "BEARISH") as ActiveProtectiveExitPolicy;
+    const bull = resolveRegimeExitArm(v3Policy, "BULLISH") as ActiveProtectiveExitPolicy;
+    const bearActor = createActor(protectiveOrderMachine, {
+      input: { policy: bear },
+    }).start();
+    bearActor.send(armEvent);
+    bearActor.send({ type: "CANCEL_REQUESTED", reason: "REGIME_CHANGED" });
+    expect(bearActor.getSnapshot().value).toBe("cancelled");
+
+    const bullActor = createActor(protectiveOrderMachine, {
+      input: { policy: bull },
+    }).start();
+    bullActor.send({ ...armEvent, averageEntryPrice: 120, armedAt: 3_000 });
+    expect(bullActor.getSnapshot().context.plan).toMatchObject({
+      anchorPrice: 120,
+      stopPrice: 120 * (1 - 500 / 10_000),
+      policyMode: "TRAILING_BPS",
+    });
   });
 });

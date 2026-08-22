@@ -8,6 +8,7 @@ import {
 } from "@dodash/domain";
 import {
   isValidProtectiveExitPolicy,
+  isValidRegimeConditionalExitPolicy,
   isConfidenceCalibrationProfile,
   isValidRegimeFilterPolicy,
   type ConfidenceCalibrationProfile,
@@ -107,6 +108,9 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
               options.protectiveExit.bearish.mode === "FIXED_BPS"
                 ? options.protectiveExit.bearish.takeProfitBps
                 : 0,
+              ...(options.protectiveExit.bullish.mode === "TRAILING_BPS"
+                ? ["bulltrail", options.protectiveExit.bullish.trailBps]
+                : []),
             ]),
     ...(options.regimeFilter === null
       ? []
@@ -162,6 +166,7 @@ export const parseBacktestCliOptions = (
     "--stop-loss-bps",
     "--take-profit-bps",
     "--trail-bps",
+    "--bull-trail-bps",
     "--regime-filter",
     "--regime-threshold-bps",
     "--regime-bearish-threshold-bps",
@@ -209,12 +214,14 @@ export const parseBacktestCliOptions = (
   const stopLossRaw = values.get("--stop-loss-bps");
   const takeProfitRaw = values.get("--take-profit-bps");
   const trailBpsRaw = values.get("--trail-bps");
+  const bullTrailRaw = values.get("--bull-trail-bps");
   let protectiveExit: BacktestCliProtectiveExitPolicy;
   if (protectiveMode === "NONE") {
     if (
       stopLossRaw !== undefined ||
       takeProfitRaw !== undefined ||
-      trailBpsRaw !== undefined
+      trailBpsRaw !== undefined ||
+      bullTrailRaw !== undefined
     ) {
       return err({ code: "INVALID_CLI_OPTIONS" });
     }
@@ -223,7 +230,8 @@ export const parseBacktestCliOptions = (
     protectiveMode === "FIXED_BPS" &&
     stopLossRaw !== undefined &&
     takeProfitRaw !== undefined &&
-    trailBpsRaw === undefined
+    trailBpsRaw === undefined &&
+    bullTrailRaw === undefined
   ) {
     const candidate = Object.freeze({
       mode: "FIXED_BPS" as const,
@@ -245,20 +253,29 @@ export const parseBacktestCliOptions = (
       stopLossBps: Number(stopLossRaw),
       takeProfitBps: Number(takeProfitRaw),
     });
-    if (!isValidProtectiveExitPolicy(armedArm)) {
-      return err({ code: "INVALID_CLI_OPTIONS" });
-    }
-    protectiveExit = Object.freeze({
+    const bullish =
+      bullTrailRaw === undefined
+        ? Object.freeze({ mode: "NONE" as const })
+        : Object.freeze({
+            mode: "TRAILING_BPS" as const,
+            trailBps: Number(bullTrailRaw),
+          });
+    const candidate = Object.freeze({
       mode: "REGIME_CONDITIONAL" as const,
-      bullish: Object.freeze({ mode: "NONE" as const }),
+      bullish,
       bearish: armedArm,
       range: armedArm,
       warmUp: armedArm,
     });
+    if (!isValidRegimeConditionalExitPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    protectiveExit = candidate;
   } else if (
     protectiveMode === "TRAILING_BPS" &&
     trailBpsRaw !== undefined &&
-    stopLossRaw === undefined
+    stopLossRaw === undefined &&
+    bullTrailRaw === undefined
   ) {
     const candidate = Object.freeze({
       mode: "TRAILING_BPS" as const,
@@ -385,7 +402,7 @@ export const parseBacktestCliOptions = (
                 ? ""
                 : `-${protectiveExit.takeProfitBps}`
             }`
-          : `-regime-exit-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.stopLossBps : 0}-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.takeProfitBps : 0}`;
+          : `-regime-exit-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.stopLossBps : 0}-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.takeProfitBps : 0}${protectiveExit.bullish.mode === "TRAILING_BPS" ? `-bt-${protectiveExit.bullish.trailBps}` : ""}`;
   const regimeSuffix =
     regimeFilter === null
       ? ""
