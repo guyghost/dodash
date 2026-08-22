@@ -19,15 +19,19 @@ import {
 } from "@dodash/indicators-prolog";
 import {
   activeProtectivePolicyEquals,
+  calibrateConfidence,
   createExecutionSchedule,
   extractBacktestDiagnosticSamples,
+  isCalibratedStrategyId,
   isValidProtectiveExitPolicy,
   isValidRegimeConditionalExitPolicy,
+  isValidRegimeConditionalSizingPolicy,
   isValidRegimeFilterPolicy,
   protectiveOrderMachine,
   resolveDailyRiskWindow,
   resolveRegimeExitArm,
   resolveRegimePermission,
+  resolveRegimeSizingProfile,
   resolveRiskEvaluationTimestamp,
   resolveSpotPermission,
   regimeFilterMachine,
@@ -41,6 +45,7 @@ import {
   type ExecutionScheduleError,
   type ProtectiveExitPolicy,
   type ProtectiveExitResolution,
+  type RegimeConditionalSizingPolicy,
   type RegimeFilterPolicy,
   type RegimeKind,
   type RiskRejectionReasonCode,
@@ -88,6 +93,9 @@ export interface BacktestConfig {
   readonly broker: PaperBrokerConfig;
   readonly protectiveExit?: ProtectiveExitPolicy;
   readonly regimeFilter?: RegimeFilterPolicy;
+  // INV-S2 (models/regime-sizing.md) : nécessite regimeFilter. La
+  // moitié confidenceCalibration de l'invariant est vérifiée côté suite.
+  readonly regimeConditionalSizing?: RegimeConditionalSizingPolicy;
 }
 
 export interface RegimeGatingSummary {
@@ -143,6 +151,7 @@ export type BacktestReplayError =
   | { readonly code: "BROKER_FAILURE"; readonly cause: PaperBrokerError }
   | { readonly code: "PROTECTIVE_ORDER_FAILURE"; readonly cause: unknown }
   | { readonly code: "REGIME_FILTER_FAILURE" }
+  | { readonly code: "REGIME_SIZING_FAILURE" }
   | { readonly code: "DIAGNOSTICS_FAILURE"; readonly cause: BacktestDiagnosticsError };
 
 const validProtectivePolicy = (policy: ProtectiveExitPolicy | undefined): boolean => {
@@ -166,7 +175,10 @@ const validConfig = (config: BacktestConfig): boolean =>
   (config.protectiveExit?.mode !== "REGIME_CONDITIONAL" ||
     config.regimeFilter !== undefined) &&
   (config.regimeFilter === undefined ||
-    isValidRegimeFilterPolicy(config.regimeFilter));
+    isValidRegimeFilterPolicy(config.regimeFilter)) &&
+  (config.regimeConditionalSizing === undefined ||
+    (isValidRegimeConditionalSizingPolicy(config.regimeConditionalSizing) &&
+      config.regimeFilter !== undefined));
 
 const validPreparedIndicators = (
   prepared: PreparedBacktestIndicators,
@@ -291,6 +303,8 @@ export const replayBacktest = async (
       ? null
       : createActor(regimeFilterMachine, { input: { policy: regimePolicy } });
   regimeActor?.start();
+  // INV-S2 garantit : sizing ⇒ regimeFilter ⇒ regimeActor ≠ null.
+  const regimeConditionalSizing = config.regimeConditionalSizing ?? null;
   const regimeCounters = {
     observationsFed: 0,
     signalsPassed: 0,
@@ -653,6 +667,38 @@ export const replayBacktest = async (
         }
       }
       gatedSignals = allowedSignals;
+      // Sizing conditionné par régime (models/regime-sizing.md §3) :
+      // recalibrage de la confiance des signaux autorisés entre le gate
+      // et l'allocation (l'allocateur consomme confidence). INV-S1 :
+      // bras IDENTITY court-circuité — aucun signal touché, bit-exact.
+      // INV-S4 : HOLD et stratégies non calibrables inchangés.
+      if (regimeConditionalSizing !== null) {
+        const sizingProfile = resolveRegimeSizingProfile(
+          regimeConditionalSizing,
+          activeRegime,
+        );
+        if (sizingProfile !== "IDENTITY") {
+          const recalibrated = [];
+          for (const signal of gatedSignals) {
+            if (
+              signal.side === "HOLD" ||
+              !isCalibratedStrategyId(signal.strategyId)
+            ) {
+              recalibrated.push(signal);
+              continue;
+            }
+            const calibrated = calibrateConfidence(
+              sizingProfile,
+              signal.confidence,
+            );
+            if (!calibrated.ok) {
+              return err({ code: "REGIME_SIZING_FAILURE" });
+            }
+            recalibrated.push({ ...signal, confidence: calibrated.value });
+          }
+          gatedSignals = recalibrated;
+        }
+      }
     }
 
     const allocation = allocateSignals({

@@ -62,8 +62,10 @@ export type {
   ConfidenceCalibrationTailConfirmationResult,
 } from "./confidence-calibration-tail-confirmation.js";
 export {
+  CALIBRATED_STRATEGY_IDS,
   calibrateConfidence,
   CONFIDENCE_CALIBRATION_PROFILES,
+  isCalibratedStrategyId,
   isConfidenceCalibrationProfile,
   selectConfidenceCalibrationProfile,
 } from "./confidence-calibration.js";
@@ -220,6 +222,11 @@ export type {
   RegimePermissions,
   RegimePermissionsResult,
 } from "./regime-filter.types.js";
+export {
+  isValidRegimeConditionalSizingPolicy,
+  resolveRegimeSizingProfile,
+} from "./regime-sizing.js";
+export type { RegimeConditionalSizingPolicy } from "./regime-sizing.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
 export {
   assessLiveTradingAgentIdentity,

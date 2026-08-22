@@ -71,10 +71,16 @@ export type ConfidenceCalibrationSelectionResult =
       };
     };
 
-const CALIBRATED_STRATEGY_IDS = Object.freeze([
+export const CALIBRATED_STRATEGY_IDS = Object.freeze([
   "ema-cross",
   "breakout",
 ] as const);
+
+export const isCalibratedStrategyId = (
+  value: unknown,
+): value is CalibratedStrategyId =>
+  typeof value === "string" &&
+  CALIBRATED_STRATEGY_IDS.some((strategyId) => strategyId === value);
 const PROFILE_EXPONENTS: Readonly<Record<ConfidenceCalibrationProfile, number>> =
   Object.freeze({
     IDENTITY: 1,

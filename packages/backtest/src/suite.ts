@@ -2,11 +2,13 @@ import { createOrderIntent, err, ok, type Result } from "@dodash/domain";
 import type { IndicatorConfig } from "@dodash/indicators-prolog";
 import {
   isConfidenceCalibrationProfile,
+  isValidRegimeConditionalSizingPolicy,
   summarizeProtectiveExits,
   type BacktestDiagnosticSamples,
   type BacktestDiagnostics,
   type ConfidenceCalibrationProfile,
   type ProtectiveExitPolicy,
+  type RegimeConditionalSizingPolicy,
   type RegimeFilterPolicy,
 } from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
@@ -44,6 +46,9 @@ export interface BacktestSuiteConfig {
   readonly broker: PaperBrokerConfig;
   readonly protectiveExit?: ProtectiveExitPolicy;
   readonly regimeFilter?: RegimeFilterPolicy;
+  // INV-S2 (models/regime-sizing.md) : exclut confidenceCalibration —
+  // deux couches de calibration actives sont une erreur de config.
+  readonly regimeConditionalSizing?: RegimeConditionalSizingPolicy;
 }
 
 export interface BacktestSuiteOptions {
@@ -107,7 +112,11 @@ const validConfig = (config: BacktestSuiteConfig): boolean =>
   Number.isFinite(config.targetSignalNotional) &&
   config.targetSignalNotional > 0 &&
   (config.confidenceCalibration === undefined ||
-    isConfidenceCalibrationProfile(config.confidenceCalibration));
+    isConfidenceCalibrationProfile(config.confidenceCalibration)) &&
+  (config.regimeConditionalSizing === undefined ||
+    (isValidRegimeConditionalSizingPolicy(config.regimeConditionalSizing) &&
+      config.regimeFilter !== undefined &&
+      config.confidenceCalibration === undefined));
 
 const compatibleExecutionDataset = (
   primary: HistoricalDataset,
@@ -268,6 +277,9 @@ export const runBacktestSuite = async (
         ...(config.regimeFilter === undefined
           ? {}
           : { regimeFilter: config.regimeFilter }),
+        ...(config.regimeConditionalSizing === undefined
+          ? {}
+          : { regimeConditionalSizing: config.regimeConditionalSizing }),
       },
       preparedIndicators.value,
       {
