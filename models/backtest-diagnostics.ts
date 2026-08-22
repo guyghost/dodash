@@ -87,11 +87,14 @@ const validAllocationObservation = (
 ): boolean =>
   positiveFinite(observation.requestedNetNotional) &&
   nonNegativeFinite(observation.allocatedNotional) &&
+  nonNegativeFinite(observation.spotInexecutableNotional) &&
   nonNegativeFinite(observation.riskApprovedNotional) &&
   observation.rejectedReasonCodes.every(validReasonCode) &&
   observation.allocatedNotional <=
     observation.requestedNetNotional +
       tolerance(observation.requestedNetNotional) &&
+  observation.spotInexecutableNotional <=
+    observation.allocatedNotional + tolerance(observation.allocatedNotional) &&
   observation.riskApprovedNotional <=
     observation.allocatedNotional + tolerance(observation.allocatedNotional);
 
@@ -173,13 +176,24 @@ export const summarizeBacktestDiagnostics = (
       allocatedNotional <
       requestedNetNotional - tolerance(requestedNetNotional),
   ).length;
+  // Mesure risk redéfinie (models/spot-prevalidation.md §4) : la
+  // population évaluée par le risk engine exclut le notionnel
+  // abandonné en amont par la pré-validation spot.
   const riskEvaluated = allocationObservations.filter(
-    ({ allocatedNotional }) => allocatedNotional > 0,
+    ({ allocatedNotional, spotInexecutableNotional }) =>
+      allocatedNotional - spotInexecutableNotional > 0,
   );
   const riskRejectedCount = riskEvaluated.filter(
-    ({ allocatedNotional, riskApprovedNotional }) =>
-      riskApprovedNotional <
-      allocatedNotional - tolerance(allocatedNotional),
+    ({ allocatedNotional, spotInexecutableNotional, riskApprovedNotional }) => {
+      const spotExecutableNotional = allocatedNotional - spotInexecutableNotional;
+      return (
+        riskApprovedNotional <
+        spotExecutableNotional - tolerance(spotExecutableNotional)
+      );
+    },
+  ).length;
+  const spotInexecutableCount = allocationObservations.filter(
+    ({ spotInexecutableNotional }) => spotInexecutableNotional > 0,
   ).length;
   const riskRejectionReasons = Object.freeze(
     Object.fromEntries(
@@ -199,6 +213,7 @@ export const summarizeBacktestDiagnostics = (
     opportunityCount,
     cappedCount,
     capRate: opportunityCount === 0 ? 0 : cappedCount / opportunityCount,
+    spotInexecutableCount,
     riskEvaluationCount: riskEvaluated.length,
     riskRejectedCount,
     riskRejectionRate:

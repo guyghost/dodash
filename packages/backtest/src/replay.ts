@@ -28,6 +28,7 @@ import {
   resolveRegimeExitArm,
   resolveRegimePermission,
   resolveRiskEvaluationTimestamp,
+  resolveSpotPermission,
   regimeFilterMachine,
   summarizeBacktestDiagnostics,
   type ActiveProtectiveExitPolicy,
@@ -42,6 +43,7 @@ import {
   type RegimeKind,
   type RiskRejectionReasonCode,
   type SignalDiagnosticObservation,
+  type SpotPermissionError,
 } from "@dodash/models";
 import {
   checkRisk,
@@ -132,6 +134,10 @@ export type BacktestReplayError =
   | { readonly code: "STRATEGY_FAILURE"; readonly cause: StrategyError }
   | { readonly code: "ALLOCATION_FAILURE"; readonly cause: AllocationError }
   | { readonly code: "RISK_FAILURE"; readonly cause: RiskError }
+  | {
+      readonly code: "SPOT_PERMISSION_FAILURE";
+      readonly cause: SpotPermissionError;
+    }
   | { readonly code: "BROKER_FAILURE"; readonly cause: PaperBrokerError }
   | { readonly code: "PROTECTIVE_ORDER_FAILURE"; readonly cause: unknown }
   | { readonly code: "REGIME_FILTER_FAILURE" }
@@ -670,7 +676,26 @@ export const replayBacktest = async (
 
     const approvedOrders: OrderIntent[] = [];
     const rejectedReasonCodes: RiskRejectionReasonCode[] = [];
+    let spotInexecutableNotional = 0;
     for (const order of allocation.value.orders) {
+      // Pré-validation spot amont (models/spot-prevalidation.md) : un
+      // ordre inexécutable est abandonné AVANT le risk engine et
+      // n'entame jamais sa métrique de rejet.
+      const permission = resolveSpotPermission(
+        order.side,
+        order.quantity,
+        portfolio.positionQuantity,
+      );
+      if (!permission.ok) {
+        return err({
+          code: "SPOT_PERMISSION_FAILURE",
+          cause: permission.error,
+        });
+      }
+      if (permission.value.status === "INEXECUTABLE") {
+        spotInexecutableNotional += order.quantity * candle.close;
+        continue;
+      }
       const equityBefore = portfolio.cash + portfolio.positionQuantity * candle.close;
       const risk = checkRisk(
         order,
@@ -697,6 +722,7 @@ export const replayBacktest = async (
         Object.freeze({
           requestedNetNotional,
           allocatedNotional,
+          spotInexecutableNotional,
           riskApprovedNotional: approvedOrders.reduce(
             (total, order) => total + order.quantity * candle.close,
             0,

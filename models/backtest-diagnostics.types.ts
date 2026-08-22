@@ -30,6 +30,7 @@ export interface SignalDiagnosticObservation {
 export interface AllocationDiagnosticObservation {
   readonly requestedNetNotional: number;
   readonly allocatedNotional: number;
+  readonly spotInexecutableNotional: number;
   readonly riskApprovedNotional: number;
   readonly rejectedReasonCodes: readonly RiskRejectionReasonCode[];
 }
@@ -61,6 +62,7 @@ export interface AllocationDiagnostics {
   readonly opportunityCount: number;
   readonly cappedCount: number;
   readonly capRate: number;
+  readonly spotInexecutableCount: number;
   readonly riskEvaluationCount: number;
   readonly riskRejectedCount: number;
   readonly riskRejectionRate: number;

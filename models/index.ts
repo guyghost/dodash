@@ -188,6 +188,15 @@ export type {
   SignalSizingErrorCode,
   SignalSizingResult,
 } from "./signal-sizing.types.js";
+export {
+  resolveSpotPermission,
+  SPOT_QUANTITY_TOLERANCE,
+} from "./spot-permission.js";
+export type {
+  SpotPermission,
+  SpotPermissionError,
+  SpotPermissionResult,
+} from "./spot-permission.js";
 export { regimeFilterMachine } from "./regime-filter.machine.js";
 export {
   classifyRegimeObservation,
