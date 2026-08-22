@@ -1,6 +1,6 @@
 # Exits par régime v3 — bras hétérogènes (bull TRAILING, bear FIXED)
 
-Statut : PROPOSÉ
+Statut : MESURÉ (verdict : échec a priori)
 Date : 2025-12-17
 Prérequis : `regime-exit.md` (V1 déployée : bull NONE +0,27 % | bear
 FIXED 600/600 +3,63 %), `trailing-exit.md` (trail 500 pur : bull
@@ -112,7 +112,50 @@ couvre la bit-identité par tests).
   qu'il ne protège, bear dégradera sous V1 — la grille 500 vs 700
   quantifiera la sensibilité.
 
-## 5. Hors périmètre
+## 5. Mesures et verdict
+
+Statut : MESURÉ — **ÉCHEC a priori** (2025-12-17).
+
+| cell | bullTrail | bull return | bull dd | bear return | bear dd |
+| ---- | --------- | ----------- | ------- | ----------- | ------- |
+| C1 | 500 | −1,96 % | 4,61 % | +0,45 % | 6,59 % |
+| C2 | 700 | −1,97 % | 4,61 % | +0,45 % | 6,59 % |
+
+Contre les critères : bull ≥ +3 % → **−1,96 %** ; bear > 0 % (ok) mais
+bear ≥ V1 (+3,63 %) → **+0,45 %**. Composite C1 = −1,51 % contre V1
++3,90 %. Les deux cellules sont quasi identiques : la **cadence des
+flips domine, pas la largeur du trail** — la sensibilité au trailBps
+est nulle à cette granularité.
+
+### Découverte structurelle : le replan détruit le ratchet
+
+Le risque documenté §4 s'est matérialisé au-delà de l'attendu. Le
+replan de régime (`cancel REGIME_CHANGED` → re-arm) **réinitialise
+l'anchor** à chaque flip (RC5) : la mémoire de tendance du trail est
+effacée à chaque transition BULLISH↔RANGE. Le ratchet ne compose que
+s'il est laissé tranquille à travers toute la fenêtre :
+
+- **bull** : chaque flip coupe le trail et en ré-arme un neuf plus bas
+  → 11 stops contre 0 take utile ; pire que V1 (+0,27 %) et que le
+  trail global T3 (+2,61 %, jamais annulé car politique globale, pas
+  conditionnelle au régime).
+- **bear** : les flips BULLISH arment un trail pendant les rallyes là
+  où V1 désarmait (bull NONE) → sorties prématurées ; +0,45 % contre
+  +3,63 %.
+
+### Conclusion
+
+Les bras hétérogènes ne sont pas une variable suffisante : **le
+conditionnement du replan au régime est structurellement incompatible
+avec les exits de tendance**. Toute amélioration future du côté bull
+doit soit supprimer le cancel au flip (hystérésis du replan : ne
+désarmer que sur transitions armé→NONE, garder le plan à travers les
+flips), soit rester sur une politique globale non conditionnelle (T3).
+
+Classement composite mesuré : **V1 (+3,90 %) > T3 trail global
+(+1,62 %) > v3 (−1,51 %)**. V1 reste le champion.
+
+## 6. Hors périmètre
 
 - Take-profit sur le bras TRAILING (invalidé par v2).
 - Bras TRAILING différenciés par trailBps (bull vs range) — un seul
