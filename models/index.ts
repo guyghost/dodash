@@ -146,10 +146,14 @@ export type {
   QualityGateStage,
 } from "./quality-gate.types.js";
 export {
+  activeProtectivePolicyEquals,
   createProtectiveOrderPlan,
   isValidProtectiveExitPolicy,
+  isValidRegimeConditionalExitPolicy,
+  isValidRegimeExitArm,
   resolveProtectiveOpen,
   resolveProtectiveRange,
+  resolveRegimeExitArm,
   summarizeProtectiveExits,
 } from "./protective-order.js";
 export type {
@@ -173,6 +177,8 @@ export type {
   ProtectiveRange,
   ProtectiveResolution,
   ProtectiveResult,
+  RegimeConditionalExitPolicy,
+  RegimeExitArm,
 } from "./protective-order.types.js";
 export { resolveTargetSignalQuantity } from "./signal-sizing.js";
 export type {

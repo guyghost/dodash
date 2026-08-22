@@ -179,4 +179,69 @@ describe("backtest CLI options", () => {
       backtest.parseBacktestCliOptions(["--unknown", "value"], Date.UTC(2026, 7, 18)),
     ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
   });
+
+  it("fige REGIME_CONDITIONAL (stop/take requis, régime requis) dans le manifeste", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--protective-exit",
+        "REGIME_CONDITIONAL",
+        "--stop-loss-bps",
+        "300",
+        "--take-profit-bps",
+        "600",
+        "--regime-filter",
+        "EMA_THRESHOLD",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.protectiveExit).toEqual({
+      mode: "REGIME_CONDITIONAL",
+      bullish: { mode: "NONE" },
+      bearish: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
+      range: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
+      warmUp: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-regime-exit-300-600-regime-100-5-3-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:protective:regime-exit:300:600:regime:100:5:3:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse REGIME_CONDITIONAL sans stop/take ou sans regime-filter (RE7)", () => {
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "REGIME_CONDITIONAL",
+          "--stop-loss-bps",
+          "300",
+          "--regime-filter",
+          "EMA_THRESHOLD",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "REGIME_CONDITIONAL",
+          "--stop-loss-bps",
+          "300",
+          "--take-profit-bps",
+          "600",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
 });

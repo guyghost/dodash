@@ -10,6 +10,7 @@ import {
 import { loadCoinbaseHistoricalDataset } from "./coinbase-history.js";
 import { runModeledBacktest } from "./modeled-run.js";
 import type { BacktestSuiteConfig } from "./suite.js";
+import type { RegimeExitArm } from "@dodash/models";
 
 const percent = (value: number): string => `${(value * 100).toFixed(2)}%`;
 const diagnosticValue = (value: number | null): string =>
@@ -93,7 +94,18 @@ const main = async (): Promise<void> => {
   if (executionDataset !== null) {
     console.log(`Execution dataset: ${executionDataset.datasetId}`);
   }
-  console.log(`Protective exit: ${options.value.protectiveExit.mode}`);
+  const protective = options.value.protectiveExit;
+  if (protective.mode === "REGIME_CONDITIONAL") {
+    const armLabel = (arm: RegimeExitArm): string =>
+      arm.mode === "NONE"
+        ? "NONE"
+        : `FIXED ${arm.stopLossBps}/${arm.takeProfitBps}`;
+    console.log(
+      `Protective exit: REGIME_CONDITIONAL bull=${armLabel(protective.bullish)} bear=${armLabel(protective.bearish)} range=${armLabel(protective.range)} warmUp=${armLabel(protective.warmUp)}`,
+    );
+  } else {
+    console.log(`Protective exit: ${protective.mode}`);
+  }
   if (options.value.regimeFilter !== null) {
     const policy = options.value.regimeFilter;
     const params =

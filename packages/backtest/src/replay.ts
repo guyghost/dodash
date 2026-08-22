@@ -18,11 +18,14 @@ import {
   type IndicatorSnapshot,
 } from "@dodash/indicators-prolog";
 import {
+  activeProtectivePolicyEquals,
   createExecutionSchedule,
   extractBacktestDiagnosticSamples,
   isValidProtectiveExitPolicy,
+  isValidRegimeConditionalExitPolicy,
   isValidRegimeFilterPolicy,
   protectiveOrderMachine,
+  resolveRegimeExitArm,
   resolveRegimePermission,
   resolveRiskEvaluationTimestamp,
   regimeFilterMachine,
@@ -119,10 +122,13 @@ export type BacktestReplayError =
   | { readonly code: "REGIME_FILTER_FAILURE" }
   | { readonly code: "DIAGNOSTICS_FAILURE"; readonly cause: BacktestDiagnosticsError };
 
-const validProtectivePolicy = (policy: ProtectiveExitPolicy | undefined): boolean =>
-  policy === undefined ||
-  policy.mode === "NONE" ||
-  isValidProtectiveExitPolicy(policy);
+const validProtectivePolicy = (policy: ProtectiveExitPolicy | undefined): boolean => {
+  if (policy === undefined || policy.mode === "NONE") return true;
+  if (policy.mode === "REGIME_CONDITIONAL") {
+    return isValidRegimeConditionalExitPolicy(policy);
+  }
+  return isValidProtectiveExitPolicy(policy);
+};
 
 const validConfig = (config: BacktestConfig): boolean =>
   config.runId.trim().length > 0 &&
@@ -134,6 +140,8 @@ const validConfig = (config: BacktestConfig): boolean =>
   Number.isFinite(config.minNetQuantity) &&
   config.minNetQuantity >= 0 &&
   validProtectivePolicy(config.protectiveExit) &&
+  (config.protectiveExit?.mode !== "REGIME_CONDITIONAL" ||
+    config.regimeFilter !== undefined) &&
   (config.regimeFilter === undefined ||
     isValidRegimeFilterPolicy(config.regimeFilter));
 
@@ -241,8 +249,12 @@ export const replayBacktest = async (
   let lastTradeAt: number | null = null;
   let pendingOrders: readonly OrderIntent[] = [];
   const protectivePolicy = config.protectiveExit ?? ({ mode: "NONE" } as const);
-  const activeProtectivePolicy: ActiveProtectiveExitPolicy | null =
-    protectivePolicy.mode === "NONE" ? null : protectivePolicy;
+  let activeProtectivePolicy: ActiveProtectiveExitPolicy | null =
+    protectivePolicy.mode === "NONE"
+      ? null
+      : protectivePolicy.mode === "REGIME_CONDITIONAL"
+        ? resolveRegimeExitArm(protectivePolicy, null)
+        : protectivePolicy;
   type ProtectiveActor = ActorRefFrom<typeof protectiveOrderMachine>;
   const protectiveState: { actor: ProtectiveActor | null } = { actor: null };
   let protectivePositionSequence = 0;
@@ -339,7 +351,7 @@ export const replayBacktest = async (
     return null;
   };
 
-  const armProtectivePosition = (
+  const armProtectivePlan = (
     candle: Candle,
     atr: number | null,
   ): BacktestReplayError | null => {
@@ -359,8 +371,17 @@ export const replayBacktest = async (
       armedAt: candle.start,
     });
     protectiveState.actor = actor;
-    const failure = actorFailure();
+    return actorFailure();
+  };
+
+  const armProtectivePosition = (
+    candle: Candle,
+    atr: number | null,
+  ): BacktestReplayError | null => {
+    const failure = armProtectivePlan(candle, atr);
     if (failure !== null) return failure;
+    const actor = protectiveState.actor;
+    if (actor === null) return null;
     actor.send({ type: "CANDLE_OPENED", start: candle.start, open: candle.open });
     return actorFailure() ?? executeTriggeredProtectiveExit(candle);
   };
@@ -567,6 +588,33 @@ export const replayBacktest = async (
         return err({ code: "REGIME_FILTER_FAILURE" });
       }
       const activeRegime = regimeSnapshot.context.regime;
+      if (protectivePolicy.mode === "REGIME_CONDITIONAL") {
+        const nextArm = resolveRegimeExitArm(protectivePolicy, activeRegime);
+        if (!activeProtectivePolicyEquals(nextArm, activeProtectivePolicy)) {
+          const existingActor = protectiveState.actor;
+          if (existingActor !== null) {
+            existingActor.send({
+              type: "CANCEL_REQUESTED",
+              reason: "REGIME_CHANGED",
+            });
+            if (!existingActor.getSnapshot().matches("cancelled")) {
+              return err({
+                code: "PROTECTIVE_ORDER_FAILURE",
+                cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
+              });
+            }
+            protectiveState.actor = null;
+          }
+          activeProtectivePolicy = nextArm;
+          if (nextArm !== null && portfolio.positionQuantity > 0) {
+            const failure = armProtectivePlan(
+              candle,
+              previousIndicators?.atr ?? null,
+            );
+            if (failure !== null) return err(failure);
+          }
+        }
+      }
       const allowedSignals = [];
       for (const signal of signalResult.value) {
         const permission =

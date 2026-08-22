@@ -1,3 +1,21 @@
+import type { RegimeKind } from "./regime-filter.types.js";
+
+export type RegimeExitArm =
+  | { readonly mode: "NONE" }
+  | {
+      readonly mode: "FIXED_BPS";
+      readonly stopLossBps: number;
+      readonly takeProfitBps: number;
+    };
+
+export interface RegimeConditionalExitPolicy {
+  readonly mode: "REGIME_CONDITIONAL";
+  readonly bullish: RegimeExitArm;
+  readonly bearish: RegimeExitArm;
+  readonly range: RegimeExitArm;
+  readonly warmUp: RegimeExitArm;
+}
+
 export type ProtectiveExitPolicy =
   | { readonly mode: "NONE" }
   | {
@@ -9,11 +27,12 @@ export type ProtectiveExitPolicy =
       readonly mode: "ATR_MULTIPLE";
       readonly stopAtrMultiple: number;
       readonly takeAtrMultiple: number;
-    };
+    }
+  | RegimeConditionalExitPolicy;
 
 export type ActiveProtectiveExitPolicy = Exclude<
   ProtectiveExitPolicy,
-  { readonly mode: "NONE" }
+  { readonly mode: "NONE" } | { readonly mode: "REGIME_CONDITIONAL" }
 >;
 
 export interface ProtectiveOrderPlan {
@@ -94,7 +113,10 @@ export interface ProtectiveRange {
   readonly low: number;
 }
 
-export type ProtectiveCancelReason = "POSITION_CLOSED" | "STRATEGY_EXIT";
+export type ProtectiveCancelReason =
+  | "POSITION_CLOSED"
+  | "STRATEGY_EXIT"
+  | "REGIME_CHANGED";
 
 export interface ProtectiveOrderInput {
   readonly policy: ActiveProtectiveExitPolicy;

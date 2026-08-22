@@ -62,7 +62,9 @@ export interface BacktestCliOptions {
 
 export type BacktestCliProtectiveExitPolicy = Extract<
   ProtectiveExitPolicy,
-  { readonly mode: "NONE" } | { readonly mode: "FIXED_BPS" }
+  | { readonly mode: "NONE" }
+  | { readonly mode: "FIXED_BPS" }
+  | { readonly mode: "REGIME_CONDITIONAL" }
 >;
 
 export type BacktestCliOptionsError = { readonly code: "INVALID_CLI_OPTIONS" };
@@ -79,12 +81,23 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
       : ["confidence", options.confidenceCalibration]),
     ...(options.protectiveExit.mode === "NONE"
       ? []
-      : [
-          "protective",
-          options.protectiveExit.mode,
-          options.protectiveExit.stopLossBps,
-          options.protectiveExit.takeProfitBps,
-        ]),
+      : options.protectiveExit.mode === "FIXED_BPS"
+        ? [
+            "protective",
+            options.protectiveExit.mode,
+            options.protectiveExit.stopLossBps,
+            options.protectiveExit.takeProfitBps,
+          ]
+        : [
+            "protective",
+            "regime-exit",
+            options.protectiveExit.bearish.mode === "FIXED_BPS"
+              ? options.protectiveExit.bearish.stopLossBps
+              : 0,
+            options.protectiveExit.bearish.mode === "FIXED_BPS"
+              ? options.protectiveExit.bearish.takeProfitBps
+              : 0,
+          ]),
     ...(options.regimeFilter === null
       ? []
       : options.regimeFilter.mode === "EMA_THRESHOLD"
@@ -200,6 +213,26 @@ export const parseBacktestCliOptions = (
       return err({ code: "INVALID_CLI_OPTIONS" });
     }
     protectiveExit = candidate;
+  } else if (
+    protectiveMode === "REGIME_CONDITIONAL" &&
+    stopLossRaw !== undefined &&
+    takeProfitRaw !== undefined
+  ) {
+    const armedArm = Object.freeze({
+      mode: "FIXED_BPS" as const,
+      stopLossBps: Number(stopLossRaw),
+      takeProfitBps: Number(takeProfitRaw),
+    });
+    if (!isValidProtectiveExitPolicy(armedArm)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    protectiveExit = Object.freeze({
+      mode: "REGIME_CONDITIONAL" as const,
+      bullish: Object.freeze({ mode: "NONE" as const }),
+      bearish: armedArm,
+      range: armedArm,
+      warmUp: armedArm,
+    });
   } else {
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
@@ -254,6 +287,9 @@ export const parseBacktestCliOptions = (
   } else {
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
+  if (protectiveExit.mode === "REGIME_CONDITIONAL" && regimeFilter === null) {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
 
   const targetSignalNotional = Number(
     values.get("--target-signal-notional") ?? "1000",
@@ -298,7 +334,9 @@ export const parseBacktestCliOptions = (
   const protectiveSuffix =
     protectiveExit.mode === "NONE"
       ? ""
-      : `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`;
+      : protectiveExit.mode === "FIXED_BPS"
+        ? `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`
+        : `-regime-exit-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.stopLossBps : 0}-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.takeProfitBps : 0}`;
   const regimeSuffix =
     regimeFilter === null
       ? ""

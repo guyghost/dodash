@@ -9,7 +9,10 @@ import type {
   ProtectiveRange,
   ProtectiveResolution,
   ProtectiveResult,
+  RegimeConditionalExitPolicy,
+  RegimeExitArm,
 } from "./protective-order.types.js";
+import type { RegimeKind } from "./regime-filter.types.js";
 
 export const summarizeProtectiveExits = (
   exits: readonly ProtectiveExitSummaryInput[],
@@ -50,6 +53,56 @@ export const isValidProtectiveExitPolicy = (
       policy.takeProfitBps < 100_000
     : positiveFinite(policy.stopAtrMultiple) &&
       positiveFinite(policy.takeAtrMultiple);
+
+export const isValidRegimeExitArm = (arm: RegimeExitArm): boolean =>
+  arm.mode === "NONE" ||
+  (positiveFinite(arm.stopLossBps) &&
+    arm.stopLossBps < 10_000 &&
+    positiveFinite(arm.takeProfitBps) &&
+    arm.takeProfitBps < 100_000);
+
+export const isValidRegimeConditionalExitPolicy = (
+  policy: RegimeConditionalExitPolicy,
+): boolean =>
+  isValidRegimeExitArm(policy.bullish) &&
+  isValidRegimeExitArm(policy.bearish) &&
+  isValidRegimeExitArm(policy.range) &&
+  isValidRegimeExitArm(policy.warmUp);
+
+export const resolveRegimeExitArm = (
+  policy: RegimeConditionalExitPolicy,
+  regime: RegimeKind | null,
+): ActiveProtectiveExitPolicy | null => {
+  const arm =
+    regime === null
+      ? policy.warmUp
+      : regime === "BULLISH"
+        ? policy.bullish
+        : regime === "BEARISH"
+          ? policy.bearish
+          : policy.range;
+  return arm.mode === "NONE" ? null : arm;
+};
+
+export const activeProtectivePolicyEquals = (
+  a: ActiveProtectiveExitPolicy | null,
+  b: ActiveProtectiveExitPolicy | null,
+): boolean => {
+  if (a === null || b === null) return a === b;
+  if (a.mode !== b.mode) return false;
+  if (a.mode === "FIXED_BPS" && b.mode === "FIXED_BPS") {
+    return (
+      a.stopLossBps === b.stopLossBps && a.takeProfitBps === b.takeProfitBps
+    );
+  }
+  if (a.mode === "ATR_MULTIPLE" && b.mode === "ATR_MULTIPLE") {
+    return (
+      a.stopAtrMultiple === b.stopAtrMultiple &&
+      a.takeAtrMultiple === b.takeAtrMultiple
+    );
+  }
+  return false;
+};
 
 export const createProtectiveOrderPlan = (
   input: CreateProtectiveOrderPlanInput,
