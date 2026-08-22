@@ -1,7 +1,6 @@
 # Exit protectif — trailing stop (TRAILING_BPS)
 
-Statut : PROPOSÉ
-Date : 2025-12-17
+Statut : MESURÉ (verdict négatif, voir §5)
 Prérequis : `regime-exit.md` (V1 REGIME_CONDITIONAL), `regime-asymmetry.md`
 (constat : les falaises bull et bear se chevauchent — le problème migre du
 classifieur vers le mécanisme d'exit)
@@ -115,7 +114,52 @@ Contrôles : V1 (REGIME_CONDITIONAL 300/600) = D1 v3 ; aucun protectif.
   les rallyes bear (sorties en perte après rallye) → piste stop
   hybride (trail + plafond de perte).
 
-## 5. Hors périmètre
+## 5. Mesures (2025-12-17)
+
+Grille T1–T3 exécutée (`scripts/trailing-exit-sensitivity.ts`), gating
+régime identique V1 (EMA_THRESHOLD 100/5/3), `takes = 0` partout (TE4
+vérifié en production). Retours/drawdowns par fenêtre :
+
+| Cell | trail | bull return | bull dd | bear return | bear dd | win bull | win bear |
+|------|-------|------------|---------|-------------|---------|----------|----------|
+| T1 | 150 | +0,99 % | 0,68 % | +0,65 % | 1,80 % | 31,0 % | 26,2 % |
+| T2 | 300 | +1,14 % | 1,78 % | +1,69 % | 3,85 % | 40,0 % | 28,6 % |
+| T3 | 500 | +2,61 % | 3,01 % | −0,99 % | 5,59 % | 47,1 % | 40,0 % |
+
+Baselines : V1 (bull +0,27 % | bear +3,63 %), non protégé (+7,42 % |
+−15,13 %).
+
+### Verdict : ÉCHEC a priori
+
+Aucune cellule ne satisfait « bull ≥ +3 % ET bear > 0 % ET dd ≤ 10 % »
+sur les deux fenêtres. T3 rate les deux barres (bull 2,61 % < 3 %,
+bear −0,99 % < 0) ; T1/T2 passent le bear mais pas le bull.
+
+### Lecture mécaniste
+
+- **Le signal path-vs-label est confirmé côté bull** : le return bull
+  croît de façon monotone avec le trail (+0,99 → +1,14 → +2,61 %),
+  10× la baseline V1 à trail 500, dd contenu (3,01 %).
+- **La protection bear se dégrade vers le trail large** (T3 −0,99 %) :
+  sans TP, les rallyes bear ne sont plus récoltés (V1 les prenait à
+  +6 % via TP 600) et le ratchet rend le stop après rallye. Optimum
+  bear intérieur ≈ trail 300 (+1,69 %), mais très en dessous du V1
+  (+3,63 %) — le TP fixe portait une partie du gain bear.
+- Les optima par fenêtre (bear ≈ 300, bull ≥ 500) sont plus proches
+  que pour le stop fixe (falaises 150–200) mais ne coïncident pas.
+
+### Pistes suivantes
+
+1. **Trailing + TP fixe combiné** (v2 du modèle) : conserver le TP à
+   600 sur les bras armés pour récolter les rallyes bear, laisser le
+   trail gérer les rebonds bull. Extension : `takeProfitBps` optionnel
+   sur TRAILING_BPS. C'est la lecture directe de la comparaison
+   V1-bear (TP) vs T3-bull (trail).
+2. Trail par régime (bras TRAILING en REGIME_CONDITIONAL) : reprendrait
+   le jeu d'asymétrie statique déjà invalidé en v3 (falaises
+   chevauchantes) — priorité basse.
+
+## 6. Hors périmètre
 
 - Trailing par régime, trailing en bras REGIME_CONDITIONAL.
 - Trailing sur short (positions longues uniquement, comme tout le
