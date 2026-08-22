@@ -1,6 +1,8 @@
 # Sizing par calibration de confiance v1
 
-Statut : SUCCÈS — POWER_QUARTER champion candidat
+Statut : SUCCÈS IN-SAMPLE — POWER_QUARTER DÉCLASSÉ en walk-forward
+(cf. `confidence-sizing-walkforward.md` §6) ; V1/IDENTITY reste
+champion déployé
 Date : 2026-08-22
 Prérequis : `confidence-calibration.ts` (modèle existant, 4 profils),
 `regime-exit.md` (V1 champion côté exits : bras bearish/range/warmUp
@@ -120,7 +122,10 @@ aux signaux ni aux exits. Le mécanisme est exactement le diagnostic
 bull : mêmes trades, même win rate, taille relevée par l'exposant ¼.
 Déploiement = flag CLI existant `--confidence-calibration
 POWER_QUARTER` (aucun changement de code). Robustesse walk-forward
-hors périmètre de ce cycle (cf. §6).
+hors périmètre de ce cycle (cf. §6). **Épilogue : le walk-forward
+(`confidence-sizing-walkforward.md`) a déclassé QUARTER — l'edge
+in-sample était un artefact des deux fenêtres, toutes deux
+modestement positives ; ne pas déployer.**
 
 Erratum de mesure : la première passe de grille utilisait bear/range/
 warmUp FIXED **600/600** (bras hérité de v3 par erreur de reprise) ;
