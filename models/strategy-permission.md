@@ -1,8 +1,8 @@
 # Permission par stratégie × régime — reconfiguration du gate
 
-Statut : D3-P2 MODÉLISÉ (pré-enregistré a priori — correction des
-seules pièces défaillantes du protocole, hypothèse et critères de
-verdict inchangés)
+Statut : MESURÉ (D3-P2 DÉCLASSÉ — test réel, H-P0 retenue ; axe
+permission fermé sous règle de sélection figée, priorité branche 4
+signaux/data)
 
 ## 1. Contexte et décision
 
@@ -320,6 +320,56 @@ propres hors {2023, 2025} (5 attendus, ≥ 4 requis), W1 ≥ 4/5, W2 bat
 C0 sur ≥ 4/5 ET spread médian > 0, W3 dd test ≤ 10 %, verdict VALIDÉ
 = W1 ∧ W2 ∧ W3 ∧ WF3-P ∧ contrôle d'effet.
 
-## 11. Résultats D3-P2
+## 11. Résultats D3-P2 (campagne du 2026-02-14, 30 runs — 2016 disponible)
 
-(à compléter après exécution)
+Cette fois le protocole a testé l'hypothèse (portes franchissables,
+contrôle au régime de décision) :
+
+- **WF3-P : PASS** — C0 reproduit bit-pour-bit les baselines
+  (2023 +0,27 % dd 2,93 % ; 2025 +3,63 % dd 3,37 %). Les compteurs
+  INV-P6 sont purs : aucune dérive de métriques.
+- **Contrôle d'effet : PASS 10/10** — Δdenied rsi > 0 partout
+  (C1 +26 à +200, C2 +82 à +282) ; `passedByRegime[BEARISH] = 0`
+  pour C1 et C2, `passedByRegime[RANGE] = 0` pour C2, sur les 10
+  fenêtres : zéro décision approuvée en régime interdit. Le câblage
+  fait exactement ce que le modèle spécifie.
+- **Sélection** : éligibles [C0, C1, C2] sur 9/9 trains (porte §10
+  opère — dd max 6,88 %, turnover max 6,17, fee 0,06 %). 6 folds
+  propres (2016 chargée cette fois ; seuils ≥ 4 inchangés, verdict
+  identique sous dénominateur 5 ou 6). Sélections : C0, C2, C1, C2,
+  C0, C2 — C2 3/6, C0 2/6, C1 1/6.
+- **W1 : FAIL** — aucun candidat atteint 4/6 (C2 max 3/6).
+- **W2 : FAIL** — sélectionné bat C0 sur 3/6 tests propres
+  (2018 +0,22 pp, 2019 +2,37 pp, 2022 +0,98 pp ; perte fold 2020
+  −0,11 pp ; folds 2017/2021 auto-nuls, C0 sélectionné), spread
+  médian +0,11 pp.
+- **W3 : PASS** — 0 violation dd test.
+- **VERDICT D3-P2 : DÉCLASSÉ** — **H-P0 retenue** : le retrait ne
+  transfère pas OOS de manière stable sous la règle de sélection
+  figée (argmax return train).
+
+### Lecture
+
+L'effet sur les années faibles est **réel et se transfère OOS quand
+le candidat est sélectionné** : les 3 folds gagnés sont les fenêtres
+2018/2019/2022 (+0,22 à +2,37 pp), la seule perte en compétition est
+−0,11 pp (2020). Mais la règle figée ne sait pas **choisir** : C0
+gagne les trains forts (2016, 2020), C2 les trains à contenu bearish
+(2017, 2019, 2021, 2022) — W1 échoue par instabilité du choix, pas
+par absence d'effet. Le fold le plus coûteux : train 2020 (bull)
+sélectionne C0 → test 2021 s'effondre à −5,81 % là où C1 aurait fait
+−1,17 % ; l'argmax train n'encode pas le risque de bascule de
+régime. Near-miss (W1 et W2 à 3/6 pour 4 requis) — la règle a priori
+est la règle : DÉCLASSÉ.
+
+Conséquence : l'axe permission par régime (branche 2 du diagnostic)
+est **fermé** sous cette famille de règles de sélection. Un
+sélecteur conscient du régime de train serait une NOUVELLE hypothèse
+(H-P2), à pré-enregistrer avec justification indépendante — pas une
+itération de D3-P2. Priorité à la branche 4 : qualité des
+signaux/data.
+
+La grille brute (identique D3-P, replays bit-exacts) reste consignée
+§8 ; l'infrastructure retenue : câblage `regimePermissions` (INV-P1
+à P6) testé et opérationnel, réutilisable tel quel pour tout cycle
+futur de permission.
