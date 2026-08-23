@@ -1,5 +1,3 @@
-import type { RegimeKind } from "./regime-filter.types.js";
-
 export type RegimeExitArm =
   | { readonly mode: "NONE" }
   | {

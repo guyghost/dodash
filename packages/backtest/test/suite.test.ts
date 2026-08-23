@@ -448,4 +448,42 @@ describe("backtest suite", () => {
       error: { code: "INVALID_SUITE_CONFIG" },
     });
   });
+
+  it("refuse une politique de filtre de régime invalide", async () => {
+    const { dataset, config } = suiteFixture();
+    const result = await backtest.runBacktestSuite(dataset, {
+      ...config,
+      regimeFilter: {
+        mode: "EMA_THRESHOLD",
+        thresholdBps: 0,
+        minObservations: 5,
+        confirmationCount: 2,
+      },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "INVALID_SUITE_CONFIG" },
+    });
+  });
+
+  it("refuse un exit REGIME_CONDITIONAL sans filtre de régime", async () => {
+    const { dataset, config } = suiteFixture();
+    const noneArm = { mode: "NONE" } as const;
+    const result = await backtest.runBacktestSuite(dataset, {
+      ...config,
+      protectiveExit: {
+        mode: "REGIME_CONDITIONAL",
+        bullish: noneArm,
+        bearish: noneArm,
+        range: noneArm,
+        warmUp: noneArm,
+      },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "INVALID_SUITE_CONFIG" },
+    });
+  });
 });

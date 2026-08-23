@@ -2,7 +2,10 @@ import { createOrderIntent, err, ok, type Result } from "@dodash/domain";
 import type { IndicatorConfig } from "@dodash/indicators-prolog";
 import {
   isConfidenceCalibrationProfile,
+  isValidProtectiveExitPolicy,
+  isValidRegimeConditionalExitPolicy,
   isValidRegimeConditionalSizingPolicy,
+  isValidRegimeFilterPolicy,
   isValidRegimePermissions,
   summarizeProtectiveExits,
   type BacktestDiagnosticSamples,
@@ -105,6 +108,14 @@ export type BacktestSuiteError =
       readonly cause: unknown;
     };
 
+const validProtectiveExit = (policy: ProtectiveExitPolicy | undefined): boolean => {
+  if (policy === undefined || policy.mode === "NONE") return true;
+  if (policy.mode === "REGIME_CONDITIONAL") {
+    return isValidRegimeConditionalExitPolicy(policy);
+  }
+  return isValidProtectiveExitPolicy(policy);
+};
+
 const validConfig = (config: BacktestSuiteConfig): boolean =>
   config.runId.trim().length > 0 &&
   config.agentId.trim().length > 0 &&
@@ -116,6 +127,12 @@ const validConfig = (config: BacktestSuiteConfig): boolean =>
   config.minNetQuantity >= 0 &&
   Number.isFinite(config.targetSignalNotional) &&
   config.targetSignalNotional > 0 &&
+  validProtectiveExit(config.protectiveExit) &&
+  // Guard mirror de replay.ts : un exit conditionné au régime exige un filtre.
+  (config.protectiveExit?.mode !== "REGIME_CONDITIONAL" ||
+    config.regimeFilter !== undefined) &&
+  (config.regimeFilter === undefined ||
+    isValidRegimeFilterPolicy(config.regimeFilter)) &&
   (config.confidenceCalibration === undefined ||
     isConfidenceCalibrationProfile(config.confidenceCalibration)) &&
   (config.regimeConditionalSizing === undefined ||
