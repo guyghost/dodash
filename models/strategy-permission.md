@@ -1,7 +1,8 @@
 # Permission par stratégie × régime — reconfiguration du gate
 
-Statut : MESURÉ (D3-P DÉCLASSÉ — porte CS4 inopérante sous candidats
-permission ; protocole D3-P2 à pré-enregistrer avant re-mesure)
+Statut : D3-P2 MODÉLISÉ (pré-enregistré a priori — correction des
+seules pièces défaillantes du protocole, hypothèse et critères de
+verdict inchangés)
 
 ## 1. Contexte et décision
 
@@ -269,3 +270,56 @@ reformulé sur le régime de décision au protocole D3-P2.
   strategyIds, clientOrderId haché) — seule l'attribution par régime
   est disponible ; le contrôle par stratégie reste au niveau denied
   (par stratégie) vs fills (par régime).
+
+## 10. Protocole D3-P2 (pré-enregistré a priori, post-D3-P)
+
+Motif : post-mortem §8 — D3-P a été court-circuité par deux pièces
+défaillantes du protocole (porte médiane inopérante pour des candidats
+à confiance identique ; contrôle d'effet mesuré au régime du fill,
+traversant les transitions par conception du paper broker). D3-P2
+corrige **exclusivement** ces deux pièces. L'hypothèse H-P1, les
+candidats C0/C1/C2 (§4-5), la config V1, les fenêtres, les folds
+propres, les critères W1-W3 (§7) et WF3-P sont **réutilisés à
+l'identique**. Le verdict D3-P (DÉCLASSÉ) reste consigné tel quel dans
+l'histoire ; D3-P2 est une re-mesure sous protocole amendé, pas une
+réinterprétation.
+
+Deltas D3-P → D3-P2 :
+
+1. **Porte de sélection (CS4)** : la borne `médiane notional ∈
+   [100,400]` est **retirée**. Justification mécanique : les candidats
+   permission ne touchent pas la confiance — leurs médianes de
+   requested notional sont identiques entre candidats (mesuré D3-P :
+   $0-31 partout) ; la porte ne peut pas discriminer et disqualifie
+   mécaniquement tout le monde sous V1-IDENTITY. Portes conservées :
+   dd ≤ 10 %, turnover ≤ 10, feeRate ≤ 1 %, run actif, puis argmax
+   return train parmi éligibles ; défaut C0. Sous ces portes, C0 est
+   de nouveau éligible (dd max 6,88 % mesuré) : W2 devient exécutable
+   — le sélecteur peut désormais préférer C1/C2 ou C0 **sur les
+   métriques**, ce qui est l'objet du test.
+2. **Contrôle d'effet** : mesuré au **régime de décision** (grandeur
+   que le gate contrôle réellement), via deux nouveaux compteurs de
+   diagnostics `passedByRegime` / `deniedByRegime` exposés par le
+   replay (INV-P6 ci-dessous) :
+   - `Δdenied = denied(C_k) − denied(C0) > 0` sur chaque fenêtre
+     (inchangé) ;
+   - `passedByRegime[BEARISH] === 0` pour C1 et C2, et
+     `passedByRegime[RANGE] === 0` pour C2, sur chaque fenêtre —
+     toute décision approuvée en régime interdit est une violation.
+   Les fills résiduels en régimes interdits (1-4/an, mesurés D3-P)
+   ne sont plus un critère : artefact de latence documenté §8.
+3. **INV-P6 (nouvel invariant de câblage)** : le replay expose les
+   compteurs de décisions par régime de décision
+   (`passedByRegime`, `deniedByRegime` : Record<RegimeKind, number>),
+   distincts de toute attribution au fill. Compteurs purs : aucun
+   effet sur les métriques (WF3-P bit-exact reste requis).
+
+Inchangés par ailleurs : 10 fenêtres × 3 candidats (30 runs, 2016
+toujours attendue indisponible réseau → 9 fenêtres utiles), folds
+propres hors {2023, 2025} (5 attendus, ≥ 4 requis), W1 ≥ 4/5, W2 bat
+C0 sur ≥ 4/5 ET spread médian > 0, W3 dd test ≤ 10 %, verdict VALIDÉ
+= W1 ∧ W2 ∧ W3 ∧ WF3-P ∧ contrôle d'effet.
+
+## 11. Résultats D3-P2
+
+(à compléter après exécution)
