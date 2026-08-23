@@ -67,6 +67,8 @@ const REGIME_KINDS: readonly RegimeKind[] = ["BULLISH", "BEARISH", "RANGE"];
 export const isValidRegimePermissions = (
   value: RegimePermissions,
 ): boolean =>
+  typeof value === "object" &&
+  value !== null &&
   REGIME_KINDS.every((kind) => Array.isArray(value[kind])) &&
   REGIME_KINDS.every((kind) =>
     value[kind].every(

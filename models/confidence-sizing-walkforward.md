@@ -95,8 +95,11 @@ nature que `confidence-sizing.md`.
    viole jamais dd > 10 %, turnover > 10, ni feeRate > 1 %.
 
 Verdicts possibles :
-- W1 ∧ W2 ∧ W3 → **VALIDÉ** : QUARTER déclaré déployable (flag CLI
-  `--confidence-calibration POWER_QUARTER`).
+- W1 ∧ W2 ∧ W3 ∧ WF2 → **VALIDÉ** : QUARTER déclaré déployable (flag CLI
+  `--confidence-calibration POWER_QUARTER`). Un WF2 FAIL invalide la
+  mesure : le run dérivé ne peut jamais être affiché VALIDÉ (durcissement
+  appliqué au script en review PR#1 ; la campagne enregistrée avait WF2
+  PASS, verdict inchangé).
 - W1 ∧ ¬W2 → sélection stable mais pas de transfert OOS : **DÉCLASSÉ**,
   V1/IDENTITY reste champion, QUARTER archivé avec causes.
 - ¬W1 → la sélection in-sample était non robuste : **DÉCLASSÉ**.

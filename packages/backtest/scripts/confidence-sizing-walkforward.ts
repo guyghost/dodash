@@ -260,5 +260,5 @@ for (const year of START_YEARS) {
   console.log(`${year}: cap ${pct(m.capRate)} riskRej ${pct(m.riskRejectionRate)} — ${flag}`);
 }
 
-const verdict = w1 && w2 && w3 ? "VALIDÉ" : "DÉCLASSÉ";
-console.log(`\nVERDICT W1∧W2∧W3 : ${verdict}${wf2Ok ? "" : " (WF2 FAIL — mesure invalide)"}`);
+const verdict = w1 && w2 && w3 && wf2Ok ? "VALIDÉ" : "DÉCLASSÉ";
+console.log(`\nVERDICT W1∧W2∧W3∧WF2 : ${verdict}${wf2Ok ? "" : " (WF2 FAIL — mesure invalide)"}`);

@@ -209,6 +209,18 @@ describe("regime filter core", () => {
     ).toBe(true);
   });
 
+  it("refuse null et valeurs non-objets sans lever", () => {
+    expect(
+      isValidRegimePermissions(null as unknown as RegimePermissions),
+    ).toBe(false);
+    expect(
+      isValidRegimePermissions(42 as unknown as RegimePermissions),
+    ).toBe(false);
+    expect(
+      isValidRegimePermissions("BULLISH" as unknown as RegimePermissions),
+    ).toBe(false);
+  });
+
   it("refuse une table incomplète, avec doublon ou identifiant vide", () => {
     expect(
       isValidRegimePermissions({

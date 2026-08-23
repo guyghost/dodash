@@ -223,6 +223,19 @@ Grille annuelle `ret / dd` (%, config V1, 40 runs) :
 
 ## 9. Limites épistémiques et hors périmètre
 
+- **Médianes CS4 mesurées pré-sizing** (constat post-campagne, review
+  PR#1) : les observations `requestedNotional` des diagnostics du replay
+  sont poussées avant l'application du recalibrage conditionnel
+  (`replay.ts` : diagnostics L626, `regimeConditionalSizing` L713) ; la
+  porte médiane du script a donc lu des notionnels pré-sizing, non
+  comparables à D12 où le sizing est appliqué en amont dans la stratégie
+  wrappée. **Non-binding sur le verdict** : la porte dd ≤ 10 % a exclu
+  chaque candidat k ≠ IDENTITY sur chaque train propre (§8,
+  `éligibles [aucun]` 9/9) — la médiane n'a jamais déterminé
+  l'éligibilité ni la sélection, et le défaut IDENTITY (W2 FAIL
+  mécanique) est invariant. Toute réouverture de l'axe devra
+  instrumenter des notionnels post-sizing dans le replay.
+
 - **Nature du déclassement** : non-éligibilité à la porte de risque
   a priori (CS4-dd), pas défaite OOS d'un candidat sélectionné — le
   signal directionnel de H-S1 n'a jamais été testé OOS parce qu'aucun
