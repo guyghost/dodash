@@ -1,6 +1,7 @@
 # Permission par stratégie × régime — reconfiguration du gate
 
-Statut : MODÉLISÉ
+Statut : MESURÉ (D3-P DÉCLASSÉ — porte CS4 inopérante sous candidats
+permission ; protocole D3-P2 à pré-enregistrer avant re-mesure)
 
 ## 1. Contexte et décision
 
@@ -177,9 +178,64 @@ C1 ; aucune conclusion M5 n'est réutilisée comme verdict.
   régime est fermée, priorité aux signaux/data (branche 4 du
   diagnostic).
 
-## 8. Résultats
+## 8. Résultats (D3-P, campagne du 2026-02-14, 27 runs)
 
-(à compléter après exécution)
+Fenêtre 2016 éliminée proprement (HISTORICAL_NETWORK_UNAVAILABLE,
+by design). Grille annuelle `ret / dd` (%, config V1-IDENTITY) :
+
+| Fenêtre | C0 défaut | C1 bear∅ | C2 bear+range∅ |
+|---|---|---|---|
+| 2017 | 3,85 / 6,88 | 5,88 / 6,30 | 6,22 / 6,30 |
+| 2018 | 3,48 / 3,48 | 4,14 / 3,45 | 3,70 / 3,47 |
+| 2019 | −2,60 / 3,45 | −0,23 / 1,06 | −0,14 / 0,30 |
+| 2020 | 11,33 / 4,82 | 11,07 / 4,54 | 11,22 / 4,45 |
+| 2021 | −5,81 / 6,21 | −1,17 / 1,47 | −0,14 / 0,24 |
+| 2022 | −1,03 / 1,74 | −0.83 / 1,43 | −0,05 / 0,19 |
+| 2023 | 0,27 / 2,93 | 0,76 / 1,52 | 0,50 / 0,56 |
+| 2024 | 2,01 / 0,59 | 1,53 / 0,36 | 0,29 / 0,35 |
+| 2025 | 3,63 / 3,37 | 0,57 / 0,73 | −0,01 / 0,02 |
+
+- **Mécanisme** (années faibles) : C1 écrase la perte — 2019 +2,37 pp,
+  2021 +4,64 pp, 2022 +0,20 pp ; C2 renforce encore (2021 : −0,14 %).
+  Coût visible les années gagnantes : 2024 −0,48 pp (C1), 2025 −3,06 pp
+  (C1) où rsi porte le gain — cohérent avec §9. dd réduite sur 9/9 par
+  C1 ; turnover ÷4-6 (6,08→1,19 en 2025 ; 6,17→0,69 en 2021).
+- **WF3-P : PASS** — C0 reproduit bit-pour-bit les baselines
+  (2023 +0,27 % dd 2,93 % ; 2025 +3,63 % dd 3,37 %). Mesure valide.
+- **Contrôle d'effet (denied)** : Δdenied > 0 sur 9/9 fenêtres, C1
+  +51 à +200, C2 +121 à +282 — le gate passe bien la table au replay.
+- **Porte CS4 — éligibles [aucun] sur 9/9 trains** : médiane notional
+  par stratégie sous V1-IDENTITY = $0-31, hors [100,400] partout.
+  La borne hérite de D12/D2-S où elle qualifiait des **calibrations de
+  confiance** (médianes calibrées vivant dans la borne) ; en D2-S le
+  binding constraint était dd ≤ 10 %, la borne médiane n'a jamais eu
+  à qualifier IDENTITY. Pour des candidats **permission** (confiance
+  inchangée), elle disqualifie tout le monde mécaniquement → défaut
+  C0 forcé → W2 FAIL (0/5, spread 0,00 %) sans jamais tester H-P1.
+- **W1 : PASS** (C0 5/5 trains propres, trivial par défaut).
+  **W2 : FAIL** (mécanique, cf. porte ci-dessus). **W3 : PASS**
+  (0 violation dd test).
+- **Verdict figé a priori : DÉCLASSÉ** — aucune candidat n'étant
+  éligible, H-P0 est retenue par le protocole.
+- **Lecture honnête** : les deltas bruts favorisent H-P1 (C1 bat C0
+  en return sur 6/9, dont les 3 années faibles ; dd réduite 9/9) mais
+  restent in-sample — le protocole n'a pas testé l'hypothèse, il l'a
+  court-circuitée par une porte inadaptée au type de candidat. Le
+  verdict DÉCLASSÉ est consigné tel quel (règle a priori) ; un
+  protocole corrigé D3-P2 devra être pré-enregistré avant re-mesure.
+
+### Contrôle d'effet « entrées résiduelles » — FAIL, artefact documenté
+
+C1 laisse 0-4 entrées fillées en BEARISH ; C2 0-1 en RANGE. Cause
+prouvée dans le code (replay.ts) : les ordres approuvés au jour T
+deviennent `pendingOrders` (L807) et s'exécutent au **candle suivant**
+à l'open (`executionCandle.start`, L474-485) — le fill porte
+executedAt = T+1. La permission est vérifiée sur le **régime de
+décision** (T) ; le contrôle mesurait le **régime au fill** (T+1). Un
+ordre approuvé en BULLISH transitionné BEARISH à T+1 est fillé
+« BEARISH » sans violation du gate. Le compte (0-4/an) est cohérent
+avec le nombre de transitions de régime par an. Ce contrôle sera
+reformulé sur le régime de décision au protocole D3-P2.
 
 ## 9. Limites et hors périmètre
 
@@ -199,3 +255,17 @@ C1 ; aucune conclusion M5 n'est réutilisée comme verdict.
   les permissions ne changent pas : l'effet C1/C2 sur rsi n'est vu par
   le sélecteur que via return/dd/turnover globaux. Pas de porte dédiée
   à l'effectif rsi ; gardées telles quelles pour la comparabilité.
+- **Défaut de protocole constaté (post-mortem)** : la porte médiane
+  [100,400] est inopérante pour des candidats permission (médianes
+  identiques entre candidats, toutes hors borne sous V1-IDENTITY).
+  Conservée telle quelle en D3-P pour l'honnêteté a priori ; tout
+  protocole futur doit recalibrer ses portes au type de candidat.
+- **Latence décision→exécution** : le paper broker exécute les ordres
+  au candle suivant (open T+1) — toute attribution « au fill »
+  traverse les transitions de régime. Les contrôles d'effet doivent
+  cibler le régime de décision, ou borner explicitement les résidus
+  attendus par le compte de transitions.
+- Attribution par stratégie impossible au fill (Fill sans
+  strategyIds, clientOrderId haché) — seule l'attribution par régime
+  est disponible ; le contrôle par stratégie reste au niveau denied
+  (par stratégie) vs fills (par régime).
