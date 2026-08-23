@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createProductId, createSignal, type Candle } from "@dodash/domain";
-import type { RegimeFilterPolicy } from "@dodash/models";
+import type { RegimeFilterPolicy, RegimePermissions } from "@dodash/models";
 import {
   createStrategyRegistry,
   type Strategy,
@@ -118,6 +118,7 @@ const bullishPolicy = {
 const config = (
   strategies: StrategyRegistry,
   regimeFilter?: RegimeFilterPolicy,
+  regimePermissions?: RegimePermissions,
 ): BacktestConfig => ({
   runId: "regime-gating-test",
   agentId: "regime-gating-agent",
@@ -138,6 +139,7 @@ const config = (
   },
   broker: { feeBps: 0, slippageBps: 0 },
   ...(regimeFilter === undefined ? {} : { regimeFilter }),
+  ...(regimePermissions === undefined ? {} : { regimePermissions }),
 });
 
 // warmup = 3 → bougies de décision = indices 2, 3, 4 (3 observations, 3 signaux
@@ -162,6 +164,60 @@ describe("replayBacktest — gating par régime", () => {
         ...bullishPolicy,
         thresholdBps: 0,
       }),
+      preparedFor(baseCandles, { emaFast: 2, emaSlow: 1 }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_BACKTEST_CONFIG");
+  });
+
+  it("regimePermissions personnalisée autorise une stratégie inconnue de la table par défaut", async () => {
+    // custom-strategy est absente de la table par défaut (deny), mais
+    // première dans la table fournie (allow) — prouve que la config
+    // câble bien l'argument permissions du résolveur.
+    const custom = {
+      BULLISH: ["custom-strategy"],
+      BEARISH: [],
+      RANGE: [],
+    } as const;
+    const denied = await replayBacktest(
+      baseCandles,
+      config(registryWith(["custom-strategy"]), bullishPolicy),
+      preparedFor(baseCandles, { emaFast: 2, emaSlow: 1 }),
+    );
+    if (!denied.ok) throw new Error(JSON.stringify(denied.error));
+    expect(denied.value.trades).toHaveLength(0);
+
+    const allowed = await replayBacktest(
+      baseCandles,
+      config(registryWith(["custom-strategy"]), bullishPolicy, custom),
+      preparedFor(baseCandles, { emaFast: 2, emaSlow: 1 }),
+    );
+    if (!allowed.ok) throw new Error(JSON.stringify(allowed.error));
+    expect(allowed.value.trades.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("une table de permissions incomplète est rejetée (INVALID_BACKTEST_CONFIG)", async () => {
+    const incomplete = {
+      BULLISH: ["ema-cross"],
+    } as unknown as RegimePermissions;
+    const result = await replayBacktest(
+      baseCandles,
+      config(registryWith(["ema-cross"]), bullishPolicy, incomplete),
+      preparedFor(baseCandles, { emaFast: 2, emaSlow: 1 }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("INVALID_BACKTEST_CONFIG");
+  });
+
+  it("regimePermissions sans regimeFilter est rejetée (le gating doit exister)", async () => {
+    const custom = {
+      BULLISH: ["ema-cross"],
+      BEARISH: [],
+      RANGE: [],
+    } as const;
+    const result = await replayBacktest(
+      baseCandles,
+      config(registryWith(["ema-cross"]), undefined, custom),
       preparedFor(baseCandles, { emaFast: 2, emaSlow: 1 }),
     );
     expect(result.ok).toBe(false);

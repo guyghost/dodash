@@ -205,6 +205,7 @@ export {
   DEFAULT_REGIME_PERMISSIONS,
   isValidRegimeFilterPolicy,
   isValidRegimeObservation,
+  isValidRegimePermissions,
   resolveRegimePermission,
 } from "./regime-filter.js";
 export type {

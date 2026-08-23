@@ -6,6 +6,7 @@ import {
   DEFAULT_REGIME_PERMISSIONS,
   isValidRegimeFilterPolicy,
   isValidRegimeObservation,
+  isValidRegimePermissions,
   resolveRegimePermission,
 } from "./regime-filter.js";
 import { regimeFilterMachine } from "./regime-filter.machine.js";
@@ -187,6 +188,48 @@ describe("regime filter core", () => {
     for (const regime of ["BULLISH", "BEARISH", "RANGE"] as const) {
       expect(DEFAULT_REGIME_PERMISSIONS[regime]).toBeDefined();
     }
+  });
+
+  it("valide une table complète, y compris avec listes vides (C1/C2)", () => {
+    expect(isValidRegimePermissions(DEFAULT_REGIME_PERMISSIONS)).toBe(true);
+    // C1 (rsi-bear-off) et C2 (rsi-off) du cycle 5 : listes vides licites.
+    expect(
+      isValidRegimePermissions({
+        BULLISH: ["ema-cross", "breakout"],
+        BEARISH: [],
+        RANGE: ["rsi-reversion"],
+      }),
+    ).toBe(true);
+    expect(
+      isValidRegimePermissions({
+        BULLISH: ["ema-cross", "breakout"],
+        BEARISH: [],
+        RANGE: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("refuse une table incomplète, avec doublon ou identifiant vide", () => {
+    expect(
+      isValidRegimePermissions({
+        BULLISH: ["ema-cross"],
+        BEARISH: [],
+      } as unknown as RegimePermissions),
+    ).toBe(false);
+    expect(
+      isValidRegimePermissions({
+        BULLISH: ["ema-cross", "ema-cross"],
+        BEARISH: [],
+        RANGE: [],
+      }),
+    ).toBe(false);
+    expect(
+      isValidRegimePermissions({
+        BULLISH: ["ema-cross", "  "],
+        BEARISH: [],
+        RANGE: [],
+      }),
+    ).toBe(false);
   });
 });
 

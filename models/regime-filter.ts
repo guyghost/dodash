@@ -59,6 +59,24 @@ export const isValidRegimeObservation = (
   Number.isFinite(observation.emaSlow) &&
   observation.emaSlow > 0;
 
+// INV-P2 (models/strategy-permission.md) : la table doit être totale sur
+// RegimeKind — chaque régime a une liste (éventuellement vide = régime
+// interdit à tous, candidats C1/C2), sans doublon ni id vide.
+const REGIME_KINDS: readonly RegimeKind[] = ["BULLISH", "BEARISH", "RANGE"];
+
+export const isValidRegimePermissions = (
+  value: RegimePermissions,
+): boolean =>
+  REGIME_KINDS.every((kind) => Array.isArray(value[kind])) &&
+  REGIME_KINDS.every((kind) =>
+    value[kind].every(
+      (id, index) =>
+        typeof id === "string" &&
+        id.trim().length > 0 &&
+        value[kind].indexOf(id) === index,
+    ),
+  );
+
 /**
  * Classification d'une observation selon le mode de la politique.
  *

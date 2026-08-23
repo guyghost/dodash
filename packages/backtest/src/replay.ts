@@ -27,6 +27,8 @@ import {
   isValidRegimeConditionalExitPolicy,
   isValidRegimeConditionalSizingPolicy,
   isValidRegimeFilterPolicy,
+  isValidRegimePermissions,
+  DEFAULT_REGIME_PERMISSIONS,
   protectiveOrderMachine,
   resolveDailyRiskWindow,
   resolveRegimeExitArm,
@@ -48,6 +50,7 @@ import {
   type RegimeConditionalSizingPolicy,
   type RegimeFilterPolicy,
   type RegimeKind,
+  type RegimePermissions,
   type RiskRejectionReasonCode,
   type SignalDiagnosticObservation,
   type SpotPermissionError,
@@ -96,6 +99,11 @@ export interface BacktestConfig {
   // INV-S2 (models/regime-sizing.md) : nécessite regimeFilter. La
   // moitié confidenceCalibration de l'invariant est vérifiée côté suite.
   readonly regimeConditionalSizing?: RegimeConditionalSizingPolicy;
+  // INV-P1..P3 (models/strategy-permission.md) : table de permission
+  // optionnelle ; absente ⇒ DEFAULT_REGIME_PERMISSIONS (bit-exact V1).
+  // Nécessite regimeFilter (la permission n'a de sens que si un régime
+  // est observé).
+  readonly regimePermissions?: RegimePermissions;
 }
 
 export interface RegimeGatingSummary {
@@ -178,6 +186,9 @@ const validConfig = (config: BacktestConfig): boolean =>
     isValidRegimeFilterPolicy(config.regimeFilter)) &&
   (config.regimeConditionalSizing === undefined ||
     (isValidRegimeConditionalSizingPolicy(config.regimeConditionalSizing) &&
+      config.regimeFilter !== undefined)) &&
+  (config.regimePermissions === undefined ||
+    (isValidRegimePermissions(config.regimePermissions) &&
       config.regimeFilter !== undefined));
 
 const validPreparedIndicators = (
@@ -298,6 +309,10 @@ export const replayBacktest = async (
   const signalDiagnosticObservations: SignalDiagnosticObservation[] = [];
   const allocationDiagnosticObservations: AllocationDiagnosticObservation[] = [];
   const regimePolicy = config.regimeFilter ?? null;
+  // INV-P1 : absente de la config, la table par défaut est utilisée —
+  // bit-exact V1. INV-P3 : source unique models/, aucune table locale.
+  const regimePermissions =
+    config.regimePermissions ?? DEFAULT_REGIME_PERMISSIONS;
   const regimeActor =
     regimePolicy === null
       ? null
@@ -658,7 +673,11 @@ export const replayBacktest = async (
         const permission =
           activeRegime === null
             ? null
-            : resolveRegimePermission(activeRegime, signal.strategyId);
+            : resolveRegimePermission(
+                activeRegime,
+                signal.strategyId,
+                regimePermissions,
+              );
         if (permission !== null && permission.ok && permission.value) {
           allowedSignals.push(signal);
           regimeCounters.signalsPassed += 1;
