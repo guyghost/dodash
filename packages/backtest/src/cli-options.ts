@@ -8,9 +8,12 @@ import {
 } from "@dodash/domain";
 import {
   isValidProtectiveExitPolicy,
+  isValidRegimeConditionalExitPolicy,
   isConfidenceCalibrationProfile,
+  isValidRegimeFilterPolicy,
   type ConfidenceCalibrationProfile,
   type ProtectiveExitPolicy,
+  type RegimeFilterPolicy,
 } from "@dodash/models";
 
 const timeframeMs: Readonly<Record<Timeframe, number>> = Object.freeze({
@@ -55,11 +58,15 @@ export interface BacktestCliOptions {
   readonly endAt: number;
   readonly outputPath: string;
   readonly protectiveExit: BacktestCliProtectiveExitPolicy;
+  readonly regimeFilter: RegimeFilterPolicy | null;
 }
 
 export type BacktestCliProtectiveExitPolicy = Extract<
   ProtectiveExitPolicy,
-  { readonly mode: "NONE" } | { readonly mode: "FIXED_BPS" }
+  | { readonly mode: "NONE" }
+  | { readonly mode: "FIXED_BPS" }
+  | { readonly mode: "REGIME_CONDITIONAL" }
+  | { readonly mode: "TRAILING_BPS" }
 >;
 
 export type BacktestCliOptionsError = { readonly code: "INVALID_CLI_OPTIONS" };
@@ -76,12 +83,55 @@ export const createBacktestRunId = (options: BacktestCliOptions): string => {
       : ["confidence", options.confidenceCalibration]),
     ...(options.protectiveExit.mode === "NONE"
       ? []
-      : [
-          "protective",
-          options.protectiveExit.mode,
-          options.protectiveExit.stopLossBps,
-          options.protectiveExit.takeProfitBps,
-        ]),
+      : options.protectiveExit.mode === "FIXED_BPS"
+        ? [
+            "protective",
+            options.protectiveExit.mode,
+            options.protectiveExit.stopLossBps,
+            options.protectiveExit.takeProfitBps,
+          ]
+        : options.protectiveExit.mode === "TRAILING_BPS"
+          ? [
+              "protective",
+              "trailing",
+              options.protectiveExit.trailBps,
+              ...(options.protectiveExit.takeProfitBps === undefined
+                ? []
+                : [options.protectiveExit.takeProfitBps]),
+            ]
+          : [
+              "protective",
+              "regime-exit",
+              options.protectiveExit.bearish.mode === "FIXED_BPS"
+                ? options.protectiveExit.bearish.stopLossBps
+                : 0,
+              options.protectiveExit.bearish.mode === "FIXED_BPS"
+                ? options.protectiveExit.bearish.takeProfitBps
+                : 0,
+              ...(options.protectiveExit.bullish.mode === "TRAILING_BPS"
+                ? ["bulltrail", options.protectiveExit.bullish.trailBps]
+                : []),
+            ]),
+    ...(options.regimeFilter === null
+      ? []
+      : options.regimeFilter.mode === "EMA_THRESHOLD"
+        ? [
+            "regime",
+            options.regimeFilter.thresholdBps,
+            ...(options.regimeFilter.bearishThresholdBps === undefined
+              ? []
+              : [options.regimeFilter.bearishThresholdBps]),
+            options.regimeFilter.minObservations,
+            options.regimeFilter.confirmationCount,
+          ]
+        : [
+            "regime",
+            "slope",
+            options.regimeFilter.slopeThresholdBps,
+            options.regimeFilter.slopePeriods,
+            options.regimeFilter.minObservations,
+            options.regimeFilter.confirmationCount,
+          ]),
   ];
   return [
     "bt",
@@ -115,6 +165,15 @@ export const parseBacktestCliOptions = (
     "--protective-exit",
     "--stop-loss-bps",
     "--take-profit-bps",
+    "--trail-bps",
+    "--bull-trail-bps",
+    "--regime-filter",
+    "--regime-threshold-bps",
+    "--regime-bearish-threshold-bps",
+    "--regime-min-observations",
+    "--regime-confirmation-count",
+    "--regime-slope-bps",
+    "--regime-slope-periods",
     "--start",
     "--end",
     "--output",
@@ -154,16 +213,25 @@ export const parseBacktestCliOptions = (
   const protectiveMode = values.get("--protective-exit") ?? "NONE";
   const stopLossRaw = values.get("--stop-loss-bps");
   const takeProfitRaw = values.get("--take-profit-bps");
+  const trailBpsRaw = values.get("--trail-bps");
+  const bullTrailRaw = values.get("--bull-trail-bps");
   let protectiveExit: BacktestCliProtectiveExitPolicy;
   if (protectiveMode === "NONE") {
-    if (stopLossRaw !== undefined || takeProfitRaw !== undefined) {
+    if (
+      stopLossRaw !== undefined ||
+      takeProfitRaw !== undefined ||
+      trailBpsRaw !== undefined ||
+      bullTrailRaw !== undefined
+    ) {
       return err({ code: "INVALID_CLI_OPTIONS" });
     }
     protectiveExit = Object.freeze({ mode: "NONE" as const });
   } else if (
     protectiveMode === "FIXED_BPS" &&
     stopLossRaw !== undefined &&
-    takeProfitRaw !== undefined
+    takeProfitRaw !== undefined &&
+    trailBpsRaw === undefined &&
+    bullTrailRaw === undefined
   ) {
     const candidate = Object.freeze({
       mode: "FIXED_BPS" as const,
@@ -174,7 +242,112 @@ export const parseBacktestCliOptions = (
       return err({ code: "INVALID_CLI_OPTIONS" });
     }
     protectiveExit = candidate;
+  } else if (
+    protectiveMode === "REGIME_CONDITIONAL" &&
+    stopLossRaw !== undefined &&
+    takeProfitRaw !== undefined &&
+    trailBpsRaw === undefined
+  ) {
+    const armedArm = Object.freeze({
+      mode: "FIXED_BPS" as const,
+      stopLossBps: Number(stopLossRaw),
+      takeProfitBps: Number(takeProfitRaw),
+    });
+    const bullish =
+      bullTrailRaw === undefined
+        ? Object.freeze({ mode: "NONE" as const })
+        : Object.freeze({
+            mode: "TRAILING_BPS" as const,
+            trailBps: Number(bullTrailRaw),
+          });
+    const candidate = Object.freeze({
+      mode: "REGIME_CONDITIONAL" as const,
+      bullish,
+      bearish: armedArm,
+      range: armedArm,
+      warmUp: armedArm,
+    });
+    if (!isValidRegimeConditionalExitPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    protectiveExit = candidate;
+  } else if (
+    protectiveMode === "TRAILING_BPS" &&
+    trailBpsRaw !== undefined &&
+    stopLossRaw === undefined &&
+    bullTrailRaw === undefined
+  ) {
+    const candidate = Object.freeze({
+      mode: "TRAILING_BPS" as const,
+      trailBps: Number(trailBpsRaw),
+      ...(takeProfitRaw === undefined
+        ? {}
+        : { takeProfitBps: Number(takeProfitRaw) }),
+    });
+    if (!isValidProtectiveExitPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    protectiveExit = candidate;
   } else {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+
+  const regimeMode = values.get("--regime-filter") ?? "NONE";
+  const regimeMinObservations = values.get("--regime-min-observations");
+  const regimeConfirmationCount = values.get("--regime-confirmation-count");
+  const regimeThresholdFlag = values.get("--regime-threshold-bps");
+  const regimeBearishThresholdFlag = values.get("--regime-bearish-threshold-bps");
+  const regimeSlopeBpsFlag = values.get("--regime-slope-bps");
+  const regimeSlopePeriodsFlag = values.get("--regime-slope-periods");
+  const regimeSharedFlags = [regimeMinObservations, regimeConfirmationCount];
+  let regimeFilter: RegimeFilterPolicy | null;
+  if (regimeMode === "NONE") {
+    if (
+      regimeSharedFlags.some((value) => value !== undefined) ||
+      regimeThresholdFlag !== undefined ||
+      regimeBearishThresholdFlag !== undefined ||
+      regimeSlopeBpsFlag !== undefined ||
+      regimeSlopePeriodsFlag !== undefined
+    ) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    regimeFilter = null;
+  } else if (regimeMode === "EMA_THRESHOLD") {
+    if (regimeSlopeBpsFlag !== undefined || regimeSlopePeriodsFlag !== undefined) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    const candidate = Object.freeze({
+      mode: "EMA_THRESHOLD" as const,
+      thresholdBps: Number(regimeThresholdFlag ?? "100"),
+      ...(regimeBearishThresholdFlag === undefined
+        ? {}
+        : { bearishThresholdBps: Number(regimeBearishThresholdFlag) }),
+      minObservations: Number(regimeMinObservations ?? "5"),
+      confirmationCount: Number(regimeConfirmationCount ?? "3"),
+    });
+    if (!isValidRegimeFilterPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    regimeFilter = candidate;
+  } else if (regimeMode === "EMA_SLOPE") {
+    if (regimeThresholdFlag !== undefined || regimeBearishThresholdFlag !== undefined) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    const candidate = Object.freeze({
+      mode: "EMA_SLOPE" as const,
+      slopeThresholdBps: Number(regimeSlopeBpsFlag ?? "200"),
+      slopePeriods: Number(regimeSlopePeriodsFlag ?? "10"),
+      minObservations: Number(regimeMinObservations ?? "5"),
+      confirmationCount: Number(regimeConfirmationCount ?? "3"),
+    });
+    if (!isValidRegimeFilterPolicy(candidate)) {
+      return err({ code: "INVALID_CLI_OPTIONS" });
+    }
+    regimeFilter = candidate;
+  } else {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+  if (protectiveExit.mode === "REGIME_CONDITIONAL" && regimeFilter === null) {
     return err({ code: "INVALID_CLI_OPTIONS" });
   }
 
@@ -221,9 +394,23 @@ export const parseBacktestCliOptions = (
   const protectiveSuffix =
     protectiveExit.mode === "NONE"
       ? ""
-      : `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`;
+      : protectiveExit.mode === "FIXED_BPS"
+        ? `-fixed-${protectiveExit.stopLossBps}-${protectiveExit.takeProfitBps}`
+        : protectiveExit.mode === "TRAILING_BPS"
+          ? `-trailing-${protectiveExit.trailBps}${
+              protectiveExit.takeProfitBps === undefined
+                ? ""
+                : `-${protectiveExit.takeProfitBps}`
+            }`
+          : `-regime-exit-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.stopLossBps : 0}-${protectiveExit.bearish.mode === "FIXED_BPS" ? protectiveExit.bearish.takeProfitBps : 0}${protectiveExit.bullish.mode === "TRAILING_BPS" ? `-bt-${protectiveExit.bullish.trailBps}` : ""}`;
+  const regimeSuffix =
+    regimeFilter === null
+      ? ""
+      : regimeFilter.mode === "EMA_THRESHOLD"
+        ? `-regime-${regimeFilter.thresholdBps}${regimeFilter.bearishThresholdBps === undefined ? "" : `-${regimeFilter.bearishThresholdBps}`}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`
+        : `-regime-slope-${regimeFilter.slopeThresholdBps}-${regimeFilter.slopePeriods}-${regimeFilter.minObservations}-${regimeFilter.confirmationCount}`;
   const outputPath = values.get("--output") ??
-    `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${confidenceSuffix}${protectiveSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
+    `.artifacts/backtests/${product.value}-${timeframeRaw}${notionalSuffix}${executionSuffix}${confidenceSuffix}${protectiveSuffix}${regimeSuffix}-${formatUtcDate(startAt)}-${formatUtcDate(endAt)}.json`;
   return ok(
     Object.freeze({
       productId: product.value,
@@ -235,6 +422,7 @@ export const parseBacktestCliOptions = (
       endAt,
       outputPath,
       protectiveExit,
+      regimeFilter,
     }),
   );
 };

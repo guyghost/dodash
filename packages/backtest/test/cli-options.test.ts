@@ -179,4 +179,371 @@ describe("backtest CLI options", () => {
       backtest.parseBacktestCliOptions(["--unknown", "value"], Date.UTC(2026, 7, 18)),
     ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
   });
+
+  it("fige REGIME_CONDITIONAL (stop/take requis, régime requis) dans le manifeste", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--protective-exit",
+        "REGIME_CONDITIONAL",
+        "--stop-loss-bps",
+        "300",
+        "--take-profit-bps",
+        "600",
+        "--regime-filter",
+        "EMA_THRESHOLD",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.protectiveExit).toEqual({
+      mode: "REGIME_CONDITIONAL",
+      bullish: { mode: "NONE" },
+      bearish: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
+      range: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
+      warmUp: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-regime-exit-300-600-regime-100-5-3-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:protective:regime-exit:300:600:regime:100:5:3:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse REGIME_CONDITIONAL sans stop/take ou sans regime-filter (RE7)", () => {
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "REGIME_CONDITIONAL",
+          "--stop-loss-bps",
+          "300",
+          "--regime-filter",
+          "EMA_THRESHOLD",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "REGIME_CONDITIONAL",
+          "--stop-loss-bps",
+          "300",
+          "--take-profit-bps",
+          "600",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
+
+  it("fige le seuil BEARISH asymétrique dans le manifeste (RA5)", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--regime-filter",
+        "EMA_THRESHOLD",
+        "--regime-bearish-threshold-bps",
+        "200",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.regimeFilter).toEqual({
+      mode: "EMA_THRESHOLD",
+      thresholdBps: 100,
+      bearishThresholdBps: 200,
+      minObservations: 5,
+      confirmationCount: 3,
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-regime-100-200-5-3-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:regime:100:200:5:3:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse --regime-bearish-threshold-bps hors EMA_THRESHOLD (RA7)", () => {
+    expect(
+      backtest.parseBacktestCliOptions(
+        ["--regime-bearish-threshold-bps", "200"],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--regime-filter",
+          "EMA_SLOPE",
+          "--regime-bearish-threshold-bps",
+          "200",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--regime-filter",
+          "EMA_THRESHOLD",
+          "--regime-bearish-threshold-bps",
+          "0",
+        ],
+        Date.UTC(2026, 7, 18),
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
+  it("accepte TRAILING_BPS et fige manifeste et suffixe (TE7)", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--protective-exit",
+        "TRAILING_BPS",
+        "--trail-bps",
+        "300",
+        "--regime-filter",
+        "EMA_THRESHOLD",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.protectiveExit).toEqual({
+      mode: "TRAILING_BPS",
+      trailBps: 300,
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-trailing-300-regime-100-5-3-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:protective:trailing:300:regime:100:5:3:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse les combinaisons TRAILING invalides (TE7)", () => {
+    const now = Date.UTC(2026, 7, 18);
+    const base = ["--protective-exit", "TRAILING_BPS", "--trail-bps", "300"];
+    expect(
+      backtest.parseBacktestCliOptions(
+        ["--protective-exit", "TRAILING_BPS"],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        ["--protective-exit", "NONE", "--trail-bps", "300"],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "FIXED_BPS",
+          "--stop-loss-bps",
+          "300",
+          "--take-profit-bps",
+          "600",
+          "--trail-bps",
+          "300",
+        ],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [...base.slice(0, -1), "0"],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
+
+  it("accepte TRAILING_BPS + take optionnel et étend manifeste et suffixe (TT6)", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--protective-exit",
+        "TRAILING_BPS",
+        "--trail-bps",
+        "500",
+        "--take-profit-bps",
+        "600",
+        "--regime-filter",
+        "EMA_THRESHOLD",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.protectiveExit).toEqual({
+      mode: "TRAILING_BPS",
+      trailBps: 500,
+      takeProfitBps: 600,
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-trailing-500-600-regime-100-5-3-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:protective:trailing:500:600:regime:100:5:3:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse les takes TRAILING invalides (TT6)", () => {
+    const now = Date.UTC(2026, 7, 18);
+    const base = [
+      "--protective-exit",
+      "TRAILING_BPS",
+      "--trail-bps",
+      "300",
+      "--take-profit-bps",
+      "600",
+    ];
+    expect(
+      backtest.parseBacktestCliOptions(
+        [...base.slice(0, -1), "0"],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [...base.slice(0, -1), "100000"],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "TRAILING_BPS",
+          "--trail-bps",
+          "300",
+          "--take-profit-bps",
+          "600",
+          "--stop-loss-bps",
+          "400",
+        ],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
+
+  it("accepte --bull-trail-bps en REGIME_CONDITIONAL et étend manifeste et suffixe (RC6)", () => {
+    const result = backtest.parseBacktestCliOptions(
+      [
+        "--protective-exit",
+        "REGIME_CONDITIONAL",
+        "--stop-loss-bps",
+        "600",
+        "--take-profit-bps",
+        "600",
+        "--bull-trail-bps",
+        "500",
+        "--regime-filter",
+        "EMA_THRESHOLD",
+        "--start",
+        "2025-01-01",
+        "--end",
+        "2026-01-01",
+      ],
+      Date.UTC(2026, 7, 18),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.protectiveExit).toEqual({
+      mode: "REGIME_CONDITIONAL",
+      bullish: { mode: "TRAILING_BPS", trailBps: 500 },
+      bearish: { mode: "FIXED_BPS", stopLossBps: 600, takeProfitBps: 600 },
+      range: { mode: "FIXED_BPS", stopLossBps: 600, takeProfitBps: 600 },
+      warmUp: { mode: "FIXED_BPS", stopLossBps: 600, takeProfitBps: 600 },
+    });
+    expect(result.value.outputPath).toBe(
+      ".artifacts/backtests/BTC-USD-ONE_DAY-notional-1000-regime-exit-600-600-bt-500-regime-100-5-3-2025-01-01-2026-01-01.json",
+    );
+    expect(backtest.createBacktestRunId(result.value)).toBe(
+      "bt:BTC-USD:ONE_DAY:notional:1000:protective:regime-exit:600:600:bulltrail:500:regime:100:5:3:1735689600000:1767225600000",
+    );
+  });
+
+  it("refuse --bull-trail-bps hors REGIME_CONDITIONAL ou hors bornes (RC6)", () => {
+    const now = Date.UTC(2026, 7, 18);
+    const base = [
+      "--protective-exit",
+      "REGIME_CONDITIONAL",
+      "--stop-loss-bps",
+      "600",
+      "--take-profit-bps",
+      "600",
+      "--regime-filter",
+      "EMA_THRESHOLD",
+    ];
+    expect(
+      backtest.parseBacktestCliOptions([...base, "--bull-trail-bps", "0"], now),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions([...base, "--bull-trail-bps", "10000"], now),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "NONE",
+          "--bull-trail-bps",
+          "500",
+        ],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "FIXED_BPS",
+          "--stop-loss-bps",
+          "600",
+          "--take-profit-bps",
+          "600",
+          "--bull-trail-bps",
+          "500",
+        ],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+    expect(
+      backtest.parseBacktestCliOptions(
+        [
+          "--protective-exit",
+          "TRAILING_BPS",
+          "--trail-bps",
+          "500",
+          "--bull-trail-bps",
+          "500",
+        ],
+        now,
+      ),
+    ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
+  });
 });
+

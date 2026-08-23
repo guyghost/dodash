@@ -2,11 +2,19 @@ import { createOrderIntent, err, ok, type Result } from "@dodash/domain";
 import type { IndicatorConfig } from "@dodash/indicators-prolog";
 import {
   isConfidenceCalibrationProfile,
+  isValidProtectiveExitPolicy,
+  isValidRegimeConditionalExitPolicy,
+  isValidRegimeConditionalSizingPolicy,
+  isValidRegimeFilterPolicy,
+  isValidRegimePermissions,
   summarizeProtectiveExits,
   type BacktestDiagnosticSamples,
   type BacktestDiagnostics,
   type ConfidenceCalibrationProfile,
   type ProtectiveExitPolicy,
+  type RegimeConditionalSizingPolicy,
+  type RegimeFilterPolicy,
+  type RegimePermissions,
 } from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
 import {
@@ -27,6 +35,7 @@ import {
 } from "./paper-broker.js";
 import { prepareBacktestIndicators } from "./prepared-indicators.js";
 import { replayBacktest } from "./replay.js";
+import type { RegimeGatingSummary } from "./replay.js";
 import { withTargetSignalNotional } from "./target-notional-strategy.js";
 
 export interface BacktestSuiteConfig {
@@ -41,6 +50,13 @@ export interface BacktestSuiteConfig {
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
   readonly protectiveExit?: ProtectiveExitPolicy;
+  readonly regimeFilter?: RegimeFilterPolicy;
+  // INV-S2 (models/regime-sizing.md) : exclut confidenceCalibration —
+  // deux couches de calibration actives sont une erreur de config.
+  readonly regimeConditionalSizing?: RegimeConditionalSizingPolicy;
+  // INV-P1..P3 (models/strategy-permission.md) : table de permission
+  // optionnelle, validée côté replay ; nécessite regimeFilter.
+  readonly regimePermissions?: RegimePermissions;
 }
 
 export interface BacktestSuiteOptions {
@@ -67,6 +83,7 @@ export interface BacktestScenarioSummary {
   readonly ambiguousExitCount: number;
   readonly diagnostics: BacktestDiagnostics;
   readonly diagnosticSamples: BacktestDiagnosticSamples | null;
+  readonly regimeGating: RegimeGatingSummary | null;
 }
 
 export interface BacktestSuiteReport {
@@ -91,6 +108,14 @@ export type BacktestSuiteError =
       readonly cause: unknown;
     };
 
+const validProtectiveExit = (policy: ProtectiveExitPolicy | undefined): boolean => {
+  if (policy === undefined || policy.mode === "NONE") return true;
+  if (policy.mode === "REGIME_CONDITIONAL") {
+    return isValidRegimeConditionalExitPolicy(policy);
+  }
+  return isValidProtectiveExitPolicy(policy);
+};
+
 const validConfig = (config: BacktestSuiteConfig): boolean =>
   config.runId.trim().length > 0 &&
   config.agentId.trim().length > 0 &&
@@ -102,8 +127,21 @@ const validConfig = (config: BacktestSuiteConfig): boolean =>
   config.minNetQuantity >= 0 &&
   Number.isFinite(config.targetSignalNotional) &&
   config.targetSignalNotional > 0 &&
+  validProtectiveExit(config.protectiveExit) &&
+  // Guard mirror de replay.ts : un exit conditionné au régime exige un filtre.
+  (config.protectiveExit?.mode !== "REGIME_CONDITIONAL" ||
+    config.regimeFilter !== undefined) &&
+  (config.regimeFilter === undefined ||
+    isValidRegimeFilterPolicy(config.regimeFilter)) &&
   (config.confidenceCalibration === undefined ||
-    isConfidenceCalibrationProfile(config.confidenceCalibration));
+    isConfidenceCalibrationProfile(config.confidenceCalibration)) &&
+  (config.regimeConditionalSizing === undefined ||
+    (isValidRegimeConditionalSizingPolicy(config.regimeConditionalSizing) &&
+      config.regimeFilter !== undefined &&
+      config.confidenceCalibration === undefined)) &&
+  (config.regimePermissions === undefined ||
+    (isValidRegimePermissions(config.regimePermissions) &&
+      config.regimeFilter !== undefined));
 
 const compatibleExecutionDataset = (
   primary: HistoricalDataset,
@@ -261,6 +299,15 @@ export const runBacktestSuite = async (
         ...(config.protectiveExit === undefined
           ? {}
           : { protectiveExit: config.protectiveExit }),
+        ...(config.regimeFilter === undefined
+          ? {}
+          : { regimeFilter: config.regimeFilter }),
+        ...(config.regimeConditionalSizing === undefined
+          ? {}
+          : { regimeConditionalSizing: config.regimeConditionalSizing }),
+        ...(config.regimePermissions === undefined
+          ? {}
+          : { regimePermissions: config.regimePermissions }),
       },
       preparedIndicators.value,
       {
@@ -291,6 +338,7 @@ export const runBacktestSuite = async (
         ...protectiveExitCounts,
         diagnostics: replay.value.diagnostics,
         diagnosticSamples: replay.value.diagnosticSamples,
+        regimeGating: replay.value.regimeGating,
       }),
     );
   }

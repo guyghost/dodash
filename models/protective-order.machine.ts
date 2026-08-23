@@ -1,6 +1,7 @@
 import { assign, setup } from "xstate";
 
 import {
+  advanceTrailingPlan,
   createProtectiveOrderPlan,
   resolveProtectiveOpen,
   resolveProtectiveRange,
@@ -160,11 +161,15 @@ export const protectiveOrderMachine = setup({
       currentCandleStart: null,
       currentOpen: null,
     })),
-    completeRange: assign(({ event }) => ({
+    completeRange: assign(({ context, event }) => ({
       lastCandleStart:
         event.type === "CANDLE_RANGE_REPLAYED" ? event.start : null,
       currentCandleStart: null,
       currentOpen: null,
+      plan:
+        context.plan !== null && event.type === "CANDLE_RANGE_REPLAYED"
+          ? advanceTrailingPlan(context.plan, context.policy, event)
+          : context.plan,
     })),
     recordCancel: assign(({ event }) =>
       event.type === "CANCEL_REQUESTED" ? { cancelReason: event.reason } : {},

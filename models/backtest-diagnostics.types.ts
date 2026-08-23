@@ -1,5 +1,25 @@
 export type DiagnosticSignalSide = "BUY" | "SELL" | "HOLD";
 
+export type RiskRejectionReasonCode =
+  | "KILL_SWITCH_ACTIVE"
+  | "DAILY_LOSS_LIMIT"
+  | "COOLDOWN_ACTIVE"
+  | "SPOT_SHORT_FORBIDDEN"
+  | "ORDER_NOTIONAL_LIMIT"
+  | "POSITION_NOTIONAL_LIMIT"
+  | "GROSS_EXPOSURE_LIMIT";
+
+export const RISK_REJECTION_REASON_CODES: readonly RiskRejectionReasonCode[] =
+  Object.freeze([
+    "KILL_SWITCH_ACTIVE",
+    "DAILY_LOSS_LIMIT",
+    "COOLDOWN_ACTIVE",
+    "SPOT_SHORT_FORBIDDEN",
+    "ORDER_NOTIONAL_LIMIT",
+    "POSITION_NOTIONAL_LIMIT",
+    "GROSS_EXPOSURE_LIMIT",
+  ]);
+
 export interface SignalDiagnosticObservation {
   readonly strategyId: string;
   readonly side: DiagnosticSignalSide;
@@ -11,7 +31,9 @@ export interface SignalDiagnosticObservation {
 export interface AllocationDiagnosticObservation {
   readonly requestedNetNotional: number;
   readonly allocatedNotional: number;
+  readonly spotInexecutableNotional: number;
   readonly riskApprovedNotional: number;
+  readonly rejectedReasonCodes: readonly RiskRejectionReasonCode[];
 }
 
 export interface NumericDistribution {
@@ -41,9 +63,13 @@ export interface AllocationDiagnostics {
   readonly opportunityCount: number;
   readonly cappedCount: number;
   readonly capRate: number;
+  readonly spotInexecutableCount: number;
   readonly riskEvaluationCount: number;
   readonly riskRejectedCount: number;
   readonly riskRejectionRate: number;
+  readonly riskRejectionReasons: Readonly<
+    Record<RiskRejectionReasonCode, number>
+  >;
   readonly requestedNetNotional: NumericDistribution;
   readonly allocatedNotional: NumericDistribution;
   readonly riskApprovedNotional: NumericDistribution;

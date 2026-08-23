@@ -1,3 +1,23 @@
+export type RegimeExitArm =
+  | { readonly mode: "NONE" }
+  | {
+      readonly mode: "FIXED_BPS";
+      readonly stopLossBps: number;
+      readonly takeProfitBps: number;
+    }
+  | {
+      readonly mode: "TRAILING_BPS";
+      readonly trailBps: number;
+    };
+
+export interface RegimeConditionalExitPolicy {
+  readonly mode: "REGIME_CONDITIONAL";
+  readonly bullish: RegimeExitArm;
+  readonly bearish: RegimeExitArm;
+  readonly range: RegimeExitArm;
+  readonly warmUp: RegimeExitArm;
+}
+
 export type ProtectiveExitPolicy =
   | { readonly mode: "NONE" }
   | {
@@ -9,11 +29,17 @@ export type ProtectiveExitPolicy =
       readonly mode: "ATR_MULTIPLE";
       readonly stopAtrMultiple: number;
       readonly takeAtrMultiple: number;
-    };
+    }
+  | {
+      readonly mode: "TRAILING_BPS";
+      readonly trailBps: number;
+      readonly takeProfitBps?: number;
+    }
+  | RegimeConditionalExitPolicy;
 
 export type ActiveProtectiveExitPolicy = Exclude<
   ProtectiveExitPolicy,
-  { readonly mode: "NONE" }
+  { readonly mode: "NONE" } | { readonly mode: "REGIME_CONDITIONAL" }
 >;
 
 export interface ProtectiveOrderPlan {
@@ -21,7 +47,8 @@ export interface ProtectiveOrderPlan {
   readonly quantity: number;
   readonly averageEntryPrice: number;
   readonly stopPrice: number;
-  readonly takeProfitPrice: number;
+  readonly takeProfitPrice: number | null;
+  readonly anchorPrice: number;
   readonly armedAt: number;
   readonly policyMode: ActiveProtectiveExitPolicy["mode"];
 }
@@ -94,7 +121,10 @@ export interface ProtectiveRange {
   readonly low: number;
 }
 
-export type ProtectiveCancelReason = "POSITION_CLOSED" | "STRATEGY_EXIT";
+export type ProtectiveCancelReason =
+  | "POSITION_CLOSED"
+  | "STRATEGY_EXIT"
+  | "REGIME_CHANGED";
 
 export interface ProtectiveOrderInput {
   readonly policy: ActiveProtectiveExitPolicy;

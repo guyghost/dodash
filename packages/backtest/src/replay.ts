@@ -18,13 +18,28 @@ import {
   type IndicatorSnapshot,
 } from "@dodash/indicators-prolog";
 import {
+  activeProtectivePolicyEquals,
+  calibrateConfidence,
   createExecutionSchedule,
   extractBacktestDiagnosticSamples,
+  isCalibratedStrategyId,
   isValidProtectiveExitPolicy,
+  isValidRegimeConditionalExitPolicy,
+  isValidRegimeConditionalSizingPolicy,
+  isValidRegimeFilterPolicy,
+  isValidRegimePermissions,
+  DEFAULT_REGIME_PERMISSIONS,
   protectiveOrderMachine,
+  resolveDailyRiskWindow,
+  resolveRegimeExitArm,
+  resolveRegimePermission,
+  resolveRegimeSizingProfile,
   resolveRiskEvaluationTimestamp,
+  resolveSpotPermission,
+  regimeFilterMachine,
   summarizeBacktestDiagnostics,
   type ActiveProtectiveExitPolicy,
+  type DailyRiskWindow,
   type AllocationDiagnosticObservation,
   type BacktestDiagnosticSamples,
   type BacktestDiagnostics,
@@ -32,13 +47,33 @@ import {
   type ExecutionScheduleError,
   type ProtectiveExitPolicy,
   type ProtectiveExitResolution,
+  type RegimeConditionalSizingPolicy,
+  type RegimeFilterPolicy,
+  type RegimeKind,
+  type RegimePermissions,
+  type RiskRejectionReasonCode,
   type SignalDiagnosticObservation,
+  type SpotPermissionError,
 } from "@dodash/models";
-import { checkRisk, type RiskConfig, type RiskError } from "@dodash/risk";
+import {
+  checkRisk,
+  type RiskConfig,
+  type RiskError,
+  type RiskReasonCode,
+} from "@dodash/risk";
 import type { StrategyError, StrategyRegistry } from "@dodash/strategies";
 import { createActor, type ActorRefFrom } from "xstate";
 
 import { calculateMetrics, type BacktestMetrics, type EquityPoint } from "./metrics.js";
+
+// INV (models/risk-rejection-diagnosis.md) : l'union miroir du modèle et
+// RiskReasonCode de @dodash/risk doivent rester alignées — verrou compilation.
+type RiskReasonCodesAligned = [RiskReasonCode] extends [RiskRejectionReasonCode]
+  ? [RiskRejectionReasonCode] extends [RiskReasonCode]
+    ? true
+    : never
+  : never;
+type RiskReasonCodesLock = RiskReasonCodesAligned extends true ? true : never;
 import {
   executePaperOrder,
   type PaperBrokerConfig,
@@ -60,6 +95,31 @@ export interface BacktestConfig {
   readonly risk: RiskConfig;
   readonly broker: PaperBrokerConfig;
   readonly protectiveExit?: ProtectiveExitPolicy;
+  readonly regimeFilter?: RegimeFilterPolicy;
+  // INV-S2 (models/regime-sizing.md) : nécessite regimeFilter. La
+  // moitié confidenceCalibration de l'invariant est vérifiée côté suite.
+  readonly regimeConditionalSizing?: RegimeConditionalSizingPolicy;
+  // INV-P1..P3 (models/strategy-permission.md) : table de permission
+  // optionnelle ; absente ⇒ DEFAULT_REGIME_PERMISSIONS (bit-exact V1).
+  // Nécessite regimeFilter (la permission n'a de sens que si un régime
+  // est observé).
+  readonly regimePermissions?: RegimePermissions;
+}
+
+export interface RegimeGatingSummary {
+  readonly policy: RegimeFilterPolicy;
+  readonly finalRegime: RegimeKind | null;
+  readonly observationsFed: number;
+  readonly signalsPassed: number;
+  readonly signalsFiltered: number;
+  readonly deniedByStrategy: Readonly<Record<string, number>>;
+  // INV-P6 (models/strategy-permission.md §10) : compteurs par régime
+  // de DÉCISION (grandeur que le gate contrôle). Les décisions warm-up
+  // (activeRegime null) ne rentrent dans aucun régime — elles restent
+  // dans deniedByStrategy/signalsFiltered. Compteurs purs : aucun
+  // effet sur les métriques.
+  readonly passedByRegime: Readonly<Record<RegimeKind, number>>;
+  readonly deniedByRegime: Readonly<Record<RegimeKind, number>>;
 }
 
 export interface BacktestReplayOptions {
@@ -84,6 +144,7 @@ export interface BacktestResult {
   readonly protectiveExits: readonly ProtectiveExitExecution[];
   readonly diagnostics: BacktestDiagnostics;
   readonly diagnosticSamples: BacktestDiagnosticSamples | null;
+  readonly regimeGating: RegimeGatingSummary | null;
 }
 
 export type BacktestReplayError =
@@ -98,14 +159,23 @@ export type BacktestReplayError =
   | { readonly code: "STRATEGY_FAILURE"; readonly cause: StrategyError }
   | { readonly code: "ALLOCATION_FAILURE"; readonly cause: AllocationError }
   | { readonly code: "RISK_FAILURE"; readonly cause: RiskError }
+  | {
+      readonly code: "SPOT_PERMISSION_FAILURE";
+      readonly cause: SpotPermissionError;
+    }
   | { readonly code: "BROKER_FAILURE"; readonly cause: PaperBrokerError }
   | { readonly code: "PROTECTIVE_ORDER_FAILURE"; readonly cause: unknown }
+  | { readonly code: "REGIME_FILTER_FAILURE" }
+  | { readonly code: "REGIME_SIZING_FAILURE" }
   | { readonly code: "DIAGNOSTICS_FAILURE"; readonly cause: BacktestDiagnosticsError };
 
-const validProtectivePolicy = (policy: ProtectiveExitPolicy | undefined): boolean =>
-  policy === undefined ||
-  policy.mode === "NONE" ||
-  isValidProtectiveExitPolicy(policy);
+const validProtectivePolicy = (policy: ProtectiveExitPolicy | undefined): boolean => {
+  if (policy === undefined || policy.mode === "NONE") return true;
+  if (policy.mode === "REGIME_CONDITIONAL") {
+    return isValidRegimeConditionalExitPolicy(policy);
+  }
+  return isValidProtectiveExitPolicy(policy);
+};
 
 const validConfig = (config: BacktestConfig): boolean =>
   config.runId.trim().length > 0 &&
@@ -116,7 +186,17 @@ const validConfig = (config: BacktestConfig): boolean =>
   config.maxDecisionNotional > 0 &&
   Number.isFinite(config.minNetQuantity) &&
   config.minNetQuantity >= 0 &&
-  validProtectivePolicy(config.protectiveExit);
+  validProtectivePolicy(config.protectiveExit) &&
+  (config.protectiveExit?.mode !== "REGIME_CONDITIONAL" ||
+    config.regimeFilter !== undefined) &&
+  (config.regimeFilter === undefined ||
+    isValidRegimeFilterPolicy(config.regimeFilter)) &&
+  (config.regimeConditionalSizing === undefined ||
+    (isValidRegimeConditionalSizingPolicy(config.regimeConditionalSizing) &&
+      config.regimeFilter !== undefined)) &&
+  (config.regimePermissions === undefined ||
+    (isValidRegimePermissions(config.regimePermissions) &&
+      config.regimeFilter !== undefined));
 
 const validPreparedIndicators = (
   prepared: PreparedBacktestIndicators,
@@ -220,16 +300,53 @@ export const replayBacktest = async (
   const equityCurve: EquityPoint[] = [];
   let previousIndicators: IndicatorSnapshot | null = null;
   let lastTradeAt: number | null = null;
+  let dailyRiskWindow: DailyRiskWindow | null = null;
   let pendingOrders: readonly OrderIntent[] = [];
   const protectivePolicy = config.protectiveExit ?? ({ mode: "NONE" } as const);
-  const activeProtectivePolicy: ActiveProtectiveExitPolicy | null =
-    protectivePolicy.mode === "NONE" ? null : protectivePolicy;
+  let activeProtectivePolicy: ActiveProtectiveExitPolicy | null =
+    protectivePolicy.mode === "NONE"
+      ? null
+      : protectivePolicy.mode === "REGIME_CONDITIONAL"
+        ? resolveRegimeExitArm(protectivePolicy, null)
+        : protectivePolicy;
   type ProtectiveActor = ActorRefFrom<typeof protectiveOrderMachine>;
   const protectiveState: { actor: ProtectiveActor | null } = { actor: null };
   let protectivePositionSequence = 0;
   const protectiveExits: ProtectiveExitExecution[] = [];
   const signalDiagnosticObservations: SignalDiagnosticObservation[] = [];
   const allocationDiagnosticObservations: AllocationDiagnosticObservation[] = [];
+  const regimePolicy = config.regimeFilter ?? null;
+  // INV-P1 : absente de la config, la table par défaut est utilisée —
+  // bit-exact V1. INV-P3 : source unique models/, aucune table locale.
+  const regimePermissions =
+    config.regimePermissions ?? DEFAULT_REGIME_PERMISSIONS;
+  const regimeActor =
+    regimePolicy === null
+      ? null
+      : createActor(regimeFilterMachine, { input: { policy: regimePolicy } });
+  regimeActor?.start();
+  // INV-S2 garantit : sizing ⇒ regimeFilter ⇒ regimeActor ≠ null.
+  const regimeConditionalSizing = config.regimeConditionalSizing ?? null;
+  const regimeCounters = {
+    observationsFed: 0,
+    signalsPassed: 0,
+    signalsFiltered: 0,
+  };
+  const deniedByStrategy = new Map<string, number>();
+  const passedByRegime: Record<RegimeKind, number> = {
+    BULLISH: 0,
+    BEARISH: 0,
+    RANGE: 0,
+  };
+  const deniedByRegime: Record<RegimeKind, number> = {
+    BULLISH: 0,
+    BEARISH: 0,
+    RANGE: 0,
+  };
+  const countDenied = (strategyId: string): void => {
+    regimeCounters.signalsFiltered += 1;
+    deniedByStrategy.set(strategyId, (deniedByStrategy.get(strategyId) ?? 0) + 1);
+  };
 
   const actorFailure = (): BacktestReplayError | null => {
     const actor = protectiveState.actor;
@@ -304,7 +421,7 @@ export const replayBacktest = async (
     return null;
   };
 
-  const armProtectivePosition = (
+  const armProtectivePlan = (
     candle: Candle,
     atr: number | null,
   ): BacktestReplayError | null => {
@@ -324,8 +441,17 @@ export const replayBacktest = async (
       armedAt: candle.start,
     });
     protectiveState.actor = actor;
-    const failure = actorFailure();
+    return actorFailure();
+  };
+
+  const armProtectivePosition = (
+    candle: Candle,
+    atr: number | null,
+  ): BacktestReplayError | null => {
+    const failure = armProtectivePlan(candle, atr);
     if (failure !== null) return failure;
+    const actor = protectiveState.actor;
+    if (actor === null) return null;
     actor.send({ type: "CANDLE_OPENED", start: candle.start, open: candle.open });
     return actorFailure() ?? executeTriggeredProtectiveExit(candle);
   };
@@ -508,11 +634,116 @@ export const replayBacktest = async (
       );
     }
 
+    let gatedSignals = signalResult.value;
+    if (regimeActor !== null) {
+      const indicatorSnapshot = indicatorResult.value;
+      if (
+        Number.isFinite(indicatorSnapshot.emaFast) &&
+        indicatorSnapshot.emaFast > 0 &&
+        Number.isFinite(indicatorSnapshot.emaSlow) &&
+        indicatorSnapshot.emaSlow > 0
+      ) {
+        regimeActor.send({
+          type: "CANDLE_CLOSED",
+          observation: {
+            start: indicatorSnapshot.candleClosedAt,
+            emaFast: indicatorSnapshot.emaFast,
+            emaSlow: indicatorSnapshot.emaSlow,
+          },
+        });
+        regimeCounters.observationsFed += 1;
+      }
+      const regimeSnapshot = regimeActor.getSnapshot();
+      if (regimeSnapshot.matches("failed")) {
+        return err({ code: "REGIME_FILTER_FAILURE" });
+      }
+      const activeRegime = regimeSnapshot.context.regime;
+      if (protectivePolicy.mode === "REGIME_CONDITIONAL") {
+        const nextArm = resolveRegimeExitArm(protectivePolicy, activeRegime);
+        if (!activeProtectivePolicyEquals(nextArm, activeProtectivePolicy)) {
+          const existingActor = protectiveState.actor;
+          if (existingActor !== null) {
+            existingActor.send({
+              type: "CANCEL_REQUESTED",
+              reason: "REGIME_CHANGED",
+            });
+            if (!existingActor.getSnapshot().matches("cancelled")) {
+              return err({
+                code: "PROTECTIVE_ORDER_FAILURE",
+                cause: { code: "INVALID_PROTECTIVE_SEQUENCE" },
+              });
+            }
+            protectiveState.actor = null;
+          }
+          activeProtectivePolicy = nextArm;
+          if (nextArm !== null && portfolio.positionQuantity > 0) {
+            const failure = armProtectivePlan(
+              candle,
+              previousIndicators?.atr ?? null,
+            );
+            if (failure !== null) return err(failure);
+          }
+        }
+      }
+      const allowedSignals = [];
+      for (const signal of signalResult.value) {
+        const permission =
+          activeRegime === null
+            ? null
+            : resolveRegimePermission(
+                activeRegime,
+                signal.strategyId,
+                regimePermissions,
+              );
+        if (permission !== null && permission.ok && permission.value) {
+          allowedSignals.push(signal);
+          regimeCounters.signalsPassed += 1;
+          if (activeRegime !== null) passedByRegime[activeRegime] += 1;
+        } else {
+          countDenied(signal.strategyId);
+          if (activeRegime !== null) deniedByRegime[activeRegime] += 1;
+        }
+      }
+      gatedSignals = allowedSignals;
+      // Sizing conditionné par régime (models/regime-sizing.md §3) :
+      // recalibrage de la confiance des signaux autorisés entre le gate
+      // et l'allocation (l'allocateur consomme confidence). INV-S1 :
+      // bras IDENTITY court-circuité — aucun signal touché, bit-exact.
+      // INV-S4 : HOLD et stratégies non calibrables inchangés.
+      if (regimeConditionalSizing !== null) {
+        const sizingProfile = resolveRegimeSizingProfile(
+          regimeConditionalSizing,
+          activeRegime,
+        );
+        if (sizingProfile !== "IDENTITY") {
+          const recalibrated = [];
+          for (const signal of gatedSignals) {
+            if (
+              signal.side === "HOLD" ||
+              !isCalibratedStrategyId(signal.strategyId)
+            ) {
+              recalibrated.push(signal);
+              continue;
+            }
+            const calibrated = calibrateConfidence(
+              sizingProfile,
+              signal.confidence,
+            );
+            if (!calibrated.ok) {
+              return err({ code: "REGIME_SIZING_FAILURE" });
+            }
+            recalibrated.push({ ...signal, confidence: calibrated.value });
+          }
+          gatedSignals = recalibrated;
+        }
+      }
+    }
+
     const allocation = allocateSignals({
       agentId: config.agentId,
       cycleId: `${config.runId}:${candle.start}`,
       decisionId: `${config.runId}:decision:${candle.start}`,
-      signals: signalResult.value,
+      signals: gatedSignals,
       marketPrices: { [config.productId]: candle.close },
       capitalAvailable: Math.max(0, portfolio.cash),
       maxDecisionNotional: config.maxDecisionNotional,
@@ -531,15 +762,40 @@ export const replayBacktest = async (
     );
 
     const approvedOrders: OrderIntent[] = [];
+    const rejectedReasonCodes: RiskRejectionReasonCode[] = [];
+    let spotInexecutableNotional = 0;
+    // Fenêtre daily-risk (models/daily-pnl-fidelity.md INV-P1) : roulée à
+    // chaque candle évalué, miroir du live qui roule à chaque cycle. En
+    // ONE_DAY aligné UTC, chaque candle rouvre la fenêtre (INV-P3).
+    const equityCandle = portfolio.cash + portfolio.positionQuantity * candle.close;
+    const dailyRisk = resolveDailyRiskWindow(dailyRiskWindow, candle.start, equityCandle);
+    dailyRiskWindow = dailyRisk.window;
     for (const order of allocation.value.orders) {
-      const equityBefore = portfolio.cash + portfolio.positionQuantity * candle.close;
+      // Pré-validation spot amont (models/spot-prevalidation.md) : un
+      // ordre inexécutable est abandonné AVANT le risk engine et
+      // n'entame jamais sa métrique de rejet.
+      const permission = resolveSpotPermission(
+        order.side,
+        order.quantity,
+        portfolio.positionQuantity,
+      );
+      if (!permission.ok) {
+        return err({
+          code: "SPOT_PERMISSION_FAILURE",
+          cause: permission.error,
+        });
+      }
+      if (permission.value.status === "INEXECUTABLE") {
+        spotInexecutableNotional += order.quantity * candle.close;
+        continue;
+      }
       const risk = checkRisk(
         order,
         {
           marketPrice: candle.close,
           currentPositionQuantity: portfolio.positionQuantity,
           otherExposureNotional: 0,
-          dailyPnl: equityBefore - config.initialCapital,
+          dailyPnl: dailyRisk.dailyPnl,
           lastTradeAt,
           now: resolveRiskEvaluationTimestamp(candle.start, lastTradeAt),
           killSwitchActive: false,
@@ -547,7 +803,10 @@ export const replayBacktest = async (
         config.risk,
       );
       if (!risk.ok) return err({ code: "RISK_FAILURE", cause: risk.error });
-      if (risk.value.status === "REJECTED") continue;
+      if (risk.value.status === "REJECTED") {
+        rejectedReasonCodes.push(risk.value.reasonCode);
+        continue;
+      }
       approvedOrders.push(order);
     }
     if (requestedNetQuantity > config.minNetQuantity) {
@@ -555,10 +814,12 @@ export const replayBacktest = async (
         Object.freeze({
           requestedNetNotional,
           allocatedNotional,
+          spotInexecutableNotional,
           riskApprovedNotional: approvedOrders.reduce(
             (total, order) => total + order.quantity * candle.close,
             0,
           ),
+          rejectedReasonCodes: Object.freeze(rejectedReasonCodes),
         }),
       );
     }
@@ -590,6 +851,24 @@ export const replayBacktest = async (
       cause: diagnosticSamples.error,
     });
   }
+  const regimeGating: RegimeGatingSummary | null =
+    regimeActor === null
+      ? null
+      : Object.freeze({
+          policy: regimePolicy as RegimeFilterPolicy,
+          finalRegime: regimeActor.getSnapshot().context.regime ?? null,
+          observationsFed: regimeCounters.observationsFed,
+          signalsPassed: regimeCounters.signalsPassed,
+          signalsFiltered: regimeCounters.signalsFiltered,
+          deniedByStrategy: Object.freeze(
+            Object.fromEntries(deniedByStrategy),
+          ),
+          passedByRegime: Object.freeze({ ...passedByRegime }),
+          deniedByRegime: Object.freeze({ ...deniedByRegime }),
+        });
+  if (regimeActor !== null && regimeActor.getSnapshot().status !== "done") {
+    regimeActor.send({ type: "STOP_REQUESTED", reason: "SESSION_END" });
+  }
   const metrics = calculateMetrics(equityCurve, trades, config.initialCapital);
   return ok(
     Object.freeze({
@@ -603,6 +882,7 @@ export const replayBacktest = async (
       diagnostics: diagnostics.value,
       diagnosticSamples:
         diagnosticSamples === null ? null : diagnosticSamples.value,
+      regimeGating,
     }),
   );
 };

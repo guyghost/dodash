@@ -1,3 +1,4 @@
+export { RISK_REJECTION_REASON_CODES } from "./backtest-diagnostics.types.js";
 export { backtestRunMachine } from "./backtest-run.machine.js";
 export {
   assessConfidenceCalibrationConfirmation,
@@ -61,8 +62,10 @@ export type {
   ConfidenceCalibrationTailConfirmationResult,
 } from "./confidence-calibration-tail-confirmation.js";
 export {
+  CALIBRATED_STRATEGY_IDS,
   calibrateConfidence,
   CONFIDENCE_CALIBRATION_PROFILES,
+  isCalibratedStrategyId,
   isConfidenceCalibrationProfile,
   selectConfidenceCalibrationProfile,
 } from "./confidence-calibration.js";
@@ -92,6 +95,7 @@ export type {
   BacktestDiagnosticsResult,
   DiagnosticSignalSide,
   NumericDistribution,
+  RiskRejectionReasonCode,
   SignalDiagnosticObservation,
   SignalDiagnostics,
   StrategySignalDiagnostics,
@@ -146,10 +150,14 @@ export type {
   QualityGateStage,
 } from "./quality-gate.types.js";
 export {
+  activeProtectivePolicyEquals,
   createProtectiveOrderPlan,
   isValidProtectiveExitPolicy,
+  isValidRegimeConditionalExitPolicy,
+  isValidRegimeExitArm,
   resolveProtectiveOpen,
   resolveProtectiveRange,
+  resolveRegimeExitArm,
   summarizeProtectiveExits,
 } from "./protective-order.js";
 export type {
@@ -173,6 +181,8 @@ export type {
   ProtectiveRange,
   ProtectiveResolution,
   ProtectiveResult,
+  RegimeConditionalExitPolicy,
+  RegimeExitArm,
 } from "./protective-order.types.js";
 export { resolveTargetSignalQuantity } from "./signal-sizing.js";
 export type {
@@ -180,6 +190,44 @@ export type {
   SignalSizingErrorCode,
   SignalSizingResult,
 } from "./signal-sizing.types.js";
+export {
+  resolveSpotPermission,
+  SPOT_QUANTITY_TOLERANCE,
+} from "./spot-permission.js";
+export type {
+  SpotPermission,
+  SpotPermissionError,
+  SpotPermissionResult,
+} from "./spot-permission.js";
+export { regimeFilterMachine } from "./regime-filter.machine.js";
+export {
+  classifyRegimeObservation,
+  DEFAULT_REGIME_PERMISSIONS,
+  isValidRegimeFilterPolicy,
+  isValidRegimeObservation,
+  isValidRegimePermissions,
+  resolveRegimePermission,
+} from "./regime-filter.js";
+export type {
+  EmaSlopeRegimePolicy,
+  EmaThresholdRegimePolicy,
+  RegimeFilterContext,
+  RegimeFilterError,
+  RegimeFilterErrorCode,
+  RegimeFilterEvent,
+  RegimeFilterInput,
+  RegimeFilterPolicy,
+  RegimeFilterStopReason,
+  RegimeKind,
+  RegimeObservation,
+  RegimePermissions,
+  RegimePermissionsResult,
+} from "./regime-filter.types.js";
+export {
+  isValidRegimeConditionalSizingPolicy,
+  resolveRegimeSizingProfile,
+} from "./regime-sizing.js";
+export type { RegimeConditionalSizingPolicy } from "./regime-sizing.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
 export {
   assessLiveTradingAgentIdentity,

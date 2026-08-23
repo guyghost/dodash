@@ -42,6 +42,7 @@ export type {
   BacktestReplayError,
   BacktestResult,
   ProtectiveExitExecution,
+  RegimeGatingSummary,
 } from "./replay.js";
 export { runBacktestSuite } from "./suite.js";
 export type {

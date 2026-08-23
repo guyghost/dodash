@@ -67,17 +67,23 @@ describe("backtest exposure diagnostics", () => {
       {
         requestedNetNotional: 100,
         allocatedNotional: 100,
+        spotInexecutableNotional: 0,
         riskApprovedNotional: 100,
+        rejectedReasonCodes: [],
       },
       {
         requestedNetNotional: 1_000,
         allocatedNotional: 800,
+        spotInexecutableNotional: 0,
         riskApprovedNotional: 800,
+        rejectedReasonCodes: [],
       },
       {
         requestedNetNotional: 500,
         allocatedNotional: 500,
+        spotInexecutableNotional: 0,
         riskApprovedNotional: 0,
+        rejectedReasonCodes: ["SPOT_SHORT_FORBIDDEN", "DAILY_LOSS_LIMIT"],
       },
     ]);
 
@@ -87,9 +93,19 @@ describe("backtest exposure diagnostics", () => {
       opportunityCount: 3,
       cappedCount: 1,
       capRate: 1 / 3,
+      spotInexecutableCount: 0,
       riskEvaluationCount: 3,
       riskRejectedCount: 1,
       riskRejectionRate: 1 / 3,
+      riskRejectionReasons: {
+        KILL_SWITCH_ACTIVE: 0,
+        DAILY_LOSS_LIMIT: 1,
+        COOLDOWN_ACTIVE: 0,
+        SPOT_SHORT_FORBIDDEN: 1,
+        ORDER_NOTIONAL_LIMIT: 0,
+        POSITION_NOTIONAL_LIMIT: 0,
+        GROSS_EXPOSURE_LIMIT: 0,
+      },
       requestedNetNotional: {
         count: 3,
         min: 100,
@@ -125,9 +141,19 @@ describe("backtest exposure diagnostics", () => {
           opportunityCount: 0,
           cappedCount: 0,
           capRate: 0,
+          spotInexecutableCount: 0,
           riskEvaluationCount: 0,
           riskRejectedCount: 0,
           riskRejectionRate: 0,
+          riskRejectionReasons: {
+            KILL_SWITCH_ACTIVE: 0,
+            DAILY_LOSS_LIMIT: 0,
+            COOLDOWN_ACTIVE: 0,
+            SPOT_SHORT_FORBIDDEN: 0,
+            ORDER_NOTIONAL_LIMIT: 0,
+            POSITION_NOTIONAL_LIMIT: 0,
+            GROSS_EXPOSURE_LIMIT: 0,
+          },
           requestedNetNotional: {
             count: 0,
             min: null,
@@ -220,13 +246,83 @@ describe("backtest exposure diagnostics", () => {
         {
           requestedNetNotional: 100,
           allocatedNotional: 101,
+          spotInexecutableNotional: 0,
           riskApprovedNotional: 100,
+          rejectedReasonCodes: [],
         },
       ]),
     ).toEqual({
       ok: false,
       error: { code: "INVALID_ALLOCATION_DIAGNOSTIC_OBSERVATION" },
     });
+  });
+
+  it("refuse un motif de rejet hors du référentiel", () => {
+    expect(
+      summarizeBacktestDiagnostics([], [
+        {
+          requestedNetNotional: 100,
+          allocatedNotional: 100,
+          spotInexecutableNotional: 0,
+          riskApprovedNotional: 100,
+          rejectedReasonCodes: ["NOT_A_REASON" as never],
+        },
+      ]),
+    ).toEqual({
+      ok: false,
+      error: { code: "INVALID_ALLOCATION_DIAGNOSTIC_OBSERVATION" },
+    });
+  });
+
+  it("refuse un notionnel spot inexécutable supérieur au notionnel alloué", () => {
+    expect(
+      summarizeBacktestDiagnostics([], [
+        {
+          requestedNetNotional: 200,
+          allocatedNotional: 100,
+          spotInexecutableNotional: 150,
+          riskApprovedNotional: 0,
+          rejectedReasonCodes: [],
+        },
+      ]),
+    ).toEqual({
+      ok: false,
+      error: { code: "INVALID_ALLOCATION_DIAGNOSTIC_OBSERVATION" },
+    });
+  });
+
+  it("exclut les décisions entièrement inexécutables de la mesure risk", () => {
+    const result = summarizeBacktestDiagnostics([], [
+      {
+        requestedNetNotional: 100,
+        allocatedNotional: 100,
+        spotInexecutableNotional: 100,
+        riskApprovedNotional: 0,
+        rejectedReasonCodes: [],
+      },
+      {
+        requestedNetNotional: 200,
+        allocatedNotional: 200,
+        spotInexecutableNotional: 0,
+        riskApprovedNotional: 200,
+        rejectedReasonCodes: [],
+      },
+      {
+        requestedNetNotional: 300,
+        allocatedNotional: 300,
+        spotInexecutableNotional: 0,
+        riskApprovedNotional: 0,
+        rejectedReasonCodes: ["POSITION_NOTIONAL_LIMIT"],
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.allocation.opportunityCount).toBe(3);
+    expect(result.value.allocation.spotInexecutableCount).toBe(1);
+    expect(result.value.allocation.riskEvaluationCount).toBe(2);
+    expect(result.value.allocation.riskRejectedCount).toBe(1);
+    expect(result.value.allocation.riskRejectionRate).toBe(1 / 2);
   });
 
   it.each([
