@@ -113,6 +113,13 @@ export interface RegimeGatingSummary {
   readonly signalsPassed: number;
   readonly signalsFiltered: number;
   readonly deniedByStrategy: Readonly<Record<string, number>>;
+  // INV-P6 (models/strategy-permission.md §10) : compteurs par régime
+  // de DÉCISION (grandeur que le gate contrôle). Les décisions warm-up
+  // (activeRegime null) ne rentrent dans aucun régime — elles restent
+  // dans deniedByStrategy/signalsFiltered. Compteurs purs : aucun
+  // effet sur les métriques.
+  readonly passedByRegime: Readonly<Record<RegimeKind, number>>;
+  readonly deniedByRegime: Readonly<Record<RegimeKind, number>>;
 }
 
 export interface BacktestReplayOptions {
@@ -326,6 +333,16 @@ export const replayBacktest = async (
     signalsFiltered: 0,
   };
   const deniedByStrategy = new Map<string, number>();
+  const passedByRegime: Record<RegimeKind, number> = {
+    BULLISH: 0,
+    BEARISH: 0,
+    RANGE: 0,
+  };
+  const deniedByRegime: Record<RegimeKind, number> = {
+    BULLISH: 0,
+    BEARISH: 0,
+    RANGE: 0,
+  };
   const countDenied = (strategyId: string): void => {
     regimeCounters.signalsFiltered += 1;
     deniedByStrategy.set(strategyId, (deniedByStrategy.get(strategyId) ?? 0) + 1);
@@ -681,8 +698,10 @@ export const replayBacktest = async (
         if (permission !== null && permission.ok && permission.value) {
           allowedSignals.push(signal);
           regimeCounters.signalsPassed += 1;
+          if (activeRegime !== null) passedByRegime[activeRegime] += 1;
         } else {
           countDenied(signal.strategyId);
+          if (activeRegime !== null) deniedByRegime[activeRegime] += 1;
         }
       }
       gatedSignals = allowedSignals;
@@ -844,6 +863,8 @@ export const replayBacktest = async (
           deniedByStrategy: Object.freeze(
             Object.fromEntries(deniedByStrategy),
           ),
+          passedByRegime: Object.freeze({ ...passedByRegime }),
+          deniedByRegime: Object.freeze({ ...deniedByRegime }),
         });
   if (regimeActor !== null && regimeActor.getSnapshot().status !== "done") {
     regimeActor.send({ type: "STOP_REQUESTED", reason: "SESSION_END" });

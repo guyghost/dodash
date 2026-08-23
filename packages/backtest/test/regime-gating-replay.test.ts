@@ -241,6 +241,9 @@ describe("replayBacktest — gating par régime", () => {
     expect(gating.observationsFed).toBe(3);
     expect(gating.signalsPassed).toBe(0);
     expect(gating.signalsFiltered).toBe(3);
+    // INV-P6 : aucune décision sous régime observé → compteurs nuls.
+    expect(gating.passedByRegime).toEqual({ BULLISH: 0, BEARISH: 0, RANGE: 0 });
+    expect(gating.deniedByRegime).toEqual({ BULLISH: 0, BEARISH: 0, RANGE: 0 });
     expect(result.value.trades).toHaveLength(0);
   });
 
@@ -259,6 +262,9 @@ describe("replayBacktest — gating par régime", () => {
     expect(gating.signalsPassed).toBe(3);
     expect(gating.signalsFiltered).toBe(3);
     expect(gating.deniedByStrategy).toEqual({ "rsi-reversion": 3 });
+    // INV-P6 : régime de décision BULLISH pour les 6 décisions.
+    expect(gating.passedByRegime).toEqual({ BULLISH: 3, BEARISH: 0, RANGE: 0 });
+    expect(gating.deniedByRegime).toEqual({ BULLISH: 3, BEARISH: 0, RANGE: 0 });
     expect(result.value.trades.length).toBeGreaterThanOrEqual(1);
     expect(result.value.finalPortfolio.positionQuantity).toBeGreaterThan(0);
   });
@@ -277,6 +283,9 @@ describe("replayBacktest — gating par régime", () => {
     expect(gating.signalsPassed).toBe(3);
     expect(gating.signalsFiltered).toBe(3);
     expect(gating.deniedByStrategy).toEqual({ breakout: 3 });
+    // INV-P6 : régime de décision BEARISH pour les 6 décisions.
+    expect(gating.passedByRegime).toEqual({ BULLISH: 0, BEARISH: 3, RANGE: 0 });
+    expect(gating.deniedByRegime).toEqual({ BULLISH: 0, BEARISH: 3, RANGE: 0 });
     expect(result.value.trades.length).toBeGreaterThanOrEqual(1);
   });
 
