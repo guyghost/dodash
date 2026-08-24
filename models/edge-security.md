@@ -19,17 +19,19 @@ public boundary.
 
 ## Classification
 
+- `HEALTH_REQUEST`: the method is `GET` and the path is exactly `/health`.
 - `API_REQUEST`: the path is exactly `/api` or starts with `/api/`.
 - `ASSET_REQUEST`: every other path, including names such as
-  `/api-client.js`.
+  `/api-client.js` and non-GET requests to `/health`.
 
-Classification depends only on the parsed pathname. Free-form request content
-and LLM output never select a transition.
+Classification depends only on the parsed method and pathname. Free-form
+request content and LLM output never select a transition.
 
 ## States and transitions
 
 | State | Event / condition | Next state | Effect |
 | --- | --- | --- | --- |
+| `classifying` | `HEALTH_REQUEST` | `respondingHealth` | Return the constant health JSON with `Cache-Control: no-store` and the public security headers. Call no binding. |
 | `classifying` | `ASSET_REQUEST` | `fetchingAsset` | Fetch from `ASSETS` without consuming API quota. |
 | `classifying` | `API_REQUEST` | `derivingRateLimitKeys` | Read the Cloudflare source address and the Authorization header, or deterministic missing-value literals. |
 | `derivingRateLimitKeys` | both SHA-256 operations succeed | `checkingRateLimits` | Derive independent `dashboard-api:source:<digest>` and `dashboard-api:credential:<digest>` keys. |
@@ -41,8 +43,8 @@ and LLM output never select a transition.
 | `fetchingApi` | binding resolves | `responding` | Decorate the response with the public security headers. |
 | either fetch | binding throws/rejects | terminal error | Preserve the runtime error; Cloudflare owns transport failure handling. |
 
-`responding`, `rateLimited`, and `serviceUnavailable` are terminal for one
-request.
+`respondingHealth`, `responding`, `rateLimited`, and `serviceUnavailable` are
+terminal for one request.
 
 ## Public response headers
 
@@ -74,6 +76,8 @@ mutates a binding-owned response object in place.
    or limiter failure.
 9. Rotating invalid Authorization values cannot obtain fresh unbounded quota:
    every attempt also consumes the stable Cloudflare-source bucket.
+10. The health response is a constant. It discloses no deployment, version, or
+    configuration detail, consumes no limiter quota, and calls no binding.
 
 ## Configuration invariant
 
@@ -81,3 +85,9 @@ The `AUTH_RATE_LIMITER` namespace ID is a positive integer string reserved for
 this application in the target Cloudflare account. Its simple limit is 100
 requests per 60 seconds. Production deployment is forbidden until the namespace
 is confirmed unique in that account.
+
+The assets binding must route `/api`, `/api/*`, and `/health` to the Worker
+(`run_worker_first`) before static asset serving. Without this ordering the
+`single-page-application` fallback answers `/health` with the SPA shell and the
+`respondingHealth` transition becomes unreachable while deployments still
+report success.
