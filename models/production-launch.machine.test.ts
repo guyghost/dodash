@@ -16,6 +16,24 @@ const submitResearch = (actor: ReturnType<typeof createLaunch>) => {
 };
 
 describe("productionLaunchMachine", () => {
+  it("rejette la portée hors allowlist avant la première évaluation", () => {
+    const actor = createActor(productionLaunchMachine, {
+      input: {
+        ...fixtures.scope,
+        policyId: "anything",
+        productIds: ["BTC-USD"],
+      },
+    }).start();
+
+    actor.send({ type: "LAUNCH_REQUESTED" });
+
+    expect(actor.getSnapshot().value).toBe("rejected");
+    expect(actor.getSnapshot().context.failedStage).toBe("research");
+    expect(actor.getSnapshot().context.reasonCode).toBe(
+      "RESEARCH_SCOPE_MISMATCH",
+    );
+  });
+
   it("n'approuve qu'après les cinq portes dans l'ordre", () => {
     const actor = createLaunch();
     submitResearch(actor);

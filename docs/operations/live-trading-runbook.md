@@ -23,6 +23,9 @@ sufficient evidence.
 
 1. Confirm the release SHA passed `verify:push` in a clean GitHub runner.
 2. Dispatch `ci` with `deploy_workers=true` and the exact `release_sha`.
+   The workflow transports this value through `env`, validates 40 lowercase
+   hexadecimal characters, then compares it to `git rev-parse HEAD`; it never
+   interpolates dispatch text directly into a shell script.
 3. The protected production job sets `LIVE_TRADING_ENABLED=false` before the
    Agent Worker deployment.
 4. The job deploys market data, Agent, dashboard API and dashboard, then probes

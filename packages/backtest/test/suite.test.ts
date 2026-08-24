@@ -64,6 +64,40 @@ const suiteFixture = () => {
   return { dataset, config };
 };
 
+const modeledWorkflowFixture = () => {
+  const { dataset, config } = suiteFixture();
+  const candles = dataset.candles.slice(0, 24);
+  return {
+    dataset: {
+      ...dataset,
+      datasetId: "dataset-24-days-workflow",
+      endAt: (candles.at(-1)?.start ?? 0) + 86_400_000,
+      candles,
+    },
+    config: {
+      ...config,
+      runId: "modeled-workflow-run",
+      indicators: {
+        rsiPeriod: 2,
+        emaFastPeriod: 2,
+        emaSlowPeriod: 21,
+        atrPeriod: 2,
+        historicalVolatilityPeriod: 2,
+        momentumPeriod: 1,
+        returnPeriods: [1],
+        vwapPeriod: 2,
+        relativeVolumePeriod: 1,
+        volumeSpikeThreshold: 2,
+        volumeTrendPeriod: 2,
+        trendStrengthPeriod: 2,
+      },
+    },
+  } satisfies {
+    readonly dataset: backtest.HistoricalDataset;
+    readonly config: backtest.BacktestSuiteConfig;
+  };
+};
+
 const executionDatasetFor = (
   dataset: backtest.HistoricalDataset,
 ): backtest.HistoricalDataset => {
@@ -230,7 +264,7 @@ describe("backtest suite", () => {
   });
 
   it("termine le workflow XState avec les artefacts du rapport", async () => {
-    const { dataset, config } = suiteFixture();
+    const { dataset, config } = modeledWorkflowFixture();
 
     const result = await backtest.runModeledBacktest(dataset, config);
 

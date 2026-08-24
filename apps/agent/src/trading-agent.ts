@@ -4,7 +4,6 @@ import type { RiskDecision } from "@dodash/risk";
 import {
   assessLiveTradingAgentIdentity,
   type ControlPermissions,
-  resolveDailyRiskWindow,
   type TradingCycleEvent,
   type LivePreflightFailureReason,
   type WorkflowError,
@@ -16,7 +15,6 @@ import {
   parseAgentConfiguration,
   type AgentConfiguration,
 } from "./configuration.js";
-import { reconcileCoinbaseAccount } from "./coinbase-account.js";
 import {
   preflightCoinbaseLive,
   type CoinbaseLivePreflightReport,
@@ -24,6 +22,9 @@ import {
 import {
   executeCoinbaseKill,
   executeCoinbaseProtectedSell,
+  reconcileCoinbaseOwnedAccount,
+  type CoinbaseProtectedSellCheckpoint,
+  type CoinbaseProtectedSellPersistence,
 } from "./coinbase-control.js";
 import {
   COINBASE_CREATE_ORDER_PATH,
@@ -42,6 +43,8 @@ import { fetchMarketSnapshot } from "./market-service.js";
 import {
   INITIAL_AGENT_STATE,
   machineIsEnabled,
+  resolveCycleDailyRiskCompletion,
+  resolveCycleDailyRiskStart,
   resolveCycleInvocation,
   resolveLiveStartContinuity,
   type CycleSummary,
@@ -171,6 +174,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         exchange_order_id TEXT,
         execution_json TEXT,
         created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `;
+    this.sql`
+      CREATE TABLE IF NOT EXISTS dodash_sell_workflows (
+        client_order_id TEXT PRIMARY KEY,
+        checkpoint_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `;
@@ -475,8 +485,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       this.state.portfolio.cash +
       this.state.portfolio.positionQuantity *
         (knownPrice ?? this.state.portfolio.averagePrice);
-    const dailyRiskAtStart = resolveDailyRiskWindow(
+    const dailyRiskAtStart = resolveCycleDailyRiskStart(
+      configuration.executionMode,
       this.state.dailyRiskWindow ?? null,
+      this.state.dailyPnl,
       identity.triggeredAt,
       startingEquity,
     );
@@ -501,17 +513,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       lastPrice === null
         ? startingEquity
         : result.portfolio.cash + result.portfolio.positionQuantity * lastPrice;
-    const dailyRisk =
-      configuration.executionMode === "live" && result.accountEquity !== null
-        ? {
-            window: result.dailyRiskWindow,
-            dailyPnl: result.dailyPnl,
-          }
-        : resolveDailyRiskWindow(
-            result.dailyRiskWindow,
-            identity.triggeredAt,
-            equity,
-          );
+    const dailyRisk = resolveCycleDailyRiskCompletion(
+      configuration.executionMode,
+      result.dailyRiskWindow,
+      result.dailyPnl,
+      identity.triggeredAt,
+      equity,
+    );
     const executed = result.artifacts?.execution !== undefined;
     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
     this.setState({
@@ -576,9 +584,14 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         if (liveSettings === null || !liveSettings.ok) {
           return err(reconciliationError(false));
         }
-        return reconcileCoinbaseAccount(
+        const knownProtectiveOrderIds = this.loadKnownProtectiveOrderIds();
+        if (!knownProtectiveOrderIds.ok) {
+          return err(reconciliationError(false));
+        }
+        return reconcileCoinbaseOwnedAccount(
           liveSettings.value,
           configuration.productId,
+          knownProtectiveOrderIds.value,
         );
       },
       fetchMarketData: async (config, triggeredAt) =>
@@ -689,8 +702,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
             if (!killed.ok) {
               return err({ ...killed.error, phase: "cancellation" });
             }
-            const dailyRisk = resolveDailyRiskWindow(
+            const dailyRisk = resolveCycleDailyRiskCompletion(
+              "live",
               this.state.dailyRiskWindow,
+              this.state.dailyPnl,
               killed.value.observedAt,
               killed.value.accountEquity,
             );
@@ -972,6 +987,53 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     }
   }
 
+  private loadProtectedSellCheckpoint(
+    clientOrderId: string,
+  ): Result<CoinbaseProtectedSellCheckpoint | null, WorkflowError> {
+    try {
+      const row = this.sql<{ checkpoint_json: string }>`
+        SELECT checkpoint_json FROM dodash_sell_workflows
+        WHERE client_order_id = ${clientOrderId}
+        LIMIT 1
+      `.at(0);
+      if (row === undefined) return ok(null);
+      const checkpoint = parseJson<CoinbaseProtectedSellCheckpoint>(
+        row.checkpoint_json,
+      );
+      return checkpoint === null ? err(storageError(false)) : ok(checkpoint);
+    } catch {
+      return err(storageError(false));
+    }
+  }
+
+  private protectedSellPersistence(
+    intent: OrderIntent,
+  ): Result<CoinbaseProtectedSellPersistence, WorkflowError> {
+    const restored = this.loadProtectedSellCheckpoint(intent.clientOrderId);
+    if (!restored.ok) return restored;
+    return ok({
+      restored: restored.value,
+      persist: async (checkpoint) => {
+        try {
+          const now = Date.now();
+          this.sql`
+            INSERT INTO dodash_sell_workflows (
+              client_order_id, checkpoint_json, updated_at
+            ) VALUES (
+              ${intent.clientOrderId}, ${JSON.stringify(checkpoint)}, ${now}
+            )
+            ON CONFLICT(client_order_id) DO UPDATE SET
+              checkpoint_json = excluded.checkpoint_json,
+              updated_at = excluded.updated_at
+          `;
+          return ok(undefined);
+        } catch {
+          return err(storageError());
+        }
+      },
+    });
+  }
+
   private async submitLiveOrder(
     settings: CoinbaseExecutionSettings,
     intent: OrderIntent,
@@ -990,6 +1052,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           error: protectiveOrderIds.error,
         };
       }
+      const persistence = this.protectedSellPersistence(intent);
+      if (!persistence.ok) {
+        return {
+          status: "TERMINAL_FAILED",
+          exchangeOrderId: null,
+          fill: null,
+          error: persistence.error,
+        };
+      }
       submission = await executeCoinbaseProtectedSell(
         settings,
         intent,
@@ -1002,6 +1073,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           stopLossBps: this.state.configuration?.risk.stopLossBps ?? 0,
           takeProfitBps: this.state.configuration?.risk.takeProfitBps ?? 0,
         },
+        {},
+        persistence.value,
       );
     } else {
       submission = await submitCoinbaseOrder(
@@ -1027,6 +1100,29 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     portfolio: TradingAgentState["portfolio"],
   ): Promise<Result<OrderSubmission, WorkflowError>> {
     const protection = protectionFromRisk(riskDecision);
+    if (intent.side === "SELL") {
+      const protectiveOrderIds = this.loadKnownProtectiveOrderIds();
+      if (!protectiveOrderIds.ok) return protectiveOrderIds;
+      const persistence = this.protectedSellPersistence(intent);
+      if (!persistence.ok) return persistence;
+      const submission = await executeCoinbaseProtectedSell(
+        settings,
+        intent,
+        this.state.machine?.context.permissions ?? {
+          canControl: false,
+          canTrade: false,
+        },
+        protectiveOrderIds.value,
+        {
+          stopLossBps: this.state.configuration?.risk.stopLossBps ?? 0,
+          takeProfitBps: this.state.configuration?.risk.takeProfitBps ?? 0,
+        },
+        {},
+        persistence.value,
+      );
+      const persisted = this.persistLiveOrderResult(intent, submission);
+      return persisted.ok ? ok(submission) : err(reconciliationError());
+    }
     let exchangeOrderId = this.loadExchangeOrderId(intent.clientOrderId);
     if (exchangeOrderId === null) {
       const replayAuthorization = createCoinbaseAuthorization(

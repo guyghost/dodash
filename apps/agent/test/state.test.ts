@@ -140,3 +140,57 @@ describe("live start continuity", () => {
     });
   });
 });
+
+describe("daily risk cycle boundaries", () => {
+  const call = (
+    name: "resolveCycleDailyRiskStart" | "resolveCycleDailyRiskCompletion",
+    ...args: readonly unknown[]
+  ) => {
+    const exported = stateModule as Record<string, unknown>;
+    expect(typeof exported[name]).toBe("function");
+    if (typeof exported[name] !== "function") return null;
+    return (exported[name] as (...values: readonly unknown[]) => unknown)(...args);
+  };
+
+  it("leaves a new live UTC window unset until Coinbase establishes equity", () => {
+    expect(
+      call("resolveCycleDailyRiskStart", "live", null, 0, 86_400_000, 10_000),
+    ).toEqual({ window: null, dailyPnl: 0 });
+
+    expect(
+      call(
+        "resolveCycleDailyRiskStart",
+        "live",
+        { utcDayStart: 0, openingEquity: 20_000 },
+        -500,
+        86_400_000,
+        10_000,
+      ),
+    ).toEqual({
+      window: { utcDayStart: 0, openingEquity: 20_000 },
+      dailyPnl: -500,
+    });
+  });
+
+  it("never seeds a live completion from local equity after reconciliation fails", () => {
+    expect(
+      call(
+        "resolveCycleDailyRiskCompletion",
+        "live",
+        null,
+        0,
+        86_400_000,
+        10_000,
+      ),
+    ).toEqual({ window: null, dailyPnl: 0 });
+  });
+
+  it("keeps paper windows based on local marked equity", () => {
+    expect(
+      call("resolveCycleDailyRiskStart", "paper", null, 0, 86_400_000, 10_000),
+    ).toEqual({
+      window: { utcDayStart: 86_400_000, openingEquity: 10_000 },
+      dailyPnl: 0,
+    });
+  });
+});

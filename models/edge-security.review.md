@@ -28,8 +28,9 @@ binding fetch. There is no persistent workflow state to repair.
 - The edge limiter reduces abuse; it does not grant access.
 - Authentication and same-origin authorization remain in the private API.
 - Hashing prevents disclosure of bearer material to the limiter key space.
-- The limiter groups repeated uses of the same credential. Missing credentials
-  share the deterministic anonymous bucket.
+- The credential bucket groups repeated uses of the same credential. The
+  independent Cloudflare-source bucket bounds rotated invalid credentials;
+  caller-supplied forwarding headers never select it.
 
 ## Terminal behavior
 
@@ -39,8 +40,8 @@ transition exists after a terminal response.
 
 ## Trade-offs accepted
 
-- The limit is intentionally coarse: 100 requests per credential per minute.
-  It protects the control plane without requiring client IP storage.
+- The limit is intentionally coarse: 100 requests per source and per credential
+  per minute. Only address digests enter the limiter, not raw client IP storage.
 - A stolen credential shares its legitimate owner's quota. This is safer than
   allowing unbounded use and does not weaken authentication.
 - The CSP is deliberately strict and may require an explicit model update if

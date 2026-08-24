@@ -416,8 +416,13 @@ describe("tradingCycleMachine", () => {
       },
     );
 
-    expect(actor.getSnapshot().value).toBe("failed");
+    expect(actor.getSnapshot().value).toBe("persisting");
     expect(actor.getSnapshot().context.shutdownMode).toBe("kill-switch");
+    expect(actor.getSnapshot().context.terminalFailure).toBe(true);
+    expect(actor.getSnapshot().context.outcome).toBe("FAILED");
+
+    actor.send({ type: "PERSIST_SUCCEEDED" });
+    expect(actor.getSnapshot().value).toBe("failed");
   });
 
   it("ne reprogramme jamais tant que la persistance échoue", () => {

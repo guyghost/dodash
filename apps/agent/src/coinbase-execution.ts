@@ -48,6 +48,7 @@ export interface CoinbaseRequestDependencies {
   readonly fetch?: typeof fetch;
   readonly now?: () => number;
   readonly nonce?: () => string;
+  readonly wait?: (delayMs: number) => Promise<void>;
 }
 
 export const coinbaseOrderPath = (exchangeOrderId: string): string => {
@@ -760,15 +761,6 @@ export const getCoinbaseOrder = async (
     }
     if (!terminalStatuses.has(order.status)) return err(reconciliationError());
 
-    const protectiveOrderId = order.attached_order_id;
-    if (
-      intent.side === "BUY" &&
-      protection !== undefined &&
-      protectiveOrderId === undefined
-    ) {
-      return err(reconciliationError("INVALID_RESPONSE", false));
-    }
-
     const quantity = parseFinite(order.filled_size);
     const price = parseFinite(order.average_filled_price);
     const fee = parseFinite(order.total_fees);
@@ -780,6 +772,14 @@ export const getCoinbaseOrder = async (
         status: "REJECTED",
         error: executionError("ORDER_REJECTED", false),
       });
+    }
+    const protectiveOrderId = order.attached_order_id;
+    if (
+      intent.side === "BUY" &&
+      protection !== undefined &&
+      protectiveOrderId === undefined
+    ) {
+      return err(reconciliationError("INVALID_RESPONSE", false));
     }
     if (price === null || price <= 0) {
       return err(reconciliationError("INVALID_RESPONSE", false));

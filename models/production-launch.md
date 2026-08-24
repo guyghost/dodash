@@ -16,9 +16,15 @@ remplacer une porte.
 - marché spot long-only, timeframe de décision `ONE_DAY` ;
 - configuration et limites égales à la politique live versionnée ;
 - verdict valable uniquement pour ce SHA et cette politique.
+- instant d'évaluation UTC explicite, utilisé pour refuser les preuves
+  opérationnelles futures ou âgées de plus de 24 heures.
 
 Toute modification du SHA, de la politique, des produits, des stratégies, du
 sizing ou du risque invalide le verdict et exige une nouvelle évaluation.
+`LAUNCH_REQUESTED` est refusé avant la porte recherche si le SHA n'est pas 40
+hexadécimaux minuscules, si le policy ID diffère de
+`LIVE_TRADING_POLICY_ID`, si l'allowlist diffère de
+`LIVE_TRADING_PRODUCTS`, ou si l'instant d'évaluation est invalide.
 
 ## États, événements et transitions
 
@@ -125,16 +131,19 @@ Motifs fermés : `ENGINEERING_CI_NOT_GREEN`, `ENGINEERING_TESTS_UNSTABLE`,
 
 Conditions cumulatives :
 
-1. logs structurés, métriques et alertes couvrent erreurs, latence, cycles,
+1. `releaseSha` et `deploymentSha` égalent le SHA évalué ; la collecte est
+   antérieure ou égale à l'instant d'évaluation et date d'au plus 24 heures ;
+2. logs structurés, métriques et alertes couvrent erreurs, latence, cycles,
    ordres inconnus, réconciliation, exposition, PnL et déclenchements de risque ;
-2. health checks des quatre Workers testés après déploiement ;
-3. runbook d'incident et propriétaire d'astreinte identifiés ;
-4. rollback versionné, chronométré et vérifié sans perte d'intégrité ;
-5. déploiement incrémental : code avec live OFF, smoke test, puis un seul produit ;
-6. seuils d'arrêt explicites avant activation ;
-7. secrets et bindings de production vérifiés sans les journaliser.
+3. health checks des quatre Workers testés après déploiement ;
+4. runbook d'incident et propriétaire d'astreinte identifiés ;
+5. rollback versionné, chronométré et vérifié sans perte d'intégrité ;
+6. déploiement incrémental : code avec live OFF, smoke test, puis un seul produit ;
+7. seuils d'arrêt explicites avant activation ;
+8. secrets et bindings de production vérifiés sans les journaliser.
 
-Motifs fermés : `OPERATIONS_OBSERVABILITY_MISSING`,
+Motifs fermés : `OPERATIONS_SCOPE_MISMATCH`, `OPERATIONS_EVIDENCE_STALE`,
+`OPERATIONS_OBSERVABILITY_MISSING`,
 `OPERATIONS_ALERTING_MISSING`, `OPERATIONS_HEALTHCHECK_FAILED`,
 `OPERATIONS_RUNBOOK_MISSING`, `OPERATIONS_ROLLBACK_UNVERIFIED`,
 `OPERATIONS_ROLLOUT_UNSAFE`, `OPERATIONS_SECRETS_UNVERIFIED`.
@@ -185,3 +194,6 @@ Motifs fermés : `CANARY_SHADOW_INSUFFICIENT`, `CANARY_SAMPLE_INSUFFICIENT`,
 9. Une preuve future ou une configuration modifiée ne rétrovalide jamais un SHA.
 10. Si le comportement ne peut pas être prouvé par une structure typée, il est
     `NO_GO`.
+11. Une entrée `workflow_dispatch` n'est jamais interpolée directement dans un
+    script shell : elle est transportée par `env`, validée avant comparaison et
+    utilisée entre guillemets.

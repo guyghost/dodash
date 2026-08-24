@@ -31,6 +31,11 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate immutable release SHA input
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_sha || github.sha }}
@@ -55,6 +60,10 @@ jobs:
       DASHBOARD_API_HEALTH_URL: ${{ secrets.DASHBOARD_API_HEALTH_URL }}
       DASHBOARD_HEALTH_URL: ${{ secrets.DASHBOARD_HEALTH_URL }}
     steps:
+      - name: Validate immutable release SHA input
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
       - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.release_sha }}
@@ -64,9 +73,9 @@ jobs:
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
       - name: Verify immutable release SHA
-        run: |
-          test "$(git rev-parse HEAD)" = "${{ inputs.release_sha }}"
-          printf '%s' "${{ inputs.release_sha }}" | grep -Eq '^[0-9a-f]{40}$'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
       - name: Force live execution OFF before deployment
         run: printf '%s' false | pnpm --filter @dodash/agent exec wrangler secret put LIVE_TRADING_ENABLED
       - name: Deploy market data Worker

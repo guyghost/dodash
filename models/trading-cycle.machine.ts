@@ -318,6 +318,11 @@ export const tradingCycleMachine = setup({
     })),
     recordError: assign(({ event }) => ({ lastError: eventError(event) })),
     markFailed: assign({ outcome: "FAILED" }),
+    markTerminalFailure: assign({
+      outcome: "FAILED",
+      terminalFailure: true,
+      orderMayBeInFlight: false,
+    }),
     incrementScheduleAttempt: assign(({ context }) => ({
       attempts: {
         ...context.attempts,
@@ -788,21 +793,21 @@ export const tradingCycleMachine = setup({
           actions: "markCancelled",
         },
         EFFECT_CANCEL_FAILED: {
-          target: "failed",
-          actions: ["recordError", "markFailed"],
+          target: "persisting",
+          actions: ["recordError", "markTerminalFailure"],
         },
       },
     },
     persisting: {
       on: {
         PERSIST_SUCCEEDED: [
+          { guard: "shouldFailAfterPersistence", target: "failed" },
           { guard: "shouldStopAfterPersistence", target: "stopped" },
           {
             guard: "shouldExecuteKillAfterPersistence",
             target: "cancelling",
           },
           { guard: "shouldHaltAfterPersistence", target: "halted" },
-          { guard: "shouldFailAfterPersistence", target: "failed" },
           { target: "scheduling" },
         ],
         PERSIST_FAILED: [

@@ -41,6 +41,9 @@ contexte de la machine.
 - À la restauration, tout champ de contexte ajouté à une release est normalisé
   vers sa valeur fail-closed explicite avant `resolveState`. Un snapshot legacy
   ne peut laisser ni garde ni identifiant de contrôle dépendre de `undefined`.
+- `EFFECT_CANCEL_FAILED` marque une défaillance terminale puis passe par
+  `persisting`. Après `PERSIST_SUCCEEDED`, cette défaillance est prioritaire sur
+  stop, kill et scheduling et atteint uniquement `failed`.
 
 ## Contrôle et permissions
 
@@ -64,7 +67,8 @@ unique. L'intention persistée utilise `client_order_id` comme clé
 d'idempotence. Un BUY est envoyé avec un bracket `trigger_bracket_gtc` attaché
 et n'est confirmé qu'après réconciliation de l'ordre parent, de son
 `attached_order_id`, de la quantité protégée et des prix arrondis aux incréments
-du produit.
+du produit. Un parent terminal avec quantité exécutée nulle est un rejet propre :
+aucun `attached_order_id` n'est alors requis.
 
 Avant un SELL directionnel, le workflow `liveSellProtectionMachine` annule et
 confirme l'absence des protections connues, relit le compte, vend uniquement la
@@ -72,6 +76,13 @@ quantité de l'intention persistée puis relit le résiduel. Un résiduel non nu
 reçoit exactement un nouveau bracket confirmé. Une course, une issue inconnue
 ou un défaut de protection délègue au kill switch : le résultat normal est
 interdit tant que le compte n'est pas plat ou correctement reprotégé.
+L'état XState du SELL, le dernier snapshot de compte, la soumission et le plan
+protecteur sont checkpointés dans SQLite avant chaque effet. Un réveil reprend
+ce checkpoint avec les mêmes identifiants idempotents ; il ne repasse jamais par
+la réconciliation générique qui pourrait ignorer la protection résiduelle. Un
+échec d'écriture du prochain checkpoint reste une issue inconnue retryable : le
+dernier point durable est repris, jamais converti en succès ou échec terminal
+qui abandonnerait une position potentiellement non protégée.
 
 Une réponse Coinbase explicite `success=false` ou un HTTP 4xx non ambigu produit
 un rejet. Une coupure réseau, un timeout ou un HTTP 5xx après le début d’un POST

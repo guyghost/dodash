@@ -30,6 +30,8 @@ export type EngineeringFailureReason =
   | "ENGINEERING_EDGE_HARDENING_MISSING";
 
 export type OperationsFailureReason =
+  | "OPERATIONS_SCOPE_MISMATCH"
+  | "OPERATIONS_EVIDENCE_STALE"
   | "OPERATIONS_OBSERVABILITY_MISSING"
   | "OPERATIONS_ALERTING_MISSING"
   | "OPERATIONS_HEALTHCHECK_FAILED"
@@ -63,6 +65,7 @@ export interface ProductionLaunchScope {
   readonly releaseSha: string;
   readonly policyId: string;
   readonly productIds: readonly string[];
+  readonly evaluatedAt: number;
 }
 
 export interface ResearchProductEvidence {
@@ -120,6 +123,9 @@ export interface EngineeringEvidence {
 }
 
 export interface OperationsEvidence {
+  readonly releaseSha: string;
+  readonly deploymentSha: string;
+  readonly collectedAt: number;
   readonly structuredTradingTelemetry: boolean;
   readonly alertsConfigured: boolean;
   readonly allHealthChecksPassed: boolean;

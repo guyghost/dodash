@@ -11,7 +11,8 @@ preflight evidence satisfy this model.
 - Flat kill: cancel/confirm orders, reconcile zero, complete without an order.
 - Invested kill: cancel/confirm, reconcile available base, flatten, verify zero.
 - Daily risk: account equity is refreshed before every decision, including
-  duplicate daily candles.
+  duplicate daily candles; the first snapshot after UTC rollover establishes
+  opening equity.
 - BUY: parent fill and attached protection are both reconciled.
 - SELL: owned protection is removed before sale and residual protection is
   confirmed afterward.
@@ -28,6 +29,11 @@ preflight evidence satisfy this model.
 - Any SELL failure after protection cancellation enters the kill machine; it
   cannot resume normal scheduling with an unprotected residual.
 - A held balance retries reconciliation; it is never treated as sellable or flat.
+- Retry states await their bounded delay before re-entry; a temporary 429 cannot
+  consume the entire retry budget in one synchronous loop.
+- A protected-SELL checkpoint write failure preserves the previous durable
+  boundary and enters outer reconciliation; it cannot abandon the inner
+  workflow as a terminal order result.
 - Exhausted kill work ends `failed`; the outer trading machine must not report
   `halted`.
 
@@ -36,6 +42,11 @@ preflight evidence satisfy this model.
 The kill workflow itself cannot be cancelled by stop/reset. Worker termination
 is recovered by persisted outer state plus idempotent Coinbase client IDs and a
 fresh exchange reconciliation.
+
+The directional SELL workflow has its own durable checkpoint. Recovery from
+each side-effect boundary must resume the inner machine, including residual
+reconciliation and protection confirmation, rather than use the generic order
+path.
 
 ## Permissions
 
@@ -72,5 +83,11 @@ execution disabled and performs authenticated reads exclusively.
   the in-flight order is reconciled and the kill machine completes.
 - Prove a persisted snapshot created before the account-control fields existed
   restores them to explicit fail-closed defaults before any transition.
+- Prove a fresh live UTC window is seeded only by Coinbase equity.
+- Prove an unknown open order fails every active pre-decision reconciliation.
+- Prove protected-SELL recovery after cancellation, market submission and
+  residual-protection submission reaches protected/flat/failed, never an
+  unprotected normal success.
+- Prove retry states await increasing bounded delays before consuming attempts.
 - Run Coinbase's static sandbox contract tests, then a live-off preflight with
   view permission before any canary funding.

@@ -13,6 +13,10 @@ import type {
   RiskEvidence,
   RiskFailureReason,
 } from "./production-launch.types.js";
+import {
+  LIVE_TRADING_POLICY_ID,
+  LIVE_TRADING_PRODUCTS,
+} from "./live-trading-policy.js";
 
 const accepted = Object.freeze({ ok: true as const });
 const rejected = <Reason extends string>(reasonCode: Reason) =>
@@ -50,10 +54,26 @@ const validResearchProduct = (product: ResearchProductEvidence): boolean =>
   isFiniteRate(product.maxDrawdown) &&
   isFiniteRate(product.winRate);
 
+const RELEASE_SHA_PATTERN = /^[0-9a-f]{40}$/;
+const OPERATIONS_EVIDENCE_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
+
+export const assessProductionLaunchScope = (
+  scope: ProductionLaunchScope,
+): ProductionLaunchAssessment<ResearchFailureReason> =>
+  RELEASE_SHA_PATTERN.test(scope.releaseSha) &&
+  scope.policyId === LIVE_TRADING_POLICY_ID &&
+  sameUniqueStrings(scope.productIds, LIVE_TRADING_PRODUCTS) &&
+  Number.isSafeInteger(scope.evaluatedAt) &&
+  scope.evaluatedAt > 0
+    ? accepted
+    : rejected("RESEARCH_SCOPE_MISMATCH");
+
 export const assessResearchEvidence = (
   scope: ProductionLaunchScope,
   evidence: ResearchEvidence,
 ): ProductionLaunchAssessment<ResearchFailureReason> => {
+  const scopeAssessment = assessProductionLaunchScope(scope);
+  if (!scopeAssessment.ok) return scopeAssessment;
   if (
     evidence.releaseSha !== scope.releaseSha ||
     evidence.policyId !== scope.policyId ||
@@ -179,8 +199,24 @@ export const assessEngineeringEvidence = (
 };
 
 export const assessOperationsEvidence = (
+  scope: ProductionLaunchScope,
   evidence: OperationsEvidence,
 ): ProductionLaunchAssessment<OperationsFailureReason> => {
+  if (
+    !assessProductionLaunchScope(scope).ok ||
+    evidence.releaseSha !== scope.releaseSha ||
+    evidence.deploymentSha !== scope.releaseSha
+  ) {
+    return rejected("OPERATIONS_SCOPE_MISMATCH");
+  }
+  if (
+    !Number.isSafeInteger(evidence.collectedAt) ||
+    evidence.collectedAt <= 0 ||
+    evidence.collectedAt > scope.evaluatedAt ||
+    scope.evaluatedAt - evidence.collectedAt > OPERATIONS_EVIDENCE_MAX_AGE_MS
+  ) {
+    return rejected("OPERATIONS_EVIDENCE_STALE");
+  }
   if (!evidence.structuredTradingTelemetry) {
     return rejected("OPERATIONS_OBSERVABILITY_MISSING");
   }

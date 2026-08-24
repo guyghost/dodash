@@ -1,11 +1,13 @@
 import { generateKeyPairSync } from "node:crypto";
-import { createProductId, type OrderIntent } from "@dodash/domain";
+import { createProductId, ok, type OrderIntent } from "@dodash/domain";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   deriveCoinbaseControlClientOrderId,
   executeCoinbaseKill,
   executeCoinbaseProtectedSell,
+  reconcileCoinbaseOwnedAccount,
+  type CoinbaseProtectedSellCheckpoint,
 } from "../src/coinbase-control.js";
 import type { CoinbaseExecutionSettings } from "../src/coinbase-execution.js";
 
@@ -107,6 +109,27 @@ const sequenceFetch = (
 };
 
 describe("Coinbase kill control", () => {
+  it("waits before consuming a retry after a temporary Coinbase failure", async () => {
+    const wait = vi.fn(async (_delayMs: number) => undefined);
+    const fetchMock = sequenceFetch([
+      new Response(null, { status: 429 }),
+      openOrders([]),
+      portfolio(0),
+      openOrders([]),
+    ]);
+
+    const result = await executeCoinbaseKill(
+      settings,
+      product.value,
+      { canControl: true, canTrade: true },
+      "kill-cycle-rate-limited",
+      { fetch: fetchMock, now: () => NOW, wait },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(wait).toHaveBeenCalledWith(1_000);
+  });
+
   it("cancels product orders, flattens the reconciled balance, and verifies flat", async () => {
     const flattenClientOrderId = deriveCoinbaseControlClientOrderId(
       `kill-cycle-1\u001fcoinbase:portfolio-1:${NOW}\u001f1`,
@@ -301,7 +324,207 @@ describe("Coinbase kill control", () => {
   });
 });
 
+describe("Coinbase active account ownership", () => {
+  it("returns the account only when every open product order is owned", async () => {
+    const fetchMock = sequenceFetch([portfolio(10), openOrders(["protective-1"])]);
+    const result = await reconcileCoinbaseOwnedAccount(
+      settings,
+      product.value,
+      ["protective-1"],
+      { fetch: fetchMock, now: () => NOW },
+    );
+
+    expect(result).toMatchObject({ ok: true, value: { totalBaseQuantity: 10 } });
+  });
+
+  it("fails closed before a decision when an open product order is unknown", async () => {
+    const fetchMock = sequenceFetch([portfolio(10), openOrders(["manual-order"])]);
+    const result = await reconcileCoinbaseOwnedAccount(
+      settings,
+      product.value,
+      ["protective-1"],
+      { fetch: fetchMock, now: () => NOW },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        phase: "reconciliation",
+        code: "RECONCILIATION_FAILURE",
+        retryable: false,
+      },
+    });
+  });
+});
+
 describe("Coinbase protected SELL control", () => {
+  it("keeps a checkpoint write failure retryable after protections were cleared", async () => {
+    const fetchMock = sequenceFetch([
+      openOrders(["protective-1"]),
+      Response.json({
+        results: [
+          { success: true, failure_reason: "", order_id: "protective-1" },
+        ],
+      }),
+      openOrders([]),
+    ]);
+
+    const result = await executeCoinbaseProtectedSell(
+      settings,
+      sellIntent,
+      { canControl: true, canTrade: true },
+      ["protective-1"],
+      { stopLossBps: 150, takeProfitBps: 300 },
+      { fetch: fetchMock, now: () => NOW },
+      {
+        restored: null,
+        persist: async (checkpoint) =>
+          checkpoint.machine.value === "reconcilingBeforeSell"
+            ? {
+                ok: false,
+                error: {
+                  phase: "persistence",
+                  code: "PERSISTENCE_FAILURE",
+                  retryable: true,
+                },
+              }
+            : ok(undefined),
+      },
+    );
+
+    expect(result).toEqual({
+      status: "UNKNOWN",
+      error: {
+        phase: "persistence",
+        code: "PERSISTENCE_FAILURE",
+        retryable: true,
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("resumes a persisted residual workflow without replaying cancellation or SELL", async () => {
+    const residualClientOrderId = deriveCoinbaseControlClientOrderId(
+      `${sellIntent.clientOrderId}\u001fresidual`,
+    );
+    const beforeEviction = sequenceFetch([
+      openOrders(["protective-1"]),
+      Response.json({
+        results: [
+          { success: true, failure_reason: "", order_id: "protective-1" },
+        ],
+      }),
+      openOrders([]),
+      portfolio(20),
+      Response.json({
+        success: true,
+        success_response: {
+          order_id: "sell-order-1",
+          product_id: "GRT-USD",
+          side: "SELL",
+          client_order_id: sellIntent.clientOrderId,
+        },
+      }),
+      Response.json({
+        order: {
+          order_id: "sell-order-1",
+          product_id: "GRT-USD",
+          client_order_id: sellIntent.clientOrderId,
+          side: "SELL",
+          status: "FILLED",
+          average_filled_price: "10",
+          total_fees: "0.10",
+          filled_size: "10",
+          last_fill_time: "2023-11-14T22:13:20.000Z",
+        },
+      }),
+    ]);
+    let restored: CoinbaseProtectedSellCheckpoint | null = null;
+    const eviction = new Error("durable object evicted");
+
+    await expect(
+      executeCoinbaseProtectedSell(
+        settings,
+        sellIntent,
+        { canControl: true, canTrade: true },
+        ["protective-1"],
+        { stopLossBps: 150, takeProfitBps: 300 },
+        { fetch: beforeEviction, now: () => NOW },
+        {
+          restored: null,
+          persist: async (checkpoint) => {
+            restored = structuredClone(checkpoint);
+            if (checkpoint.machine.value === "reconcilingResidual") {
+              throw eviction;
+            }
+            return ok(undefined);
+          },
+        },
+      ),
+    ).rejects.toBe(eviction);
+    const restartCheckpoint =
+      restored as unknown as CoinbaseProtectedSellCheckpoint;
+    expect(restartCheckpoint.machine.value).toBe("reconcilingResidual");
+
+    const afterRestart = sequenceFetch([
+      portfolio(10),
+      productRules(),
+      Response.json({
+        success: true,
+        success_response: {
+          order_id: "residual-protection-1",
+          product_id: "GRT-USD",
+          side: "SELL",
+          client_order_id: residualClientOrderId,
+        },
+      }),
+      productRules(),
+      Response.json({
+        order: {
+          order_id: "residual-protection-1",
+          product_id: "GRT-USD",
+          client_order_id: residualClientOrderId,
+          side: "SELL",
+          status: "OPEN",
+          average_filled_price: "0",
+          total_fees: "0",
+          filled_size: "0",
+          order_configuration: {
+            trigger_bracket_gtc: {
+              base_size: "10.00",
+              limit_price: "9.27",
+              stop_trigger_price: "8.87",
+            },
+          },
+        },
+      }),
+    ]);
+    const result = await executeCoinbaseProtectedSell(
+      settings,
+      sellIntent,
+      { canControl: true, canTrade: true },
+      ["protective-1"],
+      { stopLossBps: 150, takeProfitBps: 300 },
+      { fetch: afterRestart, now: () => NOW },
+      {
+        restored: restartCheckpoint,
+        persist: async () => ok(undefined),
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: "CONFIRMED",
+      exchangeOrderId: "sell-order-1",
+      protectiveOrderId: "residual-protection-1",
+    });
+    expect(afterRestart).toHaveBeenCalledTimes(5);
+    expect(
+      afterRestart.mock.calls.some(([, init]) =>
+        String(init?.body).includes(sellIntent.clientOrderId),
+      ),
+    ).toBe(false);
+  });
+
   it("cancels owned protection, sells, reconciles and re-arms the residual", async () => {
     const residualClientOrderId = deriveCoinbaseControlClientOrderId(
       `${sellIntent.clientOrderId}\u001fresidual`,

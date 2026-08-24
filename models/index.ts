@@ -145,6 +145,7 @@ export {
   assessCanaryEvidence,
   assessEngineeringEvidence,
   assessOperationsEvidence,
+  assessProductionLaunchScope,
   assessResearchEvidence,
   assessRiskEvidence,
 } from "./production-launch.js";

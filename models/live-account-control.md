@@ -30,6 +30,11 @@ protective order persisted by this Agent or the current idempotent intent.
 Discovery of an unknown order is account drift and enters the terminal safety
 path; it is never silently adopted.
 
+This ownership proof is repeated on every `reconcilingAccount` phase, not only
+during deployment preflight. The currently open product-order IDs must all
+belong to the Agent's persisted protective-order set before market data can be
+read or a new decision can be allocated.
+
 ## Pre-decision reconciliation
 
 The trading-cycle transition becomes:
@@ -53,9 +58,11 @@ A valid snapshot contains:
   targetExposure)`;
 - observation time and portfolio UUID.
 
-The daily UTC risk window is resolved from `totalEquity` at the reconciliation
-observation time. It is therefore evaluated on every scheduled live cycle, even
-when the ONE_DAY decision candle is a duplicate.
+The daily UTC risk window is resolved from Coinbase `totalEquity` at the
+reconciliation observation time. A missing window or UTC rollover remains
+unset until this exchange snapshot arrives; configured capital or the local
+portfolio can never seed a live opening equity. It is therefore evaluated on
+every scheduled live cycle, even when the ONE_DAY decision candle is a duplicate.
 
 ## Live-off preflight
 
@@ -112,8 +119,10 @@ The important kill workflow is represented by `liveAccountControlMachine`.
 | verification | remaining available base within budget | `flatteningPosition` | Increment sequence and sell only reconciled residual. |
 | verification | held/ambiguous base | `retryingVerification` or `failed` | Bounded retry. |
 
-Retry timer events only re-enter the phase that failed. No adapter error string
-chooses a transition.
+Retry timer events only re-enter the phase that failed. Before emitting one, the
+adapter awaits the modelled bounded exponential delay for that phase; retries
+are not consumed synchronously inside the same rate-limit window. No adapter
+error string chooses a transition.
 
 ## Protective order lifecycle
 
@@ -156,6 +165,20 @@ confirmation failure enters `safetyFlattening`. That state delegates to
 `ORDER_PROTECTION_FAILED`. A failed flatten ends `failed`. Neither safety
 terminal is a normal confirmed SELL.
 
+### Durable SELL checkpoints
+
+The Agent persists a checkpoint keyed by the directional SELL
+`client_order_id`. It contains the machine value/context plus the last validated
+account snapshot, market-order submission and residual protection plan. A
+checkpoint is written after every event and therefore before the next side
+effect. Terminal records are retained for audit.
+
+On restart, both `submittingOrder` and `reconcilingOrder` load this record and
+resume `liveSellProtectionMachine`. Replaying a state after a crash is safe only
+because cancel, SELL submission, protective submission and safety kill use the
+same persisted deterministic identifiers. Generic SELL reconciliation is
+forbidden while a protected-SELL checkpoint exists.
+
 ## Invariants
 
 1. No live allocation or risk decision consumes configured `initialCapital` or
@@ -191,3 +214,10 @@ terminal is a normal confirmed SELL.
 14. A kill requested while an order is possibly in flight first reconciles that
     idempotent intent, persists its outcome, then executes the kill machine.
     `halted` requires `killCompleted=true`; a request flag alone is insufficient.
+15. A live UTC day starts from the first Coinbase equity snapshot of that day,
+    never from `initialCapital` or a marked local portfolio.
+16. Every pre-decision live account reconciliation proves open-order ownership;
+    any unknown ID closes the cycle before market data and allocation.
+17. A protected SELL side effect is preceded by a durable inner-workflow
+    checkpoint, and restart recovery resumes that workflow through residual
+    protection confirmation or safety flattening.

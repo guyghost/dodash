@@ -8,6 +8,7 @@ Statut : APPROUVÉ POUR IMPLÉMENTATION
 | --- | --- | --- |
 | lancement nominal | cinq preuves successives → `approved` | test machine |
 | mauvais SHA/policy/produits | rejet à la porte recherche | test assesseur + machine |
+| scope initial hors politique figée | `LAUNCH_REQUESTED` → rejet recherche | test machine |
 | alpha ou sécurité OOS insuffisants | rejet `RESEARCH_*` | test assesseur |
 | protection exchange absente | rejet `RISK_PROTECTION_MISSING` | test assesseur |
 | compte non réconcilié | rejet `RISK_ACCOUNT_NOT_RECONCILED` | test assesseur |
@@ -17,6 +18,7 @@ Statut : APPROUVÉ POUR IMPLÉMENTATION
 | vulnérabilité high/critical | rejet sécurité | test assesseur |
 | branche non protégée | rejet branche | test assesseur |
 | observabilité/rollback incomplets | rejet `OPERATIONS_*` | test assesseur |
+| preuve opérations ancien/autre SHA | rejet scope ou fraîcheur | test assesseur + machine |
 | shadow/canary incomplet | rejet `CANARY_*` | test assesseur |
 | canary d'un autre SHA/policy/produit | rejet `CANARY_SCOPE_MISMATCH` | test assesseur |
 | preuve hors séquence | ignorée, état inchangé | test machine |
@@ -42,6 +44,11 @@ La porte ingénierie distingue une réussite locale d'une CI propre. Un timeout
 reste un échec : augmenter arbitrairement le timeout sans mesurer la durée ne
 suffit pas. L'audit sécurité et la protection de branche sont des preuves
 externes mais structurées.
+
+Le SHA et l'allowlist du scope ne sont pas choisis par l'appelant : ils sont
+comparés à la politique live versionnée avant la première porte. Les preuves
+opérationnelles sont liées au release/deployment SHA et à une collecte de moins
+de 24 heures à l'instant d'évaluation.
 
 Le canary est volontairement la dernière porte de la décision : un bon backtest
 ne remplace pas une preuve d'exécution réelle. L'autorisation préalable de
@@ -70,6 +77,8 @@ diminue jamais l'exigence.
 4. Conserver `failedStage`, `reasonCode`, SHA et policy ID dans le contexte.
 5. Tester chaque transition autorisée/interdite et les deux états terminaux.
 6. Ne pas ajouter de champ d'override, même réservé aux tests.
+7. Transporter tout input `workflow_dispatch` via `env` et le valider avant son
+   premier usage shell.
 
 ## Verdict de revue
 

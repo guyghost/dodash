@@ -1,5 +1,5 @@
 import { executePaperOrder, type PaperPortfolio } from "@dodash/backtest";
-import { ok, type Candle, type OrderIntent } from "@dodash/domain";
+import { err, ok, type Candle, type OrderIntent } from "@dodash/domain";
 import type { WorkflowError } from "@dodash/models";
 import { describe, expect, it } from "vitest";
 
@@ -29,6 +29,23 @@ const readyMachine = (agentId: string, strategyIds: readonly string[]) => {
     permissions: { canControl: true, canTrade: true },
   });
   session.send({ type: "SCHEDULE_SUCCEEDED", nextWakeAt: 360_000 });
+  const record = session.record;
+  session.stop();
+  return record;
+};
+
+const cancellingMachine = (agentId: string, strategyIds: readonly string[]) => {
+  const session = createTradingMachineSession({ agentId, strategyIds });
+  session.send({
+    type: "START_REQUESTED",
+    permissions: { canControl: true, canTrade: true },
+  });
+  session.send({ type: "SCHEDULE_SUCCEEDED", nextWakeAt: 360_000 });
+  session.send({
+    type: "KILL_SWITCH_ENGAGED",
+    permissions: { canControl: true, canTrade: true },
+    controlId: "kill-persist-failure",
+  });
   const record = session.record;
   session.stop();
   return record;
@@ -152,6 +169,48 @@ const effectsFor = (
 };
 
 describe("runTradingCycle", () => {
+  it("persists a terminal cancellation failure before entering failed", async () => {
+    const config = configuration();
+    const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 10, 10, 10, 10, 10]),
+        source: "coinbase",
+        cached: false,
+      },
+      portfolio,
+    );
+
+    const result = await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine: cancellingMachine("agent-1", config.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt: 360_000,
+      cycleId: "cycle-cancel-failed",
+      triggerAlarm: false,
+      effects: {
+        ...fixture.effects,
+        cancelCurrentEffect: async () =>
+          err({
+            phase: "cancellation",
+            code: "CANCELLATION_FAILURE",
+            retryable: false,
+          }),
+      },
+    });
+
+    expect(result.machine.value).toBe("failed");
+    expect(result.machine.context.terminalFailure).toBe(true);
+    expect(fixture.persistedCycles).toBe(1);
+  });
+
   it("executes an oversold paper order through the XState phases", async () => {
     const config = configuration();
     const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };

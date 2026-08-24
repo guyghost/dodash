@@ -52,11 +52,26 @@ export const handleDashboardEdgeRequest = async (
   if (pathname === "/api" || pathname.startsWith("/api/")) {
     try {
       const credential = request.headers.get("authorization") ?? "anonymous";
-      const fingerprint = await sha256Hex(credential);
-      const rateLimit = await env.AUTH_RATE_LIMITER.limit({
-        key: `dashboard-api:${fingerprint}`,
+      const source = request.headers.get("cf-connecting-ip") ?? "unknown-source";
+      const [sourceFingerprint, credentialFingerprint] = await Promise.all([
+        sha256Hex(source),
+        sha256Hex(credential),
+      ]);
+      const sourceLimit = await env.AUTH_RATE_LIMITER.limit({
+        key: `dashboard-api:source:${sourceFingerprint}`,
       });
-      if (!rateLimit.success) {
+      if (!sourceLimit.success) {
+        return withSecurityHeaders(
+          new Response("Too many requests", {
+            headers: { "Retry-After": "60" },
+            status: 429,
+          }),
+        );
+      }
+      const credentialLimit = await env.AUTH_RATE_LIMITER.limit({
+        key: `dashboard-api:credential:${credentialFingerprint}`,
+      });
+      if (!credentialLimit.success) {
         return withSecurityHeaders(
           new Response("Too many requests", {
             headers: { "Retry-After": "60" },

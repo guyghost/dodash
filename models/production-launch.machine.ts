@@ -4,6 +4,7 @@ import {
   assessCanaryEvidence,
   assessEngineeringEvidence,
   assessOperationsEvidence,
+  assessProductionLaunchScope,
   assessResearchEvidence,
   assessRiskEvidence,
 } from "./production-launch.js";
@@ -30,6 +31,8 @@ export const productionLaunchMachine = setup({
     input: {} as ProductionLaunchScope,
   },
   guards: {
+    launchScopeAccepted: ({ context }) =>
+      assessProductionLaunchScope(context).ok,
     researchAccepted: ({ context, event }) =>
       event.type === "RESEARCH_EVIDENCE_SUBMITTED" &&
       assessResearchEvidence(context, event.evidence).ok,
@@ -39,9 +42,9 @@ export const productionLaunchMachine = setup({
     engineeringAccepted: ({ context, event }) =>
       event.type === "ENGINEERING_EVIDENCE_SUBMITTED" &&
       assessEngineeringEvidence(context, event.evidence).ok,
-    operationsAccepted: ({ event }) =>
+    operationsAccepted: ({ context, event }) =>
       event.type === "OPERATIONS_EVIDENCE_SUBMITTED" &&
-      assessOperationsEvidence(event.evidence).ok,
+      assessOperationsEvidence(context, event.evidence).ok,
     canaryAccepted: ({ context, event }) =>
       event.type === "CANARY_EVIDENCE_SUBMITTED" &&
       assessCanaryEvidence(context, event.evidence).ok,
@@ -85,9 +88,9 @@ export const productionLaunchMachine = setup({
         ? {}
         : { failedStage: "engineering" as const, reasonCode: result.reasonCode };
     }),
-    rejectOperations: assign(({ event }) => {
+    rejectOperations: assign(({ context, event }) => {
       if (event.type !== "OPERATIONS_EVIDENCE_SUBMITTED") return {};
-      const result = assessOperationsEvidence(event.evidence);
+      const result = assessOperationsEvidence(context, event.evidence);
       return result.ok
         ? {}
         : { failedStage: "operations" as const, reasonCode: result.reasonCode };
@@ -104,6 +107,11 @@ export const productionLaunchMachine = setup({
       failedStage: null,
       reasonCode: null,
     }),
+    rejectInvalidScope: assign({
+      passedStages: [],
+      failedStage: "research",
+      reasonCode: "RESEARCH_SCOPE_MISMATCH",
+    }),
   },
 }).createMachine({
   id: "productionLaunch",
@@ -112,13 +120,19 @@ export const productionLaunchMachine = setup({
     releaseSha: input.releaseSha,
     policyId: input.policyId,
     productIds: [...input.productIds],
+    evaluatedAt: input.evaluatedAt,
     passedStages: [],
     failedStage: null,
     reasonCode: null,
   }),
   states: {
     idle: {
-      on: { LAUNCH_REQUESTED: "assessingResearch" },
+      on: {
+        LAUNCH_REQUESTED: [
+          { guard: "launchScopeAccepted", target: "assessingResearch" },
+          { target: "rejected", actions: "rejectInvalidScope" },
+        ],
+      },
     },
     assessingResearch: {
       ...activeState,

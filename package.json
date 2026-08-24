@@ -12,7 +12,7 @@
     "check": "turbo run check",
     "dev": "turbo run dev --parallel",
     "prepare": "simple-git-hooks",
-    "scan:secrets": "node --test scripts/scan-secrets.test.mjs && node scripts/scan-secrets.mjs",
+    "scan:secrets": "node --test scripts/scan-secrets.test.mjs scripts/ci-workflow-security.test.mjs && node scripts/scan-secrets.mjs",
     "test": "turbo run test",
     "verify:commit": "pnpm check",
     "verify:push": "pnpm audit --audit-level=high && pnpm scan:secrets && pnpm check && pnpm test && pnpm build && pnpm --filter @dodash/dashboard test:sites"

@@ -383,6 +383,48 @@ describe("Coinbase execution adapter", () => {
     });
   });
 
+  it("rejects a terminal zero-fill protected BUY without requiring an attached order", async () => {
+    const exchangeOrderId = "exchange-order-unfilled";
+    const path = `${COINBASE_CREATE_ORDER_PATH}/historical/${exchangeOrderId}`;
+    const result = await getCoinbaseOrder(
+      settings,
+      intent,
+      exchangeOrderId,
+      authorizationFor("GET", path),
+      { cash: 1_000, positionQuantity: 0, averagePrice: 0 },
+      {
+        fetch: vi.fn<typeof fetch>(async () =>
+          Response.json({
+            order: {
+              order_id: exchangeOrderId,
+              product_id: "BTC-USD",
+              client_order_id: intent.clientOrderId,
+              side: "BUY",
+              status: "CANCELLED",
+              average_filled_price: "0",
+              total_fees: "0",
+              filled_size: "0",
+            },
+          }),
+        ),
+        now: () => NOW,
+      },
+      protection,
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        status: "REJECTED",
+        error: {
+          phase: "execution",
+          code: "ORDER_REJECTED",
+          retryable: false,
+        },
+      },
+    });
+  });
+
   it("confirms the attached bracket identity, side, state and prices", async () => {
     const protectiveOrderId = "protective-order-1";
     const result = await confirmCoinbaseProtectiveOrder(

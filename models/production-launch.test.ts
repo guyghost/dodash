@@ -4,6 +4,7 @@ import {
   assessCanaryEvidence,
   assessEngineeringEvidence,
   assessOperationsEvidence,
+  assessProductionLaunchScope,
   assessResearchEvidence,
   assessRiskEvidence,
 } from "./production-launch.js";
@@ -20,6 +21,7 @@ const scope: ProductionLaunchScope = {
   releaseSha: "a".repeat(40),
   policyId: "CONFIDENCE_POWER_THIRD_2026_08",
   productIds: ["GRT-USD", "MANA-USD", "XTZ-USD", "ZEC-USD"],
+  evaluatedAt: 1_777_000_000_000,
 };
 
 const researchEvidence = (): ResearchEvidence => ({
@@ -75,6 +77,9 @@ const engineeringEvidence = (): EngineeringEvidence => ({
 });
 
 const operationsEvidence = (): OperationsEvidence => ({
+  releaseSha: scope.releaseSha,
+  deploymentSha: scope.releaseSha,
+  collectedAt: scope.evaluatedAt - 60_000,
   structuredTradingTelemetry: true,
   alertsConfigured: true,
   allHealthChecksPassed: true,
@@ -110,6 +115,35 @@ const canaryEvidence = (): CanaryEvidence => ({
 });
 
 describe("production launch assessors", () => {
+  it("valide uniquement le SHA, la politique et l'allowlist live gelés", () => {
+    expect(assessProductionLaunchScope(scope)).toEqual({ ok: true });
+    expect(
+      assessProductionLaunchScope({
+        ...scope,
+        policyId: "anything",
+        productIds: ["BTC-USD"],
+      }),
+    ).toEqual({ ok: false, reasonCode: "RESEARCH_SCOPE_MISMATCH" });
+  });
+
+  it("refuse une portée caller auto-cohérente hors politique live", () => {
+    const arbitraryScope = {
+      ...scope,
+      policyId: "anything",
+      productIds: ["BTC-USD"],
+    };
+    expect(
+      assessResearchEvidence(arbitraryScope, {
+        ...researchEvidence(),
+        policyId: arbitraryScope.policyId,
+        productIds: arbitraryScope.productIds,
+        products: [
+          { ...researchEvidence().products[0]!, productId: "BTC-USD" },
+        ],
+      }),
+    ).toEqual({ ok: false, reasonCode: "RESEARCH_SCOPE_MISMATCH" });
+  });
+
   it("valide une preuve de recherche OOS complète sur les produits live exacts", () => {
     expect(assessResearchEvidence(scope, researchEvidence())).toEqual({
       ok: true,
@@ -205,11 +239,35 @@ describe("production launch assessors", () => {
 
   it("refuse un rollback non vérifié", () => {
     expect(
-      assessOperationsEvidence({
+      assessOperationsEvidence(scope, {
         ...operationsEvidence(),
         rollbackVerified: false,
       }),
     ).toEqual({ ok: false, reasonCode: "OPERATIONS_ROLLBACK_UNVERIFIED" });
+  });
+
+  it("refuse les preuves d'exploitation d'un autre déploiement", () => {
+    expect(
+      assessOperationsEvidence(scope, {
+        ...operationsEvidence(),
+        deploymentSha: "b".repeat(40),
+      }),
+    ).toEqual({ ok: false, reasonCode: "OPERATIONS_SCOPE_MISMATCH" });
+  });
+
+  it("refuse les preuves d'exploitation anciennes ou datées du futur", () => {
+    expect(
+      assessOperationsEvidence(scope, {
+        ...operationsEvidence(),
+        collectedAt: scope.evaluatedAt - 24 * 60 * 60 * 1_000 - 1,
+      }),
+    ).toEqual({ ok: false, reasonCode: "OPERATIONS_EVIDENCE_STALE" });
+    expect(
+      assessOperationsEvidence(scope, {
+        ...operationsEvidence(),
+        collectedAt: scope.evaluatedAt + 1,
+      }),
+    ).toEqual({ ok: false, reasonCode: "OPERATIONS_EVIDENCE_STALE" });
   });
 
   it("accepte l'alternative préenregistrée de 90 jours pour un signal rare", () => {

@@ -4,6 +4,7 @@ import {
   liveAccountControlMachine,
   liveSellProtectionMachine,
   type ControlPermissions,
+  type LiveSellProtectionContext,
   type WorkflowError,
 } from "@dodash/models";
 import { createActor } from "xstate";
@@ -211,6 +212,24 @@ const listOpenProductOrders = async (
 
 export const listCoinbaseOpenProductOrderIds = listOpenProductOrders;
 
+export const reconcileCoinbaseOwnedAccount = async (
+  settings: CoinbaseExecutionSettings,
+  productId: ProductId,
+  knownProtectiveOrderIds: readonly string[],
+  dependencies: CoinbaseRequestDependencies = {},
+): Promise<Result<CoinbaseAccountSnapshot, WorkflowError>> => {
+  const account = await reconcileCoinbaseAccount(settings, productId, dependencies);
+  if (!account.ok) return account;
+  const openOrders = await listOpenProductOrders(settings, productId, dependencies);
+  if (!openOrders.ok) return openOrders;
+  const known = new Set(
+    knownProtectiveOrderIds.filter((orderId) => orderId.trim().length > 0),
+  );
+  return openOrders.value.every((orderId) => known.has(orderId))
+    ? account
+    : err(phaseError("reconciliation", "RECONCILIATION_FAILURE", false));
+};
+
 const cancelOrderIds = async (
   settings: CoinbaseExecutionSettings,
   orderIds: readonly string[],
@@ -412,6 +431,12 @@ export const executeCoinbaseKill = async (
     permissions,
   });
   let lastAccount: CoinbaseAccountSnapshot | null = null;
+  const wait =
+    dependencies.wait ??
+    ((delayMs: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+  const retryDelayMs = (attempt: number): number =>
+    Math.min(30_000, 1_000 * 2 ** Math.max(0, attempt - 1));
 
   for (let step = 0; step < MAX_CONTROL_STEPS; step += 1) {
     const snapshot = actor.getSnapshot();
@@ -484,8 +509,15 @@ export const executeCoinbaseKill = async (
         break;
       }
       case "retryingCancellation":
+        await wait(retryDelayMs(snapshot.context.attempts.cancellation));
+        actor.send({ type: "RETRY_TIMER_ELAPSED" });
+        break;
       case "retryingReconciliation":
+        await wait(retryDelayMs(snapshot.context.attempts.reconciliation));
+        actor.send({ type: "RETRY_TIMER_ELAPSED" });
+        break;
       case "retryingVerification":
+        await wait(retryDelayMs(snapshot.context.attempts.verification));
         actor.send({ type: "RETRY_TIMER_ELAPSED" });
         break;
       case "completed":
@@ -517,6 +549,32 @@ export interface CoinbaseProtectedSellPolicy {
   readonly takeProfitBps: number;
 }
 
+type ConfirmedOrderSubmission = Extract<
+  OrderSubmission,
+  { readonly status: "CONFIRMED" }
+>;
+
+export interface CoinbaseProtectedSellCheckpoint {
+  readonly version: 1;
+  readonly machine: {
+    readonly value: string;
+    readonly context: LiveSellProtectionContext;
+  };
+  readonly account: CoinbaseAccountSnapshot | null;
+  readonly sellSubmission: ConfirmedOrderSubmission | null;
+  readonly protectionPlan: {
+    readonly stopLossPrice: number;
+    readonly takeProfitPrice: number;
+  } | null;
+}
+
+export interface CoinbaseProtectedSellPersistence {
+  readonly restored: CoinbaseProtectedSellCheckpoint | null;
+  persist(
+    checkpoint: CoinbaseProtectedSellCheckpoint,
+  ): Promise<Result<void, WorkflowError>>;
+}
+
 const residualProtectionClientOrderId = (parentClientOrderId: string): string =>
   deriveCoinbaseControlClientOrderId(`${parentClientOrderId}\u001fresidual`);
 
@@ -527,6 +585,7 @@ export const executeCoinbaseProtectedSell = async (
   knownProtectiveOrderIds: readonly string[],
   policy: CoinbaseProtectedSellPolicy,
   dependencies: CoinbaseRequestDependencies = {},
+  persistence?: CoinbaseProtectedSellPersistence,
 ): Promise<OrderSubmission> => {
   if (
     intent.side !== "SELL" ||
@@ -554,20 +613,55 @@ export const executeCoinbaseProtectedSell = async (
       error: phaseError("execution", "INVALID_RESPONSE", false),
     };
   }
-  const actor = createActor(liveSellProtectionMachine, { input: {} }).start();
-  actor.send({
-    type: "SELL_REQUESTED",
-    productId: intent.productId,
-    clientOrderId: intent.clientOrderId,
-    quantity: intent.quantity,
-    permissions,
-  });
-  let account: CoinbaseAccountSnapshot | null = null;
-  let sellSubmission: Extract<OrderSubmission, { status: "CONFIRMED" }> | null = null;
+  const restored = persistence?.restored ?? null;
+  let restoredState:
+    | ReturnType<typeof liveSellProtectionMachine.resolveState>
+    | undefined;
+  try {
+    if (
+      restored !== null &&
+      (restored.version !== 1 ||
+        restored.machine.context.productId !== intent.productId ||
+        restored.machine.context.clientOrderId !== intent.clientOrderId ||
+        restored.machine.context.requestedQuantity !== intent.quantity)
+    ) {
+      throw new Error("INVALID_PROTECTED_SELL_CHECKPOINT");
+    }
+    restoredState =
+      restored === null
+        ? undefined
+        : liveSellProtectionMachine.resolveState({
+            value: restored.machine.value,
+            context: structuredClone(restored.machine.context),
+          });
+  } catch {
+    return {
+      status: "TERMINAL_FAILED",
+      exchangeOrderId: null,
+      fill: null,
+      error: phaseError("reconciliation", "INVALID_RESPONSE", false),
+    };
+  }
+  const actor = createActor(liveSellProtectionMachine, {
+    input: {},
+    ...(restoredState === undefined ? {} : { snapshot: restoredState }),
+  }).start();
+  if (restored === null) {
+    actor.send({
+      type: "SELL_REQUESTED",
+      productId: intent.productId,
+      clientOrderId: intent.clientOrderId,
+      quantity: intent.quantity,
+      permissions,
+    });
+  }
+  let account: CoinbaseAccountSnapshot | null = restored?.account ?? null;
+  let sellSubmission: ConfirmedOrderSubmission | null =
+    restored?.sellSubmission ?? null;
   let protectionPlan: {
     readonly stopLossPrice: number;
     readonly takeProfitPrice: number;
-  } | null = null;
+  } | null = restored?.protectionPlan ?? null;
 
   const sendAccount = (value: CoinbaseAccountSnapshot): void => {
     account = value;
@@ -583,6 +677,45 @@ export const executeCoinbaseProtectedSell = async (
 
   for (let step = 0; step < MAX_CONTROL_STEPS; step += 1) {
     const snapshot = actor.getSnapshot();
+    if (persistence !== undefined) {
+      if (typeof snapshot.value !== "string") {
+        actor.stop();
+        return {
+          status: "TERMINAL_FAILED",
+          exchangeOrderId: snapshot.context.exchangeOrderId,
+          fill: sellSubmission?.fill ?? null,
+          error: {
+            phase: "persistence",
+            code: "PERSISTENCE_FAILURE",
+            retryable: false,
+          },
+        };
+      }
+      const persisted = await persistence.persist(
+        Object.freeze({
+          version: 1 as const,
+          machine: Object.freeze({
+            value: snapshot.value,
+            context: structuredClone(snapshot.context),
+          }),
+          account: account === null ? null : structuredClone(account),
+          sellSubmission:
+            sellSubmission === null ? null : structuredClone(sellSubmission),
+          protectionPlan:
+            protectionPlan === null ? null : structuredClone(protectionPlan),
+        }),
+      );
+      if (!persisted.ok) {
+        actor.stop();
+        return {
+          status: "UNKNOWN",
+          ...(snapshot.context.exchangeOrderId === null
+            ? {}
+            : { exchangeOrderId: snapshot.context.exchangeOrderId }),
+          error: { ...persisted.error, retryable: true },
+        };
+      }
+    }
     switch (snapshot.value) {
       case "cancellingProtections": {
         const cleared = await clearCoinbaseOwnedProtections(
