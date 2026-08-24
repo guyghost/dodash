@@ -1,13 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import { createProductId, type Candle } from "@dodash/domain";
-import { DEFAULT_INDICATOR_CONFIG } from "@dodash/indicators-prolog";
 import { createStrategyRegistry } from "@dodash/strategies";
 
 import * as backtest from "../src/index.js";
 
 const product = createProductId("BTC-USD");
 if (!product.ok) throw new Error("invalid product fixture");
+
+const SUITE_INDICATOR_CONFIG = Object.freeze({
+  rsiPeriod: 2,
+  emaFastPeriod: 2,
+  emaSlowPeriod: 21,
+  atrPeriod: 2,
+  historicalVolatilityPeriod: 2,
+  momentumPeriod: 1,
+  returnPeriods: [1],
+  vwapPeriod: 2,
+  relativeVolumePeriod: 1,
+  volumeSpikeThreshold: 2,
+  volumeTrendPeriod: 2,
+  trendStrengthPeriod: 2,
+});
 
 const linearQuantile = (values: readonly number[], probability: number): number => {
   const sorted = [...values].sort((left, right) => left - right);
@@ -49,7 +63,7 @@ const suiteFixture = () => {
     maxDecisionNotional: 2_000,
     minNetQuantity: 0.000_001,
     targetSignalNotional: 1_000,
-    indicators: DEFAULT_INDICATOR_CONFIG,
+    indicators: SUITE_INDICATOR_CONFIG,
     risk: {
       maxOrderNotional: 2_000,
       maxPositionNotional: 10_000,
@@ -77,20 +91,6 @@ const modeledWorkflowFixture = () => {
     config: {
       ...config,
       runId: "modeled-workflow-run",
-      indicators: {
-        rsiPeriod: 2,
-        emaFastPeriod: 2,
-        emaSlowPeriod: 21,
-        atrPeriod: 2,
-        historicalVolatilityPeriod: 2,
-        momentumPeriod: 1,
-        returnPeriods: [1],
-        vwapPeriod: 2,
-        relativeVolumePeriod: 1,
-        volumeSpikeThreshold: 2,
-        volumeTrendPeriod: 2,
-        trendStrengthPeriod: 2,
-      },
     },
   } satisfies {
     readonly dataset: backtest.HistoricalDataset;
@@ -283,7 +283,7 @@ describe("backtest suite", () => {
   });
 
   it("propage le dataset d’exécution dans le workflow et le rapport", async () => {
-    const { dataset, config } = suiteFixture();
+    const { dataset, config } = modeledWorkflowFixture();
     const executionDataset = executionDatasetFor(dataset);
 
     const result = await backtest.runModeledBacktest(dataset, config, {
