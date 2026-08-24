@@ -2,6 +2,7 @@ CONTROL_API_TOKEN=replace-with-at-least-32-random-characters
 INTERNAL_SERVICE_TOKEN=replace-with-the-market-worker-internal-token
 LIVE_TRADING_ENABLED=false
 COINBASE_API_KEY_ID=organizations/replace/apiKeys/replace
+COINBASE_PORTFOLIO_ID=replace-with-the-dedicated-portfolio-uuid
 COINBASE_API_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----
 replace-with-the-exact-multiline-es256-private-key
 -----END EC PRIVATE KEY-----"

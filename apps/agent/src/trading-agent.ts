@@ -1,10 +1,12 @@
 import { executePaperOrder } from "@dodash/backtest";
 import { err, ok, type OrderIntent, type Result } from "@dodash/domain";
+import type { RiskDecision } from "@dodash/risk";
 import {
   assessLiveTradingAgentIdentity,
   type ControlPermissions,
   resolveDailyRiskWindow,
   type TradingCycleEvent,
+  type LivePreflightFailureReason,
   type WorkflowError,
 } from "@dodash/models";
 import { Agent } from "agents";
@@ -14,14 +16,25 @@ import {
   parseAgentConfiguration,
   type AgentConfiguration,
 } from "./configuration.js";
+import { reconcileCoinbaseAccount } from "./coinbase-account.js";
+import {
+  preflightCoinbaseLive,
+  type CoinbaseLivePreflightReport,
+} from "./coinbase-preflight.js";
+import {
+  executeCoinbaseKill,
+  executeCoinbaseProtectedSell,
+} from "./coinbase-control.js";
 import {
   COINBASE_CREATE_ORDER_PATH,
   coinbaseOrderPath,
+  confirmCoinbaseProtectiveOrder,
   createCoinbaseAuthorization,
   getCoinbaseOrder,
   resolveCoinbaseSettings,
   submitCoinbaseOrder,
   type CoinbaseExecutionSettings,
+  type CoinbaseProtectionPlan,
 } from "./coinbase-execution.js";
 import { runTradingCycle } from "./interpreter.js";
 import { createTradingMachineSession, type PersistedTradingMachine } from "./machine-session.js";
@@ -34,6 +47,10 @@ import {
   type CycleSummary,
   type TradingAgentState,
 } from "./state.js";
+import {
+  emitTradingTelemetry,
+  type TradingTelemetrySink,
+} from "./telemetry.js";
 import type {
   CycleArtifacts,
   ExecutionAuthorization,
@@ -48,6 +65,8 @@ export interface TradingEnv extends Env {
   readonly COINBASE_API_BASE_URL?: string;
   readonly COINBASE_API_KEY_ID?: string;
   readonly COINBASE_API_PRIVATE_KEY?: string;
+  readonly COINBASE_PORTFOLIO_ID?: string;
+  readonly TRADING_TELEMETRY?: TradingTelemetrySink;
 }
 
 export type AgentCommandResult =
@@ -64,6 +83,23 @@ export type AgentCommandResult =
           | "LIVE_EXECUTION_UNAVAILABLE"
           | "NOT_CONFIGURED";
       };
+    };
+
+export type LivePreflightCommandResult =
+  | { readonly ok: true; readonly report: CoinbaseLivePreflightReport }
+  | {
+      readonly ok: false;
+      readonly error: {
+        readonly code:
+          | "CONTROL_PERMISSION_REQUIRED"
+          | "INVALID_CONFIGURATION"
+          | "LIVE_PRODUCT_NOT_ALLOWED"
+          | "LIVE_POLICY_MISMATCH"
+          | "LIVE_AGENT_NAME_MISMATCH"
+          | "PREFLIGHT_UNAVAILABLE"
+          | LivePreflightFailureReason;
+      };
+      readonly report?: CoinbaseLivePreflightReport;
     };
 
 const storageError = (retryable = true): WorkflowError => ({
@@ -88,6 +124,19 @@ const reconciliationError = (retryable = true): WorkflowError => ({
   code: "RECONCILIATION_FAILURE",
   retryable,
 });
+
+type ApprovedRiskDecision = Extract<
+  RiskDecision,
+  { readonly status: "APPROVED" }
+>;
+
+const protectionFromRisk = (
+  riskDecision: ApprovedRiskDecision,
+): CoinbaseProtectionPlan =>
+  Object.freeze({
+    stopLossPrice: riskDecision.stopLossPrice,
+    takeProfitPrice: riskDecision.takeProfitPrice,
+  });
 
 const parseJson = <T>(raw: string): T | null => {
   try {
@@ -224,12 +273,79 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     return { ok: true, state: this.state };
   }
 
+  async preflightLive(
+    configurationInput: unknown,
+    permissions: ControlPermissions,
+  ): Promise<LivePreflightCommandResult> {
+    const startedAt = Date.now();
+    if (!permissions.canControl) {
+      return { ok: false, error: { code: "CONTROL_PERMISSION_REQUIRED" } };
+    }
+    this.ensureTradingPersistenceSchema();
+    const configuration = parseAgentConfiguration(configurationInput);
+    if (!configuration.ok || configuration.value.executionMode !== "live") {
+      return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+    }
+    const admission = admitAgentConfiguration(configuration.value);
+    if (admission.status === "REJECTED") {
+      return { ok: false, error: { code: admission.reasonCode } };
+    }
+    const identityAdmission = assessLiveTradingAgentIdentity(
+      configuration.value.productId,
+      this.name,
+    );
+    if (identityAdmission.status === "REJECTED") {
+      return { ok: false, error: { code: identityAdmission.reasonCode } };
+    }
+    const protections = this.loadKnownProtectiveOrderIds();
+    if (!protections.ok) {
+      return { ok: false, error: { code: "PREFLIGHT_UNAVAILABLE" } };
+    }
+    const report = await preflightCoinbaseLive(
+      this.env,
+      configuration.value.productId,
+      protections.value,
+    );
+    emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
+      schemaVersion: 1,
+      type: "preflight.completed",
+      timestamp: Date.now(),
+      agentId: this.name,
+      productId: configuration.value.productId,
+      executionMode: "live",
+      phase: "preflight",
+      outcome: report.assessment.status,
+      errorCode:
+        report.assessment.status === "REJECTED"
+          ? report.assessment.reasonCode
+          : null,
+      latencyMs: Math.max(0, Date.now() - startedAt),
+      dailyPnl: null,
+      accountEquity: null,
+      positionQuantity: null,
+      otherExposureNotional: null,
+      executionObserved: false,
+      openOrderCount: report.openOrderCount,
+    });
+    return report.assessment.status === "APPROVED"
+      ? { ok: true, report }
+      : {
+          ok: false,
+          error: { code: report.assessment.reasonCode },
+          report,
+        };
+  }
+
   async stopAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
     return this.control({ type: "STOP_REQUESTED", permissions });
   }
 
   async killAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
-    return this.control({ type: "KILL_SWITCH_ENGAGED", permissions });
+    return this.control({
+      type: "KILL_SWITCH_ENGAGED",
+      permissions,
+      controlId: crypto.randomUUID(),
+    });
   }
 
   async resetAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
@@ -285,6 +401,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   private async control(event: TradingCycleEvent): Promise<AgentCommandResult> {
+    const startedAt = Date.now();
     this.ensureTradingPersistenceSchema();
     if (this.state.machine === null || this.state.configuration === null) {
       return { ok: false, error: { code: "NOT_CONFIGURED" } };
@@ -309,6 +426,27 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     session.stop();
     await this.persistMachine(machine);
     await this.runCurrent(false, resumeCycleId);
+    emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
+      schemaVersion: 1,
+      type: "control.completed",
+      timestamp: Date.now(),
+      agentId: this.name,
+      productId: this.state.configuration.productId,
+      executionMode: this.state.configuration.executionMode,
+      phase: this.state.machine?.value ?? machine.value,
+      outcome: this.state.machine?.context.outcome ?? machine.context.outcome,
+      errorCode:
+        this.state.machine?.context.lastError?.code ??
+        machine.context.lastError?.code ??
+        null,
+      latencyMs: Math.max(0, Date.now() - startedAt),
+      dailyPnl: this.state.dailyPnl,
+      accountEquity: null,
+      positionQuantity: this.state.portfolio.positionQuantity,
+      otherExposureNotional: null,
+      executionObserved: false,
+      openOrderCount: null,
+    });
     return { ok: true, state: this.state };
   }
 
@@ -316,6 +454,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     triggerAlarm: boolean,
     resumeCycleIdOverride?: string | null,
   ): Promise<void> {
+    const startedAt = Date.now();
     const configuration = this.state.configuration;
     const machine = this.state.machine;
     if (configuration === null || machine === null) return;
@@ -349,6 +488,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       previousIndicators: this.state.previousIndicators,
       portfolio: this.state.portfolio,
       dailyPnl: dailyRiskAtStart.dailyPnl,
+      dailyRiskWindow: dailyRiskAtStart.window,
       lastTradeAt: this.state.lastTradeAt,
       triggeredAt: identity.triggeredAt,
       cycleId: identity.cycleId,
@@ -361,11 +501,17 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       lastPrice === null
         ? startingEquity
         : result.portfolio.cash + result.portfolio.positionQuantity * lastPrice;
-    const dailyRisk = resolveDailyRiskWindow(
-      dailyRiskAtStart.window,
-      identity.triggeredAt,
-      equity,
-    );
+    const dailyRisk =
+      configuration.executionMode === "live" && result.accountEquity !== null
+        ? {
+            window: result.dailyRiskWindow,
+            dailyPnl: result.dailyPnl,
+          }
+        : resolveDailyRiskWindow(
+            result.dailyRiskWindow,
+            identity.triggeredAt,
+            equity,
+          );
     const executed = result.artifacts?.execution !== undefined;
     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
     this.setState({
@@ -383,6 +529,27 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       updatedAt: Date.now(),
     });
 
+    if (result.artifacts !== null) {
+      emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
+        schemaVersion: 1,
+        type: "cycle.completed",
+        timestamp: Date.now(),
+        agentId: this.name,
+        productId: configuration.productId,
+        executionMode: configuration.executionMode,
+        phase: result.machine.value,
+        outcome: result.machine.context.outcome,
+        errorCode: result.machine.context.lastError?.code ?? null,
+        latencyMs: Math.max(0, Date.now() - startedAt),
+        dailyPnl: dailyRisk.dailyPnl,
+        accountEquity: result.accountEquity,
+        positionQuantity: result.portfolio.positionQuantity,
+        otherExposureNotional: result.otherExposureNotional,
+        executionObserved: executed,
+        openOrderCount: null,
+      });
+    }
+
     if (!machineIsEnabled(result.machine.value)) {
       await this.removeIntervalSchedule();
     }
@@ -394,6 +561,26 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         ? resolveCoinbaseSettings(this.env)
         : null;
     return {
+      reconcileAccount: async (portfolio, observedAt) => {
+        if (configuration.executionMode === "paper") {
+          return ok({
+            snapshotId: `paper:${this.name}:${observedAt}`,
+            observedAt,
+            portfolio,
+            accountEquity:
+              portfolio.cash +
+              portfolio.positionQuantity * portfolio.averagePrice,
+            otherExposureNotional: 0,
+          });
+        }
+        if (liveSettings === null || !liveSettings.ok) {
+          return err(reconciliationError(false));
+        }
+        return reconcileCoinbaseAccount(
+          liveSettings.value,
+          configuration.productId,
+        );
+      },
       fetchMarketData: async (config, triggeredAt) =>
         fetchMarketSnapshot(
           this.env.MARKET_DATA,
@@ -431,7 +618,14 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           COINBASE_CREATE_ORDER_PATH,
         );
       },
-      submitOrder: async (intent, authorization, marketPrice, portfolio, at) => {
+      submitOrder: async (
+        intent,
+        riskDecision,
+        authorization,
+        marketPrice,
+        portfolio,
+        at,
+      ) => {
         if (configuration.executionMode === "paper") {
           return this.submitPaperOrder(
             intent,
@@ -447,20 +641,67 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
             error: authenticationError(),
           };
         }
-        return this.submitLiveOrder(liveSettings.value, intent, authorization);
+        return this.submitLiveOrder(
+          liveSettings.value,
+          intent,
+          riskDecision,
+          authorization,
+        );
       },
-      reconcileOrder: async (intent, portfolio) => {
+      reconcileOrder: async (intent, riskDecision, portfolio) => {
         if (configuration.executionMode === "paper") {
           return this.reconcilePaperOrder(intent);
         }
         if (liveSettings === null || !liveSettings.ok) {
           return err(reconciliationError());
         }
-        return this.reconcileLiveOrder(liveSettings.value, intent, portfolio);
+        return this.reconcileLiveOrder(
+          liveSettings.value,
+          intent,
+          riskDecision,
+          portfolio,
+        );
       },
-      cancelCurrentEffect: async () => {
+      cancelCurrentEffect: async (shutdownMode) => {
         try {
           await this.removeIntervalSchedule();
+          if (
+            shutdownMode === "kill-switch" &&
+            configuration.executionMode === "live"
+          ) {
+            if (
+              liveSettings === null ||
+              !liveSettings.ok ||
+              this.state.machine?.context.killRequestId == null
+            ) {
+              return err({
+                phase: "cancellation",
+                code: "CANCELLATION_FAILURE",
+                retryable: false,
+              });
+            }
+            const killed = await executeCoinbaseKill(
+              liveSettings.value,
+              configuration.productId,
+              this.state.machine.context.permissions,
+              `kill-${this.state.machine.context.killRequestId}`,
+            );
+            if (!killed.ok) {
+              return err({ ...killed.error, phase: "cancellation" });
+            }
+            const dailyRisk = resolveDailyRiskWindow(
+              this.state.dailyRiskWindow,
+              killed.value.observedAt,
+              killed.value.accountEquity,
+            );
+            this.setState({
+              ...this.state,
+              portfolio: killed.value.portfolio,
+              dailyRiskWindow: dailyRisk.window,
+              dailyPnl: dailyRisk.dailyPnl,
+              updatedAt: Date.now(),
+            });
+          }
           return ok(undefined);
         } catch {
           return err({
@@ -667,6 +908,30 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     return row?.exchange_order_id ?? null;
   }
 
+  private loadKnownProtectiveOrderIds(): Result<readonly string[], WorkflowError> {
+    try {
+      const rows = this.sql<{ execution_json: string }>`
+        SELECT execution_json FROM dodash_orders
+        WHERE execution_json IS NOT NULL
+      `;
+      const orderIds = new Set<string>();
+      for (const row of rows) {
+        const submission = parseJson<OrderSubmission>(row.execution_json);
+        if (
+          submission !== null &&
+          "protectiveOrderId" in submission &&
+          typeof submission.protectiveOrderId === "string" &&
+          submission.protectiveOrderId.length > 0
+        ) {
+          orderIds.add(submission.protectiveOrderId);
+        }
+      }
+      return ok(Object.freeze([...orderIds]));
+    } catch {
+      return err(storageError(false));
+    }
+  }
+
   private persistLiveOrderResult(
     intent: OrderIntent,
     submission: OrderSubmission,
@@ -679,6 +944,12 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       const status =
         submission.status === "CONFIRMED"
           ? "CONFIRMED"
+          : submission.status === "PROTECTION_FAILED"
+            ? "PROTECTION_FAILED"
+          : submission.status === "TERMINAL_FAILED"
+            ? "TERMINAL_FAILED"
+          : submission.status === "NO_SELL_NEEDED"
+            ? "NO_SELL_NEEDED"
           : submission.status === "REJECTED"
             ? "REJECTED"
             : exchangeOrderId === null
@@ -704,9 +975,43 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   private async submitLiveOrder(
     settings: CoinbaseExecutionSettings,
     intent: OrderIntent,
+    riskDecision: ApprovedRiskDecision,
     authorization: ExecutionAuthorization,
   ): Promise<OrderSubmission> {
-    const submission = await submitCoinbaseOrder(settings, intent, authorization);
+    const protection = protectionFromRisk(riskDecision);
+    let submission: OrderSubmission;
+    if (intent.side === "SELL") {
+      const protectiveOrderIds = this.loadKnownProtectiveOrderIds();
+      if (!protectiveOrderIds.ok) {
+        return {
+          status: "TERMINAL_FAILED",
+          exchangeOrderId: null,
+          fill: null,
+          error: protectiveOrderIds.error,
+        };
+      }
+      submission = await executeCoinbaseProtectedSell(
+        settings,
+        intent,
+        this.state.machine?.context.permissions ?? {
+          canControl: false,
+          canTrade: false,
+        },
+        protectiveOrderIds.value,
+        {
+          stopLossBps: this.state.configuration?.risk.stopLossBps ?? 0,
+          takeProfitBps: this.state.configuration?.risk.takeProfitBps ?? 0,
+        },
+      );
+    } else {
+      submission = await submitCoinbaseOrder(
+        settings,
+        intent,
+        authorization,
+        {},
+        protection,
+      );
+    }
     const persisted = this.persistLiveOrderResult(intent, submission);
     if (persisted.ok || submission.status !== "UNKNOWN") return submission;
     return {
@@ -718,8 +1023,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   private async reconcileLiveOrder(
     settings: CoinbaseExecutionSettings,
     intent: OrderIntent,
+    riskDecision: ApprovedRiskDecision,
     portfolio: TradingAgentState["portfolio"],
   ): Promise<Result<OrderSubmission, WorkflowError>> {
+    const protection = protectionFromRisk(riskDecision);
     let exchangeOrderId = this.loadExchangeOrderId(intent.clientOrderId);
     if (exchangeOrderId === null) {
       const replayAuthorization = createCoinbaseAuthorization(
@@ -733,6 +1040,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         settings,
         intent,
         replayAuthorization.value,
+        {},
+        intent.side === "BUY" ? protection : undefined,
       );
       if (replay.status === "REJECTED") {
         const persisted = this.persistLiveOrderResult(intent, replay);
@@ -742,6 +1051,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         const persisted = this.persistLiveOrderResult(intent, replay);
         return persisted.ok ? ok(replay) : err(reconciliationError());
       }
+      if (replay.status !== "UNKNOWN") return err(reconciliationError(false));
       exchangeOrderId = replay.exchangeOrderId ?? null;
       if (exchangeOrderId === null) return err(reconciliationError());
       if (!this.persistLiveOrderResult(intent, replay).ok) {
@@ -762,8 +1072,60 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       exchangeOrderId,
       lookupAuthorization.value,
       portfolio,
+      {},
+      intent.side === "BUY" ? protection : undefined,
     );
     if (!reconciled.ok) return reconciled;
+    if (
+      intent.side === "BUY" &&
+      reconciled.value.status === "CONFIRMED"
+    ) {
+      const protectiveOrderId = reconciled.value.protectiveOrderId;
+      if (protectiveOrderId === undefined) {
+        return err(reconciliationError(false));
+      }
+      const confirmedProtection =
+        reconciled.value.fill === null
+          ? err({
+              phase: "reconciliation" as const,
+              code: "INVALID_RESPONSE" as const,
+              retryable: false,
+            })
+          : await confirmCoinbaseProtectiveOrder(
+              settings,
+              intent.productId,
+              protectiveOrderId,
+              protection,
+              {},
+              reconciled.value.fill.quantity,
+            );
+      if (!confirmedProtection.ok) {
+        const killed = await executeCoinbaseKill(
+          settings,
+          intent.productId,
+          { canControl: true, canTrade: true },
+          `protection-${intent.clientOrderId}`,
+        );
+        if (!killed.ok) {
+          return err({ ...killed.error, phase: "reconciliation" });
+        }
+        const protectionFailure: OrderSubmission = {
+          status: "PROTECTION_FAILED",
+          exchangeOrderId: reconciled.value.exchangeOrderId,
+          portfolio: killed.value.portfolio,
+          fill: reconciled.value.fill,
+          protectiveOrderId,
+          accountEquity: killed.value.accountEquity,
+          otherExposureNotional: killed.value.otherExposureNotional,
+          observedAt: killed.value.observedAt,
+          error: { ...confirmedProtection.error, retryable: false },
+        };
+        if (!this.persistLiveOrderResult(intent, protectionFailure).ok) {
+          return err(reconciliationError());
+        }
+        return ok(protectionFailure);
+      }
+    }
     if (!this.persistLiveOrderResult(intent, reconciled.value).ok) {
       return err(reconciliationError());
     }

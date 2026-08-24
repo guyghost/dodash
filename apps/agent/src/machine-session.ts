@@ -42,8 +42,12 @@ export const createTradingMachineSession = (
           ...persisted,
           context: {
             ...persisted.context,
+            accountSnapshotId: persisted.context.accountSnapshotId ?? null,
             lastDecisionCandleClosedAt:
               persisted.context.lastDecisionCandleClosedAt ?? null,
+            killRequestId: persisted.context.killRequestId ?? null,
+            killCompleted: persisted.context.killCompleted ?? false,
+            terminalFailure: persisted.context.terminalFailure ?? false,
           },
         };
   const restored =

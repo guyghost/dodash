@@ -2,6 +2,8 @@ export type QualityGateSource = "pre-commit" | "pre-push" | "ci";
 
 export type QualityGateStage =
   | "environment"
+  | "dependency-audit"
+  | "secret-scan"
   | "check"
   | "test"
   | "build"
@@ -9,6 +11,8 @@ export type QualityGateStage =
 
 export type QualityGateErrorCode =
   | "ENVIRONMENT_INVALID"
+  | "DEPENDENCY_AUDIT_FAILED"
+  | "SECRET_SCAN_FAILED"
   | "CHECK_FAILED"
   | "TEST_FAILED"
   | "BUILD_FAILED"
@@ -28,6 +32,10 @@ export type QualityGateEvent =
   | { type: "GATE_REQUESTED"; source: QualityGateSource }
   | { type: "ENVIRONMENT_VALIDATED" }
   | { type: "ENVIRONMENT_FAILED" }
+  | { type: "DEPENDENCY_AUDIT_PASSED" }
+  | { type: "DEPENDENCY_AUDIT_FAILED" }
+  | { type: "SECRET_SCAN_PASSED" }
+  | { type: "SECRET_SCAN_FAILED" }
   | { type: "CHECK_PASSED" }
   | { type: "CHECK_FAILED" }
   | { type: "TESTS_PASSED" }

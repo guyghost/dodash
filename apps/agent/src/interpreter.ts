@@ -11,7 +11,13 @@ import {
   createRsiReversionStrategy,
   createStrategyRegistry,
 } from "@dodash/strategies";
-import type { TradingCycleEvent, WorkflowError, WorkflowErrorCode, WorkflowPhase } from "@dodash/models";
+import {
+  resolveDailyRiskWindow,
+  type TradingCycleEvent,
+  type WorkflowError,
+  type WorkflowErrorCode,
+  type WorkflowPhase,
+} from "@dodash/models";
 import type { Timeframe } from "@dodash/domain";
 import type { Strategy } from "@dodash/strategies";
 
@@ -117,6 +123,21 @@ export const runTradingCycle = async (
   let portfolio = input.portfolio;
   let authorization: ExecutionAuthorization | undefined;
   let alarmTriggered = false;
+  let dailyRiskWindow = input.dailyRiskWindow ?? null;
+  let dailyPnl = input.dailyPnl;
+  let accountEquity: number | null = null;
+  let otherExposureNotional = 0;
+
+  const currentResult = (): RunTradingCycleResult => ({
+    machine: session.record,
+    artifacts,
+    previousIndicators,
+    portfolio,
+    dailyRiskWindow,
+    dailyPnl,
+    accountEquity,
+    otherExposureNotional,
+  });
 
   const send = async (event: TradingCycleEvent): Promise<void> => {
     session.send(event);
@@ -140,11 +161,11 @@ export const runTradingCycle = async (
         case "stopped":
         case "failed":
         case "halted":
-          return { machine: session.record, artifacts, previousIndicators, portfolio };
+          return currentResult();
 
         case "waiting":
           if (!input.triggerAlarm || alarmTriggered) {
-            return { machine: session.record, artifacts, previousIndicators, portfolio };
+            return currentResult();
           }
           artifacts = Object.freeze({
             cycleId: input.cycleId,
@@ -175,9 +196,39 @@ export const runTradingCycle = async (
         case "retryingAuthorization":
         case "retryingExecution":
         case "retryingReconciliation":
+        case "retryingAccountReconciliation":
         case "retryingPersistence":
           await send({ type: "RETRY_TIMER_ELAPSED" });
           break;
+
+        case "reconcilingAccount": {
+          const result = await input.effects.reconcileAccount(
+            portfolio,
+            artifacts?.triggeredAt ?? input.triggeredAt,
+          );
+          if (!result.ok) {
+            await send({
+              type: "ACCOUNT_RECONCILIATION_FAILED",
+              error: result.error,
+            });
+            break;
+          }
+          portfolio = result.value.portfolio;
+          accountEquity = result.value.accountEquity;
+          otherExposureNotional = result.value.otherExposureNotional;
+          const dailyRisk = resolveDailyRiskWindow(
+            dailyRiskWindow,
+            result.value.observedAt,
+            result.value.accountEquity,
+          );
+          dailyRiskWindow = dailyRisk.window;
+          dailyPnl = dailyRisk.dailyPnl;
+          await send({
+            type: "ACCOUNT_RECONCILED",
+            snapshotId: result.value.snapshotId,
+          });
+          break;
+        }
 
         case "fetchingMarketData": {
           const result = await input.effects.fetchMarketData(
@@ -340,8 +391,8 @@ export const runTradingCycle = async (
             {
               marketPrice: price,
               currentPositionQuantity: portfolio.positionQuantity,
-              otherExposureNotional: 0,
-              dailyPnl: input.dailyPnl,
+              otherExposureNotional,
+              dailyPnl,
               lastTradeAt: input.lastTradeAt,
               now: current.triggeredAt,
               killSwitchActive: session.context.shutdownMode === "kill-switch",
@@ -415,10 +466,12 @@ export const runTradingCycle = async (
         case "submittingOrder": {
           const current = artifacts;
           const order = current?.order;
+          const risk = current?.risk;
           const price = current?.market?.candles.at(-1)?.close;
           if (
             current === null ||
             order === undefined ||
+            risk?.status !== "APPROVED" ||
             price === undefined ||
             authorization === undefined
           ) {
@@ -430,6 +483,7 @@ export const runTradingCycle = async (
           }
           const result = await input.effects.submitOrder(
             order,
+            risk,
             authorization,
             price,
             portfolio,
@@ -438,11 +492,29 @@ export const runTradingCycle = async (
           authorization = undefined;
           if (result.status === "CONFIRMED") {
             portfolio = result.portfolio;
+            if (
+              result.accountEquity !== undefined &&
+              result.otherExposureNotional !== undefined &&
+              result.observedAt !== undefined
+            ) {
+              accountEquity = result.accountEquity;
+              otherExposureNotional = result.otherExposureNotional;
+              const dailyRisk = resolveDailyRiskWindow(
+                dailyRiskWindow,
+                result.observedAt,
+                result.accountEquity,
+              );
+              dailyRiskWindow = dailyRisk.window;
+              dailyPnl = dailyRisk.dailyPnl;
+            }
             const next = Object.freeze({
               ...current,
               execution: {
                 exchangeOrderId: result.exchangeOrderId,
                 fill: result.fill,
+                ...(result.protectiveOrderId === undefined
+                  ? {}
+                  : { protectiveOrderId: result.protectiveOrderId }),
               },
             });
             if (
@@ -459,6 +531,63 @@ export const runTradingCycle = async (
             });
           } else if (result.status === "REJECTED") {
             await send({ type: "ORDER_REJECTED", error: result.error });
+          } else if (result.status === "NO_SELL_NEEDED") {
+            portfolio = result.portfolio;
+            accountEquity = result.accountEquity;
+            otherExposureNotional = result.otherExposureNotional;
+            const dailyRisk = resolveDailyRiskWindow(
+              dailyRiskWindow,
+              result.observedAt,
+              result.accountEquity,
+            );
+            dailyRiskWindow = dailyRisk.window;
+            dailyPnl = dailyRisk.dailyPnl;
+            await send({ type: "ORDER_NO_LONGER_NEEDED" });
+          } else if (result.status === "PROTECTION_FAILED") {
+            portfolio = result.portfolio;
+            accountEquity = result.accountEquity;
+            otherExposureNotional = result.otherExposureNotional;
+            const dailyRisk = resolveDailyRiskWindow(
+              dailyRiskWindow,
+              result.observedAt,
+              result.accountEquity,
+            );
+            dailyRiskWindow = dailyRisk.window;
+            dailyPnl = dailyRisk.dailyPnl;
+            artifacts = Object.freeze({
+              ...current,
+              ...(result.exchangeOrderId === null
+                ? {}
+                : {
+                    execution: {
+                      exchangeOrderId: result.exchangeOrderId,
+                      fill: result.fill,
+                      ...(result.protectiveOrderId === undefined
+                        ? {}
+                        : { protectiveOrderId: result.protectiveOrderId }),
+                    },
+                  }),
+            });
+            await send({
+              type: "ORDER_PROTECTION_FAILED",
+              exchangeOrderId: result.exchangeOrderId,
+              error: result.error,
+            });
+          } else if (result.status === "TERMINAL_FAILED") {
+            if (result.exchangeOrderId !== null) {
+              artifacts = Object.freeze({
+                ...current,
+                execution: {
+                  exchangeOrderId: result.exchangeOrderId,
+                  fill: result.fill,
+                },
+              });
+            }
+            await send({
+              type: "ORDER_PROTECTION_FAILED",
+              exchangeOrderId: result.exchangeOrderId,
+              error: result.error,
+            });
           } else {
             await send({ type: "ORDER_OUTCOME_UNKNOWN", error: result.error });
           }
@@ -466,25 +595,50 @@ export const runTradingCycle = async (
         }
 
         case "reconcilingOrder": {
-          if (artifacts?.order === undefined) {
+          if (
+            artifacts?.order === undefined ||
+            artifacts.risk?.status !== "APPROVED"
+          ) {
             await send({
               type: "RECONCILIATION_FAILED",
               error: missingArtifact("reconciliation"),
             });
             break;
           }
-          const result = await input.effects.reconcileOrder(artifacts.order, portfolio);
+          const result = await input.effects.reconcileOrder(
+            artifacts.order,
+            artifacts.risk,
+            portfolio,
+          );
           if (!result.ok) {
             await send({ type: "RECONCILIATION_FAILED", error: result.error });
             break;
           }
           if (result.value.status === "CONFIRMED") {
             portfolio = result.value.portfolio;
+            if (
+              result.value.accountEquity !== undefined &&
+              result.value.otherExposureNotional !== undefined &&
+              result.value.observedAt !== undefined
+            ) {
+              accountEquity = result.value.accountEquity;
+              otherExposureNotional = result.value.otherExposureNotional;
+              const dailyRisk = resolveDailyRiskWindow(
+                dailyRiskWindow,
+                result.value.observedAt,
+                result.value.accountEquity,
+              );
+              dailyRiskWindow = dailyRisk.window;
+              dailyPnl = dailyRisk.dailyPnl;
+            }
             const next = Object.freeze({
               ...artifacts,
               execution: {
                 exchangeOrderId: result.value.exchangeOrderId,
                 fill: result.value.fill,
+                ...(result.value.protectiveOrderId === undefined
+                  ? {}
+                  : { protectiveOrderId: result.value.protectiveOrderId }),
               },
             });
             if (
@@ -501,6 +655,63 @@ export const runTradingCycle = async (
             });
           } else if (result.value.status === "REJECTED") {
             await send({ type: "ORDER_RECONCILED", exchangeOrderId: null });
+          } else if (result.value.status === "NO_SELL_NEEDED") {
+            portfolio = result.value.portfolio;
+            accountEquity = result.value.accountEquity;
+            otherExposureNotional = result.value.otherExposureNotional;
+            const dailyRisk = resolveDailyRiskWindow(
+              dailyRiskWindow,
+              result.value.observedAt,
+              result.value.accountEquity,
+            );
+            dailyRiskWindow = dailyRisk.window;
+            dailyPnl = dailyRisk.dailyPnl;
+            await send({ type: "ORDER_NO_LONGER_NEEDED" });
+          } else if (result.value.status === "PROTECTION_FAILED") {
+            portfolio = result.value.portfolio;
+            accountEquity = result.value.accountEquity;
+            otherExposureNotional = result.value.otherExposureNotional;
+            const dailyRisk = resolveDailyRiskWindow(
+              dailyRiskWindow,
+              result.value.observedAt,
+              result.value.accountEquity,
+            );
+            dailyRiskWindow = dailyRisk.window;
+            dailyPnl = dailyRisk.dailyPnl;
+            artifacts = Object.freeze({
+              ...artifacts,
+              ...(result.value.exchangeOrderId === null
+                ? {}
+                : {
+                    execution: {
+                      exchangeOrderId: result.value.exchangeOrderId,
+                      fill: result.value.fill,
+                      ...(result.value.protectiveOrderId === undefined
+                        ? {}
+                        : { protectiveOrderId: result.value.protectiveOrderId }),
+                    },
+                  }),
+            });
+            await send({
+              type: "ORDER_PROTECTION_FAILED",
+              exchangeOrderId: result.value.exchangeOrderId,
+              error: result.value.error,
+            });
+          } else if (result.value.status === "TERMINAL_FAILED") {
+            if (result.value.exchangeOrderId !== null) {
+              artifacts = Object.freeze({
+                ...artifacts,
+                execution: {
+                  exchangeOrderId: result.value.exchangeOrderId,
+                  fill: result.value.fill,
+                },
+              });
+            }
+            await send({
+              type: "ORDER_PROTECTION_FAILED",
+              exchangeOrderId: result.value.exchangeOrderId,
+              error: result.value.error,
+            });
           } else {
             await send({
               type: "RECONCILIATION_FAILED",
@@ -511,7 +722,9 @@ export const runTradingCycle = async (
         }
 
         case "cancelling": {
-          const result = await input.effects.cancelCurrentEffect();
+          const result = await input.effects.cancelCurrentEffect(
+            session.context.shutdownMode,
+          );
           await send(
             result.ok
               ? { type: "EFFECT_CANCELLED" }

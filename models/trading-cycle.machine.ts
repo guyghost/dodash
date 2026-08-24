@@ -45,7 +45,9 @@ export const tradingCycleMachine = setup({
       (event.type === "STOP_REQUESTED" ||
         event.type === "KILL_SWITCH_ENGAGED" ||
         event.type === "RESET") &&
-      event.permissions.canControl,
+      event.permissions.canControl &&
+      (event.type !== "KILL_SWITCH_ENGAGED" ||
+        event.controlId.trim().length > 0),
     isNewAlarm: ({ context, event }) =>
       event.type === "ALARM_FIRED" && event.cycleId !== context.cycleId,
     isDuplicateDecisionCandle: ({ context, event }) =>
@@ -89,6 +91,10 @@ export const tradingCycleMachine = setup({
       event.type === "RECONCILIATION_FAILED" &&
       event.error.retryable &&
       context.attempts.reconciliation < context.retryLimits.reconciliation,
+    shouldRetryAccountReconciliation: ({ context, event }) =>
+      event.type === "ACCOUNT_RECONCILIATION_FAILED" &&
+      event.error.retryable &&
+      context.attempts.reconciliation < context.retryLimits.reconciliation,
     shouldRetryPersistence: ({ context, event }) =>
       event.type === "PERSIST_FAILED" &&
       event.error.retryable &&
@@ -97,8 +103,11 @@ export const tradingCycleMachine = setup({
     shouldStopAfterPersistence: ({ context }) =>
       context.shutdownMode === "stop",
     shouldHaltAfterPersistence: ({ context }) =>
-      context.shutdownMode === "kill-switch" ||
+      (context.shutdownMode === "kill-switch" && context.killCompleted) ||
       context.shutdownMode === "permission-revoked",
+    shouldExecuteKillAfterPersistence: ({ context }) =>
+      context.shutdownMode === "kill-switch" && !context.killCompleted,
+    shouldFailAfterPersistence: ({ context }) => context.terminalFailure,
   },
   actions: {
     initializeRun: assign(({ context, event }) => {
@@ -106,7 +115,9 @@ export const tradingCycleMachine = setup({
       return {
         permissions: event.permissions,
         shutdownMode: "none" as const,
+        killCompleted: false,
         outcome: "IDLE" as const,
+        terminalFailure: false,
         lastError: null,
         attempts: { ...context.attempts, schedule: 0 },
       };
@@ -145,6 +156,7 @@ export const tradingCycleMachine = setup({
             triggeredAt: event.triggeredAt,
             nextWakeAt: null,
             marketSnapshotId: null,
+            accountSnapshotId: null,
             indicatorsId: null,
             signalsId: null,
             decisionId: null,
@@ -152,7 +164,9 @@ export const tradingCycleMachine = setup({
             exchangeOrderId: null,
             orderMayBeInFlight: false,
             authorizationExpiresAt: null,
+            killCompleted: false,
             outcome: "RUNNING" as const,
+            terminalFailure: false,
             lastError: null,
             attempts: emptyAttempts(),
           }
@@ -171,6 +185,14 @@ export const tradingCycleMachine = setup({
             marketSnapshotId: event.snapshotId,
             lastDecisionCandleClosedAt: event.candleClosedAt,
             attempts: { ...context.attempts, marketData: 0 },
+          }
+        : {},
+    ),
+    recordAccountReconciliation: assign(({ context, event }) =>
+      event.type === "ACCOUNT_RECONCILED"
+        ? {
+            accountSnapshotId: event.snapshotId,
+            attempts: { ...context.attempts, reconciliation: 0 },
           }
         : {},
     ),
@@ -242,6 +264,21 @@ export const tradingCycleMachine = setup({
       orderMayBeInFlight: false,
       outcome: "ORDER_REJECTED",
     }),
+    recordOrderNoLongerNeeded: assign({
+      orderMayBeInFlight: false,
+      outcome: "NO_ACTION",
+    }),
+    recordProtectionFailure: assign(({ event }) =>
+      event.type === "ORDER_PROTECTION_FAILED"
+        ? {
+            exchangeOrderId: event.exchangeOrderId,
+            orderMayBeInFlight: false,
+            outcome: "FAILED" as const,
+            terminalFailure: true,
+            lastError: event.error,
+          }
+        : {},
+    ),
     recordReconciliation: assign(({ event }) =>
       event.type === "ORDER_RECONCILED"
         ? {
@@ -255,7 +292,15 @@ export const tradingCycleMachine = setup({
         : {},
     ),
     requestStop: assign({ shutdownMode: "stop" }),
-    requestKillSwitch: assign({ shutdownMode: "kill-switch" }),
+    requestKillSwitch: assign(({ event }) =>
+      event.type === "KILL_SWITCH_ENGAGED"
+        ? {
+            shutdownMode: "kill-switch" as const,
+            killRequestId: event.controlId,
+            killCompleted: false,
+          }
+        : {},
+    ),
     revokePermission: assign(({ context }) => ({
       permissions: { ...context.permissions, canTrade: false },
       shutdownMode: "permission-revoked" as const,
@@ -265,10 +310,12 @@ export const tradingCycleMachine = setup({
         retryable: false,
       },
     })),
-    markCancelled: assign({
-      outcome: "CANCELLED",
+    markCancelled: assign(({ context }) => ({
+      outcome: "CANCELLED" as const,
       orderMayBeInFlight: false,
-    }),
+      killCompleted:
+        context.shutdownMode === "kill-switch" || context.killCompleted,
+    })),
     recordError: assign(({ event }) => ({ lastError: eventError(event) })),
     markFailed: assign({ outcome: "FAILED" }),
     incrementScheduleAttempt: assign(({ context }) => ({
@@ -315,6 +362,7 @@ export const tradingCycleMachine = setup({
       triggeredAt: null,
       nextWakeAt: null,
       marketSnapshotId: null,
+      accountSnapshotId: null,
       indicatorsId: null,
       signalsId: null,
       decisionId: null,
@@ -323,7 +371,10 @@ export const tradingCycleMachine = setup({
       orderMayBeInFlight: false,
       authorizationExpiresAt: null,
       shutdownMode: "none" as const,
+      killRequestId: null,
+      killCompleted: false,
       outcome: "IDLE" as const,
+      terminalFailure: false,
       lastError: null,
       attempts: emptyAttempts(),
       retryLimits: context.retryLimits,
@@ -339,6 +390,7 @@ export const tradingCycleMachine = setup({
     triggeredAt: null,
     nextWakeAt: null,
     marketSnapshotId: null,
+    accountSnapshotId: null,
     lastDecisionCandleClosedAt: input.lastDecisionCandleClosedAt ?? null,
     indicatorsId: null,
     signalsId: null,
@@ -348,7 +400,10 @@ export const tradingCycleMachine = setup({
     orderMayBeInFlight: false,
     authorizationExpiresAt: null,
     shutdownMode: "none",
+    killRequestId: null,
+    killCompleted: false,
     outcome: "IDLE",
+    terminalFailure: false,
     lastError: null,
     maxMarketStalenessMs: input.maxMarketStalenessMs ?? 90_000,
     retryLimits: { ...defaultRetryLimits, ...input.retryLimits },
@@ -380,7 +435,7 @@ export const tradingCycleMachine = setup({
         KILL_SWITCH_ENGAGED: [
           {
             guard: "canControl",
-            target: "halted",
+            target: "cancelling",
             actions: "requestKillSwitch",
           },
           { actions: "recordControlDenied" },
@@ -425,12 +480,42 @@ export const tradingCycleMachine = setup({
         ALARM_FIRED: [
           {
             guard: "isNewAlarm",
-            target: "fetchingMarketData",
+            target: "reconcilingAccount",
             actions: "beginCycle",
           },
           { actions: "recordDuplicateAlarm" },
         ],
       },
+    },
+    reconcilingAccount: {
+      always: {
+        guard: "shutdownRequested",
+        target: "cancelling",
+      },
+      on: {
+        ACCOUNT_RECONCILED: {
+          target: "fetchingMarketData",
+          actions: "recordAccountReconciliation",
+        },
+        ACCOUNT_RECONCILIATION_FAILED: [
+          {
+            guard: "shouldRetryAccountReconciliation",
+            target: "retryingAccountReconciliation",
+            actions: ["recordError", "incrementReconciliationAttempt"],
+          },
+          {
+            target: "persisting",
+            actions: ["recordError", "markFailed"],
+          },
+        ],
+      },
+    },
+    retryingAccountReconciliation: {
+      always: {
+        guard: "shutdownRequested",
+        target: "cancelling",
+      },
+      on: { RETRY_TIMER_ELAPSED: "reconcilingAccount" },
     },
     fetchingMarketData: {
       always: {
@@ -644,9 +729,17 @@ export const tradingCycleMachine = setup({
             actions: ["recordError", "recordOrderRejected"],
           },
         ],
+        ORDER_NO_LONGER_NEEDED: {
+          target: "persisting",
+          actions: "recordOrderNoLongerNeeded",
+        },
         ORDER_OUTCOME_UNKNOWN: {
           target: "reconcilingOrder",
           actions: "recordError",
+        },
+        ORDER_PROTECTION_FAILED: {
+          target: "persisting",
+          actions: "recordProtectionFailure",
         },
       },
     },
@@ -673,6 +766,14 @@ export const tradingCycleMachine = setup({
           },
           { target: "failed", actions: ["recordError", "markFailed"] },
         ],
+        ORDER_PROTECTION_FAILED: {
+          target: "persisting",
+          actions: "recordProtectionFailure",
+        },
+        ORDER_NO_LONGER_NEEDED: {
+          target: "persisting",
+          actions: "recordOrderNoLongerNeeded",
+        },
       },
     },
     retryingReconciliation: {
@@ -687,8 +788,8 @@ export const tradingCycleMachine = setup({
           actions: "markCancelled",
         },
         EFFECT_CANCEL_FAILED: {
-          target: "persisting",
-          actions: ["recordError", "markCancelled"],
+          target: "failed",
+          actions: ["recordError", "markFailed"],
         },
       },
     },
@@ -696,7 +797,12 @@ export const tradingCycleMachine = setup({
       on: {
         PERSIST_SUCCEEDED: [
           { guard: "shouldStopAfterPersistence", target: "stopped" },
+          {
+            guard: "shouldExecuteKillAfterPersistence",
+            target: "cancelling",
+          },
           { guard: "shouldHaltAfterPersistence", target: "halted" },
+          { guard: "shouldFailAfterPersistence", target: "failed" },
           { target: "scheduling" },
         ],
         PERSIST_FAILED: [

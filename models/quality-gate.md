@@ -9,10 +9,16 @@ ou LLM ne choisit une transition.
 ```text
 idle
   → validatingEnvironment
+  → auditingDependencies
+  → scanningSecrets
   → checking
       ├─ pre-commit → passed
       └─ pre-push | ci → testing → building → testingArtifact → passed
 ```
+
+Le chemin `pre-commit`, volontairement court, va directement de
+`validatingEnvironment` à `checking`. Les chemins `pre-push` et `ci` exécutent
+l'audit de dépendances et le scan de secrets avant le check statique.
 
 Chaque étape active accepte uniquement son événement de succès, son événement
 d’échec fermé ou `CANCEL_REQUESTED`. Un échec mène à `failed` avec un code et
@@ -26,6 +32,8 @@ sont terminaux.
 | --- | --- | --- |
 | CI / `validatingEnvironment` | `pnpm install --frozen-lockfile` avec Node 22 et pnpm épinglé | `ENVIRONMENT_VALIDATED`, `ENVIRONMENT_FAILED` |
 | hook local / `validatingEnvironment` | vérifier que le gestionnaire et les dépendances installées sont disponibles | `ENVIRONMENT_VALIDATED`, `ENVIRONMENT_FAILED` |
+| pre-push, CI / `auditingDependencies` | `pnpm audit --audit-level=high` | `DEPENDENCY_AUDIT_PASSED`, `DEPENDENCY_AUDIT_FAILED` |
+| pre-push, CI / `scanningSecrets` | `pnpm scan:secrets` sur les fichiers suivis | `SECRET_SCAN_PASSED`, `SECRET_SCAN_FAILED` |
 | toutes / `checking` | `pnpm check` | `CHECK_PASSED`, `CHECK_FAILED` |
 | pre-push, CI / `testing` | `pnpm test` | `TESTS_PASSED`, `TESTS_FAILED` |
 | pre-push, CI / `building` | `pnpm build` | `BUILD_PASSED`, `BUILD_FAILED` |
@@ -49,3 +57,7 @@ statique. Le hook `pre-push` exécute le gate complet identique au job CI.
    d’un gate CI réussi ainsi que des permissions de l’environnement production.
 8. Aucun secret de production n’est requis pour vérifier un changement.
 9. Aucun texte libre et aucun LLM ne pilote une transition.
+10. Un push ou une CI est refusé si une vulnérabilité `critical`/`high` ou un
+    secret suivi est détecté.
+11. Le scan de secrets est déterministe, ne lit que les fichiers suivis et
+    refuse une erreur d'outil au lieu de la traiter comme un scan vide.

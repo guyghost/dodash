@@ -111,6 +111,32 @@ describe("dashboard Agent proxy", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("forwards a validated live-off preflight JSON body", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.url).toBe(
+        "https://dodash-agent.internal/api/agents/grt-usd--multi/preflight",
+      );
+      expect(await upstream.json()).toEqual({
+        productId: "GRT-USD",
+        executionMode: "live",
+      });
+      return Response.json({ ok: true, report: { assessment: "APPROVED" } });
+    });
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/grt-usd--multi/preflight", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          productId: "GRT-USD",
+          executionMode: "live",
+        }),
+      }),
+      createEnv(fetcher),
+    );
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
   it("accepts an explicitly streamed but empty command body", async () => {
     const fetcher = vi.fn(async (upstream: Request) => {
       expect(upstream.method).toBe("POST");

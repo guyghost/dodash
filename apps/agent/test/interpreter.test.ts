@@ -77,6 +77,15 @@ const effectsFor = (
   const intents: OrderIntent[] = [];
   let persistedCycles = 0;
   const effects: TradingCycleEffects = {
+    reconcileAccount: async (portfolio, observedAt) =>
+      ok({
+        snapshotId: `paper:${observedAt}`,
+        observedAt,
+        portfolio,
+        accountEquity:
+          portfolio.cash + portfolio.positionQuantity * portfolio.averagePrice,
+        otherExposureNotional: 0,
+      }),
     fetchMarketData: async () => ok(market),
     ensureSchedule: async () => ok({ nextWakeAt: 420_000 }),
     checkpoint: async (artifacts) => {
@@ -89,7 +98,14 @@ const effectsFor = (
       return ok(undefined);
     },
     authorize: async () => ok({ issuedAt: 360_000, expiresAt: 420_000 }),
-    submitOrder: async (intent, _authorization, price, portfolio, triggeredAt) => {
+    submitOrder: async (
+      intent,
+      _riskDecision,
+      _authorization,
+      price,
+      portfolio,
+      triggeredAt,
+    ) => {
       const execution = executePaperOrder(portfolio, intent, price, triggeredAt, {
         feeBps: 0,
         slippageBps: 0,
@@ -171,6 +187,74 @@ describe("runTradingCycle", () => {
     expect(fixture.intents).toHaveLength(1);
     expect(fixture.persistedCycles).toBe(1);
     expect(fixture.checkpoints.length).toBeGreaterThan(5);
+  });
+
+  it("fails terminally with a freshly reconciled flat account when protection fails", async () => {
+    const config = configuration();
+    const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+    const flattened = { cash: 9_950, positionQuantity: 0, averagePrice: 0 };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 9, 8, 7, 6, 5]),
+        source: "coinbase",
+        cached: false,
+      },
+      portfolio,
+    );
+
+    const result = await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine: readyMachine("agent-1", config.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt: 360_000,
+      cycleId: "cycle-protection-failed",
+      triggerAlarm: true,
+      effects: {
+        ...fixture.effects,
+        submitOrder: async () => ({
+          status: "UNKNOWN",
+          exchangeOrderId: "parent-order-1",
+          error: {
+            phase: "execution",
+            code: "ORDER_OUTCOME_UNKNOWN",
+            retryable: true,
+          },
+        }),
+        reconcileOrder: async () =>
+          ok({
+            status: "PROTECTION_FAILED" as const,
+            exchangeOrderId: "parent-order-1",
+            protectiveOrderId: "protective-order-1",
+            portfolio: flattened,
+            fill: null,
+            accountEquity: 9_950,
+            otherExposureNotional: 0,
+            observedAt: 360_001,
+            error: {
+              phase: "reconciliation" as const,
+              code: "INVALID_RESPONSE" as const,
+              retryable: false,
+            },
+          }),
+      },
+    });
+
+    expect(result.machine.value).toBe("failed");
+    expect(result.machine.context.terminalFailure).toBe(true);
+    expect(result.machine.context.outcome).toBe("FAILED");
+    expect(result.portfolio).toEqual(flattened);
+    expect(result.dailyPnl).toBe(-50);
+    expect(result.artifacts?.execution).toMatchObject({
+      exchangeOrderId: "parent-order-1",
+      protectiveOrderId: "protective-order-1",
+    });
   });
 
   it("persists NO_ACTION without creating an order", async () => {

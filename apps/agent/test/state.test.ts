@@ -15,6 +15,7 @@ const context = (overrides: Partial<TradingCycleContext> = {}): TradingCycleCont
   triggeredAt: 100,
   nextWakeAt: null,
   marketSnapshotId: null,
+  accountSnapshotId: null,
   lastDecisionCandleClosedAt: null,
   indicatorsId: null,
   signalsId: null,
@@ -24,7 +25,10 @@ const context = (overrides: Partial<TradingCycleContext> = {}): TradingCycleCont
   orderMayBeInFlight: false,
   authorizationExpiresAt: null,
   shutdownMode: "none",
+  killRequestId: null,
+  killCompleted: false,
   outcome: "RUNNING",
+  terminalFailure: false,
   lastError: null,
   maxMarketStalenessMs: 90_000,
   retryLimits: {

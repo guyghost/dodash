@@ -10,6 +10,10 @@ const errorFor = (event: QualityGateEvent): QualityGateError | null => {
   switch (event.type) {
     case "ENVIRONMENT_FAILED":
       return { code: "ENVIRONMENT_INVALID", stage: "environment" };
+    case "DEPENDENCY_AUDIT_FAILED":
+      return { code: "DEPENDENCY_AUDIT_FAILED", stage: "dependency-audit" };
+    case "SECRET_SCAN_FAILED":
+      return { code: "SECRET_SCAN_FAILED", stage: "secret-scan" };
     case "CHECK_FAILED":
       return { code: "CHECK_FAILED", stage: "check" };
     case "TESTS_FAILED":
@@ -63,8 +67,28 @@ export const qualityGateMachine = setup({
     validatingEnvironment: {
       on: {
         ...activeStates.on,
-        ENVIRONMENT_VALIDATED: "checking",
+        ENVIRONMENT_VALIDATED: [
+          { guard: "isPreCommit", target: "checking" },
+          { target: "auditingDependencies" },
+        ],
         ENVIRONMENT_FAILED: { target: "failed", actions: "recordError" },
+      },
+    },
+    auditingDependencies: {
+      on: {
+        ...activeStates.on,
+        DEPENDENCY_AUDIT_PASSED: "scanningSecrets",
+        DEPENDENCY_AUDIT_FAILED: {
+          target: "failed",
+          actions: "recordError",
+        },
+      },
+    },
+    scanningSecrets: {
+      on: {
+        ...activeStates.on,
+        SECRET_SCAN_PASSED: "checking",
+        SECRET_SCAN_FAILED: { target: "failed", actions: "recordError" },
       },
     },
     checking: {

@@ -3,8 +3,17 @@ import { BodyLimitError, readBoundedBody } from "./bounded-body.js";
 
 const MAX_REQUEST_BYTES = 16_384;
 const MAX_RESPONSE_BYTES = 1_048_576;
-const agentActions = new Set(["state", "cycles", "start", "stop", "reset", "tick", "kill"]);
-const bodyActions = new Set(["start"]);
+const agentActions = new Set([
+  "state",
+  "cycles",
+  "preflight",
+  "start",
+  "stop",
+  "reset",
+  "tick",
+  "kill",
+]);
+const bodyActions = new Set(["preflight", "start"]);
 
 export interface DashboardApiEnv {
   readonly AGENT_SERVICE: Fetcher;
@@ -81,7 +90,7 @@ const isSameOrigin = (request: Request, url: URL): boolean => {
   return origin === null || origin === url.origin;
 };
 
-const readStartBody = async (request: Request): Promise<Uint8Array> => {
+const readJsonBody = async (request: Request): Promise<Uint8Array> => {
   const mediaType = request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   if (mediaType !== "application/json") throw new Error("INVALID_CONTENT_TYPE");
   const bytes = await readBoundedBody(
@@ -158,7 +167,7 @@ export const handleDashboardApiRequest = async (
   let body: Uint8Array | undefined;
   if (bodyActions.has(route.action)) {
     try {
-      body = await readStartBody(request);
+      body = await readJsonBody(request);
     } catch (caught) {
       return caught instanceof BodyLimitError
         ? error("REQUEST_TOO_LARGE", 413)

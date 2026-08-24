@@ -202,12 +202,12 @@ describe("backtest suite", () => {
 
   it("refuse un cache préparé avec une configuration étendue différente", async () => {
     const { dataset, config } = suiteFixture();
-    const prepared = await backtest.prepareBacktestIndicators(
-      dataset.candles,
-      config.indicators,
-    );
+    const prepared: backtest.PreparedBacktestIndicators = {
+      config: config.indicators,
+      snapshots: Array(dataset.candles.length).fill(null),
+    };
     const registry = createStrategyRegistry([]);
-    if (!prepared.ok || !registry.ok) throw new Error("invalid prepared fixture");
+    if (!registry.ok) throw new Error("invalid prepared fixture");
 
     const result = await backtest.replayBacktest(
       dataset.candles,
@@ -220,7 +220,7 @@ describe("backtest suite", () => {
         },
         strategies: registry.value,
       },
-      prepared.value,
+      prepared,
     );
 
     expect(result).toEqual({

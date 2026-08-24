@@ -14,6 +14,8 @@ const advanceTo = (
   actor: QualityGateActor,
   target:
     | "validatingEnvironment"
+    | "auditingDependencies"
+    | "scanningSecrets"
     | "checking"
     | "testing"
     | "building"
@@ -24,6 +26,13 @@ const advanceTo = (
   if (target === "validatingEnvironment") return;
 
   actor.send({ type: "ENVIRONMENT_VALIDATED" });
+  if (source === "pre-commit") return;
+  if (target === "auditingDependencies") return;
+
+  actor.send({ type: "DEPENDENCY_AUDIT_PASSED" });
+  if (target === "scanningSecrets") return;
+
+  actor.send({ type: "SECRET_SCAN_PASSED" });
   if (target === "checking") return;
 
   actor.send({ type: "CHECK_PASSED" });
@@ -49,6 +58,21 @@ describe("qualityGateMachine", () => {
   });
 
   it.each(["pre-push", "ci"] as const)(
+    "refuse de vérifier le code avant les deux portes sécurité pour %s",
+    (source) => {
+      const actor = createQualityGate();
+      advanceTo(actor, "auditingDependencies", source);
+
+      actor.send({ type: "CHECK_PASSED" });
+      expect(actor.getSnapshot().value).toBe("auditingDependencies");
+      actor.send({ type: "DEPENDENCY_AUDIT_PASSED" });
+      expect(actor.getSnapshot().value).toBe("scanningSecrets");
+      actor.send({ type: "SECRET_SCAN_PASSED" });
+      expect(actor.getSnapshot().value).toBe("checking");
+    },
+  );
+
+  it.each(["pre-push", "ci"] as const)(
     "termine le gate complet pour %s",
     (source) => {
       const actor = createQualityGate();
@@ -63,6 +87,8 @@ describe("qualityGateMachine", () => {
   const failures: ReadonlyArray<{
     state:
       | "validatingEnvironment"
+      | "auditingDependencies"
+      | "scanningSecrets"
       | "checking"
       | "testing"
       | "building"
@@ -74,6 +100,16 @@ describe("qualityGateMachine", () => {
       state: "validatingEnvironment",
       event: { type: "ENVIRONMENT_FAILED" },
       errorCode: "ENVIRONMENT_INVALID",
+    },
+    {
+      state: "auditingDependencies",
+      event: { type: "DEPENDENCY_AUDIT_FAILED" },
+      errorCode: "DEPENDENCY_AUDIT_FAILED",
+    },
+    {
+      state: "scanningSecrets",
+      event: { type: "SECRET_SCAN_FAILED" },
+      errorCode: "SECRET_SCAN_FAILED",
     },
     {
       state: "checking",
@@ -111,6 +147,8 @@ describe("qualityGateMachine", () => {
 
   it.each([
     "validatingEnvironment",
+    "auditingDependencies",
+    "scanningSecrets",
     "checking",
     "testing",
     "building",
