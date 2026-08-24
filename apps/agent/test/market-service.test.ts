@@ -38,7 +38,39 @@ describe("fetchMarketSnapshot", () => {
     expect(new Headers(init.headers).get("authorization")).toBe(
       `Bearer ${"x".repeat(32)}`,
     );
-    expect(JSON.parse(String(init.body))).toMatchObject({ end: 120 });
+  });
+
+  it("excludes the candle that opens at the current bucket boundary", async () => {
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(String(init?.body)) as { readonly end: number };
+      return Response.json({
+        productId: "BTC-USD",
+        timeframe: "ONE_MINUTE",
+        candles: [
+          {
+            start: request.end * 1_000,
+            open: 10,
+            high: 11,
+            low: 9,
+            close: 10,
+            volume: 1,
+          },
+        ],
+        source: "coinbase",
+        cached: false,
+      });
+    });
+
+    const result = await fetchMarketSnapshot(
+      { fetch },
+      "x".repeat(32),
+      configuration(),
+      120_000,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.candles.at(-1)?.start).toBe(60_000);
   });
 
   it("fails closed when the internal secret is missing", async () => {

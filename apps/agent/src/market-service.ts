@@ -70,7 +70,8 @@ export const fetchMarketSnapshot = async (
   }
 
   const duration = timeframeMilliseconds[configuration.timeframe];
-  const closedBoundary = Math.floor(triggeredAt / duration) * duration;
+  const currentBucketStart = Math.floor(triggeredAt / duration) * duration;
+  const latestClosedStart = currentBucketStart - duration;
   let response: Response;
   try {
     response = await service.fetch("https://market-data/internal/candles", {
@@ -83,7 +84,7 @@ export const fetchMarketSnapshot = async (
         productId: configuration.productId,
         timeframe: configuration.timeframe,
         limit: configuration.candleLimit,
-        end: Math.floor(closedBoundary / 1_000),
+        end: Math.floor(latestClosedStart / 1_000),
       }),
     });
   } catch (caught) {
