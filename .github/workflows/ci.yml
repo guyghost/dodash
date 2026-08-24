@@ -74,6 +74,8 @@ jobs:
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
         run: test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+      - name: Build workspace packages
+        run: pnpm build
       - name: Force live execution OFF before deployment
         run: printf '%s' false | pnpm --filter @dodash/agent exec wrangler secret put LIVE_TRADING_ENABLED
       # The three private Workers run with workers_dev disabled, so
