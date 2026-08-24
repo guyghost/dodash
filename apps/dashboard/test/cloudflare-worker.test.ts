@@ -20,6 +20,19 @@ const createEnv = () => {
 };
 
 describe("dashboard Cloudflare edge", () => {
+  it("treats non-GET /health as an asset request", async () => {
+    const { env, assetFetch, apiFetch, authRateLimit } = createEnv();
+    const request = new Request("https://dodash.example/health", {
+      method: "POST",
+    });
+
+    await handleDashboardEdgeRequest(request, env);
+
+    expect(assetFetch).toHaveBeenCalledWith(request);
+    expect(apiFetch).not.toHaveBeenCalled();
+    expect(authRateLimit).not.toHaveBeenCalled();
+  });
+
   it("serves health without touching either upstream binding", async () => {
     const { env, assetFetch, apiFetch, authRateLimit } = createEnv();
     const response = await handleDashboardEdgeRequest(

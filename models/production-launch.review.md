@@ -68,6 +68,12 @@ diminue jamais l'exigence.
   modèle n'accorde aucune permission de déploiement ou de trading.
 - `approved` et `cancelled` sont finaux ; `rejected` est stable jusqu'à retry ou
   reset explicite.
+- Smoke tests porte 4 (incident du 2026-08-24, run CI 32726176876) : un
+  cache-buster `?run=` sur l'URL probe violait le routage strict dashboard-api
+  et produisait 404 au lieu du 401 attendu ; la fenêtre de propagation edge
+  exigeait des retries bornées sur le corps santé. Les deux règles ajoutées à
+  la condition 3 de la porte 4 couvrent ces cas ; l'échec après la fenêtre
+  reste `OPERATIONS_HEALTHCHECK_FAILED`.
 
 ## Corrections imposées à l'implémentation
 

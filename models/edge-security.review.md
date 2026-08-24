@@ -1,6 +1,6 @@
 # Edge security model review
 
-Reviewed: 2026-08-23
+Reviewed: 2026-08-24
 
 Decision: approved for implementation, subject to deployment-time namespace
 verification.
@@ -8,6 +8,8 @@ verification.
 ## Nominal cases
 
 - Exact `/api` and descendant routes are limited, then forwarded unchanged.
+- `GET /health` returns the constant health JSON without limiter or binding
+  use; non-GET `/health` falls through to asset serving.
 - Static and SPA routes are served without touching the API limiter.
 - All public responses receive the same minimum headers.
 
@@ -53,3 +55,12 @@ Cloudflare requires a rate-limit namespace ID to be unique within the account.
 The repository can define the binding, but production remains fail-closed until
 the deploy operator confirms the selected ID does not collide with another
 binding in the target account.
+
+## Configuration drift observed
+
+The 2026-08-23 deployment served the SPA shell for `/health` because the assets
+`run_worker_first` list omitted `/health`; `wrangler deploy` succeeded, so only
+an external response-body check could detect the unreachable
+`respondingHealth` transition. The configuration invariant now pins the
+required routing prefixes, and the deploy smoke test asserts the JSON body
+rather than a bare 200.
