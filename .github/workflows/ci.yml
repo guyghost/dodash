@@ -55,10 +55,8 @@ jobs:
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      MARKET_DATA_HEALTH_URL: ${{ secrets.MARKET_DATA_HEALTH_URL }}
-      AGENT_HEALTH_URL: ${{ secrets.AGENT_HEALTH_URL }}
-      DASHBOARD_API_HEALTH_URL: ${{ secrets.DASHBOARD_API_HEALTH_URL }}
       DASHBOARD_HEALTH_URL: ${{ secrets.DASHBOARD_HEALTH_URL }}
+      DASHBOARD_API_PROBE_URL: ${{ secrets.DASHBOARD_API_PROBE_URL }}
     steps:
       - name: Validate immutable release SHA input
         env:
@@ -78,19 +76,46 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
       - name: Force live execution OFF before deployment
         run: printf '%s' false | pnpm --filter @dodash/agent exec wrangler secret put LIVE_TRADING_ENABLED
+      # The three private Workers run with workers_dev disabled, so
+      # `wrangler deploy` only uploads a version and never promotes it. Each
+      # deploy step captures the uploaded version ID and promotes it to 100%
+      # explicitly.
       - name: Deploy market data Worker
-        run: pnpm --filter @dodash/mcp-market-data exec wrangler deploy
+        run: |
+          output=$(pnpm --filter @dodash/mcp-market-data exec wrangler deploy 2>&1)
+          printf '%s\n' "$output"
+          version_id=$(printf '%s\n' "$output" | sed -n 's/^Current Version ID: //p')
+          test -n "$version_id"
+          pnpm --filter @dodash/mcp-market-data exec wrangler versions deploy --version-id "$version_id" --percentage 100 --yes
       - name: Deploy Trading Agent Worker
-        run: pnpm --filter @dodash/agent exec wrangler deploy
+        run: |
+          output=$(pnpm --filter @dodash/agent exec wrangler deploy 2>&1)
+          printf '%s\n' "$output"
+          version_id=$(printf '%s\n' "$output" | sed -n 's/^Current Version ID: //p')
+          test -n "$version_id"
+          pnpm --filter @dodash/agent exec wrangler versions deploy --version-id "$version_id" --percentage 100 --yes
       - name: Deploy dashboard API Worker
-        run: pnpm --filter @dodash/dashboard-api exec wrangler deploy
+        run: |
+          output=$(pnpm --filter @dodash/dashboard-api exec wrangler deploy 2>&1)
+          printf '%s\n' "$output"
+          version_id=$(printf '%s\n' "$output" | sed -n 's/^Current Version ID: //p')
+          test -n "$version_id"
+          pnpm --filter @dodash/dashboard-api exec wrangler versions deploy --version-id "$version_id" --percentage 100 --yes
       - name: Build dashboard assets
         run: pnpm --filter @dodash/dashboard build
       - name: Deploy dashboard Worker
         run: pnpm --filter @dodash/dashboard exec wrangler deploy
-      - name: Smoke test all Worker health endpoints
+      # Only the dashboard Worker is internet-facing; the three private
+      # Workers have no reachable workers.dev URL by design. The smoke test
+      # asserts the public health JSON body and that an unauthenticated API
+      # request traverses dashboard -> dashboard-api and is rejected with 401,
+      # which proves the service bindings and the private chain are live.
+      - name: Smoke test public health and the private API chain
         run: |
-          for url in "$MARKET_DATA_HEALTH_URL" "$AGENT_HEALTH_URL" "$DASHBOARD_API_HEALTH_URL" "$DASHBOARD_HEALTH_URL"; do
-            test -n "$url"
-            curl --fail --silent --show-error --retry 3 --retry-all-errors "$url" >/dev/null
-          done
+          test -n "$DASHBOARD_HEALTH_URL"
+          test -n "$DASHBOARD_API_PROBE_URL"
+          buster="?run=${GITHUB_RUN_ID}"
+          curl --fail --silent --show-error --retry 3 --retry-all-errors "$DASHBOARD_HEALTH_URL$buster" | grep -q '"status":"ok"'
+          status=$(curl --silent --output /tmp/probe-body.json --write-out '%{http_code}' "$DASHBOARD_API_PROBE_URL$buster")
+          test "$status" = "401"
+          grep -q 'UNAUTHORIZED' /tmp/probe-body.json
