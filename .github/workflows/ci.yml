@@ -125,8 +125,22 @@ jobs:
         run: |
           test -n "$DASHBOARD_HEALTH_URL"
           test -n "$DASHBOARD_API_PROBE_URL"
-          buster="?run=${GITHUB_RUN_ID}"
-          curl --fail --silent --show-error --retry 3 --retry-all-errors "$DASHBOARD_HEALTH_URL$buster" | grep -q '"status":"ok"'
-          status=$(curl --silent --output /tmp/probe-body.json --write-out '%{http_code}' "$DASHBOARD_API_PROBE_URL$buster")
+          # Bounded retries: right after a version promotion the edge can
+          # briefly serve a stale 200 body, so assert on the body in a loop
+          # instead of relying on curl --fail alone.
+          health_ok=""
+          for attempt in 1 2 3 4 5 6 7 8 9; do
+            body=$(curl --silent --show-error "$DASHBOARD_HEALTH_URL?run=${GITHUB_RUN_ID}")
+            if printf '%s' "$body" | grep -q '"status":"ok"'; then
+              health_ok=1
+              break
+            fi
+            sleep 10
+          done
+          test -n "$health_ok"
+          # The API enforces strict routing: query params are only legal on
+          # cycles?limit=N, so the probe URL must stay untouched (no
+          # cache-buster) or the response is 404 instead of 401.
+          status=$(curl --silent --output /tmp/probe-body.json --write-out '%{http_code}' "$DASHBOARD_API_PROBE_URL")
           test "$status" = "401"
           grep -q 'UNAUTHORIZED' /tmp/probe-body.json

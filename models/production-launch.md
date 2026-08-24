@@ -136,6 +136,13 @@ Conditions cumulatives :
 2. logs structurés, métriques et alertes couvrent erreurs, latence, cycles,
    ordres inconnus, réconciliation, exposition, PnL et déclenchements de risque ;
 3. health checks des quatre Workers testés après déploiement ;
+   - l'assertion santé tolère le délai de propagation edge post-promotion :
+     retries bornées (fenêtre ≤ 90 s) sur le corps `{"status":"ok"}`, car une
+     réponse 200 peut temporairement servir un résidu de la version précédente ;
+   - le probe API respecte strictement le contrat de routage dashboard-api
+     (`searchParams` rejetés hors `cycles?limit`) : aucun paramètre synthétique
+     (cache-buster) n'est ajouté à l'URL probe — sinon la réponse attendue est
+     404 `NOT_FOUND`, pas 401 `UNAUTHORIZED` ;
 4. runbook d'incident et propriétaire d'astreinte identifiés ;
 5. rollback versionné, chronométré et vérifié sans perte d'intégrité ;
 6. déploiement incrémental : code avec live OFF, smoke test, puis un seul produit ;
