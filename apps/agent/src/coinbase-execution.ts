@@ -5,6 +5,7 @@ import {
   ok,
   type Fill,
   type OrderIntent,
+  type ProductId,
   type Result,
 } from "@dodash/domain";
 import { LIVE_TRADING_POLICY, type WorkflowError } from "@dodash/models";
@@ -18,6 +19,8 @@ import {
 import type { ExecutionAuthorization, OrderSubmission } from "./types.js";
 
 export const COINBASE_CREATE_ORDER_PATH = "/api/v3/brokerage/orders";
+export const coinbaseProductPath = (productId: string): string =>
+  `/api/v3/brokerage/products/${encodeURIComponent(productId)}`;
 const MAX_COINBASE_RESPONSE_BYTES = 1_000_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -25,6 +28,7 @@ export interface CoinbaseExecutionSettings {
   readonly apiBaseUrl: string;
   readonly apiKeyId: string;
   readonly privateKeyPem: string;
+  readonly portfolioId: string;
 }
 
 export interface CoinbaseJwtCredential {
@@ -35,10 +39,16 @@ export interface CoinbaseJwtCredential {
   readonly path: string;
 }
 
+export interface CoinbaseProtectionPlan {
+  readonly stopLossPrice: number;
+  readonly takeProfitPrice: number;
+}
+
 export interface CoinbaseRequestDependencies {
   readonly fetch?: typeof fetch;
   readonly now?: () => number;
   readonly nonce?: () => string;
+  readonly wait?: (delayMs: number) => Promise<void>;
 }
 
 export const coinbaseOrderPath = (exchangeOrderId: string): string => {
@@ -53,6 +63,8 @@ export type CoinbaseSettingsInput = {
   readonly COINBASE_API_BASE_URL?: string;
   readonly COINBASE_API_KEY_ID?: string;
   readonly COINBASE_API_PRIVATE_KEY?: string;
+  readonly COINBASE_PORTFOLIO_ID?: string;
+  readonly TRADING_TELEMETRY?: unknown;
 };
 
 const createOrderResponseSchema = z.discriminatedUnion("success", [
@@ -102,11 +114,35 @@ const orderSchema = z
     filled_size: z.string(),
     last_fill_time: z.string().optional(),
     last_update_time: z.string().optional(),
+    attached_order_id: z.string().min(1).optional(),
+    order_configuration: z
+      .object({
+        trigger_bracket_gtc: z.object({
+          base_size: z.union([z.string(), z.number()]),
+          limit_price: z.string(),
+          stop_trigger_price: z.string(),
+        }),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 
 const getOrderResponseSchema = z
   .object({ order: orderSchema })
+  .passthrough();
+
+const productTradingRulesSchema = z
+  .object({
+    product_id: z.string().min(1),
+    base_increment: z.string().min(1),
+    quote_increment: z.string().min(1),
+    base_min_size: z.string().min(1),
+    trading_disabled: z.boolean().optional().default(false),
+    cancel_only: z.boolean().optional().default(false),
+    view_only: z.boolean().optional().default(false),
+    is_disabled: z.boolean().optional().default(false),
+  })
   .passthrough();
 
 const executionError = (
@@ -146,22 +182,35 @@ const requestTarget = (
 export const resolveCoinbaseSettings = (
   input: CoinbaseSettingsInput,
 ): Result<CoinbaseExecutionSettings, { readonly code: "LIVE_EXECUTION_UNAVAILABLE" }> => {
+  if (input.LIVE_TRADING_ENABLED !== "true") {
+    return err({ code: "LIVE_EXECUTION_UNAVAILABLE" });
+  }
+  return resolveCoinbasePreflightSettings(input);
+};
+
+export const resolveCoinbasePreflightSettings = (
+  input: CoinbaseSettingsInput,
+): Result<CoinbaseExecutionSettings, { readonly code: "LIVE_EXECUTION_UNAVAILABLE" }> => {
   const apiKeyId = input.COINBASE_API_KEY_ID?.trim() ?? "";
   const privateKeyPem = input.COINBASE_API_PRIVATE_KEY?.trim() ?? "";
+  const portfolioId = input.COINBASE_PORTFOLIO_ID?.trim() ?? "";
   const apiBaseUrl = input.COINBASE_API_BASE_URL?.trim() || "https://api.coinbase.com";
   if (
-    input.LIVE_TRADING_ENABLED !== "true" ||
     apiKeyId.length === 0 ||
-    privateKeyPem.length === 0
+    privateKeyPem.length === 0 ||
+    portfolioId.length === 0
   ) {
     return err({ code: "LIVE_EXECUTION_UNAVAILABLE" });
   }
   try {
-    requestTarget({ apiBaseUrl, apiKeyId, privateKeyPem }, COINBASE_CREATE_ORDER_PATH);
+    requestTarget(
+      { apiBaseUrl, apiKeyId, privateKeyPem, portfolioId },
+      COINBASE_CREATE_ORDER_PATH,
+    );
   } catch {
     return err({ code: "LIVE_EXECUTION_UNAVAILABLE" });
   }
-  return ok(Object.freeze({ apiBaseUrl, apiKeyId, privateKeyPem }));
+  return ok(Object.freeze({ apiBaseUrl, apiKeyId, privateKeyPem, portfolioId }));
 };
 
 export const createCoinbaseAuthorization = (
@@ -246,6 +295,148 @@ const decimalString = (value: number): string => {
   return `${digits.slice(0, decimalAt)}.${digits.slice(decimalAt)}`;
 };
 
+interface FormattedProtectionPlan {
+  readonly stopTriggerPrice: string;
+  readonly takeProfitPrice: string;
+  readonly baseIncrement: string;
+  readonly baseMinimum: string;
+}
+
+const decimalPlaces = (value: string): number | null => {
+  if (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return null;
+  return value.split(".")[1]?.length ?? 0;
+};
+
+const roundToIncrement = (
+  value: number,
+  incrementSource: string,
+  direction: "UP" | "DOWN",
+): string | null => {
+  const increment = Number(incrementSource);
+  const decimals = decimalPlaces(incrementSource);
+  if (
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    !Number.isFinite(increment) ||
+    increment <= 0 ||
+    decimals === null
+  ) {
+    return null;
+  }
+  const rawUnits = value / increment;
+  const tolerance =
+    Math.max(1, Math.abs(rawUnits)) * Number.EPSILON * 16;
+  const units =
+    direction === "UP"
+      ? Math.ceil(rawUnits - tolerance)
+      : Math.floor(rawUnits + tolerance);
+  if (units <= 0) return null;
+  return (units * increment).toFixed(decimals);
+};
+
+const loadFormattedProtection = async (
+  settings: CoinbaseExecutionSettings,
+  productId: string,
+  protection: CoinbaseProtectionPlan,
+  dependencies: CoinbaseRequestDependencies,
+): Promise<Result<FormattedProtectionPlan, WorkflowError>> => {
+  const path = coinbaseProductPath(productId);
+  const authorization = createCoinbaseAuthorization(settings, "GET", path, dependencies);
+  if (!authorization.ok) return authorization;
+  let target: ReturnType<typeof requestTarget>;
+  try {
+    target = requestTarget(settings, path);
+  } catch {
+    return err(executionError("INVALID_RESPONSE", false));
+  }
+  const now = dependencies.now?.() ?? Date.now();
+  if (!isCredentialFor(authorization.value, "GET", target.host, path, now)) {
+    return err(executionError("AUTHORIZATION_EXPIRED", true));
+  }
+  const response = await safeFetch(
+    target.url,
+    {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${authorization.value.credential.token}`,
+      },
+    },
+    dependencies,
+  );
+  if (response === null || response.status >= 500) {
+    return err(executionError("NETWORK_UNAVAILABLE", true));
+  }
+  if (response.status === 429) return err(executionError("RATE_LIMITED", true));
+  if (!response.ok) return err(executionError("INVALID_RESPONSE", false));
+  try {
+    const parsed = productTradingRulesSchema.safeParse(
+      await readBoundedJson(response, MAX_COINBASE_RESPONSE_BYTES),
+    );
+    if (
+      !parsed.success ||
+      parsed.data.product_id !== productId ||
+      parsed.data.trading_disabled ||
+      parsed.data.cancel_only ||
+      parsed.data.view_only ||
+      parsed.data.is_disabled
+    ) {
+      return err(executionError("INVALID_RESPONSE", false));
+    }
+    const baseIncrement = Number(parsed.data.base_increment);
+    const baseMinimum = Number(parsed.data.base_min_size);
+    if (
+      !Number.isFinite(baseIncrement) ||
+      baseIncrement <= 0 ||
+      !Number.isFinite(baseMinimum) ||
+      baseMinimum <= 0
+    ) {
+      return err(executionError("INVALID_RESPONSE", false));
+    }
+    const stopTriggerPrice = roundToIncrement(
+      protection.stopLossPrice,
+      parsed.data.quote_increment,
+      "UP",
+    );
+    const takeProfitPrice = roundToIncrement(
+      protection.takeProfitPrice,
+      parsed.data.quote_increment,
+      "DOWN",
+    );
+    if (
+      stopTriggerPrice === null ||
+      takeProfitPrice === null ||
+      Number(stopTriggerPrice) >= Number(takeProfitPrice)
+    ) {
+      return err(executionError("INVALID_RESPONSE", false));
+    }
+    return ok(
+      Object.freeze({
+        stopTriggerPrice,
+        takeProfitPrice,
+        baseIncrement: parsed.data.base_increment,
+        baseMinimum: parsed.data.base_min_size,
+      }),
+    );
+  } catch {
+    return err(executionError("INVALID_RESPONSE", false));
+  }
+};
+
+export const verifyCoinbaseProductTradingRules = async (
+  settings: CoinbaseExecutionSettings,
+  productId: ProductId,
+  dependencies: CoinbaseRequestDependencies = {},
+): Promise<Result<void, WorkflowError>> => {
+  const verified = await loadFormattedProtection(
+    settings,
+    productId,
+    { stopLossPrice: 1, takeProfitPrice: 2 },
+    dependencies,
+  );
+  return verified.ok ? ok(undefined) : verified;
+};
+
 const coinbaseBaseSize = (productId: string, quantity: number): string => {
   const increments = LIVE_TRADING_POLICY.baseIncrements as Readonly<
     Record<string, number>
@@ -257,6 +448,31 @@ const coinbaseBaseSize = (productId: string, quantity: number): string => {
   const units = Math.floor(quantity / increment + 1e-9);
   if (units <= 0) throw new Error("QUANTITY_BELOW_BASE_INCREMENT");
   return (units * increment).toFixed(decimals);
+};
+
+const formatBaseSize = (
+  quantity: number,
+  incrementSource: string,
+  minimumSource: string,
+): string | null => {
+  const increment = Number(incrementSource);
+  const minimum = Number(minimumSource);
+  const decimals = decimalPlaces(incrementSource);
+  if (
+    !Number.isFinite(quantity) ||
+    quantity <= 0 ||
+    !Number.isFinite(increment) ||
+    increment <= 0 ||
+    !Number.isFinite(minimum) ||
+    minimum <= 0 ||
+    decimals === null
+  ) {
+    return null;
+  }
+  const units = Math.floor(quantity / increment + Number.EPSILON * 16);
+  const rounded = units * increment;
+  if (units <= 0 || rounded + Number.EPSILON < minimum) return null;
+  return rounded.toFixed(decimals);
 };
 
 const safeFetch = async (
@@ -279,6 +495,7 @@ export const submitCoinbaseOrder = async (
   intent: OrderIntent,
   authorization: ExecutionAuthorization,
   dependencies: CoinbaseRequestDependencies = {},
+  protection?: CoinbaseProtectionPlan,
 ): Promise<OrderSubmission> => {
   let target: ReturnType<typeof requestTarget>;
   try {
@@ -305,6 +522,20 @@ export const submitCoinbaseOrder = async (
     };
   }
 
+  let formattedProtection: FormattedProtectionPlan | undefined;
+  if (intent.side === "BUY" && protection !== undefined) {
+    const formatted = await loadFormattedProtection(
+      settings,
+      intent.productId,
+      protection,
+      dependencies,
+    );
+    if (!formatted.ok) {
+      return { status: "REJECTED", error: formatted.error };
+    }
+    formattedProtection = formatted.value;
+  }
+
   let body: string;
   try {
     body = JSON.stringify({
@@ -316,6 +547,16 @@ export const submitCoinbaseOrder = async (
           base_size: coinbaseBaseSize(intent.productId, intent.quantity),
         },
       },
+      ...(formattedProtection === undefined
+        ? {}
+        : {
+            attached_order_configuration: {
+              trigger_bracket_gtc: {
+                limit_price: formattedProtection.takeProfitPrice,
+                stop_trigger_price: formattedProtection.stopTriggerPrice,
+              },
+            },
+          }),
     });
   } catch {
     return {
@@ -470,6 +711,7 @@ export const getCoinbaseOrder = async (
   authorization: ExecutionAuthorization,
   portfolio: PaperPortfolio,
   dependencies: CoinbaseRequestDependencies = {},
+  protection?: CoinbaseProtectionPlan,
 ): Promise<Result<OrderSubmission, WorkflowError>> => {
   let path: string;
   try {
@@ -531,6 +773,14 @@ export const getCoinbaseOrder = async (
         error: executionError("ORDER_REJECTED", false),
       });
     }
+    const protectiveOrderId = order.attached_order_id;
+    if (
+      intent.side === "BUY" &&
+      protection !== undefined &&
+      protectiveOrderId === undefined
+    ) {
+      return err(reconciliationError("INVALID_RESPONSE", false));
+    }
     if (price === null || price <= 0) {
       return err(reconciliationError("INVALID_RESPONSE", false));
     }
@@ -551,8 +801,195 @@ export const getCoinbaseOrder = async (
       exchangeOrderId,
       portfolio: applied.value.portfolio,
       fill: applied.value.fill,
+      ...(protectiveOrderId === undefined ? {} : { protectiveOrderId }),
     });
   } catch {
     return err(reconciliationError("INVALID_RESPONSE", false));
+  }
+};
+
+const protectiveStatuses = new Set(["PENDING", "OPEN", "QUEUED"]);
+
+export const confirmCoinbaseProtectiveOrder = async (
+  settings: CoinbaseExecutionSettings,
+  productId: ProductId,
+  protectiveOrderId: string,
+  protection: CoinbaseProtectionPlan,
+  dependencies: CoinbaseRequestDependencies = {},
+  expectedQuantity?: number,
+): Promise<Result<void, WorkflowError>> => {
+  const formatted = await loadFormattedProtection(
+    settings,
+    productId,
+    protection,
+    dependencies,
+  );
+  if (!formatted.ok) {
+    return err({ ...formatted.error, phase: "reconciliation" });
+  }
+  let path: string;
+  try {
+    path = coinbaseOrderPath(protectiveOrderId);
+  } catch {
+    return err(reconciliationError("INVALID_RESPONSE", false));
+  }
+  const authorization = createCoinbaseAuthorization(settings, "GET", path, dependencies);
+  if (!authorization.ok) return authorization;
+  let target: ReturnType<typeof requestTarget>;
+  try {
+    target = requestTarget(settings, path);
+  } catch {
+    return err(reconciliationError("INVALID_RESPONSE", false));
+  }
+  const now = dependencies.now?.() ?? Date.now();
+  if (!isCredentialFor(authorization.value, "GET", target.host, path, now)) {
+    return err(reconciliationError("AUTHORIZATION_EXPIRED", true));
+  }
+  const response = await safeFetch(
+    target.url,
+    {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${authorization.value.credential.token}`,
+      },
+    },
+    dependencies,
+  );
+  if (response === null || response.status === 429 || response.status >= 500) {
+    return err(reconciliationError());
+  }
+  if (!response.ok) return err(reconciliationError("INVALID_RESPONSE", false));
+  try {
+    const parsed = getOrderResponseSchema.safeParse(
+      await readBoundedJson(response, MAX_COINBASE_RESPONSE_BYTES),
+    );
+    if (!parsed.success) {
+      return err(reconciliationError("INVALID_RESPONSE", false));
+    }
+    const order = parsed.data.order;
+    const bracket = order.order_configuration?.trigger_bracket_gtc;
+    const expectedBaseSize =
+      expectedQuantity === undefined
+        ? null
+        : formatBaseSize(
+            expectedQuantity,
+            formatted.value.baseIncrement,
+            formatted.value.baseMinimum,
+          );
+    if (
+      order.order_id !== protectiveOrderId ||
+      order.product_id !== productId ||
+      order.side !== "SELL" ||
+      !protectiveStatuses.has(order.status) ||
+      bracket === undefined ||
+      Number(bracket.base_size) <= 0 ||
+      (expectedQuantity !== undefined &&
+        (expectedBaseSize === null ||
+          Number(bracket.base_size) !== Number(expectedBaseSize))) ||
+      bracket.limit_price !== formatted.value.takeProfitPrice ||
+      bracket.stop_trigger_price !== formatted.value.stopTriggerPrice
+    ) {
+      return err(reconciliationError("INVALID_RESPONSE", false));
+    }
+    return ok(undefined);
+  } catch {
+    return err(reconciliationError("INVALID_RESPONSE", false));
+  }
+};
+
+export const submitCoinbaseProtectionOrder = async (
+  settings: CoinbaseExecutionSettings,
+  productId: ProductId,
+  clientOrderId: string,
+  quantity: number,
+  protection: CoinbaseProtectionPlan,
+  dependencies: CoinbaseRequestDependencies = {},
+): Promise<Result<{ readonly protectiveOrderId: string }, WorkflowError>> => {
+  if (clientOrderId.trim().length === 0) {
+    return err(executionError("INVALID_RESPONSE", false));
+  }
+  const formatted = await loadFormattedProtection(
+    settings,
+    productId,
+    protection,
+    dependencies,
+  );
+  if (!formatted.ok) return formatted;
+  const baseSize = formatBaseSize(
+    quantity,
+    formatted.value.baseIncrement,
+    formatted.value.baseMinimum,
+  );
+  if (baseSize === null) {
+    return err(executionError("INVALID_RESPONSE", false));
+  }
+  const authorization = createCoinbaseAuthorization(
+    settings,
+    "POST",
+    COINBASE_CREATE_ORDER_PATH,
+    dependencies,
+  );
+  if (!authorization.ok) return authorization;
+  let target: ReturnType<typeof requestTarget>;
+  try {
+    target = requestTarget(settings, COINBASE_CREATE_ORDER_PATH);
+  } catch {
+    return err(executionError("INVALID_RESPONSE", false));
+  }
+  const now = dependencies.now?.() ?? Date.now();
+  if (
+    !isCredentialFor(
+      authorization.value,
+      "POST",
+      target.host,
+      COINBASE_CREATE_ORDER_PATH,
+      now,
+    )
+  ) {
+    return err(executionError("AUTHORIZATION_EXPIRED", true));
+  }
+  const body = JSON.stringify({
+    client_order_id: clientOrderId,
+    product_id: productId,
+    side: "SELL",
+    order_configuration: {
+      trigger_bracket_gtc: {
+        base_size: baseSize,
+        limit_price: formatted.value.takeProfitPrice,
+        stop_trigger_price: formatted.value.stopTriggerPrice,
+      },
+    },
+  });
+  const response = await safeFetch(
+    target.url,
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${authorization.value.credential.token}`,
+        "content-type": "application/json",
+      },
+      body,
+    },
+    dependencies,
+  );
+  if (response === null || response.status >= 500) {
+    return err(executionError("ORDER_OUTCOME_UNKNOWN", false));
+  }
+  if (response.status === 429) {
+    return err(executionError("RATE_LIMITED", false));
+  }
+  if (!response.ok) return err(executionError("ORDER_REJECTED", false));
+  try {
+    const parsed = createOrderResponseSchema.safeParse(
+      await readBoundedJson(response, MAX_COINBASE_RESPONSE_BYTES),
+    );
+    if (!parsed.success || !parsed.data.success) {
+      return err(executionError("ORDER_REJECTED", false));
+    }
+    return ok({ protectiveOrderId: parsed.data.success_response.order_id });
+  } catch {
+    return err(executionError("ORDER_OUTCOME_UNKNOWN", false));
   }
 };

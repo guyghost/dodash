@@ -28,6 +28,7 @@ const reachRisk = (actor: ReturnType<typeof createTradingActor>) => {
     { type: "START_REQUESTED", permissions: permission },
     { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
     { type: "ALARM_FIRED", cycleId: "cycle-1", triggeredAt: 10_000 },
+    { type: "ACCOUNT_RECONCILED", snapshotId: "account-1" },
     {
       type: "MARKET_DATA_READY",
       snapshotId: "market-1",
@@ -45,6 +46,24 @@ const reachRisk = (actor: ReturnType<typeof createTradingActor>) => {
 };
 
 describe("tradingCycleMachine", () => {
+  it("réconcilie le compte avant les données de marché et échoue fermé", () => {
+    const actor = createTradingActor();
+    send(
+      actor,
+      { type: "START_REQUESTED", permissions: permission },
+      { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
+      { type: "ALARM_FIRED", cycleId: "cycle-1", triggeredAt: 10_000 },
+    );
+
+    expect(actor.getSnapshot().value).toBe("reconcilingAccount");
+    actor.send({
+      type: "ACCOUNT_RECONCILIATION_FAILED",
+      error: error("reconciliation", "RECONCILIATION_FAILURE", false),
+    });
+    expect(actor.getSnapshot().value).toBe("persisting");
+    expect(actor.getSnapshot().context.outcome).toBe("FAILED");
+  });
+
   it("refuse un démarrage sans les deux permissions", () => {
     const actor = createTradingActor();
 
@@ -77,6 +96,7 @@ describe("tradingCycleMachine", () => {
       { type: "START_REQUESTED", permissions: permission },
       { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
       { type: "ALARM_FIRED", cycleId: "cycle-1", triggeredAt: 10_000 },
+      { type: "ACCOUNT_RECONCILED", snapshotId: "account-1" },
       {
         type: "MARKET_DATA_READY",
         snapshotId: "market-1",
@@ -105,6 +125,7 @@ describe("tradingCycleMachine", () => {
       { type: "START_REQUESTED", permissions: permission },
       { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
       { type: "ALARM_FIRED", cycleId: "cycle-1", triggeredAt: 10_000 },
+      { type: "ACCOUNT_RECONCILED", snapshotId: "account-1" },
       {
         type: "MARKET_DATA_READY",
         snapshotId: "market-1",
@@ -120,6 +141,7 @@ describe("tradingCycleMachine", () => {
       { type: "PERSIST_SUCCEEDED" },
       { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 20_000 },
       { type: "ALARM_FIRED", cycleId: "cycle-2", triggeredAt: 20_000 },
+      { type: "ACCOUNT_RECONCILED", snapshotId: "account-2" },
       {
         type: "MARKET_DATA_READY",
         snapshotId: "market-1-again",
@@ -139,6 +161,7 @@ describe("tradingCycleMachine", () => {
       { type: "START_REQUESTED", permissions: permission },
       { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
       { type: "ALARM_FIRED", cycleId: "cycle-1", triggeredAt: 200_000 },
+      { type: "ACCOUNT_RECONCILED", snapshotId: "account-1" },
       {
         type: "MARKET_DATA_READY",
         snapshotId: "stale-market",
@@ -160,6 +183,7 @@ describe("tradingCycleMachine", () => {
       { type: "START_REQUESTED", permissions: permission },
       { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
       { type: "ALARM_FIRED", cycleId: "cycle-stale", triggeredAt: 200_000 },
+      { type: "ACCOUNT_RECONCILED", snapshotId: "account-1" },
     );
     for (let attempt = 0; attempt < 3; attempt += 1) {
       send(
@@ -241,6 +265,54 @@ describe("tradingCycleMachine", () => {
     expect(actor.getSnapshot().context.outcome).toBe("ORDER_CONFIRMED");
   });
 
+  it("persiste un échec terminal quand la protection post-fill a dû liquider", () => {
+    const actor = createTradingActor();
+    reachRisk(actor);
+    send(
+      actor,
+      { type: "RISK_APPROVED" },
+      {
+        type: "ORDER_INTENT_PERSISTED",
+        clientOrderId: "btc-rsi:cycle-1:0",
+      },
+      { type: "AUTHORIZATION_READY", issuedAt: 10_000, expiresAt: 20_000 },
+      {
+        type: "ORDER_OUTCOME_UNKNOWN",
+        error: error("execution", "ORDER_OUTCOME_UNKNOWN", true),
+      },
+      {
+        type: "ORDER_PROTECTION_FAILED",
+        exchangeOrderId: "exchange-1",
+        error: error("reconciliation", "INVALID_RESPONSE", false),
+      },
+    );
+
+    expect(actor.getSnapshot().value).toBe("persisting");
+    expect(actor.getSnapshot().context.outcome).toBe("FAILED");
+    expect(actor.getSnapshot().context.exchangeOrderId).toBe("exchange-1");
+    actor.send({ type: "PERSIST_SUCCEEDED" });
+    expect(actor.getSnapshot().value).toBe("failed");
+  });
+
+  it("classe NO_ACTION une vente devenue inutile après déclenchement du bracket", () => {
+    const actor = createTradingActor();
+    reachRisk(actor);
+    send(
+      actor,
+      { type: "RISK_APPROVED" },
+      {
+        type: "ORDER_INTENT_PERSISTED",
+        clientOrderId: "btc-rsi:cycle-1:0",
+      },
+      { type: "AUTHORIZATION_READY", issuedAt: 10_000, expiresAt: 20_000 },
+      { type: "ORDER_NO_LONGER_NEEDED" },
+    );
+
+    expect(actor.getSnapshot().value).toBe("persisting");
+    expect(actor.getSnapshot().context.outcome).toBe("NO_ACTION");
+    expect(actor.getSnapshot().context.orderMayBeInFlight).toBe(false);
+  });
+
   it("borne la régénération d’une autorisation invalide", () => {
     const actor = createTradingActor();
     reachRisk(actor);
@@ -279,7 +351,11 @@ describe("tradingCycleMachine", () => {
       actor,
       { type: "START_REQUESTED", permissions: permission },
       { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
-      { type: "KILL_SWITCH_ENGAGED", permissions: permission },
+      {
+        type: "KILL_SWITCH_ENGAGED",
+        permissions: permission,
+        controlId: "kill-1",
+      },
     );
 
     expect(actor.getSnapshot().value).toBe("cancelling");
@@ -287,7 +363,66 @@ describe("tradingCycleMachine", () => {
     send(actor, { type: "EFFECT_CANCELLED" }, { type: "PERSIST_SUCCEEDED" });
 
     expect(actor.getSnapshot().value).toBe("halted");
+    expect(actor.getSnapshot().context.killCompleted).toBe(true);
     expect(actor.getSnapshot().context.outcome).toBe("CANCELLED");
+  });
+
+  it("réconcilie l'ordre en vol puis exécute le kill avant halted", () => {
+    const actor = createTradingActor();
+    reachRisk(actor);
+    send(
+      actor,
+      { type: "RISK_APPROVED" },
+      {
+        type: "ORDER_INTENT_PERSISTED",
+        clientOrderId: "btc-rsi:cycle-1:0",
+      },
+      { type: "AUTHORIZATION_READY", issuedAt: 10_000, expiresAt: 20_000 },
+    );
+    expect(actor.getSnapshot().value).toBe("submittingOrder");
+
+    actor.send({
+      type: "KILL_SWITCH_ENGAGED",
+      permissions: permission,
+      controlId: "kill-in-flight",
+    });
+    expect(actor.getSnapshot().value).toBe("reconcilingOrder");
+    actor.send({ type: "ORDER_RECONCILED", exchangeOrderId: "exchange-1" });
+    expect(actor.getSnapshot().value).toBe("persisting");
+
+    actor.send({ type: "PERSIST_SUCCEEDED" });
+    expect(actor.getSnapshot().value).toBe("cancelling");
+    expect(actor.getSnapshot().context.killCompleted).toBe(false);
+    actor.send({ type: "EFFECT_CANCELLED" });
+    expect(actor.getSnapshot().context.killCompleted).toBe(true);
+    actor.send({ type: "PERSIST_SUCCEEDED" });
+    expect(actor.getSnapshot().value).toBe("halted");
+  });
+
+  it("ne peut pas atteindre halted quand le kill switch échoue", () => {
+    const actor = createTradingActor();
+    send(
+      actor,
+      { type: "START_REQUESTED", permissions: permission },
+      { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
+      {
+        type: "KILL_SWITCH_ENGAGED",
+        permissions: permission,
+        controlId: "kill-2",
+      },
+      {
+        type: "EFFECT_CANCEL_FAILED",
+        error: error("cancellation", "CANCELLATION_FAILURE", false),
+      },
+    );
+
+    expect(actor.getSnapshot().value).toBe("persisting");
+    expect(actor.getSnapshot().context.shutdownMode).toBe("kill-switch");
+    expect(actor.getSnapshot().context.terminalFailure).toBe(true);
+    expect(actor.getSnapshot().context.outcome).toBe("FAILED");
+
+    actor.send({ type: "PERSIST_SUCCEEDED" });
+    expect(actor.getSnapshot().value).toBe("failed");
   });
 
   it("ne reprogramme jamais tant que la persistance échoue", () => {
@@ -313,6 +448,7 @@ describe("tradingCycleMachine", () => {
       {
         type: "KILL_SWITCH_ENGAGED",
         permissions: { canControl: false, canTrade: true },
+        controlId: "kill-denied",
       },
     );
 

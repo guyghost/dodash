@@ -11,6 +11,10 @@ on:
         required: false
         type: boolean
         default: false
+      release_sha:
+        description: Exact 40-character Git SHA to verify and deploy live-OFF
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -27,7 +31,14 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate immutable release SHA input
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_sha || github.sha }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -44,13 +55,29 @@ jobs:
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      MARKET_DATA_HEALTH_URL: ${{ secrets.MARKET_DATA_HEALTH_URL }}
+      AGENT_HEALTH_URL: ${{ secrets.AGENT_HEALTH_URL }}
+      DASHBOARD_API_HEALTH_URL: ${{ secrets.DASHBOARD_API_HEALTH_URL }}
+      DASHBOARD_HEALTH_URL: ${{ secrets.DASHBOARD_HEALTH_URL }}
     steps:
+      - name: Validate immutable release SHA input
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_sha }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Verify immutable release SHA
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+      - name: Force live execution OFF before deployment
+        run: printf '%s' false | pnpm --filter @dodash/agent exec wrangler secret put LIVE_TRADING_ENABLED
       - name: Deploy market data Worker
         run: pnpm --filter @dodash/mcp-market-data exec wrangler deploy
       - name: Deploy Trading Agent Worker
@@ -61,3 +88,9 @@ jobs:
         run: pnpm --filter @dodash/dashboard build
       - name: Deploy dashboard Worker
         run: pnpm --filter @dodash/dashboard exec wrangler deploy
+      - name: Smoke test all Worker health endpoints
+        run: |
+          for url in "$MARKET_DATA_HEALTH_URL" "$AGENT_HEALTH_URL" "$DASHBOARD_API_HEALTH_URL" "$DASHBOARD_HEALTH_URL"; do
+            test -n "$url"
+            curl --fail --silent --show-error --retry 3 --retry-all-errors "$url" >/dev/null
+          done

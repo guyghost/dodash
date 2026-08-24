@@ -1,9 +1,10 @@
 import type { PaperPortfolio } from "@dodash/backtest";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
-import type {
-  CycleOutcome,
-  DailyRiskWindow,
-  WorkflowError,
+import {
+  resolveDailyRiskWindow,
+  type CycleOutcome,
+  type DailyRiskWindow,
+  type WorkflowError,
 } from "@dodash/models";
 
 import type { AgentConfiguration } from "./configuration.js";
@@ -118,6 +119,40 @@ export const resolveLiveStartContinuity = (
 
 export const machineIsEnabled = (phase: string): boolean =>
   phase !== "stopped" && phase !== "failed" && phase !== "halted";
+
+export interface CycleDailyRiskState {
+  readonly window: DailyRiskWindow | null;
+  readonly dailyPnl: number;
+}
+
+export const resolveCycleDailyRiskStart = (
+  executionMode: AgentConfiguration["executionMode"],
+  currentWindow: DailyRiskWindow | null,
+  currentDailyPnl: number,
+  triggeredAt: number,
+  localMarkedEquity: number,
+): CycleDailyRiskState =>
+  executionMode === "live"
+    ? Object.freeze({ window: currentWindow, dailyPnl: currentDailyPnl })
+    : resolveDailyRiskWindow(currentWindow, triggeredAt, localMarkedEquity);
+
+export const resolveCycleDailyRiskCompletion = (
+  executionMode: AgentConfiguration["executionMode"],
+  reconciledWindow: DailyRiskWindow | null,
+  reconciledDailyPnl: number,
+  triggeredAt: number,
+  localMarkedEquity: number,
+): CycleDailyRiskState =>
+  executionMode === "live"
+    ? Object.freeze({
+        window: reconciledWindow,
+        dailyPnl: reconciledDailyPnl,
+      })
+    : resolveDailyRiskWindow(
+        reconciledWindow,
+        triggeredAt,
+        localMarkedEquity,
+      );
 
 export interface CycleInvocationIdentity {
   readonly loadCycleId: string | null;

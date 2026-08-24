@@ -29,6 +29,7 @@ type TradingAgentRpc = Pick<
   | "getAgentState"
   | "killAgent"
   | "listRecentCycles"
+  | "preflightLive"
   | "resetAgent"
   | "runNow"
   | "startAgent"
@@ -72,6 +73,16 @@ const handleApi = async (
   }
 
   switch (action) {
+    case "preflight": {
+      let body: unknown;
+      try {
+        body = await readBoundedJson(request, MAX_CONTROL_REQUEST_BYTES);
+      } catch {
+        return json({ error: { code: "INVALID_REQUEST" } }, 400);
+      }
+      const result = await agent.preflightLive(body, permissions);
+      return json(result, result.ok ? 200 : 409);
+    }
     case "start": {
       let body: unknown;
       try {

@@ -140,6 +140,34 @@ export type {
   ExecutionScheduleResult,
 } from "./execution-resolution.types.js";
 export { protectiveOrderMachine } from "./protective-order.machine.js";
+export { productionLaunchMachine } from "./production-launch.machine.js";
+export {
+  assessCanaryEvidence,
+  assessEngineeringEvidence,
+  assessOperationsEvidence,
+  assessProductionLaunchScope,
+  assessResearchEvidence,
+  assessRiskEvidence,
+} from "./production-launch.js";
+export type {
+  CanaryEvidence,
+  CanaryFailureReason,
+  EngineeringEvidence,
+  EngineeringFailureReason,
+  OperationsEvidence,
+  OperationsFailureReason,
+  ProductionLaunchAssessment,
+  ProductionLaunchContext,
+  ProductionLaunchEvent,
+  ProductionLaunchFailureReason,
+  ProductionLaunchScope,
+  ProductionLaunchStage,
+  ResearchEvidence,
+  ResearchFailureReason,
+  ResearchProductEvidence,
+  RiskEvidence,
+  RiskFailureReason,
+} from "./production-launch.types.js";
 export { qualityGateMachine } from "./quality-gate.machine.js";
 export type {
   QualityGateContext,
@@ -229,6 +257,27 @@ export {
 } from "./regime-sizing.js";
 export type { RegimeConditionalSizingPolicy } from "./regime-sizing.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
+export { liveAccountControlMachine } from "./live-account-control.machine.js";
+export { liveSellProtectionMachine } from "./live-sell-protection.machine.js";
+export { assessLivePreflight } from "./live-preflight.js";
+export type {
+  LiveAccountControlAttempts,
+  LiveAccountControlContext,
+  LiveAccountControlEvent,
+  LiveAccountControlInput,
+  LiveAccountControlRetryLimits,
+} from "./live-account-control.types.js";
+export type {
+  LiveSellProtectionContext,
+  LiveSellProtectionEvent,
+  LiveSellProtectionInput,
+  LiveSellProtectionOutcome,
+} from "./live-sell-protection.types.js";
+export type {
+  LivePreflightAssessment,
+  LivePreflightEvidence,
+  LivePreflightFailureReason,
+} from "./live-preflight.types.js";
 export {
   assessLiveTradingAgentIdentity,
   assessLiveTradingPolicy,

@@ -5,6 +5,8 @@
 | Commit nominal | environnement → check → succès | Couvert |
 | Push ou CI nominal | environnement → check → tests → build → test d’artefact → succès | Couvert |
 | Outil ou dépendances absents | `ENVIRONMENT_FAILED` → `failed` | Couvert |
+| Audit high/critical en échec | `DEPENDENCY_AUDIT_FAILED` → `failed` | À couvrir |
+| Secret suivi ou scan invalide | `SECRET_SCAN_FAILED` → `failed` | À couvrir |
 | Check, test, build ou artefact en erreur | événement fermé de l’étape → `failed` | Couvert |
 | Annulation explicite | toute étape active → `cancelled` | Couvert |
 | Retry | uniquement `failed` → `validatingEnvironment` par `RETRY_REQUESTED` | Couvert |
@@ -42,3 +44,24 @@ La branche `main` n’est pas protégée au moment de cette revue. La CI est don
 déclenchée, mais GitHub ne bloque pas encore un push direct ou un merge sur son
 résultat. Rendre le check obligatoire nécessite une règle de protection externe
 au code du dépôt ; elle ne doit pas être créée implicitement par ce workflow.
+
+## Extension sécurité pré-lancement
+
+Statut : APPROUVÉE POUR IMPLÉMENTATION
+
+L'audit de dépendances et le scan de secrets s'exécutent uniquement après une
+installation verrouillée réussie. Ils précèdent le check et les tests : le
+premier échec ferme le gate et aucun build/deploy n'est tenté. Le pre-commit
+reste court ; le pre-push et la CI partagent la même commande racine.
+
+Le scan ne doit ni parcourir `node_modules`/`dist`, ni accepter une allowlist
+globale qui masquerait un vrai secret. Les placeholders documentaires connus
+peuvent être exclus par valeur exacte. Une panne de `git ls-files`, une lecture
+impossible ou un motif invalide doit produire un code non nul.
+
+La CI actuellement rouge sur timeout n'est pas rendue verte en augmentant
+aveuglément le timeout. Le test de compatibilité du cache préparé effectue un
+calcul Prolog complet alors que son assertion porte sur un rejet préalable. La
+correction approuvée construit un cache structurel minimal et conserve la même
+assertion métier ; la durée doit être mesurée avant/après et rester largement
+sous le timeout par défaut.

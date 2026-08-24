@@ -96,6 +96,7 @@ export interface TradingCycleContext {
   readonly triggeredAt: number | null;
   readonly nextWakeAt: number | null;
   readonly marketSnapshotId: string | null;
+  readonly accountSnapshotId: string | null;
   readonly lastDecisionCandleClosedAt: number | null;
   readonly indicatorsId: string | null;
   readonly signalsId: string | null;
@@ -105,7 +106,10 @@ export interface TradingCycleContext {
   readonly orderMayBeInFlight: boolean;
   readonly authorizationExpiresAt: number | null;
   readonly shutdownMode: ShutdownMode;
+  readonly killRequestId: string | null;
+  readonly killCompleted: boolean;
   readonly outcome: CycleOutcome;
+  readonly terminalFailure: boolean;
   readonly lastError: WorkflowError | null;
   readonly maxMarketStalenessMs: number;
   readonly retryLimits: RetryLimits;
@@ -124,6 +128,7 @@ export type TradingCycleEvent =
   | {
       readonly type: "KILL_SWITCH_ENGAGED";
       readonly permissions: ControlPermissions;
+      readonly controlId: string;
     }
   | { readonly type: "PERMISSION_REVOKED" }
   | { readonly type: "RESET"; readonly permissions: ControlPermissions }
@@ -138,6 +143,14 @@ export type TradingCycleEvent =
       readonly type: "MARKET_DATA_READY";
       readonly snapshotId: string;
       readonly candleClosedAt: number;
+    }
+  | {
+      readonly type: "ACCOUNT_RECONCILED";
+      readonly snapshotId: string;
+    }
+  | {
+      readonly type: "ACCOUNT_RECONCILIATION_FAILED";
+      readonly error: WorkflowError;
     }
   | { readonly type: "MARKET_DATA_FAILED"; readonly error: WorkflowError }
   | {
@@ -175,7 +188,13 @@ export type TradingCycleEvent =
       readonly exchangeOrderId: string;
     }
   | { readonly type: "ORDER_REJECTED"; readonly error: WorkflowError }
+  | { readonly type: "ORDER_NO_LONGER_NEEDED" }
   | { readonly type: "ORDER_OUTCOME_UNKNOWN"; readonly error: WorkflowError }
+  | {
+      readonly type: "ORDER_PROTECTION_FAILED";
+      readonly exchangeOrderId: string | null;
+      readonly error: WorkflowError;
+    }
   | {
       readonly type: "ORDER_RECONCILED";
       readonly exchangeOrderId: string | null;
