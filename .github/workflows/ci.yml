@@ -82,21 +82,30 @@ jobs:
       # explicitly.
       - name: Deploy market data Worker
         run: |
-          output=$(pnpm --filter @dodash/mcp-market-data exec wrangler deploy 2>&1)
+          if ! output=$(pnpm --filter @dodash/mcp-market-data exec wrangler deploy 2>&1); then
+            printf '%s\n' "$output"
+            exit 1
+          fi
           printf '%s\n' "$output"
           version_id=$(printf '%s\n' "$output" | sed -n 's/^Current Version ID: //p')
           test -n "$version_id"
           pnpm --filter @dodash/mcp-market-data exec wrangler versions deploy --version-id "$version_id" --percentage 100 --yes
       - name: Deploy Trading Agent Worker
         run: |
-          output=$(pnpm --filter @dodash/agent exec wrangler deploy 2>&1)
+          if ! output=$(pnpm --filter @dodash/agent exec wrangler deploy 2>&1); then
+            printf '%s\n' "$output"
+            exit 1
+          fi
           printf '%s\n' "$output"
           version_id=$(printf '%s\n' "$output" | sed -n 's/^Current Version ID: //p')
           test -n "$version_id"
           pnpm --filter @dodash/agent exec wrangler versions deploy --version-id "$version_id" --percentage 100 --yes
       - name: Deploy dashboard API Worker
         run: |
-          output=$(pnpm --filter @dodash/dashboard-api exec wrangler deploy 2>&1)
+          if ! output=$(pnpm --filter @dodash/dashboard-api exec wrangler deploy 2>&1); then
+            printf '%s\n' "$output"
+            exit 1
+          fi
           printf '%s\n' "$output"
           version_id=$(printf '%s\n' "$output" | sed -n 's/^Current Version ID: //p')
           test -n "$version_id"
