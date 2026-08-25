@@ -1,4 +1,4 @@
-import { executePaperOrder, type PaperPortfolio } from "@dodash/backtest";
+import { executePaperOrder, type PaperPortfolio } from "@dodash/paper-execution";
 import { err, ok, type Candle, type OrderIntent } from "@dodash/domain";
 import type { WorkflowError } from "@dodash/models";
 import { describe, expect, it } from "vitest";

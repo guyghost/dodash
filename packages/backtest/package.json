@@ -26,6 +26,7 @@
     "@dodash/domain": "workspace:*",
     "@dodash/indicators-prolog": "workspace:*",
     "@dodash/models": "workspace:*",
+    "@dodash/paper-execution": "workspace:*",
     "@dodash/risk": "workspace:*",
     "@dodash/strategies": "workspace:*",
     "xstate": "^5.32.5"

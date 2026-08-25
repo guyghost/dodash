@@ -1,5 +1,5 @@
 {
-  "name": "@dodash/strategies",
+  "name": "@dodash/paper-execution",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,9 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dodash/domain": "workspace:*",
-    "@dodash/indicators-prolog": "workspace:*",
-    "@dodash/models": "workspace:*"
+    "@dodash/domain": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.1.10"

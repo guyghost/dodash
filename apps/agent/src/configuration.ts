@@ -4,7 +4,7 @@ import {
   type IndicatorConfig,
 } from "@dodash/indicators-prolog";
 import { createProductId, err, ok, type ProductId, type Result, type Timeframe } from "@dodash/domain";
-import type { PaperBrokerConfig } from "@dodash/backtest";
+import type { PaperBrokerConfig } from "@dodash/paper-execution";
 import {
   assessLiveTradingPolicy,
   LIVE_TRADING_POLICY,

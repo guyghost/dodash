@@ -28,8 +28,9 @@ flowchart LR
 | `models/` | Machines XState, événements, transitions, invariants et revues |
 | `packages/domain` | Primitives validées et résultats typés |
 | `packages/indicators-prolog` | Indicateurs purs exécutés via Tau-Prolog |
-| `packages/strategies` | Registre multi-stratégie et signaux normalisés |
+| `packages/strategies` | Registre, signaux et décorateurs déterministes de stratégie |
 | `packages/allocator`, `packages/risk` | Décision déterministe et garde-fous |
+| `packages/paper-execution` | Exécution paper pure partagée par le runtime et le backtest |
 | `packages/backtest` | Rejeu du même cœur métier sans I/O |
 | `apps/mcp-market-data` | MCP et frontière Coinbase read-only, cache KV |
 | `apps/agent` | Durable Object, Alarm API, SQLite et exécution Coinbase |
@@ -53,6 +54,11 @@ pnpm test
 pnpm build
 pnpm --filter @dodash/dashboard test:sites
 ```
+
+Si le shim Corepack de la machine est indisponible après l'installation des
+dépendances, `npm run verify:local` exécute les contrôles de secrets, types,
+tests, builds et artefacts Sites sans se réinvoquer via pnpm. Le gate
+`pnpm verify:push` reste la référence avant push, car il ajoute l'audit pnpm.
 
 Le dashboard peut être inspecté sans secret avec **Voir la démo** :
 

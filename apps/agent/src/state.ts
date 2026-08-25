@@ -1,4 +1,4 @@
-import type { PaperPortfolio } from "@dodash/backtest";
+import type { PaperPortfolio } from "@dodash/paper-execution";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 import {
   resolveDailyRiskWindow,

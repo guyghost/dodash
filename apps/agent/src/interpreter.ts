@@ -1,16 +1,6 @@
 import { allocateSignals } from "@dodash/allocator";
-import {
-  withConfidenceCalibration,
-  withTargetSignalNotional,
-} from "@dodash/backtest";
 import { computeIndicators } from "@dodash/indicators-prolog";
 import { checkRisk } from "@dodash/risk";
-import {
-  createBreakoutStrategy,
-  createEmaCrossStrategy,
-  createRsiReversionStrategy,
-  createStrategyRegistry,
-} from "@dodash/strategies";
 import {
   resolveDailyRiskWindow,
   type TradingCycleEvent,
@@ -19,10 +9,9 @@ import {
   type WorkflowPhase,
 } from "@dodash/models";
 import type { Timeframe } from "@dodash/domain";
-import type { Strategy } from "@dodash/strategies";
 
-import type { AgentConfiguration } from "./configuration.js";
 import { createTradingMachineSession } from "./machine-session.js";
+import { createConfiguredStrategyRegistry } from "./strategy-registry.js";
 import type {
   CycleArtifacts,
   ExecutionAuthorization,
@@ -46,45 +35,6 @@ const workflowError = (
   code: WorkflowErrorCode,
   retryable = false,
 ): WorkflowError => ({ phase, code, retryable });
-
-const createRegistry = (configuration: AgentConfiguration) => {
-  const strategies = configuration.strategyIds.map((id) => {
-    let strategy: Strategy;
-    switch (id) {
-      case "rsi-reversion":
-        strategy = createRsiReversionStrategy({
-          id,
-          oversold: 30,
-          overbought: 70,
-          baseSize: 0.01,
-        });
-        break;
-      case "ema-cross":
-        strategy = createEmaCrossStrategy({ id, baseSize: 0.01 });
-        break;
-      case "breakout":
-        strategy = createBreakoutStrategy({ id, lookback: 20, baseSize: 0.01 });
-        break;
-      default:
-        throw new Error(`Unsupported strategy id: ${id}`);
-    }
-    if (configuration.sizingPolicy.type === "NATIVE") return strategy;
-    const calibrated =
-      id === "rsi-reversion"
-        ? strategy
-        : withConfidenceCalibration(
-            strategy,
-            configuration.sizingPolicy.confidenceCalibration,
-          );
-    return withTargetSignalNotional(
-      calibrated,
-      configuration.sizingPolicy.targetSignalNotional,
-    );
-  });
-  const registry = createStrategyRegistry(strategies);
-  if (!registry.ok) throw new Error("Validated strategies produced an invalid registry");
-  return registry.value;
-};
 
 const missingArtifact = (phase: WorkflowPhase): WorkflowError => {
   const code: WorkflowErrorCode =
@@ -117,7 +67,7 @@ export const runTradingCycle = async (
     },
     input.machine,
   );
-  const registry = createRegistry(input.configuration);
+  const registry = createConfiguredStrategyRegistry(input.configuration);
   let artifacts = input.artifacts;
   let previousIndicators = input.previousIndicators;
   let portfolio = input.portfolio;

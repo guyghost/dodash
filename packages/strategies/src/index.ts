@@ -11,4 +11,5 @@ export type {
   StrategyError,
   StrategyRegistry,
 } from "./strategy.js";
-
+export { withConfidenceCalibration } from "./confidence-calibration.js";
+export { withTargetSignalNotional } from "./target-notional.js";

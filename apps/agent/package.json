@@ -13,10 +13,10 @@
   },
   "dependencies": {
     "@dodash/allocator": "workspace:*",
-    "@dodash/backtest": "workspace:*",
     "@dodash/domain": "workspace:*",
     "@dodash/indicators-prolog": "workspace:*",
     "@dodash/models": "workspace:*",
+    "@dodash/paper-execution": "workspace:*",
     "@dodash/risk": "workspace:*",
     "@dodash/strategies": "workspace:*",
     "agents": "^0.20.1",

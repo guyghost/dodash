@@ -12,8 +12,9 @@
     "check": "turbo run check",
     "dev": "turbo run dev --parallel",
     "prepare": "simple-git-hooks",
-    "scan:secrets": "node --test scripts/scan-secrets.test.mjs scripts/ci-workflow-security.test.mjs && node scripts/scan-secrets.mjs",
+    "scan:secrets": "node --test scripts/scan-secrets.test.mjs scripts/ci-workflow-security.test.mjs scripts/architecture-boundaries.test.mjs && node scripts/scan-secrets.mjs",
     "test": "turbo run test",
+    "verify:local": "npm run scan:secrets && npm run check && npm test && npm run build && npm --prefix apps/dashboard run test:sites",
     "verify:commit": "pnpm check",
     "verify:push": "pnpm audit --audit-level=high && pnpm scan:secrets && pnpm check && pnpm test && pnpm build && pnpm --filter @dodash/dashboard test:sites"
   },
@@ -22,6 +23,7 @@
     "pre-push": "pnpm verify:push"
   },
   "devDependencies": {
+    "pnpm": "11.22.0",
     "simple-git-hooks": "^2.13.1",
     "turbo": "^2.10.10",
     "typescript": "^7.0.2"

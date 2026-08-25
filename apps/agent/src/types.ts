@@ -10,7 +10,7 @@ import type {
 import type { AllocationDecision } from "@dodash/allocator";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 import type { RiskDecision } from "@dodash/risk";
-import type { PaperPortfolio } from "@dodash/backtest";
+import type { PaperPortfolio } from "@dodash/paper-execution";
 import type { DailyRiskWindow, ShutdownMode, WorkflowError } from "@dodash/models";
 
 import type { AgentConfiguration } from "./configuration.js";

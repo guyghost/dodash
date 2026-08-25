@@ -1,4 +1,4 @@
-import type { PaperPortfolio } from "@dodash/backtest";
+import type { PaperPortfolio } from "@dodash/paper-execution";
 import { err, ok, type ProductId, type Result } from "@dodash/domain";
 import type { WorkflowError } from "@dodash/models";
 import { z } from "zod";

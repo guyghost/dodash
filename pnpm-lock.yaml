@@ -11,6 +11,9 @@ importers:
 
   .:
     devDependencies:
+      pnpm:
+        specifier: 11.22.0
+        version: 11.22.0
       simple-git-hooks:
         specifier: ^2.13.1
         version: 2.13.1
@@ -26,9 +29,6 @@ importers:
       '@dodash/allocator':
         specifier: workspace:*
         version: link:../../packages/allocator
-      '@dodash/backtest':
-        specifier: workspace:*
-        version: link:../../packages/backtest
       '@dodash/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -38,6 +38,9 @@ importers:
       '@dodash/models':
         specifier: workspace:*
         version: link:../../models
+      '@dodash/paper-execution':
+        specifier: workspace:*
+        version: link:../../packages/paper-execution
       '@dodash/risk':
         specifier: workspace:*
         version: link:../../packages/risk
@@ -181,6 +184,9 @@ importers:
       '@dodash/models':
         specifier: workspace:*
         version: link:../../models
+      '@dodash/paper-execution':
+        specifier: workspace:*
+        version: link:../paper-execution
       '@dodash/risk':
         specifier: workspace:*
         version: link:../risk
@@ -220,6 +226,16 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(yaml@2.9.0))
 
+  packages/paper-execution:
+    dependencies:
+      '@dodash/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@26.2.0)(vite@8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(yaml@2.9.0))
+
   packages/risk:
     dependencies:
       '@dodash/domain':
@@ -238,6 +254,9 @@ importers:
       '@dodash/indicators-prolog':
         specifier: workspace:*
         version: link:../indicators-prolog
+      '@dodash/models':
+        specifier: workspace:*
+        version: link:../../models
     devDependencies:
       vitest:
         specifier: ^4.1.10
@@ -2104,6 +2123,11 @@ packages:
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
+
+  pnpm@11.22.0:
+    resolution: {integrity: sha512-H/hwxMYTPf2I+yr8Rt0T1H8JyXlLQ4xv20fKmMrzvBY4HuC+k6CRuOOCTPAfiJ9G19niCRD7C+GrD7W6qA3WIQ==}
+    engines: {node: '>=22.13'}
+    hasBin: true
 
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
@@ -4017,6 +4041,8 @@ snapshots:
   picomatch@4.0.5: {}
 
   pkce-challenge@5.0.1: {}
+
+  pnpm@11.22.0: {}
 
   postcss@8.5.26:
     dependencies:

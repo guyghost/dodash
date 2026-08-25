@@ -1,5 +1,5 @@
-import { executePaperOrder } from "@dodash/backtest";
 import { err, ok, type OrderIntent, type Result } from "@dodash/domain";
+import { executePaperOrder } from "@dodash/paper-execution";
 import type { RiskDecision } from "@dodash/risk";
 import {
   assessLiveTradingAgentIdentity,
