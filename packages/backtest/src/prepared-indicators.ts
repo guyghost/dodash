@@ -7,9 +7,9 @@ import {
 } from "@dodash/domain";
 import {
   computeIndicators,
-  IndicatorConfig,
-  IndicatorError,
-  IndicatorSnapshot,
+  type IndicatorConfig,
+  type IndicatorError,
+  type IndicatorSnapshot,
   requiredIndicatorCandles,
 } from "@dodash/indicators-prolog";
 

@@ -24,6 +24,7 @@ export interface LiveSellProtectionContext {
   readonly lastError: WorkflowError | null;
 }
 
+// biome-ignore lint/suspicious/noEmptyInterface: entrée sans champ, contrainte structurelle volontaire
 export interface LiveSellProtectionInput {}
 
 export type LiveSellProtectionEvent =

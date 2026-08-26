@@ -68,7 +68,9 @@ describe("Coinbase execution adapter", () => {
   });
 
   it("submits a base-sized market IOC and requires reconciliation", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async (_url, init) =>
+    const fetchMock = vi.fn<typeof fetch>(
+      // biome-ignore lint/correctness/noUnusedFunctionParameters: _url préserve l’arité de fetch
+      async (_url, init) =>
       Response.json({
         success: true,
         success_response: {

@@ -10,7 +10,7 @@ const worker = path.join(root, "worker", "index.js");
 const hosting = path.join(root, ".openai", "hosting.json");
 
 for (const file of [index, worker, hosting]) {
-  if (!existsSync(file)) throw new Error("Missing Sites build input: " + file);
+  if (!existsSync(file)) throw new Error(`Missing Sites build input: ${file}`);
 }
 
 mkdirSync(path.join(dist, "server"), { recursive: true });

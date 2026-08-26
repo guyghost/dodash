@@ -308,7 +308,8 @@ export function App({
           </div>
         </div>
         <div className="rule" />
-        <div className="legend" aria-label="Légende système">
+        {/* biome-ignore lint/a11y/useSemanticElements: conteneur de présentation, fieldset altérerait le rendu */}
+        <div className="legend" role="group" aria-label="Légende système">
           <span><i className="orange" />Agent</span>
           <span><i className="teal" />Marché</span>
           <span><i className="purple" />Indicateurs</span>
@@ -454,6 +455,7 @@ export function App({
                 <div className="control-buttons">
                   <button
                     className="button primary"
+                    type="button"
                     onClick={() => issueCommand("tick")}
                     disabled={busy || !agent.enabled}
                   >
@@ -461,6 +463,7 @@ export function App({
                   </button>
                   <button
                     className="button secondary"
+                    type="button"
                     onClick={() => issueCommand("stop")}
                     disabled={busy || !agent.enabled}
                   >
@@ -468,6 +471,7 @@ export function App({
                   </button>
                   <button
                     className="button secondary"
+                    type="button"
                     onClick={() => issueCommand("reset")}
                     disabled={
                       busy ||
@@ -478,6 +482,7 @@ export function App({
                   </button>
                   <button
                     className="button danger"
+                    type="button"
                     onClick={() =>
                       actor.send({
                         type: "KILL_CONFIRMATION_REQUESTED",
@@ -497,6 +502,7 @@ export function App({
                 </p>
                 <button
                   className="text-button"
+                  type="button"
                   onClick={() => actor.send({ type: "DISCONNECT_REQUESTED" })}
                 >
                   Fermer la session
@@ -511,10 +517,8 @@ export function App({
               title="BOUCLE D’EXÉCUTION"
               detail="UNE TRANSITION À LA FOIS"
             />
-            <div
-              className="pipeline"
-              aria-label={`Phase courante : ${phaseLabel(agent.phase)}`}
-            >
+            {/* biome-ignore lint/a11y/useSemanticElements: conteneur de présentation, fieldset altérerait le rendu */}
+            <div className="pipeline" role="group" aria-label={`Phase courante : ${phaseLabel(agent.phase)}`}>
               {PIPELINE.map((item, index) => (
                 <div
                   key={item.phase}
@@ -581,6 +585,7 @@ export function App({
               />
               <article className="paper-card start-card">
                 <div className="start-fields">
+                  {/* biome-ignore lint/a11y/noLabelWithoutControl: le ternaire contient toujours un select ou un input */}
                   <label>
                     Produit
                     {executionMode === "live" ? (
@@ -655,6 +660,7 @@ export function App({
                 )}
                 <button
                   className="button primary"
+                  type="button"
                   onClick={() => issueCommand("start")}
                   disabled={
                     busy || strategyIds.length === 0 || liveStartBlocked
@@ -731,12 +737,14 @@ export function App({
             <div className="button-row">
               <button
                 className="button danger"
+                type="button"
                 onClick={() => actor.send({ type: "KILL_CONFIRMED", permissions })}
               >
                 Confirmer le kill
               </button>
               <button
                 className="button secondary"
+                type="button"
                 onClick={() => actor.send({ type: "KILL_CANCELLED" })}
               >
                 Annuler

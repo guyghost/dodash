@@ -11,7 +11,6 @@ import { createProductId, createSignal, type Candle } from "@dodash/domain";
 import {
   createStrategyRegistry,
   type Strategy,
-  type StrategyRegistry,
 } from "@dodash/strategies";
 
 import {

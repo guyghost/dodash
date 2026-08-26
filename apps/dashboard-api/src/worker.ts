@@ -59,6 +59,7 @@ const parseRoute = (url: URL): ParsedRoute | null => {
     name.length === 0 ||
     name.length > 200 ||
     name.trim() !== name ||
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: rejet volontaire des caractères de contrôle dans les noms d’en-tête
     /[\u0000-\u001f\u007f/\\]/u.test(name)
   ) {
     return null;

@@ -20,7 +20,11 @@ const createTradingActor = () =>
 const send = (
   actor: ReturnType<typeof createTradingActor>,
   ...events: TradingCycleEvent[]
-) => events.forEach((event) => actor.send(event));
+) => {
+  for (const event of events) {
+    actor.send(event);
+  }
+};
 
 const reachRisk = (actor: ReturnType<typeof createTradingActor>) => {
   send(

@@ -28,13 +28,6 @@ const WINDOWS: readonly WindowSpec[] = [
   { label: "bear", startAt: Date.parse("2025-08-21"), endAt: Date.parse("2026-08-21") },
 ];
 
-const PROFILES: readonly ConfidenceCalibrationProfile[] = [
-  "IDENTITY",
-  "POWER_HALF",
-  "POWER_THIRD",
-  "POWER_QUARTER",
-];
-
 // Contrôle CS2 : cellule sans le champ (config V1 historique à vide).
 const UNSET = "__UNSET__" as const;
 type Cell = ConfidenceCalibrationProfile | typeof UNSET;

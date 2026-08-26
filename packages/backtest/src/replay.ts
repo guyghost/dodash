@@ -73,6 +73,7 @@ type RiskReasonCodesAligned = [RiskReasonCode] extends [RiskRejectionReasonCode]
     ? true
     : never
   : never;
+// biome-ignore lint/correctness/noUnusedVariables: verrou de compilation intentionnel, jamais référencé
 type RiskReasonCodesLock = RiskReasonCodesAligned extends true ? true : never;
 import {
   executePaperOrder,
@@ -695,7 +696,7 @@ export const replayBacktest = async (
                 signal.strategyId,
                 regimePermissions,
               );
-        if (permission !== null && permission.ok && permission.value) {
+        if (permission?.ok && permission.value) {
           allowedSignals.push(signal);
           regimeCounters.signalsPassed += 1;
           if (activeRegime !== null) passedByRegime[activeRegime] += 1;

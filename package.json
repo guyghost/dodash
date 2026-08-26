@@ -11,20 +11,22 @@
     "build": "turbo run build",
     "check": "turbo run check",
     "dev": "turbo run dev --parallel",
+    "lint": "biome lint .",
     "prepare": "simple-git-hooks",
     "coverage": "turbo run test:coverage",
     "scan:secrets": "node --test scripts/scan-secrets.test.mjs scripts/ci-workflow-security.test.mjs scripts/architecture-boundaries.test.mjs && node scripts/scan-secrets.mjs",
     "test:release-evidence": "pnpm --filter @dodash/models build && node --test scripts/generate-release-evidence.test.mjs",
     "test": "turbo run test",
-    "verify:local": "npm run scan:secrets && npm run check && npm test && npm run coverage && npm run build && npm --prefix apps/dashboard run test:sites",
+    "verify:local": "npm run lint && npm run scan:secrets && npm run check && npm test && npm run coverage && npm run build && npm --prefix apps/dashboard run test:sites",
     "verify:commit": "pnpm check",
-    "verify:push": "pnpm audit --audit-level=high && pnpm scan:secrets && pnpm check && pnpm test && pnpm coverage && pnpm build && pnpm --filter @dodash/dashboard test:sites"
+    "verify:push": "pnpm audit --audit-level=high && pnpm lint && pnpm scan:secrets && pnpm check && pnpm test && pnpm coverage && pnpm build && pnpm --filter @dodash/dashboard test:sites"
   },
   "simple-git-hooks": {
     "pre-commit": "npm run verify:commit",
     "pre-push": "npm run verify:push"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.10",
     "pnpm": "11.22.0",
     "simple-git-hooks": "^2.13.1",
     "turbo": "^2.10.10",
