@@ -23,6 +23,13 @@ export interface IndicatorConfig {
   readonly volumeSpikeThreshold: number;
   readonly volumeTrendPeriod: number;
   readonly trendStrengthPeriod: number;
+  /**
+   * Paire d'EMAs de signal optionnelle (models/ema-signal-decoupling.md) :
+   * les deux champs présents ou aucun (INV-E2). Absente ⇒ comportement et
+   * requêtes Prolog strictement identiques à V1 (INV-E1).
+   */
+  readonly signalEmaFastPeriod?: number;
+  readonly signalEmaSlowPeriod?: number;
 }
 
 export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = Object.freeze({
@@ -77,6 +84,13 @@ export interface IndicatorSnapshot {
   readonly rsi: number;
   readonly emaFast: number;
   readonly emaSlow: number;
+  /**
+   * EMAs de signal (models/ema-signal-decoupling.md INV-E1) : absentes du
+   * snapshot tant que la paire n'est pas configurée — le snapshot reste
+   * identique à V1 ; présentes avec la convention `?? 0` sinon.
+   */
+  readonly signalEmaFast?: number;
+  readonly signalEmaSlow?: number;
   readonly macd: number;
   readonly atr: number;
   readonly historicalVolatility: number;
@@ -198,12 +212,22 @@ const validConfig = (config: IndicatorConfig): boolean =>
   validPeriod(config.volumeTrendPeriod) &&
   config.volumeTrendPeriod >= 2 &&
   validPeriod(config.trendStrengthPeriod) &&
-  config.emaFastPeriod < config.emaSlowPeriod;
+  config.emaFastPeriod < config.emaSlowPeriod &&
+  // INV-E2 (models/ema-signal-decoupling.md) : couplage strict, fail-closed.
+  ((config.signalEmaFastPeriod === undefined &&
+    config.signalEmaSlowPeriod === undefined) ||
+    (config.signalEmaFastPeriod !== undefined &&
+      config.signalEmaSlowPeriod !== undefined &&
+      validPeriod(config.signalEmaFastPeriod) &&
+      validPeriod(config.signalEmaSlowPeriod) &&
+      config.signalEmaFastPeriod < config.signalEmaSlowPeriod));
 
 export const requiredIndicatorCandles = (config: IndicatorConfig): number =>
   Math.max(
     config.rsiPeriod + 1,
     config.emaSlowPeriod,
+    // INV-E2 : le warm-up couvre la paire de signal quand elle est présente.
+    config.signalEmaSlowPeriod ?? 0,
     config.atrPeriod,
     config.historicalVolatilityPeriod + 1,
     config.momentumPeriod + 1,
@@ -300,6 +324,9 @@ export const computeIndicators = async (
   const fixedWindowList = (values: readonly number[], length: number): string =>
     asPrologList(values.slice(-length));
   const candleValues: Record<string, number> = {};
+  // INV-E1 : paire absente ⇒ aucune requête Prolog additionnelle.
+  const signalEmaActive =
+    config.signalEmaFastPeriod !== undefined && config.signalEmaSlowPeriod !== undefined;
   const fixedGoals: readonly (readonly [string, string])[] = [
     [
       "Rsi",
@@ -324,6 +351,18 @@ export const computeIndicators = async (
       "TrendStrength",
       `trend_strength(${fixedWindowList(highValues, config.trendStrengthPeriod * 2)}, ${fixedWindowList(lowValues, config.trendStrengthPeriod * 2)}, ${fixedWindowList(closeValues, config.trendStrengthPeriod * 2)}, ${config.trendStrengthPeriod}, Value).`,
     ],
+    ...(signalEmaActive
+      ? ([
+          [
+            "SignalEmaFast",
+            `ema(${closes}, ${config.signalEmaFastPeriod}, Value).`,
+          ],
+          [
+            "SignalEmaSlow",
+            `ema(${closes}, ${config.signalEmaSlowPeriod}, Value).`,
+          ],
+        ] as const)
+      : []),
   ];
   for (const [indicator, goal] of fixedGoals) {
     const result = await queryNumber(session, indicator, goal);
@@ -468,6 +507,14 @@ export const computeIndicators = async (
       rsi: candleValues.Rsi ?? 0,
       emaFast: candleValues.EmaFast ?? 0,
       emaSlow: candleValues.EmaSlow ?? 0,
+      // INV-E1 : clés absentes du snapshot tant que la paire n'est pas
+      // configurée — représentation et requêtes identiques à V1.
+      ...(signalEmaActive
+        ? {
+            signalEmaFast: candleValues.SignalEmaFast ?? 0,
+            signalEmaSlow: candleValues.SignalEmaSlow ?? 0,
+          }
+        : {}),
       macd: candleValues.Macd ?? 0,
       atr: candleValues.Atr ?? 0,
       historicalVolatility: candleValues.HistoricalVolatility ?? 0,

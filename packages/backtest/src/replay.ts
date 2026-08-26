@@ -221,6 +221,11 @@ const validPreparedIndicators = (
   prepared.config.volumeSpikeThreshold === config.volumeSpikeThreshold &&
   prepared.config.volumeTrendPeriod === config.volumeTrendPeriod &&
   prepared.config.trendStrengthPeriod === config.trendStrengthPeriod &&
+  // INV-E1 (models/ema-signal-decoupling.md, correction review 1) : les
+  // champs optionnels font partie de la comparaison — un prepared E0 ne
+  // peut jamais alimenter un replay E1 (et réciproquement) sans rejet.
+  prepared.config.signalEmaFastPeriod === config.signalEmaFastPeriod &&
+  prepared.config.signalEmaSlowPeriod === config.signalEmaSlowPeriod &&
   prepared.snapshots.length === candles.length &&
   prepared.snapshots.every((snapshot, index) =>
     index < warmup - 1

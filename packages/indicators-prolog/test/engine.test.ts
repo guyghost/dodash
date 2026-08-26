@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Candle } from "@dodash/domain";
 
-import { computeIndicators } from "../src/index.js";
+import { computeIndicators, type IndicatorConfig } from "../src/index.js";
 
 const candlesFromCloses = (closes: readonly number[]): Candle[] =>
   closes.map((close, index) => ({
@@ -252,5 +252,74 @@ describe("computeIndicators", () => {
     expect(first.ok && withTrades.ok && first.value.snapshotId).not.toBe(
       withTrades.ok ? withTrades.value.snapshotId : "",
     );
+  });
+});
+
+describe("paire d'EMAs de signal (models/ema-signal-decoupling.md)", () => {
+  it("INV-E1 : config sans paire ⇒ clés absentes du snapshot", async () => {
+    const candles = candlesFromCloses([10, 11, 12, 13, 14, 15, 16, 17]);
+    const result = await computeIndicators(candles, config);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect("signalEmaFast" in result.value).toBe(false);
+    expect("signalEmaSlow" in result.value).toBe(false);
+  });
+
+  it("calcule la paire de signal 5/13 et l'expose quand elle est configurée", async () => {
+    const candles = candlesFromCloses(
+      Array.from({ length: 16 }, (_, index) => 10 + index),
+    );
+    const withPair = await computeIndicators(candles, {
+      ...config,
+      emaFastPeriod: 12,
+      emaSlowPeriod: 26,
+      signalEmaFastPeriod: 5,
+      signalEmaSlowPeriod: 13,
+    });
+    // 16 candles < 26 requis par emaSlowPeriod : refus attendu (warm-up).
+    expect(withPair).toEqual({
+      ok: false,
+      error: { code: "INSUFFICIENT_CANDLES", required: 26, actual: 16 },
+    });
+    const enough = await computeIndicators(
+      candlesFromCloses(Array.from({ length: 30 }, (_, index) => 10 + index)),
+      {
+        ...config,
+        emaFastPeriod: 12,
+        emaSlowPeriod: 26,
+        signalEmaFastPeriod: 5,
+        signalEmaSlowPeriod: 13,
+      },
+    );
+    expect(enough.ok).toBe(true);
+    if (!enough.ok) return;
+    const signalFast = enough.value.signalEmaFast;
+    const signalSlow = enough.value.signalEmaSlow;
+    expect(signalFast).toBeDefined();
+    expect(signalSlow).toBeDefined();
+    if (signalFast === undefined || signalSlow === undefined) return;
+    expect(signalFast).toBeGreaterThan(0);
+    expect(signalSlow).toBeGreaterThan(0);
+    // Série strictement croissante : la paire rapide 5/13 colle davantage
+    // au dernier close que la paire historique 12/26 — cohérence numérique
+    // du calcul (5 < 12 et 13 < 26, mêmes sémantiques de fenêtre).
+    expect(signalFast).toBeGreaterThan(enough.value.emaFast);
+    expect(signalSlow).toBeGreaterThan(enough.value.emaSlow);
+    expect(signalFast).toBeGreaterThan(signalSlow);
+  });
+
+  it("INV-E2 : rejette toute combinaison incomplète ou inversée", async () => {
+    const candles = candlesFromCloses([10, 11, 12, 13, 14, 15]);
+    const cases: readonly IndicatorConfig[] = [
+      { ...config, signalEmaFastPeriod: 5 },
+      { ...config, signalEmaSlowPeriod: 13 },
+      { ...config, signalEmaFastPeriod: 13, signalEmaSlowPeriod: 5 },
+      { ...config, signalEmaFastPeriod: 0, signalEmaSlowPeriod: 13 },
+      { ...config, signalEmaFastPeriod: 5.5, signalEmaSlowPeriod: 13 },
+    ];
+    for (const candidate of cases) {
+      const result = await computeIndicators(candles, candidate);
+      expect(result).toEqual({ ok: false, error: { code: "INVALID_CONFIG" } });
+    }
   });
 });

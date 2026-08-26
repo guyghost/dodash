@@ -114,3 +114,84 @@ describe("strategies", () => {
     });
   });
 });
+
+describe("ema-cross — paire de signal (models/ema-signal-decoupling.md)", () => {
+  const strategy = createEmaCrossStrategy({ baseSize: 1 });
+
+  it("INV-E3 : suit la paire de signal quand elle est active des deux côtés", () => {
+    // Historique 12/26 sans cross ; signal 5/13 en cross-up dans un
+    // BULLISH établi — la décision doit suivre la paire de signal.
+    const previous = snapshot({
+      emaFast: 110,
+      emaSlow: 100,
+      signalEmaFast: 98,
+      signalEmaSlow: 99,
+    });
+    const current = snapshot({
+      emaFast: 111,
+      emaSlow: 100,
+      signalEmaFast: 100,
+      signalEmaSlow: 99,
+    });
+    const result = strategy.evaluate(context({ indicators: current, previousIndicators: previous }));
+    expect(result.ok && result.value.side).toBe("BUY");
+    expect(result.ok && result.value.reasonCode).toBe("EMA_CROSS_UP");
+  });
+
+  it("INV-E3 : la paire historique pilote seul quand la paire de signal est absente (V1)", () => {
+    // Cross-up sur 12/26, aucune paire de signal → comportement V1 exact.
+    const previous = snapshot({ emaFast: 99, emaSlow: 100 });
+    const current = snapshot({ emaFast: 101, emaSlow: 100 });
+    const result = strategy.evaluate(context({ indicators: current, previousIndicators: previous }));
+    expect(result.ok && result.value.side).toBe("BUY");
+  });
+
+  it("INV-E3 : un cross de la paire historique est ignoré quand la paire de signal est active", () => {
+    // 12/26 croise vers le bas pendant que 5/13 reste orientée haut :
+    // la décision suit exclusivement la paire de signal → HOLD.
+    const previous = snapshot({
+      emaFast: 100,
+      emaSlow: 100,
+      signalEmaFast: 105,
+      signalEmaSlow: 104,
+    });
+    const current = snapshot({
+      emaFast: 99,
+      emaSlow: 100,
+      signalEmaFast: 106,
+      signalEmaSlow: 104,
+    });
+    const result = strategy.evaluate(context({ indicators: current, previousIndicators: previous }));
+    expect(result.ok && result.value.side).toBe("HOLD");
+  });
+
+  it("INV-E6 : warm-up (previous null) ⇒ HOLD même avec paire active", () => {
+    const current = snapshot({
+      signalEmaFast: 100,
+      signalEmaSlow: 99,
+    });
+    const result = strategy.evaluate(context({ indicators: current, previousIndicators: null }));
+    expect(result.ok && result.value.side).toBe("HOLD");
+    expect(result.ok && result.value.reasonCode).toBe("EMA_WARMUP");
+  });
+
+  it("INV-E3 : bascule warm-up de la paire (current active, previous inactif) ⇒ paire historique", () => {
+    // Cas structurellement impossible sous INV-E2 (requiredIndicatorCandles
+    // couvre la paire), mais fail-closed : la décision ne mélange jamais
+    // les paires — previous inactif ⇒ paire historique des deux côtés.
+    const previous = snapshot({
+      emaFast: 100,
+      emaSlow: 100,
+      signalEmaFast: 0,
+      signalEmaSlow: 0,
+    });
+    const current = snapshot({
+      emaFast: 102,
+      emaSlow: 100,
+      signalEmaFast: 104,
+      signalEmaSlow: 103,
+    });
+    const result = strategy.evaluate(context({ indicators: current, previousIndicators: previous }));
+    expect(result.ok && result.value.side).toBe("BUY");
+  });
+});
