@@ -36,7 +36,7 @@ jobs:
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
         run: printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_sha || github.sha }}
       - uses: actions/setup-node@v6
@@ -77,7 +77,7 @@ jobs:
         env:
           RELEASE_SHA: ${{ inputs.release_sha }}
         run: printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_sha }}
       - uses: actions/setup-node@v6
