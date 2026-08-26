@@ -12,15 +12,15 @@
     "types": "wrangler types"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260817.1",
+    "@cloudflare/workers-types": "^5.20260823.1",
     "@types/node": "^26.2.0",
-    "vitest": "^4.1.10",
-    "wrangler": "^4.123.0"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.125.0"
   },
   "dependencies": {
     "@dodash/domain": "workspace:*",
     "@modelcontextprotocol/server": "2.0.0",
-    "agents": "^0.20.1",
+    "agents": "^0.21.0",
     "zod": "^4.4.3"
   }
 }
