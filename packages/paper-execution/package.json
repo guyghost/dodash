@@ -13,12 +13,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@dodash/domain": "workspace:*"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "4.1.10",
     "vitest": "^4.1.10"
   }
 }
