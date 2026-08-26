@@ -97,9 +97,14 @@ la validation des deux datasets demandés.
    synthétique ou levier implicite n’est autorisé.
 5. `computingMetrics` calcule les métriques de la stratégie et le benchmark
    buy-and-hold sur exactement les mêmes bornes, frais et capital initial.
-   Les frais d’entrée sont intégrés au prix de revient moyen. Seuls les fills
+   Les frais d'entrée sont intégrés au prix de revient moyen. Seuls les fills
    qui réduisent une position entrent dans le win rate et le profit factor.
    Le rapport sépare PnL réalisé et latent.
+   Il expose en outre un win rate liquidatif : lorsque la position terminale
+   n'est pas nulle, un trade synthétique unique de PnL égal au PnL latent
+   (position forcée au dernier close, avant coûts de sortie) s'ajoute au
+   dénominateur et, selon son signe, aux gains du numérateur. Le win rate
+   par fills reste inchangé et distinct.
    Il restitue aussi la projection définie dans `backtest-diagnostics.md` pour
    expliquer la transformation signal → allocation → approbation risque.
 6. Aucun état ni effet du backtest ne peut appeler l’adapter d’exécution live.
@@ -164,3 +169,7 @@ la validation des deux datasets demandés.
     `confidence-quantile-sensitivity.md` ; ses échantillons bruts sont opt-in,
     l'estimateur externe est figé avant les nouveaux actifs et la borne relative
     reste inchangée.
+26. Le win rate liquidatif ajoute exactement un trade synthétique lorsque la
+    position terminale est non nulle, de PnL égal au PnL latent au dernier
+    close ; il est égal au win rate par fills lorsque la position terminale est
+    nulle, et ne remplace ni le win rate ni le profit factor existants.

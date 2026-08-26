@@ -870,7 +870,12 @@ export const replayBacktest = async (
   if (regimeActor !== null && regimeActor.getSnapshot().status !== "done") {
     regimeActor.send({ type: "STOP_REQUESTED", reason: "SESSION_END" });
   }
-  const metrics = calculateMetrics(equityCurve, trades, config.initialCapital);
+  const metrics = calculateMetrics(
+    equityCurve,
+    trades,
+    config.initialCapital,
+    portfolio.positionQuantity,
+  );
   return ok(
     Object.freeze({
       runId: config.runId,

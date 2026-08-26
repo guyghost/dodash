@@ -14,6 +14,7 @@ export interface BacktestMetrics {
   readonly turnover: number;
   readonly totalReturn: number;
   readonly winRate: number;
+  readonly winRateLiquidative: number;
   readonly profitFactor: number | null;
   readonly sharpe: number;
   readonly maxDrawdown: number;
@@ -32,6 +33,7 @@ export const calculateMetrics = (
   equityCurve: readonly EquityPoint[],
   trades: readonly PaperTrade[],
   initialCapital: number,
+  openPositionQuantity = 0,
 ): BacktestMetrics => {
   const finalEquity = equityCurve.at(-1)?.equity ?? initialCapital;
   const pnl = finalEquity - initialCapital;
@@ -47,6 +49,15 @@ export const calculateMetrics = (
   const profitFactor = grossLoss === 0 ? null : grossProfit / grossLoss;
   const realizedPnl = realized.reduce((sum, value) => sum + value, 0);
   const unrealizedPnl = pnl - realizedPnl;
+  // Win rate liquidatif (models/backtest-run.md, INV-26) : une position
+  // terminale non nulle compte pour un trade synthétique de PnL égal au
+  // PnL latent (position forcée au dernier close, avant coûts de sortie).
+  const hasOpenPosition = openPositionQuantity > 0;
+  const liquidativeTrades = closedTrades.length + (hasOpenPosition ? 1 : 0);
+  const liquidativeWins =
+    wins.length + (hasOpenPosition && unrealizedPnl > 0 ? 1 : 0);
+  const winRateLiquidative =
+    liquidativeTrades === 0 ? 0 : liquidativeWins / liquidativeTrades;
   const fees = trades.reduce((sum, trade) => sum + trade.fill.fee, 0);
   const grossTradedNotional = trades.reduce(
     (sum, trade) => sum + Math.abs(trade.fill.price * trade.fill.quantity),
@@ -86,6 +97,7 @@ export const calculateMetrics = (
     turnover,
     totalReturn,
     winRate,
+    winRateLiquidative,
     profitFactor,
     sharpe,
     maxDrawdown,

@@ -13,6 +13,8 @@ import type { BacktestSuiteConfig } from "./suite.js";
 import type { RegimeExitArm } from "@dodash/models";
 
 const percent = (value: number): string => `${(value * 100).toFixed(2)}%`;
+const profitFactor = (value: number | null): string =>
+  value === null ? "n/a" : value.toFixed(2);
 const diagnosticValue = (value: number | null): string =>
   value === null ? "n/a" : value.toFixed(2);
 const diagnosticPercent = (value: number | null): string =>
@@ -127,7 +129,7 @@ const main = async (): Promise<void> => {
   );
   for (const scenario of result.value.report.scenarios) {
     console.log(
-      `${scenario.id}: return=${percent(scenario.metrics.totalReturn)} excess=${percent(scenario.excessReturn)} drawdown=${percent(scenario.metrics.maxDrawdown)} trades=${scenario.tradeCount} stops=${scenario.stopLossExitCount} takes=${scenario.takeProfitExitCount} ambiguous=${scenario.ambiguousExitCount} cap=${percent(scenario.diagnostics.allocation.capRate)} risk-reject=${percent(scenario.diagnostics.allocation.riskRejectionRate)}`,
+      `${scenario.id}: return=${percent(scenario.metrics.totalReturn)} excess=${percent(scenario.excessReturn)} drawdown=${percent(scenario.metrics.maxDrawdown)} winRate=${percent(scenario.metrics.winRate)} winRateLiq=${percent(scenario.metrics.winRateLiquidative)} profitFactor=${profitFactor(scenario.metrics.profitFactor)} trades=${scenario.tradeCount} stops=${scenario.stopLossExitCount} takes=${scenario.takeProfitExitCount} ambiguous=${scenario.ambiguousExitCount} cap=${percent(scenario.diagnostics.allocation.capRate)} risk-reject=${percent(scenario.diagnostics.allocation.riskRejectionRate)}`,
     );
     if (scenario.regimeGating !== null) {
       console.log(

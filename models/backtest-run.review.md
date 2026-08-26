@@ -103,3 +103,13 @@ terminal mémorise cette paire, tandis que le rapport restitue les métadonnées
 l’empreinte complètes. L’échec de chargement de l’un des datasets emprunte le
 chemin `HISTORICAL_DATA_FAILED` existant ; aucun fallback vers la résolution
 primaire seule n’est permis.
+
+Le win rate liquidatif est revu comme une projection, pas une exécution : la
+position terminale est forcée au dernier close avant coûts de sortie,
+exactement une fois, sans créer de fill ni modifier les compteurs de trades ou
+les métriques réalisées. Il ne remplace pas le win rate par fills et ne peut ni
+gonfler le numérateur d’une position gagnante jamais clôturée, ni —
+symétriquement — laisser un win rate de 100 % masquer une position terminale
+fortement perdante. L’égalité avec le win rate par fills lorsque la position
+terminale est nulle est posée en invariant ; aucune métrique, liquidative ou
+non, n’autorise le live.
