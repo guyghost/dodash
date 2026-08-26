@@ -22,7 +22,6 @@ import {
 import {
   executeCoinbaseKill,
   executeCoinbaseProtectedSell,
-  reconcileCoinbaseOwnedAccount,
   type CoinbaseProtectedSellCheckpoint,
   type CoinbaseProtectedSellPersistence,
 } from "./coinbase-control.js";
@@ -37,9 +36,9 @@ import {
   type CoinbaseExecutionSettings,
   type CoinbaseProtectionPlan,
 } from "./coinbase-execution.js";
+import { createTradingCycleEffects } from "./trading-effects.js";
 import { runTradingCycle } from "./interpreter.js";
 import { createTradingMachineSession, type PersistedTradingMachine } from "./machine-session.js";
-import { fetchMarketSnapshot } from "./market-service.js";
 import {
   INITIAL_AGENT_STATE,
   machineIsEnabled,
@@ -61,7 +60,6 @@ import type {
   TradingCycleEffects,
 } from "./types.js";
 import {
-  authorizationWorkflowError,
   executionWorkflowError,
   reconciliationWorkflowError,
   storageWorkflowError,
@@ -113,7 +111,6 @@ export type LivePreflightCommandResult =
 
 const storageError = storageWorkflowError;
 const executionError = executionWorkflowError;
-const authenticationError = authorizationWorkflowError;
 const reconciliationError = (retryable = true): WorkflowError =>
   reconciliationWorkflowError("RECONCILIATION_FAILURE", retryable);
 
@@ -553,171 +550,54 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   private createEffects(configuration: AgentConfiguration): TradingCycleEffects {
-    const liveSettings =
-      configuration.executionMode === "live"
-        ? resolveCoinbaseSettings(this.env)
-        : null;
-    return {
-      reconcileAccount: async (portfolio, observedAt) => {
-        if (configuration.executionMode === "paper") {
-          return ok({
-            snapshotId: `paper:${this.name}:${observedAt}`,
-            observedAt,
-            portfolio,
-            accountEquity:
-              portfolio.cash +
-              portfolio.positionQuantity * portfolio.averagePrice,
-            otherExposureNotional: 0,
-          });
-        }
-        if (liveSettings === null || !liveSettings.ok) {
-          return err(reconciliationError(false));
-        }
-        const knownProtectiveOrderIds = this.loadKnownProtectiveOrderIds();
-        if (!knownProtectiveOrderIds.ok) {
-          return err(reconciliationError(false));
-        }
-        return reconcileCoinbaseOwnedAccount(
-          liveSettings.value,
-          configuration.productId,
-          knownProtectiveOrderIds.value,
-        );
-      },
-      fetchMarketData: async (config, triggeredAt) =>
-        fetchMarketSnapshot(
-          this.env.MARKET_DATA,
-          this.env.INTERNAL_SERVICE_TOKEN,
-          config,
-          triggeredAt,
-        ),
-      ensureSchedule: async (intervalSeconds) => {
-        try {
-          const schedule = await this.ensureIntervalSchedule(intervalSeconds);
-          return ok({ nextWakeAt: schedule.time });
-        } catch {
-          return err({
-            phase: "schedule",
-            code: "SCHEDULE_FAILURE",
-            retryable: true,
-          });
-        }
-      },
-      checkpoint: async (artifacts) => this.checkpoint(artifacts),
-      persistMachine: async (nextMachine) => this.persistMachine(nextMachine),
-      persistOrderIntent: async (cycleId, intent) =>
+    return createTradingCycleEffects({
+      configuration,
+      env: this.env,
+      agentName: this.name,
+      ensureIntervalSchedule: (intervalSeconds) =>
+        this.ensureIntervalSchedule(intervalSeconds),
+      removeIntervalSchedule: () => this.removeIntervalSchedule(),
+      checkpoint: (artifacts) => this.checkpoint(artifacts),
+      persistMachine: (nextMachine) => this.persistMachine(nextMachine),
+      persistOrderIntent: (cycleId, intent) =>
         this.persistOrderIntent(cycleId, intent),
-      authorize: async () => {
-        if (configuration.executionMode === "paper") {
-          const issuedAt = Date.now();
-          return ok({ issuedAt, expiresAt: issuedAt + 60_000 });
-        }
-        if (liveSettings === null || !liveSettings.ok) {
-          return err(authenticationError());
-        }
-        return createCoinbaseAuthorization(
-          liveSettings.value,
-          "POST",
-          COINBASE_CREATE_ORDER_PATH,
-        );
-      },
-      submitOrder: async (
-        intent,
-        riskDecision,
-        authorization,
-        marketPrice,
-        portfolio,
-        at,
-      ) => {
-        if (configuration.executionMode === "paper") {
-          return this.submitPaperOrder(
-            intent,
-            marketPrice,
-            portfolio,
-            at,
-            configuration,
-          );
-        }
-        if (liveSettings === null || !liveSettings.ok) {
-          return {
-            status: "REJECTED",
-            error: authenticationError(),
-          };
-        }
-        return this.submitLiveOrder(
-          liveSettings.value,
-          intent,
-          riskDecision,
-          authorization,
-        );
-      },
-      reconcileOrder: async (intent, riskDecision, portfolio) => {
-        if (configuration.executionMode === "paper") {
-          return this.reconcilePaperOrder(intent);
-        }
-        if (liveSettings === null || !liveSettings.ok) {
-          return err(reconciliationError());
-        }
-        return this.reconcileLiveOrder(
-          liveSettings.value,
-          intent,
-          riskDecision,
-          portfolio,
-        );
-      },
-      cancelCurrentEffect: async (shutdownMode) => {
-        try {
-          await this.removeIntervalSchedule();
-          if (
-            shutdownMode === "kill-switch" &&
-            configuration.executionMode === "live"
-          ) {
-            if (
-              liveSettings === null ||
-              !liveSettings.ok ||
-              this.state.machine?.context.killRequestId == null
-            ) {
-              return err({
-                phase: "cancellation",
-                code: "CANCELLATION_FAILURE",
-                retryable: false,
-              });
-            }
-            const killed = await executeCoinbaseKill(
-              liveSettings.value,
-              configuration.productId,
-              this.state.machine.context.permissions,
-              `kill-${this.state.machine.context.killRequestId}`,
-            );
-            if (!killed.ok) {
-              return err({ ...killed.error, phase: "cancellation" });
-            }
-            const dailyRisk = resolveCycleDailyRiskCompletion(
-              "live",
-              this.state.dailyRiskWindow,
-              this.state.dailyPnl,
-              killed.value.observedAt,
-              killed.value.accountEquity,
-            );
-            this.setState({
-              ...this.state,
-              portfolio: killed.value.portfolio,
-              dailyRiskWindow: dailyRisk.window,
-              dailyPnl: dailyRisk.dailyPnl,
-              updatedAt: Date.now(),
-            });
-          }
-          return ok(undefined);
-        } catch {
-          return err({
-            phase: "cancellation",
-            code: "CANCELLATION_FAILURE",
-            retryable: false,
-          });
-        }
-      },
-      persistCycle: async (cycleArtifacts, nextMachine) =>
+      submitPaperOrder: (intent, marketPrice, portfolio, executedAt, config) =>
+        this.submitPaperOrder(intent, marketPrice, portfolio, executedAt, config),
+      submitLiveOrder: (settings, intent, riskDecision, authorization) =>
+        this.submitLiveOrder(settings, intent, riskDecision, authorization),
+      reconcilePaperOrder: (intent) => this.reconcilePaperOrder(intent),
+      reconcileLiveOrder: (settings, intent, riskDecision, portfolio) =>
+        this.reconcileLiveOrder(settings, intent, riskDecision, portfolio),
+      persistCycle: (cycleArtifacts, nextMachine) =>
         this.persistCycle(cycleArtifacts, nextMachine),
-    };
+      loadKnownProtectiveOrderIds: () => this.loadKnownProtectiveOrderIds(),
+      getKillContext: () => {
+        const context = this.state.machine?.context;
+        if (context?.killRequestId == null) {
+          return null;
+        }
+        return {
+          killRequestId: context.killRequestId,
+          permissions: context.permissions,
+        };
+      },
+      applyKilledAccount: (account) => {
+        const dailyRisk = resolveCycleDailyRiskCompletion(
+          "live",
+          this.state.dailyRiskWindow,
+          this.state.dailyPnl,
+          account.observedAt,
+          account.accountEquity,
+        );
+        this.setState({
+          ...this.state,
+          portfolio: account.portfolio,
+          dailyRiskWindow: dailyRisk.window,
+          dailyPnl: dailyRisk.dailyPnl,
+          updatedAt: Date.now(),
+        });
+      },
+    });
   }
 
   private async ensureIntervalSchedule(intervalSeconds: number) {
