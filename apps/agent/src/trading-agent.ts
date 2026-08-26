@@ -60,6 +60,12 @@ import type {
   OrderSubmission,
   TradingCycleEffects,
 } from "./types.js";
+import {
+  authorizationWorkflowError,
+  executionWorkflowError,
+  reconciliationWorkflowError,
+  storageWorkflowError,
+} from "./workflow-errors.js";
 
 export interface TradingEnv extends Env {
   readonly INTERNAL_SERVICE_TOKEN: string;
@@ -105,28 +111,11 @@ export type LivePreflightCommandResult =
       readonly report?: CoinbaseLivePreflightReport;
     };
 
-const storageError = (retryable = true): WorkflowError => ({
-  phase: "persistence",
-  code: "PERSISTENCE_FAILURE",
-  retryable,
-});
-
-const executionError = (
-  code: "ORDER_REJECTED" | "ORDER_OUTCOME_UNKNOWN",
-  retryable: boolean,
-): WorkflowError => ({ phase: "execution", code, retryable });
-
-const authenticationError = (): WorkflowError => ({
-  phase: "authorization",
-  code: "AUTHENTICATION_FAILURE",
-  retryable: false,
-});
-
-const reconciliationError = (retryable = true): WorkflowError => ({
-  phase: "reconciliation",
-  code: "RECONCILIATION_FAILURE",
-  retryable,
-});
+const storageError = storageWorkflowError;
+const executionError = executionWorkflowError;
+const authenticationError = authorizationWorkflowError;
+const reconciliationError = (retryable = true): WorkflowError =>
+  reconciliationWorkflowError("RECONCILIATION_FAILURE", retryable);
 
 type ApprovedRiskDecision = Extract<
   RiskDecision,

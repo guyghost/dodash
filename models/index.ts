@@ -1,4 +1,16 @@
 export { RISK_REJECTION_REASON_CODES } from "./backtest-diagnostics.types.js";
+export {
+  createReleaseEvidence,
+  RELEASE_EVIDENCE_GATES,
+  validateReleaseEvidence,
+} from "./release-evidence.js";
+export type {
+  ReleaseEvidence,
+  ReleaseEvidenceError,
+  ReleaseEvidenceGate,
+  ReleaseEvidenceInput,
+  ReleaseEvidenceResult,
+} from "./release-evidence.js";
 export { backtestRunMachine } from "./backtest-run.machine.js";
 export {
   assessConfidenceCalibrationConfirmation,

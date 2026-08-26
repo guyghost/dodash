@@ -46,6 +46,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run the pre-push quality gate
         run: pnpm verify:push
+      - name: Test release evidence generation
+        run: pnpm test:release-evidence
+      - name: Generate immutable live-OFF release evidence
+        run: |
+          node scripts/generate-release-evidence.mjs \
+            --release-sha "$(git rev-parse HEAD)" \
+            --generated-at "$(node -p 'new Date().toISOString()')" \
+            --output .artifacts/releases/release-evidence.json
+      - name: Upload live-OFF release evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-evidence-${{ github.run_id }}
+          path: .artifacts/releases/release-evidence.json
+          if-no-files-found: error
+          retention-days: 90
 
   deploy-workers:
     if: github.event_name == 'workflow_dispatch' && inputs.deploy_workers

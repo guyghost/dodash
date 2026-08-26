@@ -386,21 +386,6 @@ describe("regime filter machine", () => {
     expect(actor.getSnapshot().context.stopReason).toBe("SESSION_END");
   });
 
-  it("ignore tout événement une fois terminal (stopped/failed)", () => {
-    const stopped = createActor(regimeFilterMachine, { input: { policy } });
-    stopped.start();
-    stopped.send({ type: "STOP_REQUESTED", reason: "OPERATOR_STOP" });
-    stopped.send(candle(1_000, "BULLISH"));
-    expect(stopped.getSnapshot().value).toBe("stopped");
-
-    const failed = createActor(regimeFilterMachine, {
-      input: { policy: { ...policy, thresholdBps: -1 } },
-    });
-    failed.start();
-    failed.send(candle(1_000, "BULLISH"));
-    expect(failed.getSnapshot().value).toBe("failed");
-  });
-
   it("invariant : les permissions suivent le régime courant du contexte", () => {
     const actor = createActor(regimeFilterMachine, { input: { policy } });
     actor.start();

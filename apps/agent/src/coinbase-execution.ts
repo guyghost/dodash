@@ -17,6 +17,11 @@ import {
   type CoinbaseHttpMethod,
 } from "./coinbase-jwt.js";
 import type { ExecutionAuthorization, OrderSubmission } from "./types.js";
+import {
+  authorizationWorkflowError as authorizationError,
+  executionWorkflowError as executionError,
+  reconciliationWorkflowError as reconciliationError,
+} from "./workflow-errors.js";
 
 export const COINBASE_CREATE_ORDER_PATH = "/api/v3/brokerage/orders";
 export const coinbaseProductPath = (productId: string): string =>
@@ -144,22 +149,6 @@ const productTradingRulesSchema = z
     is_disabled: z.boolean().optional().default(false),
   })
   .passthrough();
-
-const executionError = (
-  code: WorkflowError["code"],
-  retryable: boolean,
-): WorkflowError => ({ phase: "execution", code, retryable });
-
-const reconciliationError = (
-  code: WorkflowError["code"] = "RECONCILIATION_FAILURE",
-  retryable = true,
-): WorkflowError => ({ phase: "reconciliation", code, retryable });
-
-const authorizationError = (): WorkflowError => ({
-  phase: "authorization",
-  code: "AUTHENTICATION_FAILURE",
-  retryable: false,
-});
 
 const requestTarget = (
   settings: CoinbaseExecutionSettings,

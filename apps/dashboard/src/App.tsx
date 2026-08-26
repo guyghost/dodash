@@ -96,7 +96,21 @@ function Metric({
   );
 }
 
-export function App() {
+export interface AppGateways {
+  readonly createHttp: typeof createHttpGateway;
+  readonly createDemo: typeof createDemoGateway;
+}
+
+const defaultGateways: AppGateways = Object.freeze({
+  createHttp: createHttpGateway,
+  createDemo: createDemoGateway,
+});
+
+export function App({
+  gateways = defaultGateways,
+}: {
+  readonly gateways?: AppGateways;
+}) {
   const actor = useMemo(
     () =>
       createActor(dashboardSessionMachine, {
@@ -202,7 +216,7 @@ export function App() {
 
   const connect = (event: FormEvent) => {
     event.preventDefault();
-    gatewayRef.current = createHttpGateway(apiBaseUrl, token);
+    gatewayRef.current = gateways.createHttp(apiBaseUrl, token);
     actor.send({
       type: "CONNECT_REQUESTED",
       agentName,
@@ -211,7 +225,7 @@ export function App() {
   };
 
   const connectDemo = () => {
-    gatewayRef.current = createDemoGateway();
+    gatewayRef.current = gateways.createDemo();
     actor.send({
       type: "CONNECT_REQUESTED",
       agentName: "btc-usd--multi",
