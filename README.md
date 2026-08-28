@@ -43,7 +43,7 @@ seules les machines et règles déterministes choisissent les états suivants.
 ## Prérequis et vérification
 
 - Node.js 22
-- pnpm 11.22 via Corepack
+- pnpm 11.23 via Corepack
 - un compte Cloudflare uniquement pour le provisioning ou le déploiement
 
 ```sh

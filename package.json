@@ -2,7 +2,7 @@
   "name": "dodash",
   "version": "0.0.0",
   "private": true,
-  "packageManager": "pnpm@11.22.0",
+  "packageManager": "pnpm@11.23.0",
   "engines": {
     "node": ">=22.0.0"
   },
@@ -27,9 +27,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
-    "pnpm": "11.22.0",
+    "pnpm": "11.23.0",
     "simple-git-hooks": "^2.13.1",
-    "turbo": "^2.10.10",
+    "turbo": "^2.10.11",
     "typescript": "^7.0.2"
   }
 }
