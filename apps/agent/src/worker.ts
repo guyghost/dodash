@@ -34,6 +34,7 @@ type TradingAgentRpc = Pick<
   | "runNow"
   | "startAgent"
   | "stopAgent"
+  | "submitPerpOrderIntent"
 >;
 
 const getAgent = (env: TradingEnv, name: string): TradingAgentRpc =>
@@ -95,6 +96,19 @@ const handleApi = async (
     }
     case "stop":
       return json(await agent.stopAgent(permissions));
+    case "perp-order": {
+      let body: unknown;
+      try {
+        body = await readBoundedJson(request, MAX_CONTROL_REQUEST_BYTES);
+      } catch {
+        return json({ error: { code: "INVALID_REQUEST" } }, 400);
+      }
+      const result = await agent.submitPerpOrderIntent(body, permissions);
+      if (!result.ok) {
+        return json(result, result.code === "CONTROL_PERMISSION_REQUIRED" ? 403 : 409);
+      }
+      return json(result, 200);
+    }
     case "kill":
       return json(await agent.killAgent(permissions));
     case "reset":

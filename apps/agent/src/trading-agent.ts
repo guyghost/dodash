@@ -16,6 +16,15 @@ import {
   type AgentConfiguration,
 } from "./configuration.js";
 import {
+  type PerpOrderRequestResult,
+  recoverPerpOrders,
+  submitPerpOrderIntent,
+} from "./hyperliquid-control.js";
+import {
+  PERP_ORDERS_SCHEMA,
+  type PerpOrderSqlAdapter,
+} from "./hyperliquid-store.js";
+import {
   preflightCoinbaseLive,
   type CoinbaseLivePreflightReport,
 } from "./coinbase-preflight.js";
@@ -73,6 +82,11 @@ export interface TradingEnv extends Env {
   readonly COINBASE_API_KEY_ID?: string;
   readonly COINBASE_API_PRIVATE_KEY?: string;
   readonly COINBASE_PORTFOLIO_ID?: string;
+  readonly HYPERLIQUID_PERP_TRADING_ENABLED?: string;
+  readonly HYPERLIQUID_AGENT_PRIVATE_KEY?: string;
+  readonly HYPERLIQUID_WALLET_ADDRESS?: string;
+  readonly HYPERLIQUID_TESTNET?: string;
+  readonly HYPERLIQUID_API_BASE_URL?: string;
   readonly TRADING_TELEMETRY?: TradingTelemetrySink;
 }
 
@@ -170,6 +184,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         updated_at INTEGER NOT NULL
       )
     `;
+    this.ctx.storage.sql.exec(PERP_ORDERS_SCHEMA);
   }
 
   override async onStart(): Promise<void> {
@@ -177,6 +192,55 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
     if (this.state.enabled && this.state.configuration !== null) {
       await this.ensureIntervalSchedule(this.state.configuration.intervalSeconds);
+    }
+  }
+
+  private perpSqlAdapter(): PerpOrderSqlAdapter {
+    const raw = this.ctx.storage.sql;
+    return {
+      run: (query, params) => {
+        raw.exec(query, ...params);
+      },
+      all: <T>(query: string, params: readonly unknown[]): readonly T[] =>
+        raw
+          .exec<Record<string, string | number | null>>(query, ...params)
+          .toArray() as T[],
+    };
+  }
+
+  async submitPerpOrderIntent(
+    input: unknown,
+    permissions: ControlPermissions,
+  ): Promise<PerpOrderRequestResult> {
+    this.ensureTradingPersistenceSchema();
+    return submitPerpOrderIntent({
+      input,
+      permissions,
+      settingsInput: this.env,
+      sql: this.perpSqlAdapter(),
+      now: () => Date.now(),
+    });
+  }
+
+  private async recoverPendingPerpOrders(): Promise<void> {
+    try {
+      const report = await recoverPerpOrders({
+        settingsInput: this.env,
+        sql: this.perpSqlAdapter(),
+        now: () => Date.now(),
+      });
+      if (!report.unavailable && report.unresolved > 0) {
+        console.log(
+          JSON.stringify({ type: "PERP_RECOVERY", ...report }),
+        );
+      }
+    } catch (error) {
+      // La reprise repartira au prochain tick : aucune resoumission n'est
+      // jamais déclenchée par un échec de réconciliation.
+      console.error(
+        "PERP_RECOVERY_FAILED",
+        error instanceof Error ? error.message : "unknown",
+      );
     }
   }
 
@@ -376,6 +440,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
   async scheduledTick(): Promise<void> {
     this.ensureTradingPersistenceSchema();
+    await this.recoverPendingPerpOrders();
     if (!this.state.enabled) return;
     await this.runCurrent(true);
   }

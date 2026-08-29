@@ -137,6 +137,63 @@ describe("dashboard Agent proxy", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("forwards a bounded perp-order intent to the Agent", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.url).toBe(
+        "https://dodash-agent.internal/api/agents/btc-usd--multi/perp-order",
+      );
+      expect(upstream.method).toBe("POST");
+      const body = (await upstream.json()) as {
+        intent: { productId: string };
+        gate: { dailyPnl: number };
+      };
+      expect(body.intent.productId).toBe("BTC-PERP");
+      expect(body.gate.dailyPnl).toBe(0);
+      return Response.json({
+        ok: true,
+        result: { status: "SETTLED", outcome: "ACCEPTED" },
+      });
+    });
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc-usd--multi/perp-order", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          intent: {
+            productId: "BTC-PERP",
+            side: "BUY",
+            quantity: 0.005,
+            markPrice: 100_000,
+            leverage: 1,
+          },
+          gate: {
+            positionQuantity: 0,
+            dailyPnl: 0,
+            otherGrossExposureNotional: 0,
+          },
+          clientOrderId: "perp-2026-08-28-a",
+        }),
+      }),
+      createEnv(fetcher),
+    );
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("rejects an oversized perp-order body before the Agent", async () => {
+    const env = createEnv();
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc/perp-order", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pad: "x".repeat(20_000) }),
+      }),
+      env,
+    );
+    expect([400, 413]).toContain(response.status);
+    expect(env.AGENT_SERVICE.fetch).not.toHaveBeenCalled();
+  });
+
   it("accepts an explicitly streamed but empty command body", async () => {
     const fetcher = vi.fn(async (upstream: Request) => {
       expect(upstream.method).toBe("POST");

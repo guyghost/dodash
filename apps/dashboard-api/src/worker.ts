@@ -12,8 +12,9 @@ const agentActions = new Set([
   "reset",
   "tick",
   "kill",
+  "perp-order",
 ]);
-const bodyActions = new Set(["preflight", "start"]);
+const bodyActions = new Set(["preflight", "start", "perp-order"]);
 
 export interface DashboardApiEnv {
   readonly AGENT_SERVICE: Fetcher;
