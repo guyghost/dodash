@@ -23,6 +23,11 @@
   },
   "overrides": [
     {
+      "includes": ["**/.agents/**"],
+      "linter": { "enabled": false },
+      "formatter": { "enabled": false }
+    },
+    {
       "includes": ["**/worker-configuration.d.ts"],
       "linter": { "enabled": false }
     },
