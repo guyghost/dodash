@@ -42,6 +42,7 @@ const gateways = (gateway: DashboardGateway): AppGateways => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  delete (globalThis as { ethereum?: unknown }).ethereum;
 });
 
 describe("dashboard journey", () => {
@@ -146,5 +147,118 @@ describe("dashboard journey", () => {
     await userEvent.click(screen.getByRole("button", { name: "Annuler" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(command).not.toHaveBeenCalled();
+  });
+});
+
+type WalletRequest = { readonly method: string };
+
+const installWalletProvider = (
+  responses: Partial<Record<"eth_requestAccounts" | "eth_chainId", unknown>> = {},
+  reject?: { code: number },
+): { readonly events: Map<string, Set<(payload: unknown) => void>> } => {
+  const events = new Map<string, Set<(payload: unknown) => void>>();
+  const provider = {
+    request: async (args: WalletRequest) => {
+      if (reject !== undefined && args.method === "eth_requestAccounts") {
+        const rejection = new Error("user rejected") as { code: number };
+        rejection.code = reject.code;
+        throw rejection;
+      }
+      return responses[args.method as "eth_requestAccounts"] ?? (args.method === "eth_chainId" ? "0x2105" : []);
+    },
+    on: (name: string, listener: (payload: unknown) => void) => {
+      const set = events.get(name) ?? new Set();
+      set.add(listener);
+      events.set(name, set);
+    },
+    removeListener: (name: string, listener: (payload: unknown) => void) => {
+      events.get(name)?.delete(listener);
+    },
+  };
+  (globalThis as { ethereum?: unknown }).ethereum = provider;
+  return { events };
+};
+
+const ADDRESS = "0x1111111111111111111111111111111111111111";
+
+describe("wallet base", () => {
+  it("signale l'absence de provider sans lever d'exception", async () => {
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+
+    expect(screen.getByText("WALLET_PROVIDER_UNAVAILABLE")).toBeTruthy();
+  });
+
+  it("connecte le wallet sur Base et verrouille les perpétuels", async () => {
+    installWalletProvider({
+      eth_requestAccounts: ["0x1111111111111111111111111111111111111111"],
+      eth_chainId: "0x2105",
+    });
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("CONNECTÉ · 8453")).toBeTruthy(),
+    );
+    expect(screen.getByText("0x1111…1111")).toBeTruthy();
+    expect(
+      screen.getByText("PERPÉTUELS : VERROUILLÉS · ADMISSION FERMÉE"),
+    ).toBeTruthy();
+  });
+
+  it("affiche un mauvais réseau quand la chaîne n'est pas Base", async () => {
+    installWalletProvider({
+      eth_requestAccounts: ["0x1111111111111111111111111111111111111111"],
+      eth_chainId: "0x1",
+    });
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("MAUVAIS RÉSEAU")).toBeTruthy(),
+    );
+    expect(screen.getByText("PERPÉTUELS : MAUVAIS RÉSEAU")).toBeTruthy();
+  });
+
+  it("convertit un refus utilisateur en erreur typée retryable", async () => {
+    installWalletProvider({}, { code: 4001 });
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+
+    expect(await screen.findByText("WALLET_REQUEST_REJECTED")).toBeTruthy();
+  });
+
+  it("revient à hors ligne sur la révocation des comptes", async () => {
+    const { events } = installWalletProvider({
+      eth_requestAccounts: [ADDRESS],
+      eth_chainId: "0x2105",
+    });
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+    await screen.findByText("CONNECTÉ · 8453");
+
+    for (const listener of events.get("accountsChanged") ?? []) {
+      listener([]);
+    }
+
+    await waitFor(() =>
+      expect(screen.getByText("PERPÉTUELS : WALLET NON CONNECTÉ")).toBeTruthy(),
+    );
+    expect(screen.getByRole("button", { name: "Connecter le wallet" })).toBeTruthy();
   });
 });

@@ -171,6 +171,7 @@ section { margin-top: 44px; }
 .orange-bg { background: var(--orange); }
 .green-bg { background: var(--green); }
 .red-bg { background: var(--red); }
+.blue-bg { background: var(--blue); }
 
 .access-grid,
 .summary-grid {
@@ -178,6 +179,8 @@ section { margin-top: 44px; }
   grid-template-columns: 1.1fr 0.9fr;
   gap: 28px;
 }
+
+.wallet-card { padding: 26px; max-width: 640px; }
 
 .access-card,
 .access-note,

@@ -122,6 +122,27 @@ export type {
   BacktestRunInput,
 } from "./backtest-run.types.js";
 export { dashboardSessionMachine } from "./dashboard-session.machine.js";
+export {
+  baseWalletSessionMachine,
+  isBaseWalletAddress,
+} from "./base-wallet-session.machine.js";
+export {
+  BASE_PERP_ADMISSION,
+  resolvePerpTradingCapability,
+} from "./base-perp-admission.js";
+export type { PerpTradingCapability } from "./base-perp-admission.js";
+export {
+  BASE_MAINNET_CHAIN_ID,
+  BASE_WALLET_ADDRESS_PATTERN,
+} from "./base-wallet-session.types.js";
+export type {
+  BaseWalletAccount,
+  BaseWalletError,
+  BaseWalletErrorCode,
+  BaseWalletSessionContext,
+  BaseWalletSessionEvent,
+  BaseWalletSessionInput,
+} from "./base-wallet-session.types.js";
 export { resolveDailyRiskWindow } from "./daily-risk.js";
 export type {
   DailyRiskAssessment,

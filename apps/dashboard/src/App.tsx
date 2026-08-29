@@ -1,14 +1,25 @@
 import {
+  baseWalletSessionMachine,
+  BASE_MAINNET_CHAIN_ID,
   dashboardSessionMachine,
   LIVE_TRADING_POLICY,
   LIVE_TRADING_PRODUCTS,
+  resolvePerpTradingCapability,
   type DashboardDirectCommand,
   type DashboardError,
   type DashboardRemotePhase,
+  type PerpTradingCapability,
 } from "@dodash/models";
 import { createActor, type SnapshotFrom } from "xstate";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
+import {
+  BaseWalletRequestError,
+  connectBaseWallet,
+  findInjectedBaseWalletProvider,
+  parseHexChainId,
+  subscribeBaseWallet,
+} from "./base-wallet.js";
 import {
   DashboardRequestError,
   createStartConfiguration,
@@ -96,6 +107,96 @@ function Metric({
   );
 }
 
+const capabilityLabel = (capability: PerpTradingCapability): string => {
+  if (capability.status === "APPROVED") {
+    return `PERPÉTUELS OUVERTS · ${capability.venue.toUpperCase()}`;
+  }
+  if (capability.reason === "WALLET_NOT_CONNECTED") return "PERPÉTUELS : WALLET NON CONNECTÉ";
+  if (capability.reason === "WRONG_CHAIN") return "PERPÉTUELS : MAUVAIS RÉSEAU";
+  return "PERPÉTUELS : VERROUILLÉS · ADMISSION FERMÉE";
+};
+
+const shortAddress = (address: string): string =>
+  `${address.slice(0, 6)}…${address.slice(-4)}`;
+
+function BaseWalletCard({
+  snapshot,
+  onConnect,
+  onDisconnect,
+}: {
+  readonly snapshot: SnapshotFrom<typeof baseWalletSessionMachine>;
+  readonly onConnect: () => void;
+  readonly onDisconnect: () => void;
+}) {
+  const { account, lastError } = snapshot.context;
+  const capability = resolvePerpTradingCapability(account);
+  const connectedOnBase =
+    snapshot.value === "connected" && account !== null && account.chainId === BASE_MAINNET_CHAIN_ID;
+  const badge =
+    snapshot.value === "connecting"
+      ? "CONNEXION"
+      : snapshot.value === "connected" && connectedOnBase
+        ? "CONNECTÉ · 8453"
+        : snapshot.value === "wrongChain"
+          ? "MAUVAIS RÉSEAU"
+          : snapshot.value === "failed"
+            ? "ÉCHEC"
+            : "HORS LIGNE";
+  return (
+    <article className="paper-card wallet-card">
+      <div className="card-topline">
+        <span className="card-label blue-bg">WALLET BASE</span>
+        <span
+          className={`phase-badge ${connectedOnBase ? "online" : "offline"}`}
+        >
+          {badge}
+        </span>
+      </div>
+      <h2>Session wallet</h2>
+      {account === null ? (
+        <p>
+          Connecter le wallet Base pour signer sur `eip155:8453`. La clé reste
+          dans le wallet ; la machine ne voit que l’adresse et la chaîne.
+        </p>
+      ) : (
+        <p className="agent-meta">
+          <code>{shortAddress(account.address)}</code> ·{" "}
+          {account.chainId === BASE_MAINNET_CHAIN_ID
+            ? "Base mainnet"
+            : `Chaîne ${account.chainId}`}
+        </p>
+      )}
+      <p className="next-wake" aria-live="polite">
+        {capabilityLabel(capability)}
+      </p>
+      {lastError !== null && (
+        <p className="error-note" role="alert">
+          {lastError.code}
+        </p>
+      )}
+      {snapshot.value === "failed" || snapshot.value === "disconnected" ? (
+        <div className="button-row">
+          <button
+            className="button primary"
+            type="button"
+            onClick={onConnect}
+          >
+            {snapshot.value === "failed"
+              ? "Réessayer la connexion"
+              : "Connecter le wallet"}
+          </button>
+        </div>
+      ) : (
+        <div className="button-row">
+          <button className="text-button" type="button" onClick={onDisconnect}>
+            Déconnecter le wallet
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
 export interface AppGateways {
   readonly createHttp: typeof createHttpGateway;
   readonly createDemo: typeof createDemoGateway;
@@ -111,6 +212,15 @@ export function App({
 }: {
   readonly gateways?: AppGateways;
 }) {
+  const walletActor = useMemo(
+    () => createActor(baseWalletSessionMachine, { input: {} }),
+    [],
+  );
+  const [wallet, setWallet] = useState<
+    SnapshotFrom<typeof baseWalletSessionMachine>
+  >(walletActor.getSnapshot());
+  const unsubscribeWalletRef = useRef<(() => void) | null>(null);
+
   const actor = useMemo(
     () =>
       createActor(dashboardSessionMachine, {
@@ -146,6 +256,15 @@ export function App({
       subscription.unsubscribe();
     };
   }, [actor]);
+
+  useEffect(() => {
+    walletActor.start();
+    const walletSubscription = walletActor.subscribe(setWallet);
+    return () => {
+      walletSubscription.unsubscribe();
+      unsubscribeWalletRef.current?.();
+    };
+  }, [walletActor]);
 
   useEffect(() => {
     const state = String(snapshot.value);
@@ -264,6 +383,70 @@ export function App({
     }
   };
 
+  const connectWallet = () => {
+    const provider = findInjectedBaseWalletProvider();
+    walletActor.send({
+      type: "CONNECT_REQUESTED",
+      providerPresent: provider !== null,
+    });
+    if (provider === null) return;
+    void connectBaseWallet(provider)
+      .then((account) => {
+        walletActor.send({
+          type: "WALLET_CONNECTED",
+          address: account.address,
+          chainId: account.chainId,
+        });
+        unsubscribeWalletRef.current?.();
+        unsubscribeWalletRef.current = subscribeBaseWallet(provider, {
+          onAccountsChanged: (accounts) => {
+            const first = Array.isArray(accounts) ? accounts[0] : undefined;
+            if (first === undefined) {
+              walletActor.send({ type: "WALLET_ACCOUNT_CHANGED", address: null });
+              return;
+            }
+            if (typeof first !== "string") {
+              walletActor.send({
+                type: "CONNECTION_FAILED",
+                error: { code: "WALLET_INVALID_RESPONSE", retryable: true },
+              });
+              return;
+            }
+            walletActor.send({
+              type: "WALLET_ACCOUNT_CHANGED",
+              address: first.trim().toLowerCase(),
+            });
+          },
+          onChainChanged: (chainId) => {
+            const parsed = parseHexChainId(chainId);
+            if (parsed === null) {
+              walletActor.send({
+                type: "CONNECTION_FAILED",
+                error: { code: "WALLET_INVALID_RESPONSE", retryable: true },
+              });
+              return;
+            }
+            walletActor.send({ type: "WALLET_CHAIN_CHANGED", chainId: parsed });
+          },
+        });
+      })
+      .catch((error: unknown) => {
+        walletActor.send({
+          type: "CONNECTION_FAILED",
+          error:
+            error instanceof BaseWalletRequestError
+              ? error.walletError
+              : { code: "WALLET_INVALID_RESPONSE", retryable: true },
+        });
+      });
+  };
+
+  const disconnectWallet = () => {
+    unsubscribeWalletRef.current?.();
+    unsubscribeWalletRef.current = null;
+    walletActor.send({ type: "DISCONNECT_REQUESTED" });
+  };
+
   const busy =
     snapshot.value === "loading" ||
     snapshot.value === "refreshing" ||
@@ -318,6 +501,19 @@ export function App({
           <span><i className="blue" />Persistance</span>
         </div>
       </header>
+
+      <section>
+        <SectionHeading
+          index="00"
+          title="WALLET BASE"
+          detail="SIGNATURE LOCALE · EIP-155:8453"
+        />
+        <BaseWalletCard
+          snapshot={wallet}
+          onConnect={connectWallet}
+          onDisconnect={disconnectWallet}
+        />
+      </section>
 
       {!ready ? (
         <section className="access-section">
