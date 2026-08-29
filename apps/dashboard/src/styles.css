@@ -181,6 +181,7 @@ section { margin-top: 44px; }
 }
 
 .wallet-card { padding: 26px; max-width: 640px; }
+.perp-card { padding: 26px; }
 
 .access-card,
 .access-note,

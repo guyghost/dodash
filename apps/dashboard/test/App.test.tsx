@@ -262,3 +262,50 @@ describe("wallet base", () => {
     expect(screen.getByRole("button", { name: "Connecter le wallet" })).toBeTruthy();
   });
 });
+
+describe("perp order form", () => {
+  it("prépare, confirme et affiche l'issue de l'ordre perp", async () => {
+    const submitPerpOrder = vi.fn(async (
+      _agentName: string,
+      body: { readonly clientOrderId: string },
+    ) => ({
+      status: "SETTLED" as const,
+      outcome: "ACCEPTED" as const,
+      clientOrderId: body.clientOrderId,
+    }));
+    const gateway = {
+      ...createGateway(),
+      submitPerpOrder,
+    };
+    render(
+      <App gateways={{ createHttp: () => gateway, createDemo: () => gateway }} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Préparer l'ordre" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /Confirmer BUY/ }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/ORDRE ACCEPTED/)).toBeTruthy(),
+    );
+    expect(submitPerpOrder).toHaveBeenCalledOnce();
+    const call = submitPerpOrder.mock.calls[0] as unknown as [
+      string,
+      { intent: { productId: string; leverage: number }; gate: { dailyPnl: number } },
+    ];
+    expect(call[1].intent.productId).toBe("BTC-PERP");
+    expect(call[1].intent.leverage).toBe(1);
+    expect(call[1].gate).toEqual({ dailyPnl: 0 });
+
+    await userEvent.click(screen.getByRole("button", { name: "Nouvel ordre" }));
+    expect(
+      screen.getByRole("button", { name: "Préparer l'ordre" }),
+    ).toBeTruthy();
+  });
+});

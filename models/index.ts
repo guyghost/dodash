@@ -138,6 +138,16 @@ export {
   HYPERLIQUID_PERP_POLICY,
 } from "./hyperliquid-execution.js";
 export { hyperliquidPerpOrderMachine } from "./hyperliquid-execution.machine.js";
+export { perpOrderUiMachine } from "./perp-order-ui.machine.js";
+export type {
+  PerpOrderFormDraft,
+  PerpOrderUiContext,
+  PerpOrderUiErrorCode,
+  PerpOrderUiEvent,
+  PerpOrderUiInput,
+  PerpOrderUiPermissions,
+  PerpOrderUiResult,
+} from "./perp-order-ui.types.js";
 export type {
   HyperliquidOrderOutcome,
   HyperliquidPerpAdmission,

@@ -81,6 +81,17 @@ export const createDemoGateway = (): DashboardGateway =>
       await wait();
       return cycles;
     },
+    submitPerpOrder: async (
+      _agentName: string,
+      body: Parameters<DashboardGateway["submitPerpOrder"]>[1],
+    ) => {
+      await wait();
+      return {
+        status: "SETTLED" as const,
+        outcome: "ACCEPTED" as const,
+        clientOrderId: body.clientOrderId,
+      };
+    },
     command: async (
       _agentName: string,
       command: Parameters<DashboardGateway["command"]>[1],

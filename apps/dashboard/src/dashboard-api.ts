@@ -81,6 +81,34 @@ export interface DashboardGateway {
     command: DashboardDirectCommand | "kill",
     configuration?: StartConfiguration,
   ): Promise<AgentStateView>;
+  submitPerpOrder(
+    agentName: string,
+    body: PerpOrderRequestBody,
+  ): Promise<PerpOrderSubmissionView>;
+}
+
+export interface PerpOrderRequestBody {
+  readonly intent: {
+    readonly productId: string;
+    readonly side: "BUY" | "SELL";
+    readonly quantity: number;
+    readonly markPrice: number;
+    readonly leverage: number;
+  };
+  readonly gate: {
+    readonly dailyPnl: number;
+    readonly positionQuantity?: number;
+    readonly otherGrossExposureNotional?: number;
+  };
+  readonly clientOrderId: string;
+}
+
+export interface PerpOrderSubmissionView {
+  readonly status: "SETTLED" | "REFUSED" | "FAILED";
+  readonly outcome?: "ACCEPTED" | "REJECTED";
+  readonly reasonCode?: string;
+  readonly errorCode?: string;
+  readonly clientOrderId?: string;
 }
 
 export class DashboardRequestError extends Error {
@@ -296,6 +324,56 @@ export const createHttpGateway = (
         throw invalidResponse();
       }
       return parseAgentState(payload.state);
+    },
+    submitPerpOrder: async (agentName: string, body: PerpOrderRequestBody) => {
+      let response: Response;
+      try {
+        response = await request(`${base}/api/agents/${encodeURIComponent(agentName)}/perp-order`, {
+          method: "POST",
+          headers: {
+            accept: "application/json",
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+      } catch {
+        throw new DashboardRequestError({ code: "REQUEST_FAILED", retryable: true });
+      }
+      const payload = await boundedJson(response);
+      if (!isRecord(payload) || !isRecord(payload.result)) {
+        if (isRecord(payload) && payload.ok === false && typeof payload.code === "string") {
+          return {
+            status: "FAILED" as const,
+            errorCode: payload.code,
+          };
+        }
+        throw invalidResponse();
+      }
+      const result = payload.result as Record<string, unknown>;
+      if (
+        result.status !== "SETTLED" &&
+        result.status !== "REFUSED" &&
+        result.status !== "FAILED"
+      ) {
+        throw invalidResponse();
+      }
+      const view: PerpOrderSubmissionView = {
+        status: result.status,
+        ...(result.outcome === "ACCEPTED" || result.outcome === "REJECTED"
+          ? { outcome: result.outcome }
+          : {}),
+        ...(typeof result.reasonCode === "string"
+          ? { reasonCode: result.reasonCode }
+          : {}),
+        ...(typeof result.errorCode === "string"
+          ? { errorCode: result.errorCode }
+          : {}),
+        ...(typeof result.clientOrderId === "string"
+          ? { clientOrderId: result.clientOrderId }
+          : {}),
+      };
+      return Object.freeze(view);
     },
   });
 };

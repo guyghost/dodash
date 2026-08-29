@@ -2,12 +2,16 @@ import {
   baseWalletSessionMachine,
   BASE_MAINNET_CHAIN_ID,
   dashboardSessionMachine,
+  HYPERLIQUID_PERP_POLICY,
   LIVE_TRADING_POLICY,
   LIVE_TRADING_PRODUCTS,
+  perpOrderUiMachine,
   resolvePerpTradingCapability,
   type DashboardDirectCommand,
   type DashboardError,
   type DashboardRemotePhase,
+  type PerpOrderFormDraft,
+  type PerpRefusalCode,
   type PerpTradingCapability,
 } from "@dodash/models";
 import { createActor, type SnapshotFrom } from "xstate";
@@ -221,6 +225,23 @@ export function App({
   >(walletActor.getSnapshot());
   const unsubscribeWalletRef = useRef<(() => void) | null>(null);
 
+  const perpUiActor = useMemo(
+    () => createActor(perpOrderUiMachine, { input: {} }),
+    [],
+  );
+  const [perpUi, setPerpUi] = useState<
+    SnapshotFrom<typeof perpOrderUiMachine>
+  >(perpUiActor.getSnapshot());
+  const [perpDraft, setPerpDraft] = useState<PerpOrderFormDraft>({
+    productId: "BTC-PERP",
+    side: "BUY",
+    quantity: 0.005,
+    markPrice: 100_000,
+    leverage: 1,
+    dailyPnl: 0,
+  });
+  const inFlightPerpRef = useRef(false);
+
   const actor = useMemo(
     () =>
       createActor(dashboardSessionMachine, {
@@ -265,6 +286,14 @@ export function App({
       unsubscribeWalletRef.current?.();
     };
   }, [walletActor]);
+
+  useEffect(() => {
+    perpUiActor.start();
+    const perpSubscription = perpUiActor.subscribe(setPerpUi);
+    return () => {
+      perpSubscription.unsubscribe();
+    };
+  }, [perpUiActor]);
 
   useEffect(() => {
     const state = String(snapshot.value);
@@ -445,6 +474,99 @@ export function App({
     unsubscribeWalletRef.current?.();
     unsubscribeWalletRef.current = null;
     walletActor.send({ type: "DISCONNECT_REQUESTED" });
+  };
+
+  useEffect(() => {
+    if (perpUi.value !== "submitting" || inFlightPerpRef.current) return;
+    const gateway = gatewayRef.current;
+    const target = snapshot.context.agentName;
+    const draft = perpUi.context.draft;
+    const clientOrderId = perpUi.context.clientOrderId;
+    if (gateway === null || target === null || draft === null || clientOrderId === null) {
+      perpUiActor.send({
+        type: "SUBMISSION_FAILED",
+        error: { code: "REQUEST_FAILED", retryable: false },
+      });
+      return;
+    }
+    inFlightPerpRef.current = true;
+    gateway
+      .submitPerpOrder(target, {
+        intent: {
+          productId: draft.productId,
+          side: draft.side,
+          quantity: draft.quantity,
+          markPrice: draft.markPrice,
+          leverage: draft.leverage,
+        },
+        gate: { dailyPnl: draft.dailyPnl },
+        clientOrderId,
+      })
+      .then((view) => {
+        inFlightPerpRef.current = false;
+        if (view.status === "FAILED") {
+          perpUiActor.send({
+            type: "SUBMISSION_FAILED",
+            error: { code: "REQUEST_FAILED", retryable: true },
+          });
+          return;
+        }
+        if (view.status === "REFUSED" && typeof view.reasonCode === "string") {
+          perpUiActor.send({
+            type: "SUBMISSION_SUCCEEDED",
+            result: {
+              status: "REFUSED",
+              reasonCode: view.reasonCode as PerpRefusalCode,
+            },
+          });
+          return;
+        }
+        if (
+          view.status === "SETTLED" &&
+          (view.outcome === "ACCEPTED" || view.outcome === "REJECTED")
+        ) {
+          perpUiActor.send({
+            type: "SUBMISSION_SUCCEEDED",
+            result: {
+              status: "SETTLED",
+              outcome: view.outcome,
+              clientOrderId: view.clientOrderId ?? clientOrderId,
+            },
+          });
+          return;
+        }
+        perpUiActor.send({
+          type: "SUBMISSION_FAILED",
+          error: { code: "REQUEST_FAILED", retryable: false },
+        });
+      })
+      .catch(() => {
+        inFlightPerpRef.current = false;
+        perpUiActor.send({
+          type: "SUBMISSION_FAILED",
+          error: { code: "REQUEST_FAILED", retryable: true },
+        });
+      });
+  }, [perpUi, perpUiActor, snapshot.context.agentName]);
+
+  const preparePerpOrder = () => {
+    perpUiActor.send({
+      type: "SUBMISSION_PREPARED",
+      draft: perpDraft,
+      permissions,
+    });
+  };
+
+  const confirmPerpOrder = () => {
+    perpUiActor.send({
+      type: "PERP_ORDER_CONFIRMED",
+      permissions,
+      clientOrderId: `perp-${Date.now().toString(36)}`,
+    });
+  };
+
+  const cancelPerpOrder = () => {
+    perpUiActor.send({ type: "PERP_ORDER_CANCELLED" });
   };
 
   const busy =
@@ -912,6 +1034,182 @@ export function App({
                 <p className="empty-state">Aucun cycle persisté.</p>
               )}
             </div>
+          </section>
+
+          <section>
+            <SectionHeading
+              index="07"
+              title="PERPÉTUELS · HYPERLIQUID"
+              detail="ORDRE OPÉRATEUR · GARDES SERVEUR"
+            />
+            <article className="paper-card perp-card">
+              <div className="card-topline">
+                <span className="card-label blue-bg">INTENTION PERP</span>
+                <span className="phase-badge offline">
+                  {perpUi.value === "submitting" ? "SOUMISSION" : "MANUEL"}
+                </span>
+              </div>
+              <h2>Ordre manuel sur l'enveloppe figée</h2>
+              <p>
+                Marchés BTC-PERP et ETH-PERP, levier ≤{" "}
+                {HYPERLIQUID_PERP_POLICY.maxLeverage}x. Position et exposition
+                sont lues sur le compte ; le PnL journalier reste votre entrée.
+              </p>
+              {perpUi.context.lastRefusal !== null && (
+                <p className="error-note" role="alert">
+                  {perpUi.context.lastRefusal}
+                </p>
+              )}
+              {perpUi.value === "result" && (
+                <p className="next-wake" aria-live="polite">
+                  {perpUi.context.result?.status === "SETTLED"
+                    ? `ORDRE ${perpUi.context.result.outcome} · ${perpUi.context.result.clientOrderId}`
+                    : perpUi.context.result?.status === "REFUSED"
+                      ? `REFUSÉ · ${perpUi.context.result.reasonCode}`
+                      : perpUi.context.result?.status === "FAILED"
+                        ? `ÉCHEC · ${perpUi.context.result.errorCode}`
+                        : perpUi.context.lastError?.code ?? "—"}
+                </p>
+              )}
+              {perpUi.value === "form" && (
+                <div className="start-fields">
+                  {/* biome-ignore lint/a11y/noLabelWithoutControl: le select est toujours rendu */}
+                  <label>
+                    Marché
+                    <select
+                      value={perpDraft.productId}
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          productId: event.target.value as PerpOrderFormDraft["productId"],
+                        }))
+                      }
+                    >
+                      {HYPERLIQUID_PERP_POLICY.products.map((product) => (
+                        <option key={product} value={product}>{product}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Sens
+                    <select
+                      value={perpDraft.side}
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          side: event.target.value as PerpOrderFormDraft["side"],
+                        }))
+                      }
+                    >
+                      <option value="BUY">Achat (long)</option>
+                      <option value="SELL">Vente (short)</option>
+                    </select>
+                  </label>
+                  <label>
+                    Quantité
+                    <input
+                      value={perpDraft.quantity}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          quantity: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Prix de marque
+                    <input
+                      value={perpDraft.markPrice}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          markPrice: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Levier (×{HYPERLIQUID_PERP_POLICY.maxLeverage} max)
+                    <select
+                      value={perpDraft.leverage}
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          leverage: Number(event.target.value),
+                        }))
+                      }
+                    >
+                      {Array.from(
+                        { length: HYPERLIQUID_PERP_POLICY.maxLeverage },
+                        (_, index) => index + 1,
+                      ).map((value) => (
+                        <option key={value} value={value}>{value}x</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    PnL journalier (USD)
+                    <input
+                      value={perpDraft.dailyPnl}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          dailyPnl: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              )}
+              <div className="button-row">
+                {perpUi.value === "form" && (
+                  <button
+                    className="button primary"
+                    type="button"
+                    onClick={preparePerpOrder}
+                    disabled={busy}
+                  >
+                    Préparer l'ordre
+                  </button>
+                )}
+                {perpUi.value === "confirming" && (
+                  <>
+                    <button
+                      className="button danger"
+                      type="button"
+                      onClick={confirmPerpOrder}
+                      disabled={busy}
+                    >
+                      Confirmer {perpUi.context.draft?.side} {" "}
+                      {perpUi.context.draft?.quantity} {" "}
+                      {perpUi.context.draft?.productId}
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={cancelPerpOrder}
+                    >
+                      Annuler
+                    </button>
+                  </>
+                )}
+                {perpUi.value === "result" && (
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={() =>
+                      perpUiActor.send({ type: "SUBMISSION_DISMISSED" })
+                    }
+                  >
+                    Nouvel ordre
+                  </button>
+                )}
+              </div>
+            </article>
           </section>
         </>
       )}
