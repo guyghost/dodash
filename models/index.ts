@@ -132,6 +132,29 @@ export {
 } from "./base-perp-admission.js";
 export type { PerpTradingCapability } from "./base-perp-admission.js";
 export {
+  admitHyperliquidPerpConfiguration,
+  assessPerpOrderIntent,
+  floorToSizeIncrement,
+  HYPERLIQUID_PERP_POLICY,
+} from "./hyperliquid-execution.js";
+export { hyperliquidPerpOrderMachine } from "./hyperliquid-execution.machine.js";
+export type {
+  HyperliquidOrderOutcome,
+  HyperliquidPerpAdmission,
+  HyperliquidPerpCandidate,
+  HyperliquidPerpOrderContext,
+  HyperliquidPerpOrderEvent,
+  HyperliquidPerpOrderInput,
+  HyperliquidPerpProduct,
+  HyperliquidRiskEnvelope,
+  PerpExecutionError,
+  PerpOrderAssessment,
+  PerpOrderGateInput,
+  PerpOrderIntent,
+  PerpRefusalCode,
+  PerpRiskGate,
+} from "./hyperliquid-execution.types.js";
+export {
   BASE_MAINNET_CHAIN_ID,
   BASE_WALLET_ADDRESS_PATTERN,
 } from "./base-wallet-session.types.js";
