@@ -5,6 +5,7 @@ packages:
 allowBuilds:
   core-js-pure: false
   esbuild: true
+  hyperliquid: false
   simple-git-hooks: false
   workerd: true
 patchedDependencies:

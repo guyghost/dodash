@@ -6,3 +6,7 @@ COINBASE_PORTFOLIO_ID=replace-with-the-dedicated-portfolio-uuid
 COINBASE_API_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----
 replace-with-the-exact-multiline-es256-private-key
 -----END EC PRIVATE KEY-----"
+HYPERLIQUID_PERP_TRADING_ENABLED=false
+HYPERLIQUID_AGENT_PRIVATE_KEY=0xreplace-with-the-agent-wallet-64-hex-private-key
+HYPERLIQUID_WALLET_ADDRESS=0xreplace-with-the-master-wallet-40-hex-address
+HYPERLIQUID_TESTNET=false
