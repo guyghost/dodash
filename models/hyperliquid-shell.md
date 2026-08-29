@@ -93,6 +93,28 @@ chaque marché de l'enveloppe figée :
 Un préflight en échec bloque l'activation live perp tant qu'il n'est pas
 repassé avec succès.
 
+## Lectures de compte
+
+`POST /info { type: "clearinghouseState", user }` fournit l'état réel du
+compte : `assetPositions[].position.{coin, szi, unrealizedPnl}` et
+`marginSummary.{accountValue, totalRawUsd}`. La lecture est convertie en
+instantané typé fermé `HyperliquidAccountSnapshot` : positions
+(quantité signée, PnL non réalisé), valeur de compte, exposition brute
+totale telle que notée par la bourse (prix oracles).
+
+`derivePerpRiskGate` dérive les entrées de garde d'une intention :
+
+| Entrée | Dérivation |
+| --- | --- |
+| `positionQuantity` | `szi` du marché visé, `0` sans position |
+| `otherGrossExposureNotional` | `max(0, totalRawUsd − \|position × prix de marque\|)` — approximation conservatrice qui mélange prix oracles et marque ; toute position hors allowlist du compte réduit la marge de manœuvre |
+| `dailyPnl` | **jamais inférée** : le PnL journalier ancré sur un jour de référence reste un jalon séparé ; il est requis de la requête opérateur |
+
+Une lecture indisponible, hors spec ou non numérique est une erreur fermée :
+la route refuse avec `PERP_ACCOUNT_UNAVAILABLE` plutôt que de substituer des
+zéros silencieux — une garde dérivée de zéros désactiverait le coupe-circuit
+d'exposition.
+
 ## Limites de frontière
 
 - réponses bornées (1 MiB) et timeout de 10 s, comme la frontière Coinbase ;

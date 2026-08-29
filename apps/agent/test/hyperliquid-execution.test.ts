@@ -6,6 +6,8 @@ import {
   aggressivePrice,
   assetIndexForCoin,
   createEthersSignerFactory,
+  derivePerpRiskGate,
+  fetchHyperliquidAccountState,
   fetchHyperliquidMeta,
   hyperliquidCoin,
   hyperliquidMarketIocOrder,
@@ -364,5 +366,111 @@ describe("méta /info", () => {
         fetch: (async () => jsonResponse({})) as unknown as typeof fetch,
       }),
     ).toBeNull();
+  });
+});
+
+describe("lectures de compte clearinghouseState", () => {
+  const accountBody = {
+    assetPositions: [
+      {
+        position: {
+          coin: "BTC",
+          szi: "0.010",
+          unrealizedPnl: "12.5",
+        },
+      },
+      {
+        position: {
+          coin: "DOGE",
+          szi: "-10000",
+          unrealizedPnl: "-3.0",
+        },
+      },
+    ],
+    marginSummary: {
+      accountValue: "5000",
+      totalRawUsd: "1200.5",
+    },
+  };
+
+  it("convertit les chaînes décimales en instantané typé", async () => {
+    const snapshot = await fetchHyperliquidAccountState(settings, {
+      fetch: (async () => jsonResponse(accountBody)) as unknown as typeof fetch,
+    });
+    expect(snapshot).toEqual({
+      accountValue: 5000,
+      totalRawUsd: 1200.5,
+      positions: [
+        { coin: "BTC", quantity: 0.01, unrealizedPnl: 12.5 },
+        { coin: "DOGE", quantity: -10000, unrealizedPnl: -3 },
+      ],
+    });
+  });
+
+  it("retourne null sur réseau indisponible ou réponse hors spec", async () => {
+    const broken: ReadonlyArray<typeof fetch> = [
+      (async () => {
+        throw new Error("down");
+      }) as unknown as typeof fetch,
+      (async () => jsonResponse({ assetPositions: "nope" })) as unknown as typeof fetch,
+      (async () =>
+        jsonResponse({
+          assetPositions: [
+            { position: { coin: "BTC", szi: "NaN", unrealizedPnl: "0" } },
+          ],
+          marginSummary: { accountValue: "1", totalRawUsd: "1" },
+        })) as unknown as typeof fetch,
+      (async () =>
+        jsonResponse({ assetPositions: [] })) as unknown as typeof fetch,
+    ];
+    for (const fetchMock of broken) {
+      expect(
+        await fetchHyperliquidAccountState(settings, { fetch: fetchMock }),
+      ).toBeNull();
+    }
+  });
+
+  it("dérive la garde depuis la position réelle du marché visé", () => {
+    const snapshot = {
+      accountValue: 5000,
+      totalRawUsd: 1200.5,
+      positions: [{ coin: "BTC", quantity: 0.01, unrealizedPnl: 12.5 }],
+    };
+    const gate = derivePerpRiskGate({
+      snapshot,
+      coin: "BTC",
+      markPrice: 100_000,
+      dailyPnl: -40,
+    });
+    expect(gate).toEqual({
+      admissionApproved: true,
+      positionQuantity: 0.01,
+      dailyPnl: -40,
+      otherGrossExposureNotional: 200.5,
+    });
+  });
+
+  it("met zéro sans position et borne l'exposition hors produit à zéro", () => {
+    const withoutPosition = derivePerpRiskGate({
+      snapshot: {
+        accountValue: 500,
+        totalRawUsd: 300,
+        positions: [{ coin: "DOGE", quantity: -10000, unrealizedPnl: -3 }],
+      },
+      coin: "BTC",
+      markPrice: 100_000,
+      dailyPnl: 0,
+    });
+    expect(withoutPosition.positionQuantity).toBe(0);
+    // Conservateur : DOGE hors allowlist compte dans l'exposition hors produit.
+    expect(withoutPosition.otherGrossExposureNotional).toBe(300);
+
+    const clamped = derivePerpRiskGate({
+      snapshot: { accountValue: 10, totalRawUsd: 50, positions: [] },
+      coin: "ETH",
+      markPrice: 1,
+      dailyPnl: 0,
+    });
+    expect(clamped.otherGrossExposureNotional).toBe(50);
   });
 });

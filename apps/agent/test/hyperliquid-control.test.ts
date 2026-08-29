@@ -115,6 +115,83 @@ describe("submitPerpOrderIntent", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("dérive la garde depuis le compte réel quand les champs sont omis", async () => {
+    const fetchMock = vi.fn(async (url: unknown, init?: unknown) => {
+      if (!String(url).endsWith("/info")) {
+        return jsonResponse({
+          status: "ok",
+          response: { data: { statuses: [{ resting: { oid: 1 } }] } },
+        });
+      }
+      const body = JSON.parse(
+        String((init as { body?: string } | undefined)?.body ?? "{}"),
+      ) as { type?: string };
+      if (body.type === "clearinghouseState") {
+        return jsonResponse({
+          assetPositions: [
+            { position: { coin: "BTC", szi: "0.01", unrealizedPnl: "5" } },
+          ],
+          marginSummary: { accountValue: "5000", totalRawUsd: "1200" },
+        });
+      }
+      return jsonResponse({
+        universe: [{ name: "BTC", szDecimals: 5, maxLeverage: 40 }],
+      });
+    });
+    const result = await submitPerpOrderIntent({
+      input: {
+        intent: { ...validRequest.intent },
+        gate: { dailyPnl: -10 },
+        clientOrderId: validRequest.clientOrderId,
+      },
+      permissions,
+      settingsInput,
+      sql: createSql(),
+      now: () => 1_756_416_000_000,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    expect(result).toEqual({
+      ok: true,
+      result: {
+        status: "SETTLED",
+        outcome: "ACCEPTED",
+        clientOrderId: validRequest.clientOrderId,
+      },
+    });
+  });
+
+  it("refuse PERP_ACCOUNT_UNAVAILABLE quand le compte est illisible", async () => {
+    const result = await submitPerpOrderIntent({
+      input: {
+        intent: { ...validRequest.intent },
+        gate: { dailyPnl: 0 },
+        clientOrderId: validRequest.clientOrderId,
+      },
+      permissions,
+      settingsInput,
+      sql: createSql(),
+      now: () => 1_756_416_000_000,
+      fetch: (async () =>
+        jsonResponse({ assetPositions: "nope" })) as unknown as typeof fetch,
+    });
+    expect(result).toEqual({ ok: false, code: "PERP_ACCOUNT_UNAVAILABLE" });
+  });
+
+  it("exige dailyPnl : jamais inféré depuis le compte", async () => {
+    const result = await submitPerpOrderIntent({
+      input: {
+        intent: { ...validRequest.intent },
+        gate: { positionQuantity: 0, otherGrossExposureNotional: 0 },
+        clientOrderId: validRequest.clientOrderId,
+      },
+      permissions,
+      settingsInput,
+      sql: createSql(),
+      now: () => 0,
+    });
+    expect(result).toEqual({ ok: false, code: "INVALID_PERP_ORDER_REQUEST" });
+  });
+
   it("refuse une intention hors garde de risque avec le code de la machine", async () => {
     const result = await submitPerpOrderIntent({
       input: {

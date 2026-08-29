@@ -1,4 +1,8 @@
-import { HYPERLIQUID_PERP_POLICY, type PerpOrderIntent } from "@dodash/models";
+import {
+  HYPERLIQUID_PERP_POLICY,
+  type PerpOrderIntent,
+  type PerpRiskGate,
+} from "@dodash/models";
 import { Wallet } from "ethers";
 
 import { readBoundedJson } from "./bounded-json.js";
@@ -279,4 +283,96 @@ export const fetchHyperliquidMeta = async (
     return null;
   }
   return Object.freeze(parsed);
+};
+
+export interface HyperliquidAccountPosition {
+  readonly coin: string;
+  readonly quantity: number;
+  readonly unrealizedPnl: number;
+}
+
+export interface HyperliquidAccountSnapshot {
+  readonly accountValue: number;
+  readonly totalRawUsd: number;
+  readonly positions: readonly HyperliquidAccountPosition[];
+}
+
+const finiteFrom = (value: unknown): number | null => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+/**
+ * Lecture du compte clearinghouseState : instantané typé fermé, ou null
+ * si la réponse est indisponible ou hors spec — jamais de zéros
+ * substitués. Source de vérité : models/hyperliquid-shell.md.
+ */
+export const fetchHyperliquidAccountState = async (
+  settings: HyperliquidExecutionSettings,
+  dependencies: HyperliquidRequestDependencies = {},
+): Promise<HyperliquidAccountSnapshot | null> => {
+  const parsed = (await boundedRequest(dependencies, settings, HYPERLIQUID_INFO_PATH, {
+    type: "clearinghouseState",
+    user: settings.walletAddress,
+  })) as {
+    assetPositions?: unknown;
+    marginSummary?: {
+      accountValue?: unknown;
+      totalRawUsd?: unknown;
+    };
+  } | null;
+  if (parsed === null || typeof parsed !== "object" || !Array.isArray(parsed.assetPositions)) {
+    return null;
+  }
+  const accountValue = finiteFrom(parsed.marginSummary?.accountValue);
+  const totalRawUsd = finiteFrom(parsed.marginSummary?.totalRawUsd);
+  if (accountValue === null || totalRawUsd === null) return null;
+  const positions: HyperliquidAccountPosition[] = [];
+  for (const entry of parsed.assetPositions) {
+    const position = (entry as { position?: unknown } | null)?.position as
+      | { coin?: unknown; szi?: unknown; unrealizedPnl?: unknown }
+      | undefined;
+    const coin = position?.coin;
+    const quantity = finiteFrom(position?.szi);
+    const unrealizedPnl = finiteFrom(position?.unrealizedPnl) ?? 0;
+    if (typeof coin !== "string" || quantity === null) return null;
+    positions.push({ coin, quantity, unrealizedPnl });
+  }
+  return Object.freeze({
+    accountValue,
+    totalRawUsd,
+    positions: Object.freeze(positions),
+  });
+};
+
+/**
+ * Dérivation des entrées de garde depuis le compte réel : position du
+ * marché visé depuis szi, exposition hors produit = totalRawUsd − own
+ * notional (bornée à zéro, conservatrice), PnL journalier jamais inféré.
+ */
+export const derivePerpRiskGate = ({
+  snapshot,
+  coin,
+  markPrice,
+  dailyPnl,
+}: {
+  readonly snapshot: HyperliquidAccountSnapshot;
+  readonly coin: HyperliquidCoin;
+  readonly markPrice: number;
+  readonly dailyPnl: number;
+}): PerpRiskGate => {
+  const own = snapshot.positions.find((position) => position.coin === coin);
+  const positionQuantity = own?.quantity ?? 0;
+  const ownNotional = Math.abs(positionQuantity) * markPrice;
+  const otherGross = Math.max(0, snapshot.totalRawUsd - ownNotional);
+  return Object.freeze({
+    admissionApproved: true,
+    positionQuantity,
+    dailyPnl,
+    otherGrossExposureNotional: otherGross,
+  });
 };

@@ -31,6 +31,12 @@
 | Bundle Worker | aucun import du SDK racine (ws) ; msgpack + ethers purs | Testé au build dry-run |
 | Montée de version du schéma SDK | le test d'équivalence casse avant production | Testé (équivalence) |
 | Flag spot et flag perp | indépendants ; l'un n'active pas l'autre | Testé |
+| Lecture de compte (clearinghouseState) | instantané typé ; positions, exposition et PnL extraits en nombres finis | Testé |
+| Compte sans position sur le marché visé | `positionQuantity = 0` | Testé |
+| Dérivation de garde avec position existante | own notional déduit de l'exposition totale, bornée à zéro | Testé |
+| Positions hors allowlist du compte | incluses dans `otherGross` (conservateur) | Testé |
+| Réponse hors spec ou non numérique | refus `PERP_ACCOUNT_UNAVAILABLE`, jamais de zéros substitués | Testé |
+| `dailyPnl` jamais inféré | requis de la requête ; ancrage journalier = jalon séparé | Testé |
 
 Le shell ne prend aucune décision d'état : il produit des issues typées
 fermées et laisse `hyperliquidPerpOrderMachine` arbitrer. Le détail textuel
