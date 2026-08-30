@@ -1,5 +1,7 @@
 export { createBreakoutStrategy } from "./breakout.js";
 export type { BreakoutConfig } from "./breakout.js";
+export { createEmaBandTrendStrategy } from "./ema-band-trend.js";
+export type { EmaBandTrendConfig } from "./ema-band-trend.js";
 export { createEmaCrossStrategy } from "./ema-cross.js";
 export type { EmaCrossConfig } from "./ema-cross.js";
 export { createRsiReversionStrategy } from "./rsi-reversion.js";

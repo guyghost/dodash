@@ -5,6 +5,7 @@ import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 
 import {
   createBreakoutStrategy,
+  createEmaBandTrendStrategy,
   createEmaCrossStrategy,
   createRsiReversionStrategy,
   createStrategyRegistry,
@@ -112,6 +113,112 @@ describe("strategies", () => {
       ok: false,
       error: { code: "DUPLICATE_STRATEGY_ID", strategyId: "same" },
     });
+  });
+});
+
+describe("ema-band-trend (models/ema-band-trend.md)", () => {
+  const strategy = createEmaBandTrendStrategy({ baseSize: 1 });
+
+  it("id par défaut : ema-band-trend", () => {
+    expect(strategy.id).toBe("ema-band-trend");
+  });
+
+  it("INV-T4 : BUY au franchissement strict de la bande haussière (+100 bps)", () => {
+    // previous 90 bps, current 150 bps → franchissement strict.
+    const previous = snapshot({ emaFast: 100.9, emaSlow: 100 });
+    const current = snapshot({ emaFast: 101.5, emaSlow: 100 });
+    const result = strategy.evaluate(
+      context({ indicators: current, previousIndicators: previous }),
+    );
+    expect(result.ok && result.value.side).toBe("BUY");
+    expect(result.ok && result.value.reasonCode).toBe("EMA_BAND_BULL_ENTRY");
+    // |150|/100 caplé à 1 — un franchissement strict est toujours ≥ 1.
+    expect(result.ok && result.value.confidence).toBe(1);
+    expect(result.ok && result.value.suggestedSize).toBe(1);
+  });
+
+  it("INV-T4 : SELL au franchissement strict de la bande baissière (−100 bps)", () => {
+    // previous exactement au seuil bas (−100 bps ≥ −100), current −150 bps.
+    const previous = snapshot({ emaFast: 99, emaSlow: 100 });
+    const current = snapshot({ emaFast: 98.5, emaSlow: 100 });
+    const result = strategy.evaluate(
+      context({ indicators: current, previousIndicators: previous }),
+    );
+    expect(result.ok && result.value.side).toBe("SELL");
+    expect(result.ok && result.value.reasonCode).toBe("EMA_BAND_BEAR_EXIT");
+  });
+
+  it("INV-T4 : au seuil exactement (+100 bps) ⇒ HOLD — au-seuil = RANGE, miroir du gate", () => {
+    // 101/100 = spread mathématiquement exact de 100 bps : pas de BUY
+    // (inégalité stricte, même convention que classifyRegimeObservation).
+    const previous = snapshot({ emaFast: 100.9, emaSlow: 100 });
+    const current = snapshot({ emaFast: 101, emaSlow: 100 });
+    const result = strategy.evaluate(
+      context({ indicators: current, previousIndicators: previous }),
+    );
+    expect(result.ok && result.value.side).toBe("HOLD");
+    expect(result.ok && result.value.reasonCode).toBe("EMA_BAND_NO_EVENT");
+  });
+
+  it("INV-T4 : zéro émission répétée à l’intérieur de la bande", () => {
+    // previous 150 bps, current 160 bps : déjà au-dessus, pas de nouveau BUY.
+    const previous = snapshot({ emaFast: 101.5, emaSlow: 100 });
+    const current = snapshot({ emaFast: 101.6, emaSlow: 100 });
+    const result = strategy.evaluate(
+      context({ indicators: current, previousIndicators: previous }),
+    );
+    expect(result.ok && result.value.side).toBe("HOLD");
+    expect(result.ok && result.value.suggestedSize).toBe(0);
+  });
+
+  it("INV-T2 : warm-up (previous null) ⇒ HOLD EMA_BAND_WARMUP", () => {
+    const current = snapshot({ emaFast: 101.5, emaSlow: 100 });
+    const result = strategy.evaluate(
+      context({ indicators: current, previousIndicators: null }),
+    );
+    expect(result.ok && result.value.side).toBe("HOLD");
+    expect(result.ok && result.value.reasonCode).toBe("EMA_BAND_WARMUP");
+  });
+
+  it("INV-T2 : EMA non positive ⇒ HOLD fail-closed (EMA_BAND_WARMUP)", () => {
+    const previous = snapshot({ emaFast: 0, emaSlow: 0 });
+    const current = snapshot({ emaFast: 101.5, emaSlow: 100 });
+    const result = strategy.evaluate(
+      context({ indicators: current, previousIndicators: previous }),
+    );
+    expect(result.ok && result.value.side).toBe("HOLD");
+    expect(result.ok && result.value.reasonCode).toBe("EMA_BAND_WARMUP");
+  });
+
+  it("INV-T3 : config invalide (baseSize 0 / NaN) ⇒ INVALID_STRATEGY_CONFIG", () => {
+    for (const baseSize of [0, Number.NaN]) {
+      const invalid = createEmaBandTrendStrategy({ baseSize });
+      const result = invalid.evaluate(context());
+      expect(result).toEqual({
+        ok: false,
+        error: { code: "INVALID_STRATEGY_CONFIG", strategyId: "ema-band-trend" },
+      });
+    }
+  });
+
+  it("INV-T1 : ne lit jamais context.candles", () => {
+    // Proxy qui explose à toute lecture : la décision doit réussir sans
+    // toucher aux candles (stratégie pure sur snapshots uniquement).
+    const forbiddenCandles = new Proxy([] as Candle[], {
+      get(_target, property) {
+        throw new Error(`context.candles lu (${String(property)})`);
+      },
+    });
+    const previous = snapshot({ emaFast: 100.9, emaSlow: 100 });
+    const current = snapshot({ emaFast: 101.5, emaSlow: 100 });
+    const result = strategy.evaluate(
+      context({
+        candles: forbiddenCandles,
+        indicators: current,
+        previousIndicators: previous,
+      }),
+    );
+    expect(result.ok && result.value.side).toBe("BUY");
   });
 });
 
