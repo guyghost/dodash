@@ -193,4 +193,34 @@ describe("daily risk cycle boundaries", () => {
       dailyPnl: 0,
     });
   });
+
+  it("treats perp like live: reconciled real PnL is kept, never local equity", () => {
+    expect(
+      call(
+        "resolveCycleDailyRiskStart",
+        "perp",
+        { utcDayStart: 0, openingEquity: 20_000 },
+        -500,
+        86_400_000,
+        10_000,
+      ),
+    ).toEqual({
+      window: { utcDayStart: 0, openingEquity: 20_000 },
+      dailyPnl: -500,
+    });
+
+    expect(
+      call(
+        "resolveCycleDailyRiskCompletion",
+        "perp",
+        { utcDayStart: 0, openingEquity: 20_000 },
+        -750,
+        86_400_000,
+        10_000,
+      ),
+    ).toEqual({
+      window: { utcDayStart: 0, openingEquity: 20_000 },
+      dailyPnl: -750,
+    });
+  });
 });

@@ -14,6 +14,8 @@
 | Position réelle déjà ouverte | garde lue sur clearinghouseState, ouverture refusée si plafond | Testé (contrôle) |
 | Kill switch en mode perp | arrêt de boucle sans appel Coinbase | Testé |
 | Credentials croisées (spot live ↔ perp) | chaînes disjointes : l'une n'active pas l'autre | Testé |
+| Ancrage journalier en mode perp | accountValue réel → référence UTC → dailyPnl réel | Testé |
+| Échec de lecture du compte au cycle | réconciliation non retryable, cycle échoue fermé | Testé |
 | Compte Hyperliquid illisible au moment de l'ordre | refus `PERP_ACCOUNT_UNAVAILABLE`, aucun ordre | Testé (contrôle) |
 | Dérive portefeuille virtuel vs position réelle | seule la garde réelle peut refuser ; jamais autoriser un faux ordre | Modélisé |
 | Double démarrage d'instance perp | nom canonique d'Agent inchangé, un DO par produit | Couvert par le DO |

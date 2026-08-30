@@ -39,9 +39,22 @@ que silencieusement écrasé.
 | enveloppe exacte + réglages présents | démarrage autorisé |
 
 Aucune credential Coinbase n'est requise en mode perp : la relecture de
-compte Coinbase du mode live n'est pas branchée, le portefeuille virtuel
-local sert à la comptabilité du cycle et les gardes d'exécution lisent la
-position **réelle** sur `clearinghouseState`.
+compte Coinbase du mode live n'est pas branchée. Le portefeuille local
+sert à la comptabilité affichée ; l'équité **réelle** Hyperliquid alimente
+le coupe-circuit (voir PnL journalier).
+
+## PnL journalier réel (ancrage UTC)
+
+La relecture de compte du cycle perp (`reconcileAccount`) porte
+l'`accountValue` réel de `clearinghouseState` et l'exposition brute
+`totalRawUsd`. Le mécanisme d'ancrage journalier UTC existant
+(`models/daily-risk.ts`, `resolveDailyRiskWindow`) s'applique sans
+changement : au premier cycle d'un jour UTC, la référence devient
+cette équité réelle, et `dailyPnl = accountValue − référence`. Le
+coupe-circuit de la garde (−1 000 USD) porte donc la perte **réelle**,
+non réalisée incluse. L'échec de la lecture est une erreur de
+réconciliation non retryable : le cycle échoue fermé plutôt que de
+soumettre avec un PnL inconnu.
 
 ## Conversion d'une décision en intention perp
 
@@ -72,12 +85,13 @@ exposition lues sur `clearinghouseState`.
    n'exige aucune clé Hyperliquid — les chaînes d'activation restent
    disjointes.
 5. La quantité est arrondie vers zéro avant tout événement de machine.
-6. Le PnL journalier de la garde est la référence jour de l'Agent
-   (mécanisme existant), jamais une valeur inférée du compte.
+6. Le PnL journalier de la garde vient de l'ancrage UTC existant
+   (`daily-risk`) alimenté par l'`accountValue` réel — jamais une valeur
+   inventée ni le portefeuille virtuel affiché.
 7. Le kill switch en mode perp arrête la boucle et retire la
    planification : il n'appelle jamais Coinbase.
 8. Les ordres perp passent en 1x effectif ; dépasser le plafond de
    l'enveloppe reste impossible.
-9. La comptabilité virtuelle locale approxime le cycle ; la garde
-   d'exécution, elle, lit la position réelle — un écart entre les deux ne
-   peut qu'interdire un ordre, jamais en autoriser un faux.
+9. L'équité affichée reste la comptabilité virtuelle ; le coupe-circuit,
+   lui, lit l'équité réelle — un écart entre les deux ne peut
+   qu'interdire un ordre, jamais en autoriser un faux.

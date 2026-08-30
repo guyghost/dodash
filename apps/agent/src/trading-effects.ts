@@ -12,6 +12,9 @@ import {
   reconcileCoinbaseOwnedAccount,
 } from "./coinbase-control.js";
 import type { CoinbaseAccountSnapshot } from "./coinbase-account.js";
+import {
+  fetchHyperliquidAccountState,
+} from "./hyperliquid-execution.js";
 import type { HyperliquidExecutionSettings } from "./hyperliquid-settings.js";
 import { resolveHyperliquidSettings } from "./hyperliquid-settings.js";
 import {
@@ -41,6 +44,7 @@ const reconciliationError = (retryable = true): WorkflowError =>
 export interface TradingEffectsDependencies {
   readonly configuration: AgentConfiguration;
   readonly env: TradingEnv;
+  readonly fetch?: typeof fetch;
   readonly agentName: string;
   ensureIntervalSchedule(
     intervalSeconds: number,
@@ -109,10 +113,7 @@ export const createTradingCycleEffects = (
       : null;
   return {
     reconcileAccount: async (portfolio, observedAt) => {
-      if (
-        deps.configuration.executionMode === "paper" ||
-        deps.configuration.executionMode === "perp"
-      ) {
+      if (deps.configuration.executionMode === "paper") {
         return ok({
           snapshotId: `paper:${deps.agentName}:${observedAt}`,
           observedAt,
@@ -121,6 +122,26 @@ export const createTradingCycleEffects = (
             portfolio.cash +
             portfolio.positionQuantity * portfolio.averagePrice,
           otherExposureNotional: 0,
+        });
+      }
+      if (deps.configuration.executionMode === "perp") {
+        // Perp : l'accountValue réel (clearinghouseState) alimente
+        // l'ancrage journalier UTC existant — dailyPnl devient réel.
+        if (perpSettings === null || !perpSettings.ok) {
+          return err(reconciliationError(false));
+        }
+        const account = await fetchHyperliquidAccountState(perpSettings.value, {
+          ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+        });
+        if (account === null) {
+          return err(reconciliationError(false));
+        }
+        return ok({
+          snapshotId: `perp:${deps.agentName}:${observedAt}`,
+          observedAt,
+          portfolio,
+          accountEquity: account.accountValue,
+          otherExposureNotional: account.totalRawUsd,
         });
       }
       if (liveSettings === null || !liveSettings.ok) {

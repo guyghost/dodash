@@ -50,6 +50,89 @@ const makeDependencies = (
   ...overrides,
 });
 
+describe("perp reconciliation", () => {
+  const jsonResponse = (body: unknown): Response =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  const perpDependencies = (
+    fetchMock: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<Response>>>,
+  ) => {
+    const deps = makeDependencies() as TradingEffectsDependencies;
+    return {
+      deps: {
+        ...deps,
+        configuration: {
+          ...deps.configuration,
+          executionMode: "perp" as const,
+          productId: "BTC-USD",
+        },
+      } as TradingEffectsDependencies,
+      fetchMock,
+    };
+  };
+
+  const perpEnv = {
+    HYPERLIQUID_PERP_TRADING_ENABLED: "true",
+    HYPERLIQUID_AGENT_PRIVATE_KEY:
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+    HYPERLIQUID_WALLET_ADDRESS: "0x2222222222222222222222222222222222222222",
+  };
+
+  it("carries the real accountValue into the daily anchor", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        assetPositions: [
+          { position: { coin: "BTC", szi: "0.01", unrealizedPnl: "-30" } },
+        ],
+        marginSummary: { accountValue: "9500", totalRawUsd: "1000" },
+      }),
+    );
+    const { deps } = perpDependencies(fetchMock);
+    Object.assign(deps, { fetch: fetchMock as unknown as typeof fetch });
+    Object.assign(deps.env as object, perpEnv);
+    const effects = createTradingCycleEffects(deps);
+
+    const reconciliation = await effects.reconcileAccount(
+      { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+      42,
+    );
+
+    expect(reconciliation).toEqual({
+      ok: true,
+      value: {
+        snapshotId: "perp:test-agent:42",
+        observedAt: 42,
+        portfolio: { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+        accountEquity: 9500,
+        otherExposureNotional: 1000,
+      },
+    });
+  });
+
+  it("fails closed without retry when the account is unreadable", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ assetPositions: "nope" }),
+    );
+    const { deps } = perpDependencies(fetchMock);
+    Object.assign(deps, { fetch: fetchMock as unknown as typeof fetch });
+    Object.assign(deps.env as object, perpEnv);
+    const effects = createTradingCycleEffects(deps);
+
+    const reconciliation = await effects.reconcileAccount(
+      { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+      42,
+    );
+
+    expect(reconciliation.ok).toBe(false);
+    if (!reconciliation.ok) {
+      expect(reconciliation.error.retryable).toBe(false);
+    }
+  });
+});
+
 describe("createTradingCycleEffects", () => {
   it("reconciles the paper account from portfolio equity", async () => {
     const deps = makeDependencies();

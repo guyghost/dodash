@@ -132,7 +132,7 @@ export const resolveCycleDailyRiskStart = (
   triggeredAt: number,
   localMarkedEquity: number,
 ): CycleDailyRiskState =>
-  executionMode === "live"
+  executionMode === "live" || executionMode === "perp"
     ? Object.freeze({ window: currentWindow, dailyPnl: currentDailyPnl })
     : resolveDailyRiskWindow(currentWindow, triggeredAt, localMarkedEquity);
 
@@ -143,7 +143,7 @@ export const resolveCycleDailyRiskCompletion = (
   triggeredAt: number,
   localMarkedEquity: number,
 ): CycleDailyRiskState =>
-  executionMode === "live"
+  executionMode === "live" || executionMode === "perp"
     ? Object.freeze({
         window: reconciledWindow,
         dailyPnl: reconciledDailyPnl,
