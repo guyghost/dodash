@@ -1,8 +1,67 @@
-import type {
-  ControlPermissions,
-  PerpRiskGate,
+import {
+  HYPERLIQUID_PERP_POLICY,
+  type ControlPermissions,
+  type PerpOrderIntent,
+  type PerpRiskGate,
 } from "@dodash/models";
 import { z } from "zod";
+
+/**
+ * Mapping signal spot Coinbase → perp Hyperliquid (option proxy,
+ * models/hyperliquid-signals.md).
+ */
+export const HYPERLIQUID_SIGNAL_MAP = Object.freeze({
+  "BTC-USD": "BTC-PERP",
+  "ETH-USD": "ETH-PERP",
+} as const);
+
+export const perpProductForSignal = (
+  signalProductId: string,
+): "BTC-PERP" | "ETH-PERP" | null => {
+  const mapped = (HYPERLIQUID_SIGNAL_MAP as Record<string, string>)[signalProductId];
+  return mapped === "BTC-PERP" || mapped === "ETH-PERP" ? mapped : null;
+};
+
+/**
+ * Conversion pure d'une décision du cœur en intention perp : mapping
+ * produit, quantité arrondie vers zéro à szDecimals, levier effectif 1
+ * (la borne 2x de l'enveloppe est un plafond, pas un objectif).
+ */
+export const toPerpIntent = ({
+  intent,
+  markPrice,
+}: {
+  readonly intent: {
+    readonly productId: string;
+    readonly side: "BUY" | "SELL";
+    readonly quantity: number;
+  };
+  readonly markPrice: number;
+}): PerpOrderIntent | null => {
+  const productId = perpProductForSignal(intent.productId);
+  if (productId === null) return null;
+  const decimals =
+    HYPERLIQUID_PERP_POLICY.sizeDecimals[
+      productId as keyof typeof HYPERLIQUID_PERP_POLICY.sizeDecimals
+    ];
+  if (
+    typeof decimals !== "number" ||
+    !Number.isFinite(intent.quantity) ||
+    intent.quantity <= 0
+  ) {
+    return null;
+  }
+  const factor = 10 ** decimals;
+  const quantity = Math.floor(intent.quantity * factor + 1e-9) / factor;
+  if (quantity <= 0) return null;
+  return Object.freeze({
+    productId,
+    side: intent.side,
+    quantity,
+    markPrice,
+    leverage: 1,
+  });
+};
 
 import type { HyperliquidRequestDependencies } from "./hyperliquid-execution.js";
 import {

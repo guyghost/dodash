@@ -21,9 +21,27 @@ import {
   submitPerpOrderIntent,
 } from "./hyperliquid-control.js";
 import {
+  admitHyperliquidPerpAgent,
+} from "./configuration.js";
+import {
   PERP_ORDERS_SCHEMA,
+  createSqlitePerpOrderStore,
   type PerpOrderSqlAdapter,
 } from "./hyperliquid-store.js";
+import {
+  createHyperliquidPerpRunner,
+  type HyperliquidPerpRunner,
+} from "./hyperliquid-orchestrator.js";
+import { toPerpIntent } from "./hyperliquid-control.js";
+import {
+  derivePerpRiskGate,
+  fetchHyperliquidAccountState,
+  hyperliquidCoin,
+} from "./hyperliquid-execution.js";
+import {
+  type HyperliquidExecutionSettings,
+  resolveHyperliquidSettings,
+} from "./hyperliquid-settings.js";
 import {
   preflightCoinbaseLive,
   type CoinbaseLivePreflightReport,
@@ -102,7 +120,11 @@ export type AgentCommandResult =
           | "LIVE_POLICY_MISMATCH"
           | "LIVE_AGENT_NAME_MISMATCH"
           | "LIVE_EXECUTION_UNAVAILABLE"
-          | "NOT_CONFIGURED";
+          | "NOT_CONFIGURED"
+          | "PERP_PRODUCT_NOT_ALLOWED"
+          | "PERP_POLICY_MISMATCH"
+          | "PERP_ADMISSION_REQUIRED"
+          | "HYPERLIQUID_EXECUTION_UNAVAILABLE";
       };
     };
 
@@ -273,7 +295,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     }
 
     const admission = admitAgentConfiguration(configuration.value);
-    if (admission.status === "REJECTED") {
+    if (configuration.value.executionMode === "perp") {
+      const perpAdmission = admitHyperliquidPerpAgent(configuration.value);
+      if (perpAdmission.status === "REJECTED") {
+        return { ok: false, error: { code: perpAdmission.reasonCode } };
+      }
+      if (!resolveHyperliquidSettings(this.env).ok) {
+        return { ok: false, error: { code: "HYPERLIQUID_EXECUTION_UNAVAILABLE" } };
+      }
+    } else if (admission.status === "REJECTED") {
       return { ok: false, error: { code: admission.reasonCode } };
     }
     if (configuration.value.executionMode === "live") {
@@ -630,9 +660,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         this.submitPaperOrder(intent, marketPrice, portfolio, executedAt, config),
       submitLiveOrder: (settings, intent, riskDecision, authorization) =>
         this.submitLiveOrder(settings, intent, riskDecision, authorization),
+      submitPerpOrder: (settings, intent, riskDecision, marketPrice) =>
+        this.submitPerpSignalOrder(settings, intent, riskDecision, marketPrice),
       reconcilePaperOrder: (intent) => this.reconcilePaperOrder(intent),
       reconcileLiveOrder: (settings, intent, riskDecision, portfolio) =>
         this.reconcileLiveOrder(settings, intent, riskDecision, portfolio),
+      reconcilePerpOrder: (settings, intent) =>
+        this.reconcilePerpSignalOrder(settings, intent),
       persistCycle: (cycleArtifacts, nextMachine) =>
         this.persistCycle(cycleArtifacts, nextMachine),
       loadKnownProtectiveOrderIds: () => this.loadKnownProtectiveOrderIds(),
@@ -1025,6 +1059,94 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       status: "UNKNOWN",
       error: executionError("ORDER_OUTCOME_UNKNOWN", true),
     };
+  }
+
+  private perpRunner(
+    settings: HyperliquidExecutionSettings,
+  ): HyperliquidPerpRunner {
+    return createHyperliquidPerpRunner({
+      settings,
+      store: createSqlitePerpOrderStore(this.perpSqlAdapter()),
+      dependencies: { now: () => Date.now() },
+    });
+  }
+
+  private async submitPerpSignalOrder(
+    settings: HyperliquidExecutionSettings,
+    intent: OrderIntent,
+    _riskDecision: ApprovedRiskDecision,
+    marketPrice: number,
+  ): Promise<OrderSubmission> {
+    const portfolio = this.state.portfolio;
+    const perpIntent = toPerpIntent({
+      intent: {
+        productId: intent.productId,
+        side: intent.side,
+        quantity: intent.quantity,
+      },
+      markPrice: marketPrice,
+    });
+    if (perpIntent === null) {
+      return {
+        status: "REJECTED",
+        error: executionWorkflowError("ORDER_REJECTED", false),
+      };
+    }
+    const account = await fetchHyperliquidAccountState(settings);
+    if (account === null) {
+      return { status: "REJECTED", error: executionWorkflowError("ORDER_REJECTED", false) };
+    }
+    const gate = derivePerpRiskGate({
+      snapshot: account,
+      coin: "BTC" === hyperliquidCoin(perpIntent.productId) ? "BTC" : "ETH",
+      markPrice: marketPrice,
+      dailyPnl: this.state.dailyPnl,
+    });
+    const runner = this.perpRunner(settings);
+    const result = await runner.runOrder({
+      intent: perpIntent,
+      gate,
+      clientOrderId: intent.clientOrderId,
+    });
+    if (result.status === "SETTLED" && result.outcome === "ACCEPTED") {
+      return {
+        status: "CONFIRMED",
+        exchangeOrderId: result.clientOrderId,
+        portfolio,
+        fill: null,
+      };
+    }
+    if (result.status === "SETTLED" && result.outcome === "REJECTED") {
+      return {
+        status: "REJECTED",
+        error: executionWorkflowError("ORDER_REJECTED", false),
+      };
+    }
+    if (result.status === "REFUSED") {
+      return {
+        status: "REJECTED",
+        error: executionWorkflowError("ORDER_REJECTED", false),
+      };
+    }
+    return {
+      status: "UNKNOWN",
+      error: executionWorkflowError("ORDER_OUTCOME_UNKNOWN", true),
+    };
+  }
+
+  private async reconcilePerpSignalOrder(
+    settings: HyperliquidExecutionSettings,
+    intent: OrderIntent,
+  ): Promise<Result<OrderSubmission, WorkflowError>> {
+    const runner = this.perpRunner(settings);
+    const report = await runner.recoverPending();
+    void report;
+    return ok({
+      status: "CONFIRMED",
+      exchangeOrderId: intent.clientOrderId,
+      portfolio: this.state.portfolio,
+      fill: null,
+    } satisfies OrderSubmission);
   }
 
   private async reconcileLiveOrder(

@@ -12,6 +12,8 @@ import {
   reconcileCoinbaseOwnedAccount,
 } from "./coinbase-control.js";
 import type { CoinbaseAccountSnapshot } from "./coinbase-account.js";
+import type { HyperliquidExecutionSettings } from "./hyperliquid-settings.js";
+import { resolveHyperliquidSettings } from "./hyperliquid-settings.js";
 import {
   COINBASE_CREATE_ORDER_PATH,
   createCoinbaseAuthorization,
@@ -72,6 +74,16 @@ export interface TradingEffectsDependencies {
     riskDecision: Extract<RiskDecision, { readonly status: "APPROVED" }>,
     portfolio: PaperPortfolio,
   ): Promise<Result<OrderSubmission, WorkflowError>>;
+  submitPerpOrder(
+    settings: HyperliquidExecutionSettings,
+    intent: OrderIntent,
+    riskDecision: Extract<RiskDecision, { readonly status: "APPROVED" }>,
+    marketPrice: number,
+  ): Promise<OrderSubmission>;
+  reconcilePerpOrder(
+    settings: HyperliquidExecutionSettings,
+    intent: OrderIntent,
+  ): Promise<Result<OrderSubmission, WorkflowError>>;
   persistCycle(
     artifacts: CycleArtifacts | null,
     machine: PersistedTradingMachine,
@@ -91,9 +103,16 @@ export const createTradingCycleEffects = (
     deps.configuration.executionMode === "live"
       ? resolveCoinbaseSettings(deps.env)
       : null;
+  const perpSettings =
+    deps.configuration.executionMode === "perp"
+      ? resolveHyperliquidSettings(deps.env)
+      : null;
   return {
     reconcileAccount: async (portfolio, observedAt) => {
-      if (deps.configuration.executionMode === "paper") {
+      if (
+        deps.configuration.executionMode === "paper" ||
+        deps.configuration.executionMode === "perp"
+      ) {
         return ok({
           snapshotId: `paper:${deps.agentName}:${observedAt}`,
           observedAt,
@@ -141,7 +160,10 @@ export const createTradingCycleEffects = (
     persistOrderIntent: async (cycleId, intent) =>
       deps.persistOrderIntent(cycleId, intent),
     authorize: async () => {
-      if (deps.configuration.executionMode === "paper") {
+      if (
+        deps.configuration.executionMode === "paper" ||
+        deps.configuration.executionMode === "perp"
+      ) {
         const issuedAt = Date.now();
         return ok({ issuedAt, expiresAt: issuedAt + 60_000 });
       }
@@ -171,6 +193,20 @@ export const createTradingCycleEffects = (
           deps.configuration,
         );
       }
+      if (deps.configuration.executionMode === "perp") {
+        if (perpSettings === null || !perpSettings.ok) {
+          return {
+            status: "REJECTED",
+            error: authenticationError(),
+          };
+        }
+        return deps.submitPerpOrder(
+          perpSettings.value,
+          intent,
+          riskDecision,
+          marketPrice,
+        );
+      }
       if (liveSettings === null || !liveSettings.ok) {
         return {
           status: "REJECTED",
@@ -187,6 +223,12 @@ export const createTradingCycleEffects = (
     reconcileOrder: async (intent, riskDecision, portfolio) => {
       if (deps.configuration.executionMode === "paper") {
         return deps.reconcilePaperOrder(intent);
+      }
+      if (deps.configuration.executionMode === "perp") {
+        if (perpSettings === null || !perpSettings.ok) {
+          return err(reconciliationError());
+        }
+        return deps.reconcilePerpOrder(perpSettings.value, intent);
       }
       if (liveSettings === null || !liveSettings.ok) {
         return err(reconciliationError());

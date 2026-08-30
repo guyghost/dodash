@@ -9,7 +9,7 @@ export interface TradingTelemetryEvent {
   readonly timestamp: number;
   readonly agentId: string;
   readonly productId: string;
-  readonly executionMode: "paper" | "live";
+  readonly executionMode: "paper" | "live" | "perp";
   readonly phase: string;
   readonly outcome: string;
   readonly errorCode: string | null;

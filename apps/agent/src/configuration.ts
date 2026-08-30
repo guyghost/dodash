@@ -6,11 +6,15 @@ import {
 import { createProductId, err, ok, type ProductId, type Result, type Timeframe } from "@dodash/domain";
 import type { PaperBrokerConfig } from "@dodash/paper-execution";
 import {
+  admitHyperliquidPerpConfiguration,
   assessLiveTradingPolicy,
+  type HyperliquidPerpAdmission,
   LIVE_TRADING_POLICY,
   type LiveTradingAdmission,
+  HYPERLIQUID_PERP_POLICY,
 } from "@dodash/models";
 import type { RiskConfig } from "@dodash/risk";
+import { perpProductForSignal } from "./hyperliquid-control.js";
 import { z } from "zod";
 
 export const STRATEGY_IDS = [
@@ -39,7 +43,7 @@ export interface AgentConfiguration {
   readonly initialCapital: number;
   readonly maxDecisionNotional: number;
   readonly minNetQuantity: number;
-  readonly executionMode: "paper" | "live";
+  readonly executionMode: "paper" | "live" | "perp";
   readonly sizingPolicy: AgentSizingPolicy;
   readonly indicators: IndicatorConfig;
   readonly risk: RiskConfig;
@@ -154,7 +158,7 @@ const inputSchema = z.object({
   initialCapital: z.number().positive().default(10_000),
   maxDecisionNotional: z.number().positive().default(2_000),
   minNetQuantity: z.number().nonnegative().default(0.000_001),
-  executionMode: z.enum(["paper", "live"]).default("paper"),
+  executionMode: z.enum(["paper", "live", "perp"]).default("paper"),
   sizingPolicy: sizingPolicySchema.default({ type: "NATIVE" }),
   indicators: indicatorSchema.default({
     ...DEFAULT_INDICATOR_CONFIG,
@@ -174,6 +178,31 @@ const inputSchema = z.object({
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const withPerpPolicyDefaults = (input: unknown): unknown => {
+  if (!isRecord(input) || input.executionMode !== "perp") return input;
+  const risk = isRecord(input.risk) ? input.risk : {};
+  return {
+    timeframe: HYPERLIQUID_PERP_POLICY.timeframe,
+    intervalSeconds: 3_600,
+    maxMarketStalenessMs: 90_000,
+    candleLimit: 200,
+    initialCapital: 10_000,
+    maxDecisionNotional: HYPERLIQUID_PERP_POLICY.risk.maxOrderNotional,
+    minNetQuantity: 0.000_001,
+    ...input,
+    risk: {
+      maxOrderNotional: HYPERLIQUID_PERP_POLICY.risk.maxOrderNotional,
+      maxPositionNotional: HYPERLIQUID_PERP_POLICY.risk.maxPositionNotional,
+      maxGrossExposure: HYPERLIQUID_PERP_POLICY.risk.maxGrossExposure,
+      maxDailyLoss: HYPERLIQUID_PERP_POLICY.risk.maxDailyLoss,
+      cooldownMs: 0,
+      stopLossBps: 150,
+      takeProfitBps: 300,
+      ...risk,
+    },
+  };
+};
 
 const withLivePolicyDefaults = (input: unknown): unknown => {
   if (!isRecord(input) || input.executionMode !== "live") return input;
@@ -199,7 +228,11 @@ const withLivePolicyDefaults = (input: unknown): unknown => {
 export const parseAgentConfiguration = (
   input: unknown,
 ): Result<AgentConfiguration, AgentConfigurationError> => {
-  const parsed = inputSchema.safeParse(withLivePolicyDefaults(input));
+  const defaulted =
+    isRecord(input) && input.executionMode === "perp"
+      ? withPerpPolicyDefaults(input)
+      : withLivePolicyDefaults(input);
+  const parsed = inputSchema.safeParse(defaulted);
   if (!parsed.success) return err({ code: "INVALID_CONFIGURATION" });
 
   const product = createProductId(parsed.data.productId);
@@ -234,3 +267,27 @@ export const admitAgentConfiguration = (
   configuration.executionMode === "paper"
     ? { status: "APPROVED" }
     : assessLiveTradingPolicy(configuration);
+
+/**
+ * Admission perp au démarrage d'une instance signal (option proxy) :
+ * le produit configuré doit être un miroir et l'enveloppe figée exacte.
+ */
+export const admitHyperliquidPerpAgent = (
+  configuration: AgentConfiguration,
+): HyperliquidPerpAdmission => {
+  if (configuration.executionMode !== "perp") {
+    return { status: "REJECTED", reasonCode: "PERP_POLICY_MISMATCH" };
+  }
+  const perpProduct = perpProductForSignal(configuration.productId);
+  if (perpProduct === null) {
+    return { status: "REJECTED", reasonCode: "PERP_PRODUCT_NOT_ALLOWED" };
+  }
+  return admitHyperliquidPerpConfiguration({
+    executionMode: "live",
+    venue: "HYPERLIQUID",
+    productId: perpProduct,
+    timeframe: configuration.timeframe,
+    maxLeverage: HYPERLIQUID_PERP_POLICY.maxLeverage,
+    risk: configuration.risk,
+  });
+};

@@ -32,6 +32,15 @@ const makeDependencies = (
   persistOrderIntent: vi.fn(async () => ok(undefined)),
   submitPaperOrder: vi.fn(async () => ({ status: "CONFIRMED" }) as OrderSubmission),
   submitLiveOrder: vi.fn(async () => ({ status: "CONFIRMED" }) as OrderSubmission),
+  submitPerpOrder: vi.fn(async () => ({ status: "CONFIRMED" }) as OrderSubmission),
+  reconcilePerpOrder: vi.fn(async () =>
+    ok({
+      status: "CONFIRMED",
+      exchangeOrderId: "perp-x",
+      portfolio: { cash: 1000, positionQuantity: 2, averagePrice: 50 },
+      fill: null,
+    } as OrderSubmission),
+  ),
   reconcilePaperOrder: vi.fn(async () => ok({ status: "CONFIRMED" } as OrderSubmission)),
   reconcileLiveOrder: vi.fn(async () => ok({ status: "CONFIRMED" } as OrderSubmission)),
   persistCycle: vi.fn(async () => ok(undefined)),
