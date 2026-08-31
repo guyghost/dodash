@@ -29,10 +29,10 @@
     "@dodash/paper-execution": "workspace:*",
     "@dodash/risk": "workspace:*",
     "@dodash/strategies": "workspace:*",
-    "xstate": "^5.32.5"
+    "xstate": "^5.32.6"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.0",
     "vitest": "^4.1.11"
   }
 }

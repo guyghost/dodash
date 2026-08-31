@@ -14,21 +14,21 @@
   },
   "dependencies": {
     "@dodash/models": "workspace:*",
-    "@vitejs/plugin-react": "6.1.0",
+    "@vitejs/plugin-react": "6.1.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "vite": "8.2.2",
-    "xstate": "^5.32.5"
+    "xstate": "^5.32.6"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260823.1",
-    "@testing-library/react": "^16.3.2",
+    "@cloudflare/workers-types": "^5.20260828.1",
+    "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
+    "@types/react-dom": "^19.2.5",
     "jsdom": "^30.0.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
-    "wrangler": "^4.125.0"
+    "wrangler": "^4.127.1"
   }
 }
