@@ -31,6 +31,7 @@ import {
   type AgentStateView,
   type CycleView,
   type DashboardGateway,
+  type PnlHistoryView,
   type StartConfiguration,
 } from "./dashboard-api.js";
 import { createDemoGateway } from "./demo-gateway.js";
@@ -74,6 +75,35 @@ const outcomeClass = (outcome: string): string => {
   if (outcome === "ORDER_CONFIRMED") return "positive";
   if (outcome === "RISK_REJECTED" || outcome === "FAILED") return "negative";
   return "neutral";
+};
+
+const signedClass = (value: number): string =>
+  value >= 0 ? "pnl-positive" : "pnl-negative";
+
+const bps = new Intl.NumberFormat("fr-FR", {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 2,
+});
+
+const equityPath = (points: readonly { readonly t: number; readonly equity: number }[]): string => {
+  if (points.length < 2) return "";
+  const times = points.map((point) => point.t);
+  const equities = points.map((point) => point.equity);
+  const tMin = Math.min(...times);
+  const tMax = Math.max(...times);
+  const eMin = Math.min(...equities);
+  const eMax = Math.max(...equities);
+  const width = 600;
+  const height = 160;
+  const spanT = Math.max(1, tMax - tMin);
+  const spanE = Math.max(Number.EPSILON, eMax - eMin);
+  return points
+    .map((point, index) => {
+      const x = (point.t - tMin) / spanT * width;
+      const y = height - ((point.equity - eMin) / spanE) * (height - 12) - 6;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
 };
 
 function SectionHeading({
@@ -254,6 +284,7 @@ export function App({
   >(actor.getSnapshot());
   const [agent, setAgent] = useState<AgentStateView | null>(null);
   const [cycles, setCycles] = useState<readonly CycleView[]>([]);
+  const [pnlHistory, setPnlHistory] = useState<PnlHistoryView | null>(null);
   const [agentName, setAgentName] = useState("btc-usd--multi");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [token, setToken] = useState("");
@@ -312,8 +343,12 @@ export function App({
       actor.send({ type: "REQUEST_FAILED", error: toDashboardError(error) });
     };
     if (state === "loading" || state === "refreshing") {
-      void Promise.all([gateway.loadState(target), gateway.loadCycles(target)])
-        .then(([nextAgent, nextCycles]) => {
+      void Promise.all([
+        gateway.loadState(target),
+        gateway.loadCycles(target),
+        gateway.loadPnlHistory(target),
+      ])
+        .then(([nextAgent, nextCycles, nextPnl]) => {
           actor.send({
             type: "STATE_LOADED",
             remotePhase: nextAgent.phase,
@@ -322,6 +357,7 @@ export function App({
           if (String(actor.getSnapshot().value) === "ready") {
             setAgent(nextAgent);
             setCycles(nextCycles);
+            setPnlHistory(nextPnl);
           }
         })
         .catch(fail);
@@ -336,7 +372,10 @@ export function App({
           command === "start" ? pendingStartRef.current : undefined,
         )
         .then(async (nextAgent) => {
-          const nextCycles = await gateway.loadCycles(target);
+          const [nextCycles, nextPnl] = await Promise.all([
+            gateway.loadCycles(target),
+            gateway.loadPnlHistory(target),
+          ]);
           actor.send({
             type: "COMMAND_SUCCEEDED",
             remotePhase: nextAgent.phase,
@@ -345,6 +384,7 @@ export function App({
           if (String(actor.getSnapshot().value) === "ready") {
             setAgent(nextAgent);
             setCycles(nextCycles);
+            setPnlHistory(nextPnl);
           }
           pendingStartRef.current = undefined;
         })
@@ -1039,6 +1079,134 @@ export function App({
           <section>
             <SectionHeading
               index="07"
+              title="PERFORMANCE"
+              detail="PROJECTION SQLITE · LECTURE SEULE"
+            />
+            {pnlHistory === null ? null : (
+              <>
+                <article className="paper-card equity-card">
+                  <div className="card-topline">
+                    <span className="card-label blue-bg">COURBE D’ÉQUITÉ</span>
+                    <span className="sync-time">
+                      {pnlHistory.equityCurve.length} POINTS
+                    </span>
+                  </div>
+                  {pnlHistory.equityCurve.length < 2 ? (
+                    <p className="empty-state">Aucun point d’équité.</p>
+                  ) : (
+                    <svg
+                      className="equity-chart"
+                      viewBox="0 0 600 160"
+                      preserveAspectRatio="none"
+                      role="img"
+                      aria-label="Courbe d’équité"
+                    >
+                      <path d={equityPath(pnlHistory.equityCurve)} />
+                    </svg>
+                  )}
+                  {/* biome-ignore lint/a11y/useSemanticElements: groupe de badges de présentation */}
+                  <div
+                    className="protection-badges"
+                    role="group"
+                    aria-label="Position et protections"
+                  >
+                    {pnlHistory.openPosition === null ? (
+                      <span className="outcome neutral">PLAT</span>
+                    ) : (
+                      <>
+                        <span className="outcome neutral">
+                          POSITION {quantity.format(pnlHistory.openPosition.quantity)}
+                        </span>
+                        {pnlHistory.protection === null ? (
+                          <span className="outcome negative">NON PROTÉGÉ</span>
+                        ) : (
+                          <>
+                            <span className="outcome negative">
+                              STOP {money.format(pnlHistory.protection.stopLossPrice)}
+                            </span>
+                            <span className="outcome positive">
+                              TAKE-PROFIT {money.format(pnlHistory.protection.takeProfitPrice)}
+                            </span>
+                            <span
+                              className={`outcome ${
+                                pnlHistory.protection.protectiveOrderConfirmed
+                                  ? "positive"
+                                  : "neutral"
+                              }`}
+                            >
+                              {pnlHistory.protection.protectiveOrderConfirmed
+                                ? "PROTECTION CONFIRMÉE"
+                                : "PROTECTION NON CONFIRMÉE"}
+                            </span>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </article>
+                <div className="paper-card table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cycle</th>
+                        <th>Déclenché</th>
+                        <th>Issue</th>
+                        <th>Sens</th>
+                        <th>Quantité</th>
+                        <th>Prix exec.</th>
+                        <th>PnL réalisé</th>
+                        <th>Frais</th>
+                        <th>Slippage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pnlHistory.cycles.map((cycle) => (
+                        <tr key={cycle.cycleId}>
+                          <td><code>{cycle.cycleId}</code></td>
+                          <td>{compactDate.format(cycle.triggeredAt)}</td>
+                          <td>
+                            <span className={`outcome ${outcomeClass(cycle.outcome)}`}>
+                              {cycle.outcome}
+                            </span>
+                          </td>
+                          <td>{cycle.side ?? "—"}</td>
+                          <td>{cycle.quantity === null ? "—" : quantity.format(cycle.quantity)}</td>
+                          <td>{cycle.fillPrice === null ? "—" : money.format(cycle.fillPrice)}</td>
+                          <td>
+                            {cycle.realizedPnl === null ? (
+                              "—"
+                            ) : (
+                              <span className={signedClass(cycle.realizedPnl)}>
+                                {money.format(cycle.realizedPnl)}
+                              </span>
+                            )}
+                          </td>
+                          <td>{cycle.fee === null ? "—" : money.format(cycle.fee)}</td>
+                          <td>
+                            {cycle.slippageBps === null ? (
+                              "—"
+                            ) : (
+                              <span className={signedClass(-cycle.slippageBps)}>
+                                {cycle.slippageBps >= 0 ? "+" : ""}
+                                {bps.format(cycle.slippageBps)} bps
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {pnlHistory.cycles.length === 0 && (
+                    <p className="empty-state">Aucun cycle dans la fenêtre.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+
+          <section>
+            <SectionHeading
+              index="08"
               title="PERPÉTUELS · HYPERLIQUID"
               detail="ORDRE OPÉRATEUR · GARDES SERVEUR"
             />

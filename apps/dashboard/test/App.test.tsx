@@ -9,6 +9,7 @@ import {
   type AgentStateView,
   type CycleView,
   type DashboardGateway,
+  type PnlHistoryView,
   type StartConfiguration,
 } from "../src/dashboard-api.js";
 
@@ -25,11 +26,19 @@ const stoppedAgent = (): AgentStateView => ({
   indicators: null,
 });
 
+const emptyPnlHistory = (): PnlHistoryView => ({
+  equityCurve: [],
+  cycles: [],
+  openPosition: null,
+  protection: null,
+});
+
 const createGateway = (
   overrides: Partial<DashboardGateway> = {},
 ): DashboardGateway => ({
   loadState: async () => stoppedAgent(),
   loadCycles: async (): Promise<readonly CycleView[]> => [],
+  loadPnlHistory: async () => emptyPnlHistory(),
   command: async () => stoppedAgent(),
   ...overrides,
 });
@@ -122,6 +131,111 @@ describe("dashboard journey", () => {
       executionMode: "live",
       timeframe: LIVE_TRADING_POLICY.timeframe,
     });
+  });
+
+  it("renders the read-only pnl projection with protection badges", async () => {
+    const startedAt = Date.UTC(2026, 7, 26, 12);
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+    };
+    const pnlHistory: PnlHistoryView = {
+      equityCurve: [
+        { t: startedAt - 600_000, equity: 6_401.5 },
+        { t: startedAt - 300_000, equity: 6_501.5 },
+        { t: startedAt, equity: 6_611.5 },
+      ],
+      cycles: [
+        {
+          cycleId: "cycle-buy",
+          triggeredAt: startedAt - 300_000,
+          completedAt: startedAt - 296_000,
+          outcome: "ORDER_CONFIRMED",
+          marketPrice: 60_000,
+          side: "BUY",
+          quantity: 0.1,
+          fillPrice: 60_060,
+          fee: 1.5,
+          realizedPnl: null,
+          slippageBps: 10,
+        },
+        {
+          cycleId: "cycle-hold",
+          triggeredAt: startedAt,
+          completedAt: null,
+          outcome: "NO_ACTION",
+          marketPrice: 61_000,
+          side: null,
+          quantity: null,
+          fillPrice: null,
+          fee: null,
+          realizedPnl: null,
+          slippageBps: null,
+        },
+      ],
+      openPosition: { quantity: 0.1, averagePrice: 60_098.5 },
+      protection: {
+        stopLossPrice: 58_000,
+        takeProfitPrice: 63_000,
+        protectiveOrderConfirmed: true,
+      },
+    };
+    render(
+      <App
+        gateways={gateways(
+          createGateway({
+            loadState: async () => active,
+            loadPnlHistory: async () => pnlHistory,
+          }),
+        )}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.getByText("PERFORMANCE")).toBeTruthy();
+    expect(
+      screen.getByRole("group", { name: "Position et protections" }).textContent,
+    ).toContain("STOP 58\u202f000,00\u00a0$US");
+    expect(
+      screen.getByRole("group", { name: "Position et protections" }).textContent,
+    ).toContain("TAKE-PROFIT 63\u202f000,00\u00a0$US");
+    expect(screen.getByRole("img", { name: "Courbe d’équité" })).toBeTruthy();
+    expect(screen.getByText("cycle-buy")).toBeTruthy();
+    expect(screen.getByText("Slippage")).toBeTruthy();
+    expect(screen.getByText("+10,00 bps")).toBeTruthy();
+  });
+
+  it("shows an unprotected open position as fail-closed", async () => {
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+    };
+    const pnlHistory: PnlHistoryView = {
+      equityCurve: [],
+      cycles: [],
+      openPosition: { quantity: 0.1, averagePrice: 60_098.5 },
+      protection: null,
+    };
+    render(
+      <App
+        gateways={gateways(
+          createGateway({
+            loadState: async () => active,
+            loadPnlHistory: async () => pnlHistory,
+          }),
+        )}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.getByText("NON PROTÉGÉ")).toBeTruthy();
+    expect(screen.getByText("Aucun point d’équité.")).toBeTruthy();
   });
 
   it("requires confirmation before exposing the kill command", async () => {

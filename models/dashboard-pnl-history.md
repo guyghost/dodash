@@ -77,6 +77,10 @@ calcul à cette fonction ; aucun Worker UI, proxy ou edge ne calcule un chiffre.
   `PROTECTION_FAILED` portent aussi le fill).
 - Les statuts `REJECTED`, `TERMINAL_FAILED` et `UNKNOWN` ne fournissent
   aucun fait : ni portefeuille, ni trade.
+- Si plusieurs ordres partagent un même `cycle_id`, leurs lignes sont
+  consommées dans l'ordre de `client_order_id` croissant ; le premier
+  ordre porteur d'un fill confirme les chiffres de trade du cycle, les
+  suivants ne mettent plus à jour que le portefeuille porté.
 - En tête de fenêtre, le portefeuille est **inconnu** tant qu'aucune
   soumission porteuse ne s'est pas présentée : aucun point d'équité ni PnL
   n'est déduit avant ce premier portefeuille (fail-closed, pas de

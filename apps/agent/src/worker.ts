@@ -1,4 +1,5 @@
 import type { ControlPermissions } from "@dodash/models";
+import { DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT } from "@dodash/models";
 import { routeAgentRequest } from "agents";
 
 import { hasValidBearerToken } from "./auth.js";
@@ -27,6 +28,7 @@ const isAuthorized = (request: Request, env: TradingEnv): boolean => {
 type TradingAgentRpc = Pick<
   TradingAgent,
   | "getAgentState"
+  | "getPnlHistory"
   | "killAgent"
   | "listRecentCycles"
   | "preflightLive"
@@ -65,6 +67,14 @@ const handleApi = async (
   if (request.method === "GET" && action === "cycles") {
     const rawLimit = Number(new URL(request.url).searchParams.get("limit") ?? 50);
     return json(await agent.listRecentCycles(rawLimit));
+  }
+  if (request.method === "GET" && action === "pnl") {
+    const rawLimit = Number(
+      new URL(request.url).searchParams.get("limit") ??
+        DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
+    );
+    const result = await agent.getPnlHistory(rawLimit);
+    return json(result, result.ok ? 200 : 500);
   }
   if (request.method !== "POST") {
     return new Response("Method Not Allowed", {

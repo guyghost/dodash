@@ -51,6 +51,40 @@ export interface CycleView {
   readonly outcome: string;
 }
 
+export interface PnlEquityPointView {
+  readonly t: number;
+  readonly equity: number;
+}
+
+export interface PnlCycleView {
+  readonly cycleId: string;
+  readonly triggeredAt: number;
+  readonly completedAt: number | null;
+  readonly outcome: string;
+  readonly marketPrice: number | null;
+  readonly side: "BUY" | "SELL" | null;
+  readonly quantity: number | null;
+  readonly fillPrice: number | null;
+  readonly fee: number | null;
+  readonly realizedPnl: number | null;
+  readonly slippageBps: number | null;
+}
+
+export interface PnlHistoryView {
+  readonly equityCurve: readonly PnlEquityPointView[];
+  readonly cycles: readonly PnlCycleView[];
+  readonly openPosition:
+    | { readonly quantity: number; readonly averagePrice: number }
+    | null;
+  readonly protection:
+    | {
+        readonly stopLossPrice: number;
+        readonly takeProfitPrice: number;
+        readonly protectiveOrderConfirmed: boolean;
+      }
+    | null;
+}
+
 export interface StartConfiguration {
   readonly productId: string;
   readonly timeframe: string;
@@ -76,6 +110,7 @@ export const createStartConfiguration = (
 export interface DashboardGateway {
   loadState(agentName: string): Promise<AgentStateView>;
   loadCycles(agentName: string): Promise<readonly CycleView[]>;
+  loadPnlHistory(agentName: string): Promise<PnlHistoryView>;
   command(
     agentName: string,
     command: DashboardDirectCommand | "kill",
@@ -122,6 +157,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
+const isSafeTime = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 const invalidResponse = (): DashboardRequestError =>
   new DashboardRequestError({ code: "INVALID_RESPONSE", retryable: false });
@@ -262,6 +299,108 @@ export const parseCycles = (value: unknown): readonly CycleView[] => {
   );
 };
 
+const optionalFinite = (value: unknown): number | null => {
+  if (value === null) return null;
+  if (!isFiniteNumber(value)) throw invalidResponse();
+  return value;
+};
+
+const optionalPositiveFinite = (value: unknown): number | null => {
+  if (value === null) return null;
+  if (!isFiniteNumber(value) || value <= 0) throw invalidResponse();
+  return value;
+};
+
+const optionalTradeField = (
+  side: unknown,
+  value: unknown,
+  positive: boolean,
+): number | null => {
+  if (side === null) {
+    if (value !== null) throw invalidResponse();
+    return null;
+  }
+  if (value === null) return null;
+  if (!isFiniteNumber(value) || (positive && value <= 0)) {
+    throw invalidResponse();
+  }
+  return value;
+};
+
+export const parsePnlHistory = (value: unknown): PnlHistoryView => {
+  if (!isRecord(value) || !Array.isArray(value.equityCurve) || !Array.isArray(value.cycles)) {
+    throw invalidResponse();
+  }
+  const equityCurve = value.equityCurve.slice(0, 50).map((point) => {
+    if (!isRecord(point) || !isSafeTime(point.t) || !isFiniteNumber(point.equity)) {
+      throw invalidResponse();
+    }
+    return Object.freeze({ t: point.t, equity: point.equity });
+  });
+  const cycles = value.cycles.slice(0, 50).map((cycle) => {
+    if (
+      !isRecord(cycle) ||
+      typeof cycle.cycleId !== "string" ||
+      !isSafeTime(cycle.triggeredAt) ||
+      !(cycle.completedAt === null || isSafeTime(cycle.completedAt)) ||
+      typeof cycle.outcome !== "string" ||
+      !(cycle.marketPrice === null || isFiniteNumber(cycle.marketPrice)) ||
+      (cycle.side !== "BUY" && cycle.side !== "SELL" && cycle.side !== null)
+    ) {
+      throw invalidResponse();
+    }
+    return Object.freeze({
+      cycleId: cycle.cycleId,
+      triggeredAt: cycle.triggeredAt,
+      completedAt: cycle.completedAt,
+      outcome: cycle.outcome,
+      marketPrice: optionalPositiveFinite(cycle.marketPrice),
+      side: cycle.side,
+      quantity: optionalTradeField(cycle.side, cycle.quantity, true),
+      fillPrice: optionalTradeField(cycle.side, cycle.fillPrice, true),
+      fee: optionalTradeField(cycle.side, cycle.fee, true),
+      realizedPnl: optionalTradeField(cycle.side, cycle.realizedPnl, false),
+      slippageBps: optionalTradeField(cycle.side, cycle.slippageBps, false),
+    });
+  });
+  let openPosition: PnlHistoryView["openPosition"] = null;
+  if (value.openPosition !== null) {
+    if (
+      !isRecord(value.openPosition) ||
+      !isFiniteNumber(value.openPosition.quantity) ||
+      !isFiniteNumber(value.openPosition.averagePrice)
+    ) {
+      throw invalidResponse();
+    }
+    openPosition = Object.freeze({
+      quantity: value.openPosition.quantity,
+      averagePrice: value.openPosition.averagePrice,
+    });
+  }
+  let protection: PnlHistoryView["protection"] = null;
+  if (value.protection !== null) {
+    if (
+      !isRecord(value.protection) ||
+      !isFiniteNumber(value.protection.stopLossPrice) ||
+      !isFiniteNumber(value.protection.takeProfitPrice) ||
+      typeof value.protection.protectiveOrderConfirmed !== "boolean"
+    ) {
+      throw invalidResponse();
+    }
+    protection = Object.freeze({
+      stopLossPrice: value.protection.stopLossPrice,
+      takeProfitPrice: value.protection.takeProfitPrice,
+      protectiveOrderConfirmed: value.protection.protectiveOrderConfirmed,
+    });
+  }
+  return Object.freeze({
+    equityCurve: Object.freeze(equityCurve),
+    cycles: Object.freeze(cycles),
+    openPosition,
+    protection,
+  });
+};
+
 const boundedJson = async (response: Response): Promise<unknown> => {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > 1_000_000) throw invalidResponse();
@@ -311,6 +450,10 @@ export const createHttpGateway = (
       parseAgentState(await call(`/api/agents/${encodeURIComponent(agentName)}/state`)),
     loadCycles: async (agentName: string) =>
       parseCycles(await call(`/api/agents/${encodeURIComponent(agentName)}/cycles?limit=12`)),
+    loadPnlHistory: async (agentName: string) =>
+      parsePnlHistory(
+        await call(`/api/agents/${encodeURIComponent(agentName)}/pnl?limit=30`),
+      ),
     command: async (
       agentName: string,
       command: DashboardDirectCommand | "kill",

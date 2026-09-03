@@ -373,3 +373,18 @@ export type {
   WorkflowErrorCode,
   WorkflowPhase,
 } from "./trading-cycle.types.js";
+export {
+  projectDashboardPnlHistory,
+  DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
+  DASHBOARD_PNL_HISTORY_MAX_CYCLES,
+} from "./dashboard-pnl-history.js";
+export type {
+  DashboardPnlCycleHistory,
+  DashboardPnlCycleRow,
+  DashboardPnlEquityPoint,
+  DashboardPnlHistory,
+  DashboardPnlHistoryErrorCode,
+  DashboardPnlHistoryResult,
+  DashboardPnlOrderRow,
+  DashboardPnlProtection,
+} from "./dashboard-pnl-history.js";

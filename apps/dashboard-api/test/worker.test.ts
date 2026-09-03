@@ -180,6 +180,38 @@ describe("dashboard Agent proxy", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("forwards a bounded pnl read to the Agent", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.method).toBe("GET");
+      expect(upstream.url).toBe(
+        "https://dodash-agent.internal/api/agents/btc/pnl?limit=30",
+      );
+      expect(upstream.headers.get("authorization")).toBe(`Bearer ${controlToken}`);
+      return Response.json({
+        ok: true,
+        value: { equityCurve: [], cycles: [], openPosition: null, protection: null },
+      });
+    });
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc/pnl?limit=30"),
+      createEnv(fetcher),
+    );
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("rejects pnl writes and out-of-envelope queries before the Agent", async () => {
+    const env = createEnv();
+    const responses = await Promise.all([
+      handleDashboardApiRequest(request("/api/agents/btc/pnl", { method: "POST" }), env),
+      handleDashboardApiRequest(request("/api/agents/btc/pnl?limit=51"), env),
+      handleDashboardApiRequest(request("/api/agents/btc/pnl?limit=30&extra=1"), env),
+      handleDashboardApiRequest(request("/api/agents/btc/pnl?limit=30", { method: "POST", body: "{}" }), env),
+    ]);
+    expect(responses.map(({ status }) => status)).toEqual([405, 404, 404, 405]);
+    expect(env.AGENT_SERVICE.fetch).not.toHaveBeenCalled();
+  });
+
   it("rejects an oversized perp-order body before the Agent", async () => {
     const env = createEnv();
     const response = await handleDashboardApiRequest(

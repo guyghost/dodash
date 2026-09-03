@@ -438,6 +438,13 @@ code { font-family: ui-monospace, monospace; font-size: 12px; }
 .outcome.neutral { color: var(--blue); }
 .empty-state { padding: 20px; text-align: center; }
 
+.equity-card { margin-bottom: 22px; box-shadow: 6px 6px 0 var(--ink); }
+.equity-chart { display: block; width: 100%; height: 160px; margin: 18px 0; }
+.equity-chart path { fill: none; stroke: var(--teal); stroke-width: 2.5; }
+.protection-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.pnl-positive { color: var(--green); font-weight: 700; }
+.pnl-negative { color: var(--red); font-weight: 700; }
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
