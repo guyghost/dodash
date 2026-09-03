@@ -81,9 +81,21 @@ describe("computeIndicators — entrée funding (models/funding-rate-strategy.md
     expect(rest).toEqual(baseline.value);
   });
 
-  it("rejette une série de longueur ≠ bougies (INV-F2)", async () => {
+  it("alignement suffixe : série plus courte que les bougies couvre les dernières bougies", async () => {
+    // 6 bougies, 3 taux alignés sur les bougies 3-5 : la valeur portée
+    // par le snapshot est la moyenne des 3 taux (période 3).
     const result = await computeIndicators(candles, config, undefined, {
-      rates: [0.0001, 0.0002],
+      rates: [0.0004, -0.0001, 0.0003],
+      avgPeriod: 3,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.fundingAvg).toBeCloseTo(0.0002, 12);
+  });
+
+  it("rejette une série plus longue que les bougies (INV-F2)", async () => {
+    const result = await computeIndicators(candles, config, undefined, {
+      rates: [0.0001, 0.0002, 0.0001, 0, 0, 0, 0.0001],
       avgPeriod: 2,
     });
     expect(result).toEqual({
@@ -94,7 +106,7 @@ describe("computeIndicators — entrée funding (models/funding-rate-strategy.md
 
   it("rejette un taux non fini (INV-F2)", async () => {
     const result = await computeIndicators(candles, config, undefined, {
-      rates: [0.0001, 0.0002, 0.0001, Number.NaN, 0, 0],
+      rates: [0.0001, 0.0002, 0.0001, Number.NaN],
       avgPeriod: 2,
     });
     expect(result).toEqual({

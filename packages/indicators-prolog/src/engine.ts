@@ -47,6 +47,13 @@ export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = Object.freeze({
   trendStrengthPeriod: 14,
 });
 
+/**
+ * Période figée du funding moyen glissant (models/funding-rate-strategy.md
+ * §4) : source unique, consommée par la couture runtime et le backtest.
+ * Figée a priori, tout balayage exclu.
+ */
+export const FUNDING_AVG_PERIOD = 72;
+
 export interface TradeSample {
   readonly price: number;
   readonly size: number;
@@ -68,10 +75,10 @@ export interface IndicatorMicrostructure {
 }
 
 /**
- * Entrée funding optionnelle (models/funding-rate-strategy.md §4) : série
- * de taux 1:1 alignée sur les bougies de décision, période glissante
- * explicite. Absente ⇒ aucun requête Prolog additionnelle, snapshot
- * bit-identique (INV-F1).
+ * Entrée funding optionnelle (models/funding-rate-strategy.md §4) : taux
+ * alignés par SUFFIXE sur les dernières `rates.length` bougies de la
+ * série passée, période glissante explicite. Absente ⇒ aucune requête
+ * Prolog additionnelle, snapshot bit-identique (INV-F1).
  */
 export interface IndicatorFunding {
   readonly rates: readonly number[];
@@ -260,8 +267,10 @@ const isPositiveFinite = (value: number): boolean =>
   Number.isFinite(value) && value > 0;
 
 /**
- * Validation funding fail-closed (INV-F2) : longueur 1:1 avec les
- * bougies, taux tous finis, période entière ≥ 2.
+ * Validation funding fail-closed (INV-F2) : alignement SUFFIXE — `rates`
+ * couvre les dernières `rates.length` bougies, d'où `rates.length ≤
+ * candleCount` (amendement C1-suite, models/funding-rate-strategy.md
+ * §4) ; taux tous finis, période entière ≥ 2.
  */
 const validFunding = (
   funding: IndicatorFunding,
@@ -270,7 +279,7 @@ const validFunding = (
   Number.isSafeInteger(funding.avgPeriod) &&
   funding.avgPeriod >= 2 &&
   Array.isArray(funding.rates) &&
-  funding.rates.length === candleCount &&
+  funding.rates.length <= candleCount &&
   funding.rates.every((rate) => Number.isFinite(rate));
 
 const validMicrostructure = (

@@ -1,4 +1,5 @@
-import { err, ok, type OrderIntent, type Result } from "@dodash/domain";
+import { err, ok, type Candle, type OrderIntent, type Result } from "@dodash/domain";
+import { FUNDING_AVG_PERIOD } from "@dodash/indicators-prolog";
 import type {
   ControlPermissions,
   WorkflowError,
@@ -14,6 +15,9 @@ import {
 import type { CoinbaseAccountSnapshot } from "./coinbase-account.js";
 import {
   fetchHyperliquidAccountState,
+  fetchHyperliquidFundingHistory,
+  fundingRatesForCandles,
+  hyperliquidCoin,
 } from "./hyperliquid-execution.js";
 import type { HyperliquidExecutionSettings } from "./hyperliquid-settings.js";
 import { resolveHyperliquidSettings } from "./hyperliquid-settings.js";
@@ -24,6 +28,7 @@ import {
   type CoinbaseExecutionSettings,
 } from "./coinbase-execution.js";
 import { fetchMarketSnapshot } from "./market-service.js";
+import { perpProductForSignal } from "./hyperliquid-control.js";
 import type { PersistedTradingMachine } from "./machine-session.js";
 import type {
   CycleArtifacts,
@@ -164,6 +169,34 @@ export const createTradingCycleEffects = (
         config,
         triggeredAt,
       ),
+    // Couture funding (models/funding-rate-strategy.md §3) : fournie
+    // uniquement en mode perp avec réglages résolus (première porte) ;
+    // la deuxième porte (mode + stratégie configurée) vit dans
+    // l'interpréteur. Absence de l'effet ⇒ zéro fetch pour les modes
+    // spot et pour les instances perp héritées (C2/C3).
+    ...(perpSettings?.ok
+      ? {
+          fetchFundingData: async (
+            config: AgentConfiguration,
+            candles: readonly Candle[],
+          ): Promise<readonly number[] | null> => {
+            const coin = hyperliquidCoin(
+              perpProductForSignal(config.productId) ?? "",
+            );
+            if (coin === null || candles.length === 0) return null;
+            const suffix = candles.slice(-FUNDING_AVG_PERIOD);
+            const firstStart = suffix[0]?.start;
+            if (firstStart === undefined) return null;
+            const samples = await fetchHyperliquidFundingHistory(
+              perpSettings.value,
+              { coin, startTime: firstStart },
+              { ...(deps.fetch === undefined ? {} : { fetch: deps.fetch }) },
+            );
+            if (samples === null) return null;
+            return fundingRatesForCandles(suffix, samples);
+          },
+        }
+      : {}),
     ensureSchedule: async (intervalSeconds) => {
       try {
         const schedule = await deps.ensureIntervalSchedule(intervalSeconds);

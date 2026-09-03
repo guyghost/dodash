@@ -247,3 +247,69 @@ describe("replayBacktest — inactivité de funding-trend (C3, INV-F5)", () => {
     expect(result.value.fundingPaid).not.toBe(0);
   });
 });
+
+describe("replayBacktest — indicateur funding au chemin non préparé (§6)", () => {
+  // 80 bougies en croissance régulière (~3 %/bougie) : emaFast > emaSlow
+  // avec un écart > 100 bps (indicateurs compacts ema 2/3).
+  const risingCandles: Candle[] = Array.from({ length: 80 }, (_, index) => {
+    const close = 10 * 1.03 ** index;
+    return {
+      start: index * 60_000,
+      open: close,
+      high: close * 1.01,
+      low: close * 0.99,
+      close,
+      volume: 10,
+    };
+  });
+  const negativeRates = Array.from({ length: 80 }, () => -1e-4);
+  const positiveRates = Array.from({ length: 80 }, () => 1e-4);
+  const permissions: RegimePermissions = {
+    BULLISH: ["funding-trend"],
+    BEARISH: [],
+    RANGE: [],
+  };
+  const bullish = {
+    mode: "EMA_THRESHOLD",
+    thresholdBps: 100,
+    minObservations: 1,
+    confirmationCount: 1,
+  } as const;
+
+  const fundingRegistry = () => {
+    const registry = createStrategyRegistry([
+      createFundingTrendStrategy({ enterThreshold: 5e-5, baseSize: 1 }),
+    ]);
+    if (!registry.ok) throw new Error("invalid strategy fixture");
+    return registry.value;
+  };
+
+  const runRising = async (fundingRates?: readonly number[]) => {
+    const result = await replayBacktest(
+      risingCandles,
+      {
+        ...config(fundingRegistry(), fundingRates),
+        regimeFilter: bullish,
+        regimePermissions: permissions,
+      },
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.error));
+    return result.value;
+  };
+
+  it("carry favorable + tendance haussière ⇒ signaux exécutés", { timeout: 30_000 }, async () => {
+    const result = await runRising(negativeRates);
+    expect(result.trades.length).toBeGreaterThanOrEqual(1);
+    expect(result.fundingPaid).not.toBe(0);
+  });
+
+  it("sans série ⇒ fundingAvg absent ⇒ HOLD partout (INV-F3)", { timeout: 30_000 }, async () => {
+    const result = await runRising();
+    expect(result.trades).toHaveLength(0);
+  });
+
+  it("carry défavorable (funding positif) ⇒ HOLD malgré la tendance", { timeout: 30_000 }, async () => {
+    const result = await runRising(positiveRates);
+    expect(result.trades).toHaveLength(0);
+  });
+});

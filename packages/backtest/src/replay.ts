@@ -13,6 +13,7 @@ import {
 import {
   computeIndicators,
   requiredIndicatorCandles,
+  FUNDING_AVG_PERIOD,
   type IndicatorConfig,
   type IndicatorError,
   type IndicatorSnapshot,
@@ -382,6 +383,20 @@ export const replayBacktest = async (
     fundingPaid += cost;
     portfolio = { ...portfolio, cash: portfolio.cash - cost };
   };
+  // Double usage de la série (models/funding-rate-strategy.md §6) :
+  // l'indicateur reçoit le suffixe aligné sur les bougies du préfixe
+  // évalué (alignement suffixe, §4). Prepared path non concerné : les
+  // snapshots préparés font autorité sur les valeurs d'indicateur.
+  const fundingInputFor = (
+    candleCount: number,
+  ): { readonly rates: readonly number[]; readonly avgPeriod: number } | undefined => {
+    const rates = config.fundingRates;
+    if (rates === undefined) return undefined;
+    return {
+      rates: rates.slice(Math.max(0, candleCount - FUNDING_AVG_PERIOD), candleCount),
+      avgPeriod: FUNDING_AVG_PERIOD,
+    };
+  };
 
   const actorFailure = (): BacktestReplayError | null => {
     const actor = protectiveState.actor;
@@ -643,7 +658,12 @@ export const replayBacktest = async (
     const preparedSnapshot = preparedIndicators?.snapshots[index];
     const indicatorResult =
       preparedSnapshot === undefined || preparedSnapshot === null
-        ? await computeIndicators(history, config.indicators)
+        ? await computeIndicators(
+            history,
+            config.indicators,
+            undefined,
+            fundingInputFor(history.length),
+          )
         : ok(preparedSnapshot);
     if (!indicatorResult.ok) {
       return err({ code: "INDICATOR_FAILURE", cause: indicatorResult.error });

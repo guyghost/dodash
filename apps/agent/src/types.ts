@@ -107,6 +107,15 @@ export interface TradingCycleEffects {
     configuration: AgentConfiguration,
     triggeredAt: number,
   ): Promise<Result<MarketSnapshot, WorkflowError>>;
+  /**
+   * Couture funding optionnelle (models/funding-rate-strategy.md §3) :
+   * taux alignés par suffixe sur les bougies passées, ou null si
+   * indisponible — jamais d'exception, jamais de zéro substitué.
+   * Câblée uniquement en mode perp avec réglages résolus (INV-F2, C3).
+   */
+  fetchFundingData?(configuration: AgentConfiguration,
+    candles: readonly Candle[],
+  ): Promise<readonly number[] | null>;
   ensureSchedule(
     intervalSeconds: number,
   ): Promise<Result<{ readonly nextWakeAt: number }, WorkflowError>>;
