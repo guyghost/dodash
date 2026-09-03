@@ -2,6 +2,7 @@ import type {
   AgentStateView,
   CycleView,
   DashboardGateway,
+  PnlHistoryView,
   StartConfiguration,
 } from "./dashboard-api.js";
 
@@ -68,6 +69,62 @@ let cycles: readonly CycleView[] = Object.freeze([
   },
 ]);
 
+const pnlHistory: PnlHistoryView = Object.freeze({
+  equityCurve: Object.freeze([
+    { t: startedAt - 2_090_000, equity: 9_812.4 },
+    { t: startedAt - 1_490_000, equity: 9_774.02 },
+    { t: startedAt - 1_190_000, equity: 9_869.76 },
+    { t: startedAt - 890_000, equity: 9_964.56 },
+  ]),
+  cycles: Object.freeze([
+    Object.freeze({
+      cycleId: "cycle-01J6A2J8X7",
+      triggeredAt: startedAt - 890_000,
+      completedAt: startedAt - 886_000,
+      outcome: "ORDER_CONFIRMED",
+      marketPrice: 63_912.18,
+      side: "BUY" as const,
+      quantity: 0.0184,
+      fillPrice: 63_924.51,
+      fee: 1.18,
+      realizedPnl: null,
+      slippageBps: 1.93,
+    }),
+    Object.freeze({
+      cycleId: "cycle-01J6A1TB4M",
+      triggeredAt: startedAt - 1_190_000,
+      completedAt: startedAt - 1_187_000,
+      outcome: "NO_ACTION",
+      marketPrice: 63_402.11,
+      side: null,
+      quantity: null,
+      fillPrice: null,
+      fee: null,
+      realizedPnl: null,
+      slippageBps: null,
+    }),
+    Object.freeze({
+      cycleId: "cycle-01J6A14QPC",
+      triggeredAt: startedAt - 1_490_000,
+      completedAt: startedAt - 1_486_000,
+      outcome: "RISK_REJECTED",
+      marketPrice: 63_118.4,
+      side: null,
+      quantity: null,
+      fillPrice: null,
+      fee: null,
+      realizedPnl: null,
+      slippageBps: null,
+    }),
+  ]),
+  openPosition: Object.freeze({ quantity: 0.0184, averagePrice: 61_284.42 }),
+  protection: Object.freeze({
+    stopLossPrice: 58_220.2,
+    takeProfitPrice: 67_412.86,
+    protectiveOrderConfirmed: true,
+  }),
+});
+
 const nextState = (patch: Partial<AgentStateView>): AgentStateView =>
   Object.freeze({ ...state, ...patch, updatedAt: Date.now() });
 
@@ -80,6 +137,10 @@ export const createDemoGateway = (): DashboardGateway =>
     loadCycles: async (_agentName: string) => {
       await wait();
       return cycles;
+    },
+    loadPnlHistory: async (_agentName: string) => {
+      await wait();
+      return pnlHistory;
     },
     submitPerpOrder: async (
       _agentName: string,

@@ -6,6 +6,7 @@ const MAX_RESPONSE_BYTES = 1_048_576;
 const agentActions = new Set([
   "state",
   "cycles",
+  "pnl",
   "preflight",
   "start",
   "stop",
@@ -67,7 +68,11 @@ const parseRoute = (url: URL): ParsedRoute | null => {
   }
 
   if (url.searchParams.size > 0) {
-    if (action !== "cycles" || [...url.searchParams.keys()].some((key) => key !== "limit")) {
+    const readAction = action === "cycles" || action === "pnl";
+    if (
+      !readAction ||
+      [...url.searchParams.keys()].some((key) => key !== "limit")
+    ) {
       return null;
     }
     const rawLimit = url.searchParams.get("limit");
@@ -83,9 +88,11 @@ const parseRoute = (url: URL): ParsedRoute | null => {
   };
 };
 
+const readActions = new Set(["state", "cycles", "pnl"]);
+
 const methodAllowed = (method: string, action: string): boolean =>
-  (method === "GET" && (action === "state" || action === "cycles")) ||
-  (method === "POST" && action !== "state" && action !== "cycles");
+  (method === "GET" && readActions.has(action)) ||
+  (method === "POST" && !readActions.has(action));
 
 const isSameOrigin = (request: Request, url: URL): boolean => {
   const origin = request.headers.get("origin");
@@ -156,7 +163,7 @@ export const handleDashboardApiRequest = async (
   if (route === null) return error("NOT_FOUND", 404);
   if (!isSameOrigin(request, url)) return error("CROSS_ORIGIN_FORBIDDEN", 403);
   if (!methodAllowed(request.method, route.action)) {
-    const allow = route.action === "state" || route.action === "cycles" ? "GET" : "POST";
+    const allow = readActions.has(route.action) ? "GET" : "POST";
     return error("METHOD_NOT_ALLOWED", 405, { allow });
   }
   if (!hasValidBearerToken(request.headers.get("authorization"), env.DASHBOARD_ACCESS_TOKEN)) {

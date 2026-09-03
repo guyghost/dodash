@@ -64,6 +64,54 @@ describe("Agent Worker live preflight route", () => {
     });
   });
 
+  it("routes an authenticated pnl read and fails closed on projection error", async () => {
+    const history = {
+      ok: true as const,
+      value: {
+        equityCurve: [],
+        cycles: [],
+        openPosition: null,
+        protection: null,
+      },
+    };
+    const getPnlHistory = vi.fn(() => history);
+    const env = {
+      CONTROL_API_TOKEN: token,
+      TRADING_AGENT: { getByName: () => ({ getPnlHistory }) },
+    } as unknown as TradingEnv;
+    const response = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/pnl?limit=30", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(getPnlHistory).toHaveBeenCalledWith(30);
+    await expect(response.json()).resolves.toEqual(history);
+
+    const failing = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/pnl?limit=30", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      {
+        ...env,
+        TRADING_AGENT: {
+          getByName: () => ({
+            getPnlHistory: () => ({
+              ok: false as const,
+              error: { code: "INVALID_ARTIFACTS_JSON" },
+            }),
+          }),
+        },
+      } as unknown as TradingEnv,
+    );
+    expect(failing.status).toBe(500);
+    await expect(failing.json()).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_ARTIFACTS_JSON" },
+    });
+  });
+
   it("rejects preflight without the control token", async () => {
     const getByName = vi.fn();
     const env = {

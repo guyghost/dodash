@@ -3,7 +3,12 @@ import { executePaperOrder } from "@dodash/paper-execution";
 import type { RiskDecision } from "@dodash/risk";
 import {
   assessLiveTradingAgentIdentity,
+  DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
+  DASHBOARD_PNL_HISTORY_MAX_CYCLES,
+  projectDashboardPnlHistory,
   type ControlPermissions,
+  type DashboardPnlHistoryResult,
+  type DashboardPnlOrderRow,
   type TradingCycleEvent,
   type LivePreflightFailureReason,
   type WorkflowError,
@@ -519,6 +524,64 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       ORDER BY triggered_at DESC
       LIMIT ${boundedLimit}
     `;
+  }
+
+  /**
+   * Projection PnL/équité lecture-seule (dao #26) : deux lectures SQL
+   * locales bornées, aucun appel réseau sortant, aucun calcul UI.
+   * Source normative : models/dashboard-pnl-history.md §3-§4.
+   */
+  getPnlHistory(
+    limit: number = DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
+  ): DashboardPnlHistoryResult {
+    this.ensureTradingPersistenceSchema();
+    const boundedLimit = Math.max(
+      1,
+      Math.min(DASHBOARD_PNL_HISTORY_MAX_CYCLES, Math.trunc(limit)),
+    );
+    const cycles = this.sql<{
+      cycle_id: string;
+      triggered_at: number;
+      completed_at: number | null;
+      outcome: string;
+      artifacts_json: string;
+    }>`
+      SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json
+      FROM dodash_cycles
+      ORDER BY triggered_at DESC
+      LIMIT ${boundedLimit}
+    `;
+    const cycleIds = cycles.map((row) => row.cycle_id);
+    const orders = (
+      cycleIds.length === 0
+        ? []
+        : (
+            this.ctx.storage.sql.exec(
+              `SELECT client_order_id, cycle_id, status, execution_json
+               FROM dodash_orders
+               WHERE cycle_id IN (${cycleIds.map(() => "?").join(", ")})
+               ORDER BY client_order_id ASC`,
+              ...cycleIds,
+            ).toArray() as readonly Record<string, string | number | null>[]
+          ).map((row): DashboardPnlOrderRow => ({
+            clientOrderId: row.client_order_id as string,
+            cycleId: row.cycle_id as string,
+            status: row.status as string,
+            executionJson:
+              row.execution_json === null ? null : (row.execution_json as string),
+          }))
+    );
+    return projectDashboardPnlHistory(
+      cycles.map((row) => ({
+        cycleId: row.cycle_id,
+        triggeredAt: row.triggered_at,
+        completedAt: row.completed_at,
+        outcome: row.outcome,
+        artifactsJson: row.artifacts_json,
+      })),
+      orders,
+      boundedLimit,
+    );
   }
 
   private async control(event: TradingCycleEvent): Promise<AgentCommandResult> {
