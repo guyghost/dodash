@@ -22,6 +22,7 @@ describe("Agent Worker live preflight route", () => {
           liveTradingDisabled: true,
           credentialsConfigured: true,
           telemetryConfigured: true,
+          operatorNotificationsConfigured: true,
           keyCanView: true,
           keyCanTrade: true,
           keyCanTransfer: false,
