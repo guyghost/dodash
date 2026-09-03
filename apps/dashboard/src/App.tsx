@@ -1241,7 +1241,6 @@ export function App({
               )}
               {perpUi.value === "form" && (
                 <div className="start-fields">
-                  {/* biome-ignore lint/a11y/noLabelWithoutControl: le select est toujours rendu */}
                   <label>
                     Marché
                     <select

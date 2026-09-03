@@ -299,12 +299,6 @@ export const parseCycles = (value: unknown): readonly CycleView[] => {
   );
 };
 
-const optionalFinite = (value: unknown): number | null => {
-  if (value === null) return null;
-  if (!isFiniteNumber(value)) throw invalidResponse();
-  return value;
-};
-
 const optionalPositiveFinite = (value: unknown): number | null => {
   if (value === null) return null;
   if (!isFiniteNumber(value) || value <= 0) throw invalidResponse();
