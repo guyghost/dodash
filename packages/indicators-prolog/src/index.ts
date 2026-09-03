@@ -7,6 +7,7 @@ export type {
   BidAskSpread,
   IndicatorConfig,
   IndicatorError,
+  IndicatorFunding,
   IndicatorMicrostructure,
   IndicatorSnapshot,
   OrderBookLevel,

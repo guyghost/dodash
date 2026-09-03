@@ -235,6 +235,10 @@ trend_strength([High|Highs], [Low|Lows], [Close|Closes], Period, Value) :-
   AdxSeed is DxSum / Period,
   adx_continue(RemainingHighs, RemainingLows, RemainingCloses, PreviousHigh, PreviousLow, PreviousClose, Period, FinalRange, FinalPlus, FinalMinus, AdxSeed, Value).
 
+funding_average(FundingRates, Period, Value) :-
+  Period >= 2,
+  sma(FundingRates, Period, Value).
+
 midpoint(A, B, Value) :- Value is (A + B) / 2.
 
 spread_absolute(Bids, Asks, Value) :-
