@@ -14,7 +14,11 @@ import {
   withConfidenceCalibration,
   withTargetSignalNotional,
 } from "@dodash/backtest";
-import { createProductId, type Candle } from "@dodash/domain";
+import {
+  TIMEFRAME_MILLISECONDS,
+  createProductId,
+  type Candle,
+} from "@dodash/domain";
 import { DEFAULT_INDICATOR_CONFIG } from "@dodash/indicators-prolog";
 import {
   createBreakoutStrategy,
@@ -172,6 +176,7 @@ for (const year of START_YEARS) {
     {
       runId: `${config.runId}:ensemble`,
       agentId: config.agentId,
+      intervalMs: TIMEFRAME_MILLISECONDS["ONE_DAY"],
       productId: product.value,
       initialCapital: config.initialCapital,
       maxDecisionNotional: config.maxDecisionNotional,

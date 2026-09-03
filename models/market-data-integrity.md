@@ -205,4 +205,19 @@ flowchart LR
 
 ## 8. Résultats de vérification
 
-Rempli en fin de cycle (commit implémentation) — cf. §6.
+Commandes : `pnpm check`, `pnpm test` (turbo, force), `pnpm build`,
+`pnpm lint` — toutes vertes, **aucun nouveau warning** (baseline lint
+inchangée : 9 warnings préexistants, hors fichiers touchés).
+
+| Suite | Résultat |
+| --- | --- |
+| `@dodash/domain` | 14/14 (8 nouveaux : trouée index, désordonnée, dupliquée, vide, intervalle, borne 100 bps incluse, prix ticker invalide, ticker null) |
+| `apps/agent` (market-service) | 174/174 (3 nouveaux : trouée → `INVALID_RESPONSE`, ticker 200 bps → `STALE_MARKET_DATA`, ticker injoignable → `NETWORK_UNAVAILABLE` ; mocks routés candles/ticker) |
+| `@dodash/backtest` | 103/103 (3 nouveaux : décision trouée → `INVALID_CANDLES`/`CANDLE_GAP` index 3 + jumeau conforme OK ; exécution trouée → `INVALID_EXECUTION_CANDLES` ; `executionCandles` sans cadence → rejet fermé) |
+| Total (19 tâches turbo) | 784 tests, 0 échec |
+
+Non-régression (INV-I6/C3) : suites préexistantes intégralement vertes
+sans modification de comportement sur séries conformes ; seuls les
+doubles de `fetch` du test market-service et les fixtures `BacktestConfig`
+(`intervalMs` déclaré, mechanical) ont été adaptés au nouveau contrat.
+Aucune bougie synthétique ni interpolation introduite (INV-I1).

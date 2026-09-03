@@ -7,7 +7,7 @@
 import { createActor } from "xstate";
 
 import { DEFAULT_INDICATOR_CONFIG } from "@dodash/indicators-prolog";
-import { createProductId } from "@dodash/domain";
+import { TIMEFRAME_MILLISECONDS, createProductId } from "@dodash/domain";
 import { regimeFilterMachine, type RegimeKind } from "@dodash/models";
 import {
   createBreakoutStrategy,
@@ -138,6 +138,7 @@ const replayConfigFor = (
   const registry = createStrategyRegistry(strategies);
   if (!registry.ok) throw new Error(JSON.stringify(registry.error));
   return {
+    intervalMs: TIMEFRAME_MILLISECONDS["ONE_DAY"],
     runId: `${config.runId}:${suffix}`,
     agentId: config.agentId,
     productId: product.value,

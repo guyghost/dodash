@@ -1,12 +1,13 @@
 import {
+  TIMEFRAME_MILLISECONDS,
   createCandle,
   createProductId,
   err,
   ok,
-  validateCandleSeries,
+  validateMarketDataIntegrity,
   type Candle,
+  type ProductId,
   type Result,
-  type Timeframe,
 } from "@dodash/domain";
 import type { WorkflowError } from "@dodash/models";
 import { z } from "zod";
@@ -16,15 +17,6 @@ import type { AgentConfiguration } from "./configuration.js";
 import type { MarketSnapshot } from "./types.js";
 
 const MAX_MARKET_RESPONSE_BYTES = 1_000_000;
-
-const timeframeMilliseconds: Readonly<Record<Timeframe, number>> = Object.freeze({
-  ONE_MINUTE: 60_000,
-  FIVE_MINUTE: 300_000,
-  FIFTEEN_MINUTE: 900_000,
-  ONE_HOUR: 3_600_000,
-  SIX_HOUR: 21_600_000,
-  ONE_DAY: 86_400_000,
-});
 
 const responseSchema = z.object({
   productId: z.string(),
@@ -50,10 +42,70 @@ const responseSchema = z.object({
   cached: z.boolean(),
 });
 
+const tickerSchema = z.object({
+  productId: z.string(),
+  price: z.number(),
+  observedAt: z.number().int().nonnegative(),
+  source: z.literal("coinbase"),
+  cached: z.boolean(),
+});
+
 const error = (
   code: WorkflowError["code"],
   retryable: boolean,
 ): WorkflowError => ({ phase: "market-data", code, retryable });
+
+const fetchTickerPrice = async (
+  service: MarketService,
+  internalToken: string,
+  productId: ProductId,
+): Promise<Result<number, WorkflowError>> => {
+  let response: Response;
+  try {
+    response = await service.fetch("https://market-data/internal/ticker", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${internalToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ productId }),
+    });
+  } catch (caught) {
+    console.warn(
+      JSON.stringify({
+        event: "market_service_ticker_fetch_failed",
+        errorType: caught instanceof Error ? caught.name : "UnknownError",
+      }),
+    );
+    return err(error("NETWORK_UNAVAILABLE", true));
+  }
+
+  if (!response.ok) {
+    console.warn(
+      JSON.stringify({
+        event: "market_service_ticker_response_failed",
+        status: response.status,
+      }),
+    );
+    await response.body?.cancel().catch(() => undefined);
+    return err(
+      response.status === 429
+        ? error("RATE_LIMITED", true)
+        : error("NETWORK_UNAVAILABLE", response.status >= 500),
+    );
+  }
+
+  try {
+    const json = await readBoundedJson(response, MAX_MARKET_RESPONSE_BYTES);
+    const parsed = tickerSchema.safeParse(json);
+    if (!parsed.success || parsed.data.productId !== productId) {
+      return err(error("INVALID_RESPONSE", false));
+    }
+    return ok(parsed.data.price);
+  } catch {
+    return err(error("INVALID_RESPONSE", false));
+  }
+};
 
 export interface MarketService {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
@@ -69,7 +121,7 @@ export const fetchMarketSnapshot = async (
     return err(error("NETWORK_UNAVAILABLE", false));
   }
 
-  const duration = timeframeMilliseconds[configuration.timeframe];
+  const duration = TIMEFRAME_MILLISECONDS[configuration.timeframe];
   const currentBucketStart = Math.floor(triggeredAt / duration) * duration;
   const latestClosedStart = currentBucketStart - duration;
   let response: Response;
@@ -131,14 +183,40 @@ export const fetchMarketSnapshot = async (
       if (!candle.ok) return err(error("INVALID_RESPONSE", false));
       candles.push(candle.value);
     }
-    const series = validateCandleSeries(candles);
-    if (!series.ok) return err(error("INVALID_RESPONSE", false));
+
+    // models/market-data-integrity.md §4.1 : point de branchement live —
+    // avant MARKET_DATA_READY, donc avant computingIndicators. Mapping
+    // des causes vers les codes fermés existants (table §3 du modèle).
+    const ticker = await fetchTickerPrice(
+      service,
+      internalToken,
+      configuration.productId,
+    );
+    if (!ticker.ok) return ticker;
+    const integrity = validateMarketDataIntegrity(
+      candles,
+      duration,
+      { price: ticker.value },
+    );
+    if (!integrity.ok) {
+      console.warn(
+        JSON.stringify({
+          event: "market_service_integrity_failed",
+          cause: integrity.error,
+        }),
+      );
+      return err(
+        integrity.error.code === "TICKER_INCOHERENT"
+          ? error("STALE_MARKET_DATA", true)
+          : error("INVALID_RESPONSE", false),
+      );
+    }
 
     return ok(
       Object.freeze({
         productId: product.value,
         timeframe: parsed.data.timeframe,
-        candles: series.value,
+        candles: integrity.value,
         source: parsed.data.source,
         cached: parsed.data.cached,
       }),

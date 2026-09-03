@@ -248,6 +248,7 @@ describe("backtest suite", () => {
       {
         ...config,
         productId: dataset.productId,
+        intervalMs: 86_400_000,
         indicators: {
           ...config.indicators,
           volumeSpikeThreshold: config.indicators.volumeSpikeThreshold + 1,

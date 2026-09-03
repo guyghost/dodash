@@ -17,7 +17,12 @@ import {
   withTargetSignalNotional,
   type BacktestConfig,
 } from "@dodash/backtest";
-import { createProductId, type Candle, type Strategy } from "@dodash/domain";
+import {
+  TIMEFRAME_MILLISECONDS,
+  createProductId,
+  type Candle,
+  type Strategy,
+} from "@dodash/domain";
 import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from "@dodash/indicators-prolog";
 import {
   createBreakoutStrategy,
@@ -132,6 +137,7 @@ const replayConfigFor = (
   const registry = createStrategyRegistry(strategies);
   if (!registry.ok) throw new Error(JSON.stringify(registry.error));
   return {
+    intervalMs: TIMEFRAME_MILLISECONDS["ONE_DAY"],
     runId: `${config.runId}:${suffix}`,
     agentId: config.agentId,
     productId: product.value,
