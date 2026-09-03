@@ -1,7 +1,8 @@
 # Stratégie perp consciente du taux de financement (DAO #27)
 
-Statut : MODÉLISÉ (en attente de review ; implémentation soumise aux
-critères d'acceptation du brief DAO #27)
+Statut : MODÉLISÉ + IMPLÉMENTÉ (modèle §1-§8 ; branchement runtime §3
+implémenté au cycle C1-suite sous son propre passage Model → Review →
+Implement → Verify)
 
 ## 1. Contexte et objet
 
@@ -23,12 +24,11 @@ Objet de ce cycle, borné aux critères d'acceptation du brief :
    (`packages/backtest`) ;
 4. le câblage de configuration (C4) et les tests contractuels.
 
-Le chemin runtime complet (branchement du fetch de funding dans
-`tradingCycleMachine`) est modélisé ici (§3) mais **hors périmètre
-d'implémentation** : il touche l'orchestration du cycle et exigera son
-propre passage Model → Review → Implement → Verify avec machines.
-La couture pure (fetch + agrégation, testés) est livrée pour que le
-chemin C1 existe concrètement et soit réutilisable tel quel.
+Le branchement runtime de la couture (effet `fetchFundingData` +
+interpréteur, §3) est modélisé puis implémenté au cycle C1-suite, sous
+son propre passage Model → Review → Implement → Verify, avec les
+corrections documentées en revue (alignement suffixe §4, double porte,
+pas d'axe de retry nouveau). La machine n'est pas modifiée.
 
 ## 2. C1 — Décision de source de données funding
 
@@ -87,18 +87,50 @@ lecture indisponible ou hors spec ⇒ série absente ⇒ `fundingAvg` absent
 du snapshot ⇒ la stratégie HOLD. Une décision n'est jamais prise avec un
 input de funding partiel ou substitué.
 
-## 3. Modèle runtime (couture, hors périmètre d'implémentation ce cycle)
+## 3. Branchement runtime (implémenté, cycle C1-suite)
 
-Dans une instance perp, le cycle (`computingIndicators`) obtiendrait la
-série par l'effet ci-dessus AVANT `computeIndicators` et passerait
-l'entrée optionnelle ; `tradingCycleMachine` reste l'orchestrateur,
-l'effet ne décide aucune transition (`models/effects.md`). La fenêtre de
-fetch : `startTime = dernière clôture évaluée − avgPeriod × tf`, `coin`
-issu du mapping produit signal → coin Hyperliquid existant. Ce
-branchement est consigné ici comme spécification ; sa mise en œuvre
-(modification de l'interpréteur du cycle) fera l'objet d'un cycle
-séparé. Tant qu'il n'est pas branché, la stratégie est inactive au sens
-plein : aucune source runtime ne produit `fundingAvg`.
+**Aucun changement de `tradingCycleMachine` ni de ses événements** : la
+lecture funding est un fournisseur d'entrée de l'effet
+`computingIndicators`, sur le modèle des lectures de compte qui
+alimentent les gardes de risque. L'effet ne décide aucune transition :
+les issues restent `INDICATORS_COMPUTED` / `INDICATORS_FAILED`
+(`models/effects.md`).
+
+Effet optionnel (couture, `apps/agent`) :
+
+- `TradingCycleEffects.fetchFundingData?(configuration, candles) →
+  readonly number[] | null` : jamais d'exception, jamais de zéro
+  substitué ; `null` = indisponible (sémantique §2). Optionnel ⇒ les
+  implémentations existantes de l'interface restent valides (C3).
+- Fourni par `createTradingCycleEffects` **uniquement en mode perp avec
+  réglages Hyperliquid résolus** (première porte) ; `coin` issu du
+  mapping produit signal existant (`perpProductForSignal` +
+  `hyperliquidCoin`).
+- Fenêtre : suffixe des `FUNDING_AVG_PERIOD` dernières bougies de la
+  série passée ; `startTime = start de la première bougie du suffixe` ;
+  fetch `fundingHistory` puis agrégation 1:1 sur le suffixe
+  (`fundingRatesForCandles`) → `rates` alignés par suffixe (§4).
+- Deuxième porte côté interpréteur : la série n'est demandée que si
+  mode perp ∧ `funding-trend` présent dans `strategyIds` ∧ effet
+  câblé. Une instance perp qui n'exécute pas `funding-trend` ne
+  provoque **aucun** fetch (zéro changement de comportement réseau,
+  C3).
+- Pré-validation interpréteur (INV-F2 à la frontière) : `1 ≤
+  rates.length ≤ candles.length` et taux tous finis ; toute autre
+  forme, comme toute indisponibilité, est traitée en `null` —
+  **jamais un échec de cycle** pour un input optionnel. `computeIndicators`
+  est alors appelé sans entrée funding ⇒ `fundingAvg` absent ⇒
+  `funding-trend` HOLD. Aucun axe de retry nouveau (le retry
+  `marketData` reste réservé aux bougies, input requis).
+- Télémétrie : une indisponibilité attendue (portes passées, résultat
+  `null`) émet `funding_data_unavailable` (structured warn), pour
+  qu'un HOLD prolongé de la stratégie ne soit jamais silencieux.
+- Les échantillons bruts ne sont pas checkpointés : l'artefact
+  `indicators` porte le résultat (`fundingAvg` entre dans le hash du
+  snapshot). Une reprise ré-exécute l'effet (lecture seule,
+  idempotent) — un écart de `fundingAvg` entre tentatives ne peut
+  jamais créer de décision avec un input partiel (champ absent ⇒
+  HOLD).
 
 ## 4. Indicateur pur — funding moyen glissant
 
@@ -114,10 +146,20 @@ Couture du moteur (`packages/indicators-prolog/src/engine.ts`) :
 
 - `computeIndicators(candles, config, microstructure?, funding?)` —
   4e paramètre optionnel `{ rates: readonly number[]; avgPeriod: number }`.
-- Validation fail-closed : `rates.length === candles.length`, tous les
-  taux finis, `avgPeriod` entier ≥ 2 ; toute autre forme ⇒ erreur
-  (`INVALID_FUNDING_DATA` / `INVALID_CONFIG`), jamais corrigée
-  silencieusement.
+- **Alignement par suffixe** (amendement C1-suite) : `rates` est aligné
+  sur les **dernières** `rates.length` bougies de la série passée ;
+  validation fail-closed : `1` implicite, `rates.length ≤
+  candles.length`, taux tous finis, `avgPeriod` entier ≥ 2 ; toute
+  autre forme ⇒ erreur (`INVALID_FUNDING_DATA`), jamais corrigée
+  silencieusement. Motivation : une couverture 1:1 de la fenêtre
+  runtime (350 bougies max) exigerait ~8 400 enregistrements
+  `fundingHistory` (réponse proche du plafond 1 MiB) et rendrait
+  l'entrée fragile — une heure manquée dans une vieille bougie
+  invaliderait toute la série, alors que l'indicateur ne consomme que
+  les `avgPeriod` derniers taux. Le backtest passe la série pleine
+  (cas particulier du suffixe) ; la fenêtre du backtest qui précède
+  `computeIndicators` par préfixe est tronquée en conséquence
+  (`slice(max(0, n − avgPeriod), n)`).
 - `rates.length >= avgPeriod` ⇒ requête Prolog et champ
   `fundingAvg?: number` dans le snapshot. `rates.length < avgPeriod` ⇒
   **champ absent** (sémantique d'échauffement, miroir du warm-up
@@ -127,10 +169,14 @@ Couture du moteur (`packages/indicators-prolog/src/engine.ts`) :
   comparaisons de config (`validPreparedIndicators`, INV-E1/E2 de
   `models/ema-signal-decoupling.md`) restent inchangées ; le snapshot
   sans entrée funding est **bit-identique** à l'actuel.
+- `FUNDING_AVG_PERIOD = 72` exporté de `@dodash/indicators-prolog` :
+  source unique de la période figée, consommée par la couture runtime
+  et le backtest.
 
-Période figée : `avgPeriod = 72` observations (3 jours de funding
-horaire agrégé par jour en ONE_DAY — couvre les cycles courts sans être
-du bruit d'intraday ; figé a priori, tout balayage exclu).
+Période figée : `avgPeriod = FUNDING_AVG_PERIOD = 72` observations (3
+jours de funding horaire agrégé par jour en ONE_DAY — couvre les
+cycles courts sans être du bruit d'intraday ; figé a priori, tout
+balayage exclu).
 
 ## 5. Stratégie pure — `funding-trend`
 
@@ -192,6 +238,17 @@ bougie `i`).
   longueur ≠ bougies ou non fini ⇒ `INVALID_BACKTEST_CONFIG`.
 - Le reste du replay (permission, allocation, risque, fills, protective)
   est inchangé — le funding est un coût de détention, pas une décision.
+- **Double usage de la série** (amendement C1-suite) : `fundingRates`
+  porte le COÛT (cidessus) et alimente l'INDICATEUR dans le chemin non
+  préparé : chaque `computeIndicators(history, …)` reçoit le suffixe
+  `{ rates: slice(max(0, n − avgPeriod), n), avgPeriod:
+  FUNDING_AVG_PERIOD }` où `n = history.length` (alignement suffixe,
+  §4). Les snapshots préparés (`prepareBacktestIndicators`, resté
+  funding-blind) font autorité sur les VALEURS d'indicateur : un replay
+  préparé qui veut `funding-trend` actif doit fournir des snapshots
+  portant déjà `fundingAvg` (fixtures) — la série ne nourrit alors que
+  le coût. `prepareBacktestIndicators` avec entrée funding est une
+  extension possible, hors périmètre.
 
 ## 7. C4 — Effets de l'ajout à `STRATEGY_IDS` (listés avant implémentation)
 
@@ -223,18 +280,26 @@ Id ajouté : `"funding-trend"` (4e entrée de l'enum, `max(3)` inchangé).
 
 - `models/funding-rate-strategy.md` + `.review.md` (commit 1, `feat(models)`).
 - `packages/indicators-prolog` : `funding_average` (+ `prepare:prolog`),
-  entrée `funding?`, champ `fundingAvg?` ; tests déterministes (valeur
-  exacte sur fixture, warm-up, rejets fail-closed, INV-F1 bit-exact).
+  entrée `funding?`, champ `fundingAvg?`, `FUNDING_AVG_PERIOD` ; tests
+  déterministes (valeur exacte sur fixture, warm-up, rejets
+  fail-closed, alignement suffixe, INV-F1 bit-exact).
 - `packages/strategies` : `funding-trend` + export ; tests fixtures
   (BUY/SELL/HOLD, seuils, warm-up, config invalide).
 - `packages/backtest` : `fundingRates` + `fundingPaid` ; tests : replay
   sans funding bit-identique, replay avec funding dont `pnl` diffère
   exactement de `fundingPaid`, stratégie inactive sans permission
-  (`deniedByStrategy`), coût nul sans position.
+  (`deniedByStrategy`), coût nul sans position, chemin non préparé
+  alimenté par la série (stratégie réellement active avec permission).
 - `apps/agent` : enum + registre ; `fetchHyperliquidFundingHistory` et
   `fundingRatesForCandles` purs/testés (fetch mocké, hors spec ⇒ null,
   agrégation 1:1, bougie sans observation ⇒ rejet) ; admission live
   spot/perp inchangées (tests de non-régression).
+- Branchement runtime (cycle C1-suite) : effet optionnel
+  `fetchFundingData` (fourni perp seulement, réglages résolus),
+  interpréteur `computingIndicators` avec double porte et
+  pré-validation ; tests : série disponible ⇒ snapshot avec
+  `fundingAvg` et signal émis, paper spot ⇒ jamais d'appel (C2), effet
+  absent ou `null` ⇒ cycle continue sans funding (C3).
 - Vérifications : `pnpm check`, tests des paquets touchés, `pnpm build`,
   `pnpm lint` sans nouveau warning.
 

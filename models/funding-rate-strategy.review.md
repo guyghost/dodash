@@ -3,6 +3,122 @@
 Statut : APPROUVÉ AVEC CORRECTIONS (intégrées au modèle)
 Modèle : `models/funding-rate-strategy.md`
 
+---
+
+# Review 2 — Branchement runtime (cycle C1-suite, §3)
+
+Statut : APPROUVÉ AVEC CORRECTIONS (intégrées au modèle)
+Date : cycle C1-suite
+Périmètre vérifié : effet `fetchFundingData`, interpréteur
+`computingIndicators`, alignement suffixe du moteur, alimentation de
+l'indicateur dans le backtest non préparé.
+
+Fichiers vérifiés : `apps/agent/src/interpreter.ts` (cas
+`computingIndicators`, `checkpoint`), `apps/agent/src/trading-effects.ts`
+(résolution des réglages perp, pattern des effets conditionnés au mode),
+`apps/agent/src/types.ts` (interface `TradingCycleEffects`),
+`apps/agent/src/hyperliquid-execution.ts` (couture pure livrée au cycle
+1), `packages/indicators-prolog/src/engine.ts` (validation funding),
+`packages/backtest/src/replay.ts` (chemin non préparé,
+`validPreparedIndicators`), `models/trading-cycle.machine.ts` (états et
+événements de `computingIndicators`), tests interpréteur
+(`interpreter.test.ts`, fakes d'effets) et effets
+(`trading-effects.test.ts`).
+
+## Checklist
+
+### Aucun changement de machine
+- [x] `tradingCycleMachine` : l'état `computingIndicators` et ses deux
+      événements restent inchangés — la lecture funding est un
+      fournisseur d'entrée de l'effet, pas un état. Précédent interne :
+      lectures de compte (`reconcileAccount`) qui alimentent les gardes
+      sans état dédié.
+- [x] Aucun axe de retry nouveau : `MARKET_DATA_FAILED`/retry reste
+      réservé aux bougies (input requis) ; le funding est optionnel —
+      un échec de fetch ne doit jamais router le cycle vers l'échec
+      (garde C3 pour les instances perp héritées).
+
+### Effet optionnel et double porte
+- [x] `fetchFundingData?` optionnel dans `TradingCycleEffects` : les
+      fakes d'effets existants (tests interpréteur) restent valides sans
+      modification (C3 vérifié par la suite de tests existante).
+- [x] Porte fournisseur : effet câblé uniquement en mode perp avec
+      `resolveHyperliquidSettings` résolu (miroir de `perpSettings`).
+- [x] Porte interpréteur : mode perp ∧ `funding-trend` configuré ∧ effet
+      présent. Une instance perp sans `funding-trend` ne provoque aucun
+      fetch — zéro changement réseau (C3).
+- [x] C2 : le mode paper (et le live spot) ne passent jamais par la
+      couture — testé (effet jamais appelé).
+
+### Alignement suffixe (écart v1 documenté)
+- [x] La spec v1 (1:1 strict, `rates.length === candles.length`) est
+      **intenable au runtime** : couverture complète = jusqu'à ~8 400
+      enregistrements `fundingHistory` (réponse au-delà du plafond 1 MiB
+      à candleLimit 350) et fragilité totale (une heure manquée dans une
+      vieille bougie invalide toute la série). Correction : alignement
+      par suffixe (`rates.length ≤ candles.length`, dernières bougies),
+      intégrée au modèle §4. Le backtest passe la série pleine (cas
+      particulier) — INV-F1/F7 inchangés, tests bit-exact revalidés.
+- [x] Pré-validation interpréteur (`1 ≤ len ≤ candles.length`, finitude)
+      avant passage au moteur : un fournisseur bogué ne peut jamais
+      transformer un input optionnel en échec de cycle.
+- [x] Warm-up : suffixe < période ⇒ champ absent ⇒ HOLD (INV-F3) —
+      atteignable au runtime seulement si `candleLimit < 72`, cohérent.
+
+### Alimentation de l'indicateur au backtest
+- [x] Chemin non préparé : `computeIndicators(history, …)` reçoit le
+      suffixe `slice(max(0, n − avgPeriod), n)` de la série de config —
+      testé de bout en bout (stratégie émet, fills constatés).
+- [x] Chemin préparé : `prepareBacktestIndicators` reste funding-blind ;
+      les snapshots préparés font autorité sur les valeurs (règle §6).
+      La combinaison série + snapshots préparés sans `fundingAvg` ⇒ la
+      stratégie HOLD (jamais de valeur inventée) — consigné comme
+      limite, extension hors périmètre.
+- [ ] **Correction 3 (appliquée §6)** : la règle d'autorité prepared
+      n'était pas explicite dans la v1 du modèle — ajoutée.
+
+### Écueils vérifiés
+- [x] `checkpoint` : les échantillons bruts ne sont pas persistés ; le
+      snapshot (dont le hash couvre l'entrée funding) l'est. Une reprise
+      ré-exécute l'effet (lecture seule) ; aucun chemin ne décide avec
+      un input partiel.
+- [x] Télémétrie `funding_data_unavailable` : émise seulement quand les
+      portes passent et que le résultat est `null` — un HOLD prolongé
+      n'est jamais silencieux ; aucun bruit pour les instances sans
+      `funding-trend`.
+- [x] `FUNDING_AVG_PERIOD = 72` exporté de `@dodash/indicators-prolog` :
+      source unique (couture, backtest, tests).
+- [x] `fundingRatesForCandles` réutilisée sur le suffixe : la
+      granularité dérivée des deux derniers starts reste correcte sur
+      une tranche contiguë ; bougie sans observation ⇒ `null` (INV-F2).
+
+## Corrections (appliquées au modèle)
+
+1. **§4** : alignement par suffixe en remplacement du 1:1 strict —
+   intenable au runtime (taille de réponse, fragilité aux trous).
+2. **§3** : spécification portée au grade d'implémentation (effet
+   optionnel, double porte, pré-validation, pas de retry, télémétrie,
+   échantillons non checkpointés).
+3. **§6** : règle d'autorité des snapshots préparés sur les valeurs
+   d'indicateur ; la série de config nourrit toujours le coût.
+
+## Risques résiduels assumés
+
+- Une reprise de cycle recalculant les indicateurs peut observer un
+  `fundingAvg` différent (nouvelles heures publiées entre-temps) — la
+  décision reste cohérente : valeur complète ou absence (HOLD), jamais
+  partielle.
+- Le suffixe de 72 jours suppose que `fundingHistory` reste complet sur
+  cette profondeur ; un trou dans la fenêtre suffixe dégrade en HOLD
+  (télémétrie), jamais en signal faux.
+- `prepareBacktestIndicators` funding-blind : une campagne future qui
+  veut le chemin préparé rapide avec indicateur funding devra étendre
+  la préparation (extension modélisée, hors périmètre).
+
+---
+
+# Review 1 — Modèle initial (dao #27)
+
 Fichiers vérifiés : `packages/indicators-prolog/src/engine.ts` (paramètres
 `computeIndicators`, validation, `parseAnswer`, snapshot), `prolog/series.pl`
 (`sma/3`, `last_n`, `sum_values`), `packages/strategies/src/strategy.ts`,
