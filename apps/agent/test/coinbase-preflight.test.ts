@@ -15,6 +15,8 @@ const input: CoinbaseSettingsInput = {
     .toString(),
   COINBASE_PORTFOLIO_ID: "portfolio-1",
   TRADING_TELEMETRY: { binding: true },
+  OPERATOR_NOTIFY_WEBHOOK_URL: "https://operator.example.com/hook",
+  OPERATOR_NOTIFY_SECRET: "0".repeat(32),
 };
 
 const keyPermissions = (canTransfer = false) =>
@@ -101,6 +103,26 @@ describe("Coinbase live-off preflight", () => {
     expect(
       fetchMock.mock.calls.every(([, request]) => request?.method === "GET"),
     ).toBe(true);
+  });
+
+  it("refuses live when the operator notification channel is not configured", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const {
+      OPERATOR_NOTIFY_WEBHOOK_URL: _webhookUrl,
+      OPERATOR_NOTIFY_SECRET: _secret,
+      ...inputWithoutNotifications
+    } = input;
+    const report = await preflightCoinbaseLive(
+      inputWithoutNotifications,
+      "GRT-USD",
+      [],
+      { fetch: fetchMock, now: () => NOW },
+    );
+    expect(report.evidence.operatorNotificationsConfigured).toBe(false);
+    expect(report.assessment).toEqual({
+      status: "REJECTED",
+      reasonCode: "OPERATOR_NOTIFICATIONS_MISSING",
+    });
   });
 
   it("rejects a transfer-capable key", async () => {

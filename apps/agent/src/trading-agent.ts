@@ -78,8 +78,15 @@ import {
 } from "./state.js";
 import {
   emitTradingTelemetry,
+  type TradingTelemetryEvent,
   type TradingTelemetrySink,
 } from "./telemetry.js";
+import {
+  createOperatorNotificationDeduper,
+  emitOperatorNotifications,
+  resolveOperatorNotificationSettings,
+  type OperatorNotificationSourceKind,
+} from "./operator-notifications.js";
 import type {
   CycleArtifacts,
   ExecutionAuthorization,
@@ -106,6 +113,8 @@ export interface TradingEnv extends Env {
   readonly HYPERLIQUID_TESTNET?: string;
   readonly HYPERLIQUID_API_BASE_URL?: string;
   readonly TRADING_TELEMETRY?: TradingTelemetrySink;
+  readonly OPERATOR_NOTIFY_WEBHOOK_URL?: string;
+  readonly OPERATOR_NOTIFY_SECRET?: string;
 }
 
 export type AgentCommandResult =
@@ -173,6 +182,27 @@ const parseJson = <T>(raw: string): T | null => {
 
 export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   override initialState = INITIAL_AGENT_STATE;
+
+  private readonly operatorNotificationDeduper =
+    createOperatorNotificationDeduper();
+
+  /**
+   * Effet de bord de sortie (dao #23) : ajoute la notification opérateur à
+   * l'émission télémétrie. Fire-and-forget : ne peut pas changer une
+   * transition ni bloquer le cycle.
+   */
+  private emitOperatorSideEffects(
+    kind: OperatorNotificationSourceKind,
+    event: TradingTelemetryEvent,
+  ): void {
+    const settings = resolveOperatorNotificationSettings(this.env);
+    emitOperatorNotifications(
+      settings.ok ? settings.value : undefined,
+      kind,
+      event,
+      this.operatorNotificationDeduper,
+    );
+  }
 
   private ensureTradingPersistenceSchema(): void {
     this.sql`
@@ -517,7 +547,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     session.stop();
     await this.persistMachine(machine);
     await this.runCurrent(false, resumeCycleId);
-    emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
+    const controlEvent: TradingTelemetryEvent = {
       schemaVersion: 1,
       type: "control.completed",
       timestamp: Date.now(),
@@ -537,7 +567,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       otherExposureNotional: null,
       executionObserved: false,
       openOrderCount: null,
-    });
+    };
+    emitTradingTelemetry(this.env.TRADING_TELEMETRY, controlEvent);
+    this.emitOperatorSideEffects("control", controlEvent);
     return { ok: true, state: this.state };
   }
 
@@ -619,7 +651,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     });
 
     if (result.artifacts !== null) {
-      emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
+      const cycleEvent: TradingTelemetryEvent = {
         schemaVersion: 1,
         type: "cycle.completed",
         timestamp: Date.now(),
@@ -636,7 +668,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         otherExposureNotional: result.otherExposureNotional,
         executionObserved: executed,
         openOrderCount: null,
-      });
+      };
+      emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);
+      this.emitOperatorSideEffects("cycle", cycleEvent);
     }
 
     if (!machineIsEnabled(result.machine.value)) {

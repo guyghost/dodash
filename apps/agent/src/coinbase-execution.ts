@@ -70,6 +70,8 @@ export type CoinbaseSettingsInput = {
   readonly COINBASE_API_PRIVATE_KEY?: string;
   readonly COINBASE_PORTFOLIO_ID?: string;
   readonly TRADING_TELEMETRY?: unknown;
+  readonly OPERATOR_NOTIFY_WEBHOOK_URL?: string;
+  readonly OPERATOR_NOTIFY_SECRET?: string;
 };
 
 const createOrderResponseSchema = z.discriminatedUnion("success", [
