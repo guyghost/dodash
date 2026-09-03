@@ -233,7 +233,9 @@ const validPreparedIndicators = (
       : snapshot !== null && snapshot.candleClosedAt === candles[index]?.start,
   );
 
-const capSpotOrder = (
+// Réutilisé par le replay multi-produits (models/multi-product-portfolio.md
+// §8) : plafonnement cash/position identique au replay mono-produit.
+export const capSpotOrder = (
   order: OrderIntent,
   portfolio: PaperPortfolio,
   marketPrice: number,
