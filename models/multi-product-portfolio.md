@@ -193,7 +193,10 @@ Règles normatives (INV-P6, INV-P7) :
 - **N = 1** : normalisation vers la forme legacy — la configuration produite
   est celle de `parseAgentConfiguration({ productId, ...shared, risk })`,
   par construction (même pipeline, aucune clé `products`/`portfolioRisk` en
-  sortie). Comportement strictement identique, admissions incluses.
+  sortie). Comportement strictement identique, admissions incluses. Un
+  `portfolioRisk` fourni avec N = 1 est ignoré : à un seul produit, le
+  budget par produit est le seul garde-fou, les plafonds consolidés sont
+  absents de la configuration multi normalisée.
 - **N ≥ 2** : `portfolioRisk` requis, `risk` top-level interdit
   (`INVALID_CONFIGURATION`) — le budget vit par produit, le plafond vit au
   portefeuille ; créneaux triés par identifiant et figés ;
