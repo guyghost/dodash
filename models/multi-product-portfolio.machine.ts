@@ -133,10 +133,7 @@ export const multiProductPortfolioMachine = setup({
       validLimits(context.limits),
     productKnown: ({ context, event }) => {
       const productId = productOf(event);
-      return (
-        productId !== null &&
-        Object.prototype.hasOwnProperty.call(context.statuses, productId)
-      );
+      return productId !== null && Object.hasOwn(context.statuses, productId);
     },
     controlIdPresent: ({ event }) =>
       event.type === "KILL_SWITCH_ENGAGED" && event.controlId.trim().length > 0,
@@ -145,10 +142,7 @@ export const multiProductPortfolioMachine = setup({
     // (INV-P2) et exposition brute consolidée sous le plafond (INV-P1).
     admissible: ({ context, event }) => {
       if (event.type !== "RISK_PROPOSED") return false;
-      const known = Object.prototype.hasOwnProperty.call(
-        context.statuses,
-        event.productId,
-      );
+      const known = Object.hasOwn(context.statuses, event.productId);
       return (
         known &&
         context.statuses[event.productId] === "running" &&
@@ -225,10 +219,7 @@ export const multiProductPortfolioMachine = setup({
     }),
     rejectProposal: assign(({ context, event }) => {
       if (event.type !== "RISK_PROPOSED") return {};
-      const known = Object.prototype.hasOwnProperty.call(
-        context.statuses,
-        event.productId,
-      );
+      const known = Object.hasOwn(context.statuses, event.productId);
       const reasonCode: PortfolioConsolidatedReasonCode = !known
         ? "UNKNOWN_PRODUCT"
         : context.killSwitchActive
