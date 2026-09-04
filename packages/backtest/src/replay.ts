@@ -3,8 +3,9 @@ import {
   createOrderIntent,
   err,
   ok,
-  validateCandleSeries,
+  validateMarketDataIntegrity,
   type Candle,
+  type MarketDataIntegrityError,
   type MarketValidationError,
   type OrderIntent,
   type ProductId,
@@ -88,6 +89,11 @@ export interface BacktestConfig {
   readonly runId: string;
   readonly agentId: string;
   readonly productId: ProductId;
+  // INV-I7 (models/market-data-integrity.md) : cadence déclarée de la
+  // série de décision — dérivée de `dataset.timeframe` par la couche
+  // modélisée (suite.ts) via TIMEFRAME_MILLISECONDS, jamais inférée
+  // depuis les données (auto-référence interdite).
+  readonly intervalMs: number;
   readonly initialCapital: number;
   readonly maxDecisionNotional: number;
   readonly minNetQuantity: number;
@@ -125,6 +131,9 @@ export interface RegimeGatingSummary {
 
 export interface BacktestReplayOptions {
   readonly executionCandles?: readonly Candle[];
+  // Requis dès que `executionCandles` est fourni (rejet fermé
+  // INVALID_EXECUTION_CANDLES sinon) — models/market-data-integrity.md.
+  readonly executionIntervalMs?: number;
   readonly includeDiagnosticSamples?: boolean;
 }
 
@@ -150,10 +159,16 @@ export interface BacktestResult {
 
 export type BacktestReplayError =
   | { readonly code: "INVALID_BACKTEST_CONFIG" }
-  | { readonly code: "INVALID_CANDLES"; readonly cause: MarketValidationError }
+  | {
+      readonly code: "INVALID_CANDLES";
+      readonly cause: MarketValidationError | MarketDataIntegrityError;
+    }
   | {
       readonly code: "INVALID_EXECUTION_CANDLES";
-      readonly cause: MarketValidationError | ExecutionScheduleError;
+      readonly cause:
+        | MarketValidationError
+        | MarketDataIntegrityError
+        | ExecutionScheduleError;
     }
   | { readonly code: "INVALID_PREPARED_INDICATORS" }
   | { readonly code: "INDICATOR_FAILURE"; readonly cause: IndicatorError }
@@ -262,12 +277,31 @@ export const replayBacktest = async (
   options?: BacktestReplayOptions,
 ): Promise<Result<BacktestResult, BacktestReplayError>> => {
   if (!validConfig(config)) return err({ code: "INVALID_BACKTEST_CONFIG" });
-  const validated = validateCandleSeries(candles);
-  if (!validated.ok) return err({ code: "INVALID_CANDLES", cause: validated.error });
-  const validatedExecution =
-    options?.executionCandles === undefined
-      ? undefined
-      : validateCandleSeries(options.executionCandles);
+  // INV-I7 (models/market-data-integrity.md) : même cœur de validation
+  // que le live — structure, continuité, monotonie (ticker null licite
+  // au rejeu uniquement).
+  const integrity = validateMarketDataIntegrity(
+    candles,
+    config.intervalMs,
+    null,
+  );
+  if (!integrity.ok) {
+    return err({ code: "INVALID_CANDLES", cause: integrity.error });
+  }
+  const validated = integrity;
+  let validatedExecution:
+    | Result<readonly Candle[], MarketDataIntegrityError>
+    | undefined;
+  if (options?.executionCandles !== undefined) {
+    validatedExecution =
+      options.executionIntervalMs === undefined
+        ? err({ code: "INVALID_INTERVAL" })
+        : validateMarketDataIntegrity(
+            options.executionCandles,
+            options.executionIntervalMs,
+            null,
+          );
+  }
   if (validatedExecution !== undefined && !validatedExecution.ok) {
     return err({
       code: "INVALID_EXECUTION_CANDLES",

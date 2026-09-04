@@ -1,11 +1,15 @@
 export {
+  MAX_TICKER_DIVERGENCE_BPS,
+  TIMEFRAME_MILLISECONDS,
   TIMEFRAMES,
   createCandle,
   createProductId,
   validateCandleSeries,
+  validateMarketDataIntegrity,
 } from "./market.js";
 export type {
   Candle,
+  MarketDataIntegrityError,
   MarketValidationError,
   ProductId,
   Timeframe,
