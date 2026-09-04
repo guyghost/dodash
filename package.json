@@ -26,10 +26,10 @@
     "pre-push": "npm run verify:push"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.10",
-    "pnpm": "11.23.0",
-    "simple-git-hooks": "^2.13.1",
-    "turbo": "^2.10.11",
+    "@biomejs/biome": "2.5.11",
+    "pnpm": "11.25.0",
+    "simple-git-hooks": "^2.14.0",
+    "turbo": "^2.10.12",
     "typescript": "^7.0.2"
   }
 }
