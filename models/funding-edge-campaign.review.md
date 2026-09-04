@@ -1,113 +1,110 @@
-# Review — Campagne d'edge funding en lecture-seule (DAO #30)
+# Review — Protocole v2 de la campagne edge funding (DAO #35)
 
-Statut : APPROUVÉ (protocole pré-enregistré, aucune correction bloquante)
-Modèle : `models/funding-edge-campaign.md`
-Date : 2026-09-04 — **avant toute observation de données réelles**
-(INV-C1 : le SHA de ce commit précède le premier fetch dans l'historique)
+Statut : APPROUVÉ (amendement pré-enregistré, aucune correction bloquante)
+Modèle : `models/funding-edge-campaign.md` (v2) +
+`models/funding-edge-campaign-v2.annexe-calibration.json`
+Date : 2026-09-04 — **avant toute collecte out-of-sample** (INV-C1 :
+le SHA de ce commit précédera le premier fetch OOS dans l'historique)
 
-Fichiers vérifiés : `packages/backtest/src/replay.ts` (application du coût
-`applyFundingCost` avant le point d'équité, `fundingInputFor` suffixe
-non préparé, validation longueur 1:1, gating ignoré sans
-`regimeFilter`), `packages/backtest/src/suite.ts` (conventions sizing
-`withTargetSignalNotional`, calibration `IDENTITY`, 3 stratégies legacy
-et leurs seuils, benchmark buy-and-hold),
-`packages/backtest/src/coinbase-history.ts` (pagination ≤ 350, données
-complètes exigées, SHA-256 canonique), `packages/backtest/src/metrics.ts`
-(`sharpe` √252, `maxDrawdown`, `EquityPoint.at`),
-`packages/paper-execution/src/index.ts` (`PaperTrade.fill`),
-`packages/domain/src/trading.ts` (`Fill.executedAt`),
-`apps/agent/src/hyperliquid-execution.ts` (`boundedRequest` 1 MiB /
-10 s, `fetchHyperliquidFundingHistory` coercition `finiteFrom` + rejet
-entier, `fundingRatesForCandles` moyenne par bougie, endpoint public
-sans signature),
-`packages/indicators-prolog/src/engine.ts` (`FUNDING_AVG_PERIOD = 72`,
-`requiredIndicatorCandles` = 28, `DEFAULT_INDICATOR_CONFIG`),
-`models/funding-rate-strategy.md` §10 (la campagne y est déclarée hors
-périmètre #27 et soumise à pré-enregistrement),
-`models/backtest-run.md` (manifeste, provenance obligatoire),
-`models/regime-filter.ts` (`DEFAULT_REGIME_PERMISSIONS` dénie
-`funding-trend`), `models/backtest-run.md` / `docs/operations/` (où
-vivent rapports et runbooks).
+Fichiers vérifiés : `models/funding-edge-campaign.md` v1 (git
+`bd4a561`) et rapport v1 `docs/campaigns/funding-edge-campaign-2026-09.md`
+(verdict non informatif : 0 trade, seuil 5e-5 jamais atteint),
+`packages/strategies/src/funding-trend.ts` (double porte : longCarry
+`fundingAvg ≤ −T` + EMA bullish → BUY ; shortCrowding `fundingAvg ≥ +T`
++ EMA bearish → SELL ; warm-up ⇒ HOLD),
+`packages/indicators-prolog/src/engine.ts` + `prolog/indicators.pl`
+(`funding_average` = sma sur le suffixe 72, `FUNDING_AVG_PERIOD = 72`),
+`packages/backtest/src/replay.ts` (`fundingInputFor` suffixe aligné,
+`applyFundingCost` avant point d'équité, pré-validation spot :
+SELL sans position = INEXECUTABLE abandonné avant risk engine),
+`packages/backtest/src/coinbase-history.ts` (couverture exacte exigée),
+`packages/backtest/scripts/funding-edge-walkforward.ts` +
+`collect-funding-history.ts` (v1, bornes #27/#30), fixtures
+`dao30-*` + provenance SHA-256 revérifiées à la lecture,
+`models/funding-rate-strategy.md` §5/§10, `models/backtest-run.md`.
 
 ## Checklist
 
-### Séquence pré-enregistrée (C1)
-- [x] Le protocole fige fenêtres, métriques, conventions de découpage et
-      seuils **avant** tout fetch : le commit 1 contient uniquement
-      `models/funding-edge-campaign.md` + `.review.md`, aucun artefact de
-      données. L'historique git prouvera l'antériorité.
-- [x] INV-C1 rend l'anti-retouche un invariant du modèle, pas une simple
-      intention de processus.
-- [x] Aucun seuil de §6 n'est dérivé d'une donnée observée : 0,25 de
-      Sharpe, 30 trades, 0,05 de drawdown et la grille S1–S5 sont
-      justifiés a priori (bruit d'échantillon, significativité, risque).
+### Séquence sacrée (C1 / INV-C1)
+- [x] Le commit 1 contient : protocole v2, revue, **annexe de
+      calibration in-sample** et 3 scripts — **aucun artefact OOS**.
+      Les fixtures `dao35-*` ne peuvent exister qu'après (INV-C3 :
+      jamais de fichier fabriqué), donc l'historique git prouve
+      l'antériorité calibration → collecte.
+- [x] La phase A ne lit que `dao30-*` (fenêtre close 2026-09-01) ; la
+      fenêtre OOS démarre à cette même borne — aucune donnée OOS n'a
+      pu entrer en calibration par construction temporelle.
+- [x] `funding-edge-oos-v2.ts` re-vérifie le seuil contre l'annexe et
+      échoue ferme en cas d'écart — le seuil ne peut pas dériver entre
+      protocole et exécution.
 
-### Lecture-seule (C2)
-- [x] La campagne ne touche ni `models/regime-filter.ts`, ni
-      `models/live-trading-policy.ts`, ni l'admission perp, ni aucun
-      fichier de production — scripts et fixtures d'artefacts uniquement.
-- [x] `funding-trend` reste déniée en runtime (`DEFAULT_REGIME_PERMISSIONS`
-      inchangé, vérifié) ; le backtest l'active sans filtre de régime car
-      le gating est entier sous `regimeActor !== null` (replay.ts 743 :
-      `gatedSignals = signalResult.value` sinon) — comportement existant,
-      non modifié, documenté §4.
+### Calibration (phase A)
+- [x] Règle mécanique sans liberté : quantile p90, **rang le plus
+      proche sans interpolation**, sur 294 valeurs de `|fundingAvg|`
+      (SMA-72 causale, miroir exact de `fundingInputFor`/`sma` Prolog).
+      Reproductible bit à bit (le script écrit l'annexe).
+- [x] Justification a priori du p90 consignée (fréquence ~30/an,
+      sélectivité, candidates p90/p99 déjà nommées par le rapport v1
+      **avant** toute donnée nouvelle) — le choix n'est pas guidé par
+      un résultat de rejeu au seuil calibré.
+- [x] Distribution complète annexée : 294 jours (fundingAvg signé,
+      signal, raison, rendement, équité), quantiles |fundingAvg|,
+      signaux (29 SELL / 265 HOLD / 0 BUY), métriques H12 + folds des
+      4 runs + benchmark. Les métriques baseline coïncident avec le
+      rapport v1 (rsi −0,078 / ema +0,241 / breakout −0,211 ;
+      buy-and-hold −27,48 %) — contrôle de cohérence de la config §4.
+- [x] Le constat in-sample « funding signé positif toute l'année ⇒ 0
+      longCarry, 0 BUY, 0 trade » est annexé **tel quel** et n'a
+      déclenché **aucune** retouche du seuil ou de la règle — c'est le
+      test de la discipline INV-C7 en phase A.
+- [x] Risque de sélection assumé et borné : l'auteur du protocole a vu
+      les statistiques v1 (quantiles publiés) avant de fixer p90 ;
+      c'est précisément ce que le brief #35 qualifie de calibration.
+      Le point aveugle résiduel (choix du quantile non vérifiable sur
+      données futures) est couvert par INV-C7 : une seule évaluation.
 
-### Données réelles ou rien (C3)
-- [x] Fixtures de campagne persistées sous `packages/backtest/fixtures/`
-      avec provenance (endpoint, fenêtre, horodatage, SHA-256) — le dépôt
-      n'avait aucun répertoire de fixtures : convention créée ici,
-      distincte des fixtures inline des tests unitaires.
-- [x] Échec de collecte ⇒ EN ATTENTE, protocole + scripts prêts ;
-      aucune donnée synthétique possible par construction (la collecte
-      fail-closed rejette toute lecture hors spec — mêmes bornes que la
-      couture #27 : 1 MiB, timeout 10 s, coercition, rejet entier).
+### Phase B et grille mécanique
+- [x] A0 (≥ 90 bougies complètes couvertes) sépare « verdict » et « EN
+      ATTENTE » sans zone grise ; l'état EN ATTENTE n'épuise pas
+      l'itération unique (sinon une collecte 3 jours « consommerait »
+      le verdict — contraire au brief).
+- [x] Préfixe d'échauffement (90 bougies campagne-1) : état
+      d'indicateurs uniquement, équité 10 000 au début du préfixe,
+      métriques OOS par conventions de segment §5 v1 (jonction incluse,
+      pic local, trades par `executedAt`) — aucun lookahead : le
+      suffixe 72 à l'entrée OOS ne lit que le passé causal, miroir
+      exact d'un passage live.
+- [x] Grille A1–A4 reprise des seuils v1 S1/S2/S3/S5 à constantes
+      identiques (0,25 / 30/an échelonné / +0,05 / ≥ 0) — aucune
+      constante nouvelle à justifier ; A2 mise à l'échelle
+      mécaniquement (`⌈30 × joursOOS / 365⌉`), pas à la main.
+- [x] Abandon consigné de S4 (folds) : une fenêtre OOS unique ne se
+      découpe pas ; tout test de stabilité = nouveau protocole. Écart
+      documenté dans le protocole lui-même (§4.4), pas découvert a
+      posteriori.
+- [x] `fundingPaid` en phase B est indicatif (span complet préfixe+OOS,
+      le cœur de rejeu ne l'impute pas par segment) : la grille ne
+      l'utilise pas — aucun critère contaminé.
+- [x] Benchmark buy-and-hold recalé sur la fenêtre OOS seule, formule
+      de la suite inchangée.
 
-### Comparabilité (INV-C5)
-- [x] Même série `fundingRates` pour les 4 runs : une baseline sans coût
-      serait favorisée artificiellement ; le choix contraire (coût
-      partout) est le seul équitable pour un perp long-only et il est
-      figé §4.
-- [x] Même chemin de rejeu pour tous : **non préparé** — les snapshots
-      préparés sont funding-blind (models/funding-rate-strategy.review.md,
-      limite consignée) et ne peuvent pas alimenter `funding-trend` ;
-      `fundingInputFor` (replay.ts) nourrit l'indicateur du suffixe 72 et
-      `applyFundingCost` déduit le coût avant le point d'équité — Sharpe
-      net de funding par construction, pas par post-traitement.
-- [x] Sizing `TARGET_SIGNAL_NOTIONAL` uniforme (models/backtest-run.md) ;
-      calibration `IDENTITY` partout ; sortie protectrice `NONE` et pas
-      de filtre de régime : aucune asymétrie de gating entre runs.
-- [x] Benchmark buy-and-hold conservé comme contexte, hors critères.
-
-### Fenêtres et stabilité
-- [x] Bornes alignées UTC minuit, 365 jours vérifiés (91+90+92+92) ;
-      R30 = dernier mois de H12 ; folds = découpage de la courbe d'un
-      rejeu causal unique — aucun re-calibrage, aucun lookahead (le rejeu
-      n'utilise que le préfixe passé à chaque bougie, vérifié replay.ts).
-- [x] Warm-up assumé (~72 bougies sans `fundingAvg` ; 365 − 72 ≈ 293
-      jours de décision) : constaté, non ajustable — conforme à
-      l'esprit INV-C1 (on ne rallonge pas la fenêtre pour fabriquer de
-      la significativité).
-- [x] Conventions de segment figées §5 (premier rendement incluant la
-      jonction, drawdown par pic local, trades par `Fill.executedAt`)
-      — sinon les folds seraient incomparables entre runs.
-
-### Seuils §6
-- [x] « baseline max » défini sans liberté post-hoc : max de Sharpe sur
-      les **3 legacy figées** §4 — pas de sélection parmi des variantes
-      additionnelles.
-- [x] S4 porte sur la médiane des legacy et sur R30 : un edge concentré
-      sur un trimestre ou déjà évaporé sur le mois récent ne passe pas.
-- [x] INV-C6 : la grille n'active rien ; la proposition d'activation
-      future reste l'unique décisionneuse.
+### Lecture-seule (C2) et données réelles (C3)
+- [x] Aucun fichier de production touché : scripts d'artefacts +
+      modèles + fixtures uniquement ; `DEFAULT_REGIME_PERMISSIONS` et
+      tout code de trading inchangés.
+- [x] Collecte OOS = copie conforme des bornes #27/#30 v1 (1 MiB, 10 s,
+      coercition, rejet entier, pagination capée, couverture
+      bougie-par-bougie avant écriture) ; fixtures versionnées +
+      provenance SHA-256, SHA revérifié à chaque lecture.
 
 ## Risques résiduels assumés
 
-- `fundingHistory` paginé par plages de ≤ 500 enregistrements : un trou
-  horaire réel chez la venue invalide la collecte (fail-closed) — la
-  campagne passe alors EN ATTENTE, elle ne compresse jamais la fenêtre.
-- La bougie de prix Coinbase et le taux Hyperliquid viennent de venues
-  différentes (miroir spot vs perp) : convention #27 assumée, inchangée
-  ici ; un écart de prix miroir est un biais commun à tous les runs.
-- 12 mois de données donnent des folds trimestriels courts (~90 points)
-  : les Sharpe de segment sont bruités — S4 n'exige qu'un signe, pas une
-  magnitude, précisément pour cette raison.
+- Le régime de signe du funding (positif sur toute la campagne-1) peut
+  persister hors-échantillon : la phase B conclura alors mécaniquement
+  à un échec d'activité (A2) — verdict final, sujet clos (INV-C7).
+  C'est un résultat informatif sur H2, pas un défaut du protocole.
+- Fenêtre OOS initiale mécaniquement trop courte (collecte au
+  2026-09-04 = 3 jours) : état EN ATTENTE attendu pour ce cycle ; la
+  grille sera évaluée une fois sur la première fenêtre ≥ 90 jours.
+- Les Sharpes de segment ~90 points restent bruités — A1/A4 n'exigent
+  pas de magnitude élevée, et A2 borne la dépendance à l'activité.
