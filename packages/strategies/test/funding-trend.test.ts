@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createProductId, type Candle } from "@dodash/domain";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
+import { FUNDING_TREND_ENTER_THRESHOLD } from "@dodash/models";
 
 import {
   createFundingTrendStrategy,
@@ -143,6 +144,55 @@ describe("funding-trend (models/funding-rate-strategy.md §5)", () => {
       expect(result.error.code).toBe("INVALID_STRATEGY_CONFIG");
       expect(result.error.strategyId).toBe(FUNDING_TREND_STRATEGY_ID);
     }
+  });
+
+  it("seuil absent ⇒ constante figée p75 (dao #38, INV-F9)", () => {
+    const byDefault = createFundingTrendStrategy({ baseSize: 0.01 });
+    // juste sous le seuil : amplitude négative ⇒ HOLD
+    const under = byDefault.evaluate(
+      context({
+        indicators: snapshot({
+          emaFast: 99,
+          emaSlow: 100,
+          fundingAvg: FUNDING_TREND_ENTER_THRESHOLD * (1 - 1e-9),
+        }),
+      }),
+    );
+    expect(under.ok && under.value.side).toBe("HOLD");
+    expect(under.ok && under.value.reasonCode).toBe("FUNDING_NO_SIGNAL");
+    // au seuil exact : autorisation shortCrowding ⇒ SELL, confiance nulle
+    const atThreshold = byDefault.evaluate(
+      context({
+        indicators: snapshot({
+          emaFast: 99,
+          emaSlow: 100,
+          fundingAvg: FUNDING_TREND_ENTER_THRESHOLD,
+        }),
+      }),
+    );
+    expect(atThreshold.ok && atThreshold.value.side).toBe("SELL");
+    expect(atThreshold.ok && atThreshold.value.reasonCode).toBe(
+      "FUNDING_SHORT_CROWDING",
+    );
+    expect(atThreshold.ok && atThreshold.value.confidence).toBe(0);
+  });
+
+  it("seuil explicite v1 (5e-5) reste honoré — rejeu campagne reproductible (C2)", () => {
+    const v1 = createFundingTrendStrategy({
+      enterThreshold: 5e-5,
+      baseSize: 0.01,
+    });
+    // amplitude > seuil p75 mais < 5e-5 : HOLD en v1, SELL par défaut
+    const mid = v1.evaluate(
+      context({
+        indicators: snapshot({
+          emaFast: 99,
+          emaSlow: 100,
+          fundingAvg: 1e-5,
+        }),
+      }),
+    );
+    expect(mid.ok && mid.value.side).toBe("HOLD");
   });
 
   it("signaux déterministes : même entrée ⇒ même sortie", () => {

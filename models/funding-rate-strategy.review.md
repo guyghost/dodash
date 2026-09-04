@@ -5,6 +5,114 @@ Modèle : `models/funding-rate-strategy.md`
 
 ---
 
+# Review 3 — Amendement du seuil d'entrée en percentile figé (dao #38)
+
+Statut : APPROUVÉ (aucune correction demandée)
+Date : dao #38
+Périmètre vérifié : amendement §5 (seuil percentile figé, étiquetage
+in-sample), constante source unique `models/funding-rate-strategy.ts`,
+nouvel invariant INV-F9, garanties C1/C2/C3 du brief.
+
+Fichiers vérifiés : `models/funding-rate-strategy.md` (§1, §5, §7, §8,
+§9, §10), `models/funding-edge-campaign.md` (§3/§7/§9 v2 — non touché),
+`models/funding-edge-campaign-v2.annexe-calibration.json` (source de la
+valeur), `models/regime-filter.ts` (`DEFAULT_REGIME_PERMISSIONS`, non
+modifié), `models/live-trading-policy.ts` (non modifié),
+`models/confidence-calibration.ts` (`CALIBRATED_STRATEGY_IDS`, non
+modifié), `packages/backtest/scripts/funding-edge-walkforward.ts` (seuil
+v1 explicite, non modifié), `packages/backtest/scripts/
+funding-edge-calibration-v2.ts` et `funding-edge-oos-v2.ts` (seuil
+campagne explicite, non modifiés).
+
+## Checklist
+
+### C3 — percentile figé AVANT le rejeu
+- [x] La règle (quantité `|fundingAvg|` SMA-72, dataset dao30, p75 par
+      rang le plus proche sans interpolation, N = 294 jours de décision)
+      et la valeur (`8,8750099537037e-6`) sont figées dans le modèle au
+      commit 1, avant tout rejeu au nouveau seuil.
+- [x] La valeur est dérivée d'un artefact antérieur commité (annexe #35,
+      `distributionAbsFundingAvg.p75`) — aucune donnée nouvelle. Dérivation
+      re-exécutée indépendamment depuis les fixtures (règle identique
+      calibration-v2) : même valeur au bit près, 74/294 jours traversés
+      (25,2 % — bande cible 5–25 %).
+- [x] p90 écarté en connaissance de cause : c'est le seuil calibré du
+      protocole #35 EN ATTENTE (INV-C7 : itération unique, aucun
+      recalibrage) ; en faire le défaut produit confondrait recherche et
+      produit. Le p75 sépare les deux artefacts.
+- [x] Aucun balayage : un percentile unique, une règle unique, une
+      exécution unique (miroir #35 §9).
+
+### C1 — variant inactif/inactivable
+- [x] `DEFAULT_REGIME_PERMISSIONS` inchangé : `funding-trend` absente des
+      3 listes ⇒ déni partout (`resolveRegimePermission` : absent ⇒ déni).
+- [x] `LIVE_TRADING_POLICY.strategyIds` inchangé (3 ids) ⇒ toute config
+      live contenant `funding-trend` reste rejetée `LIVE_POLICY_MISMATCH`.
+- [x] `CALIBRATED_STRATEGY_IDS` inchangé (INV-F6) ; admission perp
+      inchangée ; aucun branchement runtime/paper nouveau.
+- [x] INV-F9 ajoute l'étiquetage normatif (non validé OOS, activation =
+      proposition séparée) sans toucher INV-F1..F8 (pureté, coût intégré,
+      convention de signe inchangées).
+
+### C2 — rejeu v1 reproductible (mode comparaison)
+- [x] La stratégie rend le seuil **optionnel** (défaut = constante) :
+      élargissement de signature rétrocompatible, tout appelant explicite
+      garde son comportement bit-exact.
+- [x] Les scripts campagne passent leur seuil explicitement (v1 #30 :
+      `5e-5` ; #35 : p90 calibré re-vérifié contre l'annexe) — aucune de
+      leurs surfaces n'est modifiée.
+- [x] Preuve par exécution : `funding-edge-walkforward.ts` et
+      `funding-edge-oos-v2.ts` ré-exécutés avant/après implémentation,
+      sorties identiques bit à bit (verdict EN ATTENTE #35 préservé,
+      grille non évaluée).
+
+### Constat pré-enregistré et critère « ≥ 1 trade in-sample »
+- [x] Le modèle constate AVANT le rejeu (données annexées #35) :
+      `fundingAvg` signé strictement positif sur toute la campagne-1
+      (min +2,17e-7) ⇒ longCarry jamais autorisable ⇒ 0 remplissage
+      attendu au rejeu H12 quel que soit le seuil positif (shortCrowding
+      seul peut s'autoriser, inexécutable en long-only sans position).
+- [x] Conséquence assumée et consignée : le critère de vérification
+      « au moins 1 trade sur H12 in-sample » du brief #38 est
+      **structurellement non atteignable** sur ces données — le modèle
+      n'est pas retouché pour le « faire passer » (aucune inversion de
+      convention de signe, aucun seuil négatif). Point ouvert reporté à
+      la proposition : seule une fenêtre où le SMA-72 passe négatif (ou
+      un chemin short modélisé) peut produire des remplissages.
+- [x] Le rejeu comparatif reste livré intégralement (trades/PnL/Sharpe
+      v1 vs v2 + distributions de signaux) : il mesure le rétablissement
+      de l'autorisation d'amplitude (74 vs 0 jours) et confirme le
+      constat pré-enregistré.
+
+### Implémentation (vérifiée a priori dans le modèle)
+- [x] Source unique de la constante : `models/funding-rate-strategy.ts`
+      (modèles = vérité, miroir `DEFAULT_REGIME_PERMISSIONS` /
+      `CALIBRATED_STRATEGY_IDS`), exportée par `models/index.ts`, test de
+      verrouillage de la valeur littérale.
+- [x] Stratégie : défaut = constante, validation `enterThreshold > 0`
+      inchangée (un seuil négatif ou nul reste `INVALID_STRATEGY_CONFIG`).
+- [x] Registre agent : `enterThreshold: FUNDING_TREND_ENTER_THRESHOLD`
+      explicite (pas d'implicite caché).
+- [x] Script comparatif : lecture-seule, fixtures SHA-256 vérifiées,
+      re-vérification de la constante contre l'annexe (fatal si écart),
+      aucune évaluation de la grille #35 (INV-C7), aucune écriture
+      d'artefact campagne.
+
+## Risques résiduels assumés
+
+- Le défaut produit p75 est calibré in-sample sur UNE fenêtre (2025-26,
+  marché BTC −27,48 %) : biais de fenêtre assumé et étiqueté (INV-F9) —
+  l'activation exigerait une validation OOS dédiée.
+- Sur cette fenêtre, l'autorisation rétablie ne porte que sur la branche
+  shortCrowding (inexécutable en long-only) : le variant reste sans effet
+  de remplissage tant que le régime de signe du funding ne change pas —
+  c'est la mesure du constat, pas une promesse d'edge.
+- La précision de la constante (16 chiffres significatifs) lie le défaut
+  produit à l'annexe #35 : toute re-derive de l'annexe (non prévue —
+  INV-C7) exigerait un nouveau protocole et un nouvel amendement.
+
+---
+
 # Review 2 — Branchement runtime (cycle C1-suite, §3)
 
 Statut : APPROUVÉ AVEC CORRECTIONS (intégrées au modèle)
