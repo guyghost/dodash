@@ -9,6 +9,7 @@ import {
   derivePerpRiskGate,
   fetchHyperliquidAccountState,
   fetchHyperliquidMeta,
+  fetchHyperliquidOrderFills,
   hyperliquidCoin,
   hyperliquidMarketIocOrder,
   reconcileHyperliquidOrder,
@@ -472,5 +473,134 @@ describe("lectures de compte clearinghouseState", () => {
       dailyPnl: 0,
     });
     expect(clamped.otherGrossExposureNotional).toBe(50);
+  });
+});
+
+describe("lecture des fills /info userFills (dao #31)", () => {
+  const CLOID = hyperliquidCloidFromClientOrderId("perp-2026-08-28-0001");
+
+  const venueFill = (overrides: Record<string, unknown> = {}) => ({
+    coin: "BTC",
+    px: "100050.0",
+    sz: "0.003",
+    side: "B",
+    time: 1_756_416_000_500,
+    startPosition: 0,
+    dir: "Open Long",
+    closedPnl: "0.0",
+    hash: "0xabc",
+    oid: 308427057,
+    crossed: true,
+    fee: "0.15",
+    tid: 441994346001,
+    cloid: CLOID,
+    ...overrides,
+  });
+
+  it("type fermé les fills de notre cloid uniquement", async () => {
+    const fills = await fetchHyperliquidOrderFills(
+      settings,
+      "perp-2026-08-28-0001",
+      {
+        fetch: (async () =>
+          jsonResponse([
+            venueFill(),
+            venueFill({
+              cloid: `0x${"9".repeat(32)}`,
+              tid: 441994346002,
+              side: "A",
+            }),
+            venueFill({ cloid: undefined, tid: 441994346003 }),
+          ])) as unknown as typeof fetch,
+      },
+    );
+    expect(fills).toEqual([
+      {
+        fillId: "441994346001",
+        side: "BUY",
+        price: 100_050,
+        quantity: 0.003,
+        fee: 0.15,
+        closedPnl: 0,
+        fillTime: 1_756_416_000_500,
+      },
+    ]);
+  });
+
+  it("mappe side A sur SELL et closedPnl négatif tel quel", async () => {
+    const fills = await fetchHyperliquidOrderFills(
+      settings,
+      "perp-2026-08-28-0001",
+      {
+        fetch: (async () =>
+          jsonResponse([
+            venueFill({ side: "A", closedPnl: "-12.5", px: "99000.0" }),
+          ])) as unknown as typeof fetch,
+      },
+    );
+    expect(fills).toEqual([
+      {
+        fillId: "441994346001",
+        side: "SELL",
+        price: 99_000,
+        quantity: 0.003,
+        fee: 0.15,
+        closedPnl: -12.5,
+        fillTime: 1_756_416_000_500,
+      },
+    ]);
+  });
+
+  it("retourne une liste vide sans fill de notre cloid", async () => {
+    const fills = await fetchHyperliquidOrderFills(
+      settings,
+      "perp-2026-08-28-0001",
+      {
+        fetch: (async () => jsonResponse([])) as unknown as typeof fetch,
+      },
+    );
+    expect(fills).toEqual([]);
+  });
+
+  it("rejette la lecture entière quand un fill de notre cloid est hors domaine", async () => {
+    const cases: ReadonlyArray<Record<string, unknown>> = [
+      venueFill({ px: "0" }),
+      venueFill({ sz: "-0.001" }),
+      venueFill({ fee: "-1" }),
+      venueFill({ closedPnl: "x" }),
+      venueFill({ tid: "abc" }),
+      venueFill({ time: 1.5 }),
+      venueFill({ side: "X" }),
+    ];
+    for (const entry of cases) {
+      const fills = await fetchHyperliquidOrderFills(
+        settings,
+        "perp-2026-08-28-0001",
+        {
+          fetch: (async () =>
+            jsonResponse([entry])) as unknown as typeof fetch,
+        },
+      );
+      expect(fills).toBeNull();
+    }
+  });
+
+  it("retourne null hors spec ou indisponible", async () => {
+    const cases: ReadonlyArray<typeof fetch> = [
+      (async () => {
+        throw new Error("network down");
+      }) as unknown as typeof fetch,
+      (async () =>
+        jsonResponse({ status: "err" })) as unknown as typeof fetch,
+      (async () => jsonResponse({ fills: [] })) as unknown as typeof fetch,
+    ];
+    for (const fetchMock of cases) {
+      const fills = await fetchHyperliquidOrderFills(
+        settings,
+        "perp-2026-08-28-0001",
+        { fetch: fetchMock },
+      );
+      expect(fills).toBeNull();
+    }
   });
 });

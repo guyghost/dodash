@@ -5,6 +5,7 @@ import {
   type HyperliquidOrderOutcome,
   type HyperliquidPerpCandidate,
   type PerpExecutionError,
+  type PerpFillFact,
   type PerpOrderIntent,
   type PerpRefusalCode,
   type PerpRiskGate,
@@ -14,6 +15,7 @@ import { createActor } from "xstate";
 import {
   assetIndexForCoin,
   fetchHyperliquidMeta,
+  fetchHyperliquidOrderFills,
   hyperliquidCoin,
   type HyperliquidRequestDependencies,
   type HyperliquidSubmission,
@@ -46,18 +48,35 @@ export interface PerpOrderStore {
     outcome: HyperliquidOrderOutcome,
     settledAt: number,
   ): Promise<void>;
+  /**
+   * Persistance idempotente des fills réconciliés (dao #31) : insert
+   * only, jamais de rétroécriture. Un échec n'est jamais un échec de
+   * cycle (C3, models/hyperliquid-fill-persistence.md §2.4).
+   */
+  persistFills(
+    clientOrderId: string,
+    fills: readonly PerpFillFact[],
+    persistedAt: number,
+  ): Promise<void>;
   loadUnresolvedOrderIntents(): Promise<readonly PerpOrderRecord[]>;
 }
 
 export const createInMemoryPerpOrderStore = (): PerpOrderStore => {
   const intents = new Map<string, PerpOrderRecord>();
   const outcomes = new Map<string, HyperliquidOrderOutcome>();
+  const fills = new Map<string, PerpFillFact>();
   return {
     async persistOrderIntent(record) {
       intents.set(record.clientOrderId, record);
     },
     async persistOutcome(clientOrderId, outcome) {
       outcomes.set(clientOrderId, outcome);
+    },
+    async persistFills(clientOrderId, persisted) {
+      for (const fill of persisted) {
+        const key = `${clientOrderId}:${fill.fillId}`;
+        if (!fills.has(key)) fills.set(key, fill);
+      }
     },
     async loadUnresolvedOrderIntents() {
       return [...intents.values()]
@@ -79,6 +98,11 @@ export type HyperliquidPerpRunResult =
 export interface HyperliquidRecoveryReport {
   readonly recovered: number;
   readonly unresolved: number;
+  /**
+   * Lectures/écritures de fills en échec (dao #31) : signal de sortie
+   * télémétrie, jamais une décision (C3).
+   */
+  readonly fillPersistenceFailures: number;
 }
 
 export interface HyperliquidPerpRunner {
@@ -149,15 +173,81 @@ export const createHyperliquidPerpRunner = ({
     return signed.ok ? { ok: true, submission: signed.value } : { ok: false };
   };
 
+  /**
+   * Compteur télémétrie des fills non persistés (dao #31, C3) : échec
+   * de lecture ou d'écriture des fills. Signal de sortie only — jamais
+   * un événement de machine, jamais un échec de cycle.
+   */
+  let fillPersistenceFailures = 0;
+
+  /**
+   * Lecture venue des fills d'un ordre accepté, puis persistance
+   * idempotente via le port. Sobre : une seule tentative par clôture
+   * d'issue, aucun retry, aucune ligne inventée en cas d'absence.
+   * Source de vérité : models/hyperliquid-fill-persistence.md §2.3–2.4.
+   */
+  const persistReconciledFills = async (
+    clientOrderId: string,
+  ): Promise<void> => {
+    let fills: readonly PerpFillFact[] | null = null;
+    try {
+      fills = await fetchHyperliquidOrderFills(
+        settings,
+        clientOrderId,
+        runnerDependencies,
+      );
+    } catch {
+      fills = null;
+    }
+    if (fills === null) {
+      fillPersistenceFailures += 1;
+      console.error(
+        JSON.stringify({
+          type: "PERP_FILLS_UNAVAILABLE",
+          clientOrderId,
+          fillPersistenceFailures,
+        }),
+      );
+      return;
+    }
+    // Aucun fill : aucune ligne inventée (invariant 9).
+    if (fills.length === 0) return;
+    try {
+      await store.persistFills(
+        clientOrderId,
+        fills,
+        dependencies.now?.() ?? Date.now(),
+      );
+    } catch {
+      fillPersistenceFailures += 1;
+      console.error(
+        JSON.stringify({
+          type: "PERP_FILL_PERSIST_FAILED",
+          clientOrderId,
+          fillPersistenceFailures,
+        }),
+      );
+    }
+  };
+
   const finishOutcome = async (
     machine: OrderMachine,
     clientOrderId: string,
+    fillsHandled = false,
   ): Promise<HyperliquidPerpRunResult> => {
     if (machine.getSnapshot().value === "persistingOutcome") {
+      const outcome = machine.getSnapshot().context.outcome ?? "REJECTED";
+      // Un ordre accepté sans incertitude ne repasse jamais par la
+      // réconciliation : la lecture des fills est attachée à cet effet
+      // de clôture (models/hyperliquid-fill-persistence.md §2.3). Les
+      // fills précèdent l'issue : un ordre settled a ses fills écrits.
+      if (outcome === "ACCEPTED" && !fillsHandled) {
+        await persistReconciledFills(clientOrderId);
+      }
       try {
         await store.persistOutcome(
           clientOrderId,
-          machine.getSnapshot().context.outcome ?? "REJECTED",
+          outcome,
           dependencies.now?.() ?? Date.now(),
         );
         machine.send({ type: "PERSIST_SUCCEEDED" });
@@ -174,6 +264,7 @@ export const createHyperliquidPerpRunner = ({
         status: "SETTLED",
         outcome: final.context.outcome ?? "REJECTED",
         clientOrderId,
+        fillPersistenceFailures,
       });
     }
     return Object.freeze({
@@ -191,6 +282,12 @@ export const createHyperliquidPerpRunner = ({
       clientOrderId,
       runnerDependencies,
     );
+    // Effet de réconciliation enrichi (dao #31) : les fills d'une issue
+    // résolue ACCEPTED sont persistés avant l'événement de résolution —
+    // sans jamais bloquer ni faire échouer la réconciliation (C3).
+    if (issue.kind === "RESOLVED" && issue.outcome === "ACCEPTED") {
+      await persistReconciledFills(clientOrderId);
+    }
     machine.send(
       issue.kind === "RESOLVED"
         ? { type: "RECONCILIATION_RESOLVED", outcome: issue.outcome }
@@ -199,7 +296,7 @@ export const createHyperliquidPerpRunner = ({
             error: { code: "RECONCILIATION_FAILED" },
           },
     );
-    return finishOutcome(machine, clientOrderId);
+    return finishOutcome(machine, clientOrderId, true);
   };
 
   return {
@@ -313,6 +410,7 @@ export const createHyperliquidPerpRunner = ({
       return Object.freeze({
         recovered,
         unresolved: pending.length - recovered,
+        fillPersistenceFailures,
       });
     },
   };

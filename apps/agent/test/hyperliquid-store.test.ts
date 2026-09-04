@@ -3,9 +3,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   createSqlitePerpOrderStore,
+  loadPerpPnlProjectionRows,
   type PerpOrderSqlAdapter,
 } from "../src/hyperliquid-store.js";
-import type { PerpOrderIntent } from "@dodash/models";
+import type { PerpFillFact, PerpOrderIntent } from "@dodash/models";
 
 const INTENT: PerpOrderIntent = Object.freeze({
   productId: "BTC-PERP",
@@ -134,5 +135,144 @@ describe("createSqlitePerpOrderStore", () => {
     );
 
     expect(await store.loadUnresolvedOrderIntents()).toEqual([]);
+  });
+});
+
+const FILL: PerpFillFact = Object.freeze({
+  fillId: "441994346001",
+  side: "BUY",
+  price: 100_050,
+  quantity: 0.003,
+  fee: 0.15,
+  closedPnl: 0,
+  fillTime: 1_756_416_000_500,
+});
+
+describe("persistance des fills perp (dao #31)", () => {
+  it("persiste et relit les fills d'un ordre", async () => {
+    const adapter = freshAdapter();
+    const store = createSqlitePerpOrderStore(adapter);
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000001",
+      intent: INTENT,
+      createdAt: 1_756_416_000_000,
+    });
+    await store.persistOutcome("perp-00000001", "ACCEPTED", 1_756_416_000_600);
+    await store.persistFills("perp-00000001", [FILL], 1_756_416_000_550);
+
+    const rows = loadPerpPnlProjectionRows(adapter, 30);
+    expect(rows.orders).toEqual([
+      {
+        clientOrderId: "perp-00000001",
+        intentJson: JSON.stringify(INTENT),
+        outcome: "ACCEPTED",
+        settledAt: 1_756_416_000_600,
+      },
+    ]);
+    expect(rows.fills).toEqual([
+      { clientOrderId: "perp-00000001", fillJson: JSON.stringify(FILL) },
+    ]);
+  });
+
+  it("ne duplique jamais un fill re-persisté (idempotence)", async () => {
+    const adapter = freshAdapter();
+    const store = createSqlitePerpOrderStore(adapter);
+    await store.persistFills("perp-00000001", [FILL], 1_756_416_000_550);
+    await store.persistFills("perp-00000001", [FILL], 1_756_416_000_550);
+
+    const rows = adapter.all<{ fill_id: string }>(
+      "SELECT fill_id FROM dodash_perp_fills",
+      [],
+    );
+    expect(rows).toEqual([{ fill_id: FILL.fillId }]);
+  });
+
+  it("rejette un lot contenant un fill mal formé sans écriture partielle", async () => {
+    const adapter = freshAdapter();
+    const store = createSqlitePerpOrderStore(adapter);
+    const invalid = { ...FILL, price: 0, fillId: "441994346002" };
+    expect(() =>
+      store.persistFills("perp-00000001", [FILL, invalid], 1_756_416_000_550),
+    ).rejects.toThrow("INVALID_PERP_FILL_FACT");
+
+    const rows = adapter.all<{ fill_id: string }>(
+      "SELECT fill_id FROM dodash_perp_fills",
+      [],
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("laisse les lignes préexistantes de dodash_perp_orders intactes", async () => {
+    const adapter = freshAdapter();
+    const store = createSqlitePerpOrderStore(adapter);
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000001",
+      intent: INTENT,
+      createdAt: 1_756_416_000_000,
+    });
+    await store.persistOutcome("perp-00000001", "REJECTED", 1_756_416_000_600);
+    const before = adapter.all<unknown>(
+      "SELECT * FROM dodash_perp_orders",
+      [],
+    );
+
+    await store.persistFills("perp-00000001", [FILL], 1_756_416_000_550);
+    loadPerpPnlProjectionRows(adapter, 30);
+
+    const after = adapter.all<unknown>("SELECT * FROM dodash_perp_orders", []);
+    expect(after).toEqual(before);
+  });
+
+  it("borne la fenêtre de projection aux ordres résolus les plus récents", async () => {
+    const adapter = freshAdapter();
+    const store = createSqlitePerpOrderStore(adapter);
+    for (const index of [1, 2, 3]) {
+      await store.persistOrderIntent({
+        clientOrderId: `perp-0000000${index}`,
+        intent: INTENT,
+        createdAt: 1_756_416_000_000 + index,
+      });
+      await store.persistOutcome(
+        `perp-0000000${index}`,
+        "ACCEPTED",
+        1_756_416_000_000 + index * 100,
+      );
+      await store.persistFills(`perp-0000000${index}`, [FILL], 1);
+    }
+
+    const rows = loadPerpPnlProjectionRows(adapter, 2);
+    expect(rows.orders.map((row) => row.clientOrderId)).toEqual([
+      "perp-00000003",
+      "perp-00000002",
+    ]);
+    // Les fills de l'ordre hors fenêtre ne sont jamais retournés.
+    expect(
+      rows.fills.every(
+        (row) =>
+          row.clientOrderId === "perp-00000002" ||
+          row.clientOrderId === "perp-00000003",
+      ),
+    ).toBe(true);
+  });
+
+  it("n'expose qu'une fenêtre vide quand aucun ordre n'est résolu", async () => {
+    const adapter = freshAdapter();
+    const store = createSqlitePerpOrderStore(adapter);
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000001",
+      intent: INTENT,
+      createdAt: 1_756_416_000_000,
+    });
+
+    const rows = loadPerpPnlProjectionRows(adapter, 30);
+    expect(rows.orders).toEqual([]);
+    expect(rows.fills).toEqual([]);
+  });
+
+  it("refuse un limit hors bornes (fail-closed)", () => {
+    const adapter = freshAdapter();
+    expect(() => loadPerpPnlProjectionRows(adapter, 0)).toThrow();
+    expect(() => loadPerpPnlProjectionRows(adapter, 51)).toThrow();
+    expect(() => loadPerpPnlProjectionRows(adapter, 1.5)).toThrow();
   });
 });
