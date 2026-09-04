@@ -212,6 +212,41 @@ describe("dashboard Agent proxy", () => {
     expect(env.AGENT_SERVICE.fetch).not.toHaveBeenCalled();
   });
 
+  it("forwards a bounded portfolio snapshot read without any query to the Agent", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.method).toBe("GET");
+      expect(upstream.url).toBe(
+        "https://dodash-agent.internal/api/agents/btc/portfolio",
+      );
+      expect(upstream.headers.get("authorization")).toBe(`Bearer ${controlToken}`);
+      return Response.json({
+        ok: true,
+        value: { kind: "single-product" },
+      });
+    });
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc/portfolio"),
+      createEnv(fetcher),
+    );
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("rejects portfolio writes and any query before the Agent", async () => {
+    const env = createEnv();
+    const responses = await Promise.all([
+      handleDashboardApiRequest(request("/api/agents/btc/portfolio", { method: "POST" }), env),
+      handleDashboardApiRequest(request("/api/agents/btc/portfolio?limit=30"), env),
+      handleDashboardApiRequest(request("/api/agents/btc/portfolio?anything=1"), env),
+      handleDashboardApiRequest(
+        new Request("https://dashboard.example/api/agents/btc/portfolio"),
+        env,
+      ),
+    ]);
+    expect(responses.map(({ status }) => status)).toEqual([405, 404, 404, 401]);
+    expect(env.AGENT_SERVICE.fetch).not.toHaveBeenCalled();
+  });
+
   it("rejects an oversized perp-order body before the Agent", async () => {
     const env = createEnv();
     const response = await handleDashboardApiRequest(

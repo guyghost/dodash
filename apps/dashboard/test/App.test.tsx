@@ -10,6 +10,7 @@ import {
   type CycleView,
   type DashboardGateway,
   type PnlHistoryView,
+  type PortfolioSummaryView,
   type StartConfiguration,
 } from "../src/dashboard-api.js";
 
@@ -33,12 +34,63 @@ const emptyPnlHistory = (): PnlHistoryView => ({
   protection: null,
 });
 
+const singleProductSummary = (): PortfolioSummaryView =>
+  Object.freeze({ kind: "single-product" });
+
+const portfolioSummary = (): PortfolioSummaryView =>
+  Object.freeze({
+    kind: "portfolio",
+    phase: "running",
+    killSwitchActive: false,
+    products: [
+      Object.freeze({
+        productId: "BTC-USD",
+        phase: "waiting",
+        status: "running" as const,
+        cash: 5_000,
+        positionQuantity: 0.1,
+        averagePrice: 60_000,
+        marketPrice: 62_000,
+        grossExposure: 6_200,
+        maxGrossExposure: 20_000,
+        dailyPnl: 42.5,
+        lastCycle: Object.freeze({
+          cycleId: "cycle-1",
+          triggeredAt: Date.UTC(2026, 7, 26, 11),
+          completedAt: Date.UTC(2026, 7, 26, 11, 1),
+          outcome: "ORDER_CONFIRMED",
+          marketPrice: 62_000,
+        }),
+      }),
+      Object.freeze({
+        productId: "ETH-USD",
+        phase: "halted",
+        status: "halted" as const,
+        cash: 1_000,
+        positionQuantity: 0,
+        averagePrice: 0,
+        marketPrice: null,
+        grossExposure: 0,
+        maxGrossExposure: 12_000,
+        dailyPnl: -10,
+        lastCycle: null,
+      }),
+    ],
+    consolidated: Object.freeze({
+      grossExposure: 6_200,
+      maxGrossExposure: 30_000,
+      dailyPnl: 32.5,
+      maxDailyLoss: 1_500,
+    }),
+  });
+
 const createGateway = (
   overrides: Partial<DashboardGateway> = {},
 ): DashboardGateway => ({
   loadState: async () => stoppedAgent(),
   loadCycles: async (): Promise<readonly CycleView[]> => [],
   loadPnlHistory: async () => emptyPnlHistory(),
+  loadPortfolioSummary: async () => singleProductSummary(),
   command: async () => stoppedAgent(),
   ...overrides,
 });
@@ -236,6 +288,66 @@ describe("dashboard journey", () => {
 
     expect(screen.getByText("NON PROTÉGÉ")).toBeTruthy();
     expect(screen.getByText("Aucun point d’équité.")).toBeTruthy();
+  });
+
+  it("renders the read-only portfolio view with quiescent products visible", async () => {
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+    };
+    render(
+      <App
+        gateways={gateways(
+          createGateway({
+            loadState: async () => active,
+            loadPortfolioSummary: async () => portfolioSummary(),
+          }),
+        )}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.getByText("PORTEFEUILLE")).toBeTruthy();
+    // Produit actif : phase machine et exposition vs plafond affichées.
+    expect(screen.getByText("BTC-USD")).toBeTruthy();
+    expect(screen.getByText("ACTIF")).toBeTruthy();
+    expect(screen.getAllByText("EXPOSITION").length).toBe(2);
+    // Produit quiescent (INV-P3) : visible, jamais masqué.
+    expect(screen.getByText("ETH-USD")).toBeTruthy();
+    expect(screen.getByText("SUSPENDU")).toBeTruthy();
+    // Agrégat consolidé : garde-fous côte à côte, kill switch au repos.
+    expect(screen.getByText("Garde-fous du portefeuille")).toBeTruthy();
+    expect(screen.getByText("EXPOSITION CONSOLIDÉE")).toBeTruthy();
+    expect(screen.getByText("PLAFOND PERTE JOUR")).toBeTruthy();
+    expect(screen.queryByText("KILL SWITCH ENGAGÉ")).toBeNull();
+    expect(screen.getAllByText(/Dernier cycle :/).length).toBe(2);
+  });
+
+  it("keeps the mono-product screen unchanged for a single-product answer", async () => {
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+    };
+    render(
+      <App
+        gateways={gateways(
+          createGateway({
+            loadState: async () => active,
+            loadPortfolioSummary: async () => singleProductSummary(),
+          }),
+        )}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.queryByText("PORTEFEUILLE")).toBeNull();
+    expect(screen.queryByText("Garde-fous du portefeuille")).toBeNull();
   });
 
   it("requires confirmation before exposing the kill command", async () => {

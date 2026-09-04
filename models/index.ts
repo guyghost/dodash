@@ -388,6 +388,20 @@ export type {
   DashboardPnlOrderRow,
   DashboardPnlProtection,
 } from "./dashboard-pnl-history.js";
+export {
+  projectDashboardPortfolioSummary,
+} from "./dashboard-portfolio-summary.js";
+export type {
+  DashboardPortfolioConsolidated,
+  DashboardPortfolioErrorCode,
+  DashboardPortfolioLastCycle,
+  DashboardPortfolioProductInput,
+  DashboardPortfolioProductSummary,
+  DashboardPortfolioSessionInput,
+  DashboardPortfolioSummary,
+  DashboardPortfolioSummaryResult,
+  DashboardPortfolioSummaryValue,
+} from "./dashboard-portfolio-summary.js";
 export { multiProductPortfolioMachine } from "./multi-product-portfolio.machine.js";
 export type {
   MultiProductPortfolioContext,

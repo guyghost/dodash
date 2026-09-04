@@ -64,6 +64,88 @@ describe("Agent Worker live preflight route", () => {
     });
   });
 
+  it("routes an authenticated portfolio summary read and fails closed on projection error", async () => {
+    const summary = {
+      ok: true as const,
+      value: {
+        kind: "portfolio" as const,
+        phase: "running",
+        killSwitchActive: false,
+        products: [
+          {
+            productId: "BTC-USD",
+            phase: "waiting",
+            status: "running",
+            cash: 9_800,
+            positionQuantity: 0.1,
+            averagePrice: 60_000,
+            marketPrice: 62_000,
+            grossExposure: 6_200,
+            maxGrossExposure: 20_000,
+            dailyPnl: 42.5,
+            lastCycle: null,
+          },
+        ],
+        consolidated: {
+          grossExposure: 6_200,
+          maxGrossExposure: 30_000,
+          dailyPnl: 42.5,
+          maxDailyLoss: 1_500,
+        },
+      },
+    };
+    const getPortfolioSummary = vi.fn(() => summary);
+    const env = {
+      CONTROL_API_TOKEN: token,
+      TRADING_AGENT: { getByName: () => ({ getPortfolioSummary }) },
+    } as unknown as TradingEnv;
+    const response = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/portfolio", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(getPortfolioSummary).toHaveBeenCalledOnce();
+    await expect(response.json()).resolves.toEqual(summary);
+
+    const failing = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/portfolio", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      {
+        ...env,
+        TRADING_AGENT: {
+          getByName: () => ({
+            getPortfolioSummary: () => ({
+              ok: false as const,
+              error: { code: "INVALID_PORTFOLIO_SESSION" },
+            }),
+          }),
+        },
+      } as unknown as TradingEnv,
+    );
+    expect(failing.status).toBe(500);
+    await expect(failing.json()).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_PORTFOLIO_SESSION" },
+    });
+  });
+
+  it("rejects an unauthenticated portfolio read before touching the Agent", async () => {
+    const getPortfolioSummary = vi.fn();
+    const env = {
+      CONTROL_API_TOKEN: token,
+      TRADING_AGENT: { getByName: () => ({ getPortfolioSummary }) },
+    } as unknown as TradingEnv;
+    const response = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/portfolio"),
+      env,
+    );
+    expect(response.status).toBe(401);
+    expect(getPortfolioSummary).not.toHaveBeenCalled();
+  });
+
   it("routes an authenticated pnl read and fails closed on projection error", async () => {
     const history = {
       ok: true as const,

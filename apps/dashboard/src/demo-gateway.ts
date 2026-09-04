@@ -3,6 +3,7 @@ import type {
   CycleView,
   DashboardGateway,
   PnlHistoryView,
+  PortfolioSummaryView,
   StartConfiguration,
 } from "./dashboard-api.js";
 
@@ -125,6 +126,78 @@ const pnlHistory: PnlHistoryView = Object.freeze({
   }),
 });
 
+const portfolioSummary: PortfolioSummaryView = Object.freeze({
+  kind: "portfolio",
+  phase: "running",
+  killSwitchActive: false,
+  products: Object.freeze([
+    Object.freeze({
+      productId: "BTC-USD",
+      phase: "waiting",
+      status: "running" as const,
+      cash: 5_204.11,
+      positionQuantity: 0.0184,
+      averagePrice: 61_284.42,
+      marketPrice: 63_912.18,
+      grossExposure: 1_175.98,
+      maxGrossExposure: 12_000,
+      dailyPnl: 96.4,
+      lastCycle: Object.freeze({
+        cycleId: "cycle-01J6A2J8X7",
+        triggeredAt: startedAt - 890_000,
+        completedAt: startedAt - 886_000,
+        outcome: "ORDER_CONFIRMED",
+        marketPrice: 63_912.18,
+      }),
+    }),
+    Object.freeze({
+      productId: "ETH-USD",
+      phase: "scheduling",
+      status: "running" as const,
+      cash: 3_410.02,
+      positionQuantity: 0.31,
+      averagePrice: 3_084.5,
+      marketPrice: 3_121.77,
+      grossExposure: 967.75,
+      maxGrossExposure: 12_000,
+      dailyPnl: 51.36,
+      lastCycle: Object.freeze({
+        cycleId: "cycle-01J6A2GRQ2",
+        triggeredAt: startedAt - 920_000,
+        completedAt: startedAt - 916_000,
+        outcome: "NO_ACTION",
+        marketPrice: 3_121.77,
+      }),
+    }),
+    // Produit quiescent (INV-P3) : visible avec ses derniers chiffres connus.
+    Object.freeze({
+      productId: "SOL-USD",
+      phase: "halted",
+      status: "halted" as const,
+      cash: 1_028.01,
+      positionQuantity: 2.4,
+      averagePrice: 148.22,
+      marketPrice: 146.9,
+      grossExposure: 352.56,
+      maxGrossExposure: 12_000,
+      dailyPnl: -24.63,
+      lastCycle: Object.freeze({
+        cycleId: "cycle-01J69ZKQ9M",
+        triggeredAt: startedAt - 1_860_000,
+        completedAt: startedAt - 1_856_000,
+        outcome: "FAILED",
+        marketPrice: 146.9,
+      }),
+    }),
+  ]),
+  consolidated: Object.freeze({
+    grossExposure: 2_496.29,
+    maxGrossExposure: 30_000,
+    dailyPnl: 123.13,
+    maxDailyLoss: 1_500,
+  }),
+});
+
 const nextState = (patch: Partial<AgentStateView>): AgentStateView =>
   Object.freeze({ ...state, ...patch, updatedAt: Date.now() });
 
@@ -141,6 +214,10 @@ export const createDemoGateway = (): DashboardGateway =>
     loadPnlHistory: async (_agentName: string) => {
       await wait();
       return pnlHistory;
+    },
+    loadPortfolioSummary: async (_agentName: string) => {
+      await wait();
+      return portfolioSummary;
     },
     submitPerpOrder: async (
       _agentName: string,
