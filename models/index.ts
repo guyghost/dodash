@@ -429,3 +429,7 @@ export type {
   PortfolioWorkflowError,
   PortfolioWorkflowErrorCode,
 } from "./multi-product-portfolio.machine.js";
+export {
+  FUNDING_TREND_ENTER_THRESHOLD,
+  FUNDING_TREND_THRESHOLD_PERCENTILE,
+} from "./funding-rate-strategy.js";

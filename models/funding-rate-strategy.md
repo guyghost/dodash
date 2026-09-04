@@ -4,6 +4,12 @@ Statut : MODÉLISÉ + IMPLÉMENTÉ (modèle §1-§8 ; branchement runtime §3
 implémenté au cycle C1-suite sous son propre passage Model → Review →
 Implement → Verify)
 
+**Amendement dao #38** (§5, INV-F9) : le seuil d'entrée de
+`funding-trend` est redéfini en **percentile figé** de la distribution
+`|fundingAvg|` in-sample (campagne-1) — **VARIANT IN-SAMPLE, NON VALIDÉ
+OUT-OF-SAMPLE**, inactif (permission en déni partout, C1). Revue 3 :
+`models/funding-rate-strategy.review.md`.
+
 ## 1. Contexte et objet
 
 Les instances `perp` exécutent des perpétuels Hyperliquid à partir des
@@ -182,7 +188,11 @@ balayage exclu).
 
 `packages/strategies/src/funding-trend.ts`, pattern `rsi-reversion`/
 `ema-cross` (config figée, `Object.freeze`, `strategySignal`,
-`createSignal`). Config : `{ id?, enterThreshold, baseSize }`.
+`createSignal`). Config : `{ id?, enterThreshold?, baseSize }` — seuil
+optionnel : absent ⇒ constante figée `FUNDING_TREND_ENTER_THRESHOLD`
+(source unique `models/funding-rate-strategy.ts`) ; présent ⇒ valeur
+du rejeu appelant (les rejeux campagne v1 #30/#35 passent leur seuil
+explicitement : reproductibilité inchangée, INV-F9).
 
 Règles de décision (seuils explicites figés, aucune décision LLM) —
 combinaison du contexte de prix (paire EMA 12/26 existante du snapshot)
@@ -209,13 +219,65 @@ d'amplitude — jamais l'un sans l'autre.
   transition (pas de double émission à éviter ; l'allocation et la
   permission amortissent de toute façon les répétitions).
 
-Seuil figés a priori (un seul degré de liberté, aucun balayage) :
+Seuils figés (un seul degré de liberté, aucun balayage) :
 
-| Paramètre | Valeur | Justification a priori |
+| Paramètre | Valeur | Justification |
 | --- | --- | --- |
-| `enterThreshold` | `5e-5` par période | ≈ 4× la base Hyperliquid (0,01 %/8 h ⇒ 1,25e-5/h agrégé) : n'agit que sur un financement anormalement chargé, bruité en dessous |
-| `baseSize` | `0.01` | convention des 3 stratégies du registre |
-| `avgPeriod` | `72` | §4 |
+| `enterThreshold` | **`FUNDING_TREND_ENTER_THRESHOLD = 8,8750099537037e-6` par période** (amendement dao #38 ; valeur v1 : `5e-5`, choix a priori #27 jamais atteint — 0 jour traversé in-sample, 0 trade sur H12, stratégie inopérante, cf. `docs/analysis/analyse-backtest-2026-09-04.md` §3) | percentile p75 de `|fundingAvg|` — règle de dérivation figée ci-dessous, écrite AVANT le rejeu comparatif (C3) |
+| `baseSize` | `0.01` | convention des 3 stratégies du registre (inchangée) |
+| `avgPeriod` | `72` | §4 (inchangée) |
+
+Règle de calibration figée (amendement dao #38 — fixée au commit du
+présent modèle, avant tout rejeu au nouveau seuil) :
+
+- **Quantité calibrée** : `|fundingAvg|` — SMA 72 jours causale
+  (`FUNDING_AVG_PERIOD`, §4), c'est-à-dire la grandeur effectivement
+  consommée et seuillée par la stratégie. Le percentile porte sur cette
+  quantité (jours de décision), pas sur les taux horaires bruts : c'est
+  la fraction de jours d'autorisation qui est contrôlée.
+- **Dataset** : fixtures campagne-1 `packages/backtest/fixtures/dao30-*`
+  (fenêtre close `[2025-09-01, 2026-09-01)`, empreintes SHA-256 des
+  fichiers de provenance) — les mêmes données que l'annexe de
+  calibration #35 ;
+  **aucune donnée nouvelle** n'est collectée pour cet amendement.
+- **Règle** : quantile **p75**, méthode du rang le plus proche
+  (`h = ⌈p/100 × N⌉`, valeur au rang `h` de la série triée, sans
+  interpolation) sur les **294 jours de décision** (365 − 71
+  d'échauffement) → valeur figée `8,8750099537037e-6`, identique à
+  `distributionAbsFundingAvg.p75` de
+  `models/funding-edge-campaign-v2.annexe-calibration.json` (artefact
+  commité #35) : la valeur est dérivée d'un artefact antérieur, la
+  dérivation est reproductible bit à bit.
+- **Justification chiffrée du p75** : bande cible 5–25 % d'échantillons
+  au-dessus du seuil. p75 traverse **74/294** jours de décision
+  in-sample (**25,2 %**) contre **0/294** au seuil v1 `5e-5` ; p90
+  (`1,0106e-5`, 30/294 = 10,2 %) est écarté : c'est le seuil calibré du
+  protocole #35 (EN ATTENTE), dont l'itération unique (INV-C7 v2)
+  interdit d'ailleurs le recalibrage et dont la valeur ne doit pas
+  devenir un défaut produit — p75 sépare le défaut produit du seuil de
+  campagne et rend le rejeu comparatif moins dégénéré (74 vs 30
+  traversées in-sample).
+
+**Étiquetage explicite (dao #38) : VARIANT IN-SAMPLE — NON VALIDÉ
+OUT-OF-SAMPLE (INV-F9).** La validation hors-échantillon reste l'objet
+du protocole #35 en cours (EN ATTENTE), qui porte ses propres seuils
+figés (calibrés p90) — aucune retouche de ce protocole. Toute
+activation runtime/paper reste déniée par défaut
+(`DEFAULT_REGIME_PERMISSIONS` inchangé : `funding-trend` déniée dans
+les 3 régimes — C1) et ne peut venir que d'une proposition séparée,
+évaluée sur une validation out-of-sample.
+
+Constat pré-enregistré (dérivé de l'annexe #35 AVANT le rejeu, aucune
+observation nouvelle) : `fundingAvg` signé est resté **strictement
+positif** sur toute la campagne-1 (min `+2,17e-7`, max `+1,18e-5`) —
+la branche longCarry (`fundingAvg ≤ −T`) ne peut jamais s'autoriser
+cette fenêtre, et la branche shortCrowding ne remplit pas (rejeu
+long-only, vente à découvert inexécutable). Le rejeu comparatif H12
+est donc attendu à **0 remplissage quel que soit le seuil positif** :
+le recalibrage rétablit l'autorisation d'amplitude (74 jours traversés
+au lieu de 0), il ne peut pas créer de trade sur cette fenêtre — c'est
+une propriété de structure du régime de signe, consignée #35 (§3 v2),
+pas un effet de la hauteur du seuil.
 
 ## 6. Backtest — coût de funding dans le PnL
 
@@ -257,7 +319,7 @@ Id ajouté : `"funding-trend"` (4e entrée de l'enum, `max(3)` inchangé).
 | Surface | Effet |
 | --- | --- |
 | `apps/agent/src/configuration.ts` | enum Zod `strategyIds` élargi ; `max(3)` inchangé (au plus 3 stratégies par instance) ; `requiredCandles` inchangé (l'input de la stratégie n'est pas une bougie) |
-| `apps/agent/src/strategy-registry.ts` | case `funding-trend` avec seuils figés §5 ; traité comme rsi-reversion côté sizing : **non calibré** (`CALIBRATED_STRATEGY_IDS` inchangé, source `models/confidence-calibration.ts`) |
+| `apps/agent/src/strategy-registry.ts` | case `funding-trend` avec seuils figés §5 (`enterThreshold: FUNDING_TREND_ENTER_THRESHOLD`, constante `models/funding-rate-strategy.ts`) ; traité comme rsi-reversion côté sizing : **non calibré** (`CALIBRATED_STRATEGY_IDS` inchangé, source `models/confidence-calibration.ts`) |
 | `models/regime-filter.ts` `DEFAULT_REGIME_PERMISSIONS` | **inchangé** : l'id est absent des 3 listes ⇒ dénié partout ⇒ stratégie inactive tant qu'une table `regimePermissions` explicite ne l'autorise pas (C3) |
 | `models/live-trading-policy.ts` | **inchangé** : `LIVE_TRADING_POLICY.strategyIds` (3 ids) ⇒ toute config live spot contenant `funding-trend` est rejetée `LIVE_POLICY_MISMATCH` (C2/C3) |
 | `models/hyperliquid-execution.ts` admission perp | **inchangée** : `admitHyperliquidPerpConfiguration` ne vérifie pas `strategyIds` ; l'activation reste un choix opérateur via config perp + permission de régime |
@@ -275,6 +337,7 @@ Id ajouté : `"funding-trend"` (4e entrée de l'enum, `max(3)` inchangé).
 | INV-F6 | La calibration de confiance reste réservée à `CALIBRATED_STRATEGY_IDS` ; `funding-trend` n'y entre pas. |
 | INV-F7 | Le coût de funding n'affecte que le cash à la clôture des bougies couvertes : `fundingPaid = Σ position × close × rate` ; absent ⇒ bit-exact (INV-F1). |
 | INV-F8 | Le chemin runtime C1 est une couture d'effets : le shell Hyperliquid traduit le monde en séries typées fermées ; `tradingCycleMachine` décide ; aucun LLM nulle part. |
+| INV-F9 | Le seuil percentile (dao #38) est un **VARIANT IN-SAMPLE, non validé out-of-sample** : dérivé une seule fois par la règle figée §5 (aucun balayage, aucun recalibrage post-rejeu) ; `funding-trend` reste **déniée en runtime/paper** (`DEFAULT_REGIME_PERMISSIONS` et `LIVE_TRADING_POLICY` inchangés) tant qu'aucune proposition séparée ne l'active sur la foi d'une validation OOS ; les rejeux campagne v1 (#30 : `5e-5` explicite ; #35 : p90 calibré explicite) restent reproductibles bit à bit (C1/C2/C3). |
 
 ## 9. Livrables et vérification
 
@@ -300,6 +363,14 @@ Id ajouté : `"funding-trend"` (4e entrée de l'enum, `max(3)` inchangé).
   pré-validation ; tests : série disponible ⇒ snapshot avec
   `fundingAvg` et signal émis, paper spot ⇒ jamais d'appel (C2), effet
   absent ou `null` ⇒ cycle continue sans funding (C3).
+- Amendement dao #38 : constante figée `models/funding-rate-strategy.ts`
+  (+ test de verrouillage de la valeur), seuil optionnel dans la
+  stratégie pure (défaut = constante), registre agent sur la constante,
+  rejeu comparatif v1/v2 (`packages/backtest/scripts/
+  funding-threshold-comparison.ts`) sur les fixtures dao30/dao35 —
+  mode comparaison descriptif : trades/PnL/Sharpe v1 (0 trade) vs v2,
+  distribution des signaux, constat de structure de signe ; le script
+  re-vérifie la constante contre l'annexe #35 (tout écart est fatal).
 - Vérifications : `pnpm check`, tests des paquets touchés, `pnpm build`,
   `pnpm lint` sans nouveau warning.
 
@@ -315,4 +386,6 @@ Id ajouté : `"funding-trend"` (4e entrée de l'enum, `max(3)` inchangé).
   pré-enregistrée avec ses propres portes, sur données réelles
   `fundingHistory`.
 - Balayage des seuils/périodes (§4-§5 : figés, une variante = nouvelle
-  hypothèse pré-enregistrée).
+  hypothèse pré-enregistrée). La dérivation percentile §5 est une règle
+  figée évaluée une fois sur des données déjà commitées — ce n'est pas
+  un balayage (miroir #35 §9).
