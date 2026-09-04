@@ -494,6 +494,30 @@ export const parseAgentConfiguration = (
   return err({ code: "MULTI_PRODUCT_UNSUPPORTED" });
 };
 
+/**
+ * Discriminant d'entrée du branchement runtime (models/
+ * multi-product-portfolio.md §9.1) : un enregistrement avec `products[]`
+ * d'au moins deux créneaux pilote le portefeuille ; N = 1 suit la voie
+ * legacy normalisée (INV-P6), sémantique strictement identique (C2).
+ */
+export const isMultiProductConfigurationInput = (input: unknown): boolean =>
+  isRecord(input) && Array.isArray(input.products) && input.products.length >= 2;
+
+/**
+ * Projection runtime d'un créneau (models/multi-product-portfolio.md
+ * §9.2) : configuration produit identique à une configuration legacy
+ * équivalente, par construction (INV-P6) — mêmes admissions, mêmes
+ * décisions (C2).
+ */
+export const projectProductSlotConfiguration = (
+  multi: MultiProductAgentConfiguration,
+  productId: ProductId,
+): Result<AgentConfiguration, AgentConfigurationError> => {
+  const slot = multi.products.find((product) => product.productId === productId);
+  if (slot === undefined) return err({ code: "INVALID_CONFIGURATION" });
+  return parseSingleAgentConfiguration(projectedLegacyInput(multi, slot));
+};
+
 export const admitAgentConfiguration = (
   configuration: AgentConfiguration,
 ): LiveTradingAdmission =>

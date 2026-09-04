@@ -9,6 +9,11 @@ import {
 
 import type { AgentConfiguration } from "./configuration.js";
 import type { PersistedTradingMachine } from "./machine-session.js";
+import {
+  portfolioProductIds,
+  type PortfolioProductRuntime,
+  type PortfolioSessionState,
+} from "./portfolio-runtime.js";
 
 export interface AgentScheduleState {
   readonly id: string;
@@ -39,6 +44,14 @@ export interface TradingAgentState {
   readonly lastTradeAt: number | null;
   readonly previousIndicators: IndicatorSnapshot | null;
   readonly lastCycle: CycleSummary | null;
+  /**
+   * Session portefeuille multi-produits (models/multi-product-portfolio.md
+   * §9.1, §9.7) : configuration figée du §7, orchestrateur du §5 et état
+   * par produit. Null en mono-produit ; une restauration invalide est
+   * refusée fermement via `portfolioRestoreError` (C3).
+   */
+  readonly portfolioSession: PortfolioSessionState | null;
+  readonly portfolioRestoreError: "INVALID_PORTFOLIO_SNAPSHOT" | null;
   readonly updatedAt: number;
 }
 
@@ -58,8 +71,23 @@ export const INITIAL_AGENT_STATE: TradingAgentState = Object.freeze({
   lastTradeAt: null,
   previousIndicators: null,
   lastCycle: null,
+  portfolioSession: null,
+  portfolioRestoreError: null,
   updatedAt: 0,
 });
+
+export type { PortfolioProductRuntime, PortfolioSessionState };
+
+/**
+ * INV-P3 (quiescence) : le portefeuille reste actif tant qu'au moins un
+ * créneau n'est pas terminal — l'arrêt d'un produit ne désactive jamais
+ * les autres.
+ */
+export const portfolioIsEnabled = (session: PortfolioSessionState): boolean =>
+  portfolioProductIds(session).some((productId) => {
+    const product = session.products[productId];
+    return product !== undefined && machineIsEnabled(product.machine.value);
+  });
 
 export interface LiveStartContinuity {
   readonly portfolio: PaperPortfolio;
