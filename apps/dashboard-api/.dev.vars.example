@@ -1,2 +1,5 @@
 DASHBOARD_ACCESS_TOKEN=replace-with-at-least-32-random-characters
+# Secret partagé : copier la valeur exacte de CONTROL_API_TOKEN depuis
+# apps/agent/.dev.vars — jamais un token généré à part (sinon le proxy
+# répond 401 côté Agent pour chaque appel de contrôle).
 CONTROL_API_TOKEN=replace-with-the-agent-control-token

@@ -99,11 +99,53 @@ describe("fetchMarketSnapshot", () => {
       ok: false,
       error: {
         phase: "market-data",
-        code: "NETWORK_UNAVAILABLE",
+        code: "AUTHENTICATION_FAILURE",
         retryable: false,
       },
     });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("maps a market worker 401 to AUTHENTICATION_FAILURE, not a network error", async () => {
+    const fetch = marketFetch(
+      new Response("{\"error\":{\"code\":\"UNAUTHORIZED\"}}", { status: 401 }),
+      tickerResponse(10),
+    );
+    const result = await fetchMarketSnapshot(
+      { fetch },
+      "x".repeat(32),
+      configuration(),
+      120_000,
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        phase: "market-data",
+        code: "AUTHENTICATION_FAILURE",
+        retryable: false,
+      },
+    });
+  });
+
+  it("keeps 5xx market worker failures retryable as NETWORK_UNAVAILABLE", async () => {
+    const fetch = marketFetch(
+      new Response("{}", { status: 503 }),
+      tickerResponse(10),
+    );
+    const result = await fetchMarketSnapshot(
+      { fetch },
+      "x".repeat(32),
+      configuration(),
+      120_000,
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        phase: "market-data",
+        code: "NETWORK_UNAVAILABLE",
+        retryable: true,
+      },
+    });
   });
 
   it("rejects a gappy series with INVALID_RESPONSE (dao #25)", async () => {

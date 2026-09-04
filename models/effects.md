@@ -9,7 +9,12 @@ Entrée fermée : produit, timeframe, limite. Sortie : chandelles ou ticker vali
 - La réponse Coinbase est bornée (`limit ≤ 350`) avant lecture JSON.
 - Le cache utilise une clé déterministe et un TTL inférieur à la granularité.
 - Toute réponse non conforme devient `INVALID_RESPONSE`.
-- `429` devient `RATE_LIMITED`, les pannes réseau `NETWORK_UNAVAILABLE`.
+- `429` devient `RATE_LIMITED`, les pannes réseau `NETWORK_UNAVAILABLE`
+  (retryable uniquement si le statut est ≥ 500).
+- Un refus d'authentification du worker marché (`401`/`403`) ainsi qu'un
+  secret interne absent ou trop court deviennent `AUTHENTICATION_FAILURE`
+  (non retryable) : un secret partagé incorrect n'est jamais une panne
+  réseau et n'appelle aucun retry.
 
 ### Fenêtre de chandelles d'un cycle
 
