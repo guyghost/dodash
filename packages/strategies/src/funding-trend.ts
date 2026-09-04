@@ -1,4 +1,5 @@
 import { createSignal } from "@dodash/domain";
+import { FUNDING_TREND_ENTER_THRESHOLD } from "@dodash/models";
 
 import {
   strategySignal,
@@ -17,10 +18,12 @@ export interface FundingTrendConfig {
   readonly id?: string;
   /**
    * Amplitude minimale de |fundingAvg| par période (décimal) qui autorise
-   * un signal. Figée a priori : 5e-5 ≈ 4× la base Hyperliquid
-   * (models/funding-rate-strategy.md §5). Aucun balayage.
+   * un signal. Absente ⇒ constante figée FUNDING_TREND_ENTER_THRESHOLD
+   * (percentile p75 de |fundingAvg| in-sample, models/funding-rate-strategy.md
+   * §5 — variant non validé OOS, INV-F9). Les rejeux campagne v1 (#30/#35)
+   * passent leur seuil explicitement : reproductibilité inchangée (C2).
    */
-  readonly enterThreshold: number;
+  readonly enterThreshold?: number;
   readonly baseSize: number;
 }
 
@@ -34,12 +37,13 @@ export const createFundingTrendStrategy = (
   config: FundingTrendConfig,
 ): Strategy => {
   const id = config.id ?? FUNDING_TREND_STRATEGY_ID;
+  const enterThreshold = config.enterThreshold ?? FUNDING_TREND_ENTER_THRESHOLD;
   return Object.freeze({
     id,
     evaluate: (context: StrategyContext) => {
       if (
-        !Number.isFinite(config.enterThreshold) ||
-        config.enterThreshold <= 0 ||
+        !Number.isFinite(enterThreshold) ||
+        enterThreshold <= 0 ||
         !Number.isFinite(config.baseSize) ||
         config.baseSize <= 0
       ) {
@@ -67,15 +71,15 @@ export const createFundingTrendStrategy = (
       const { emaFast, emaSlow } = context.indicators;
       const bullish = emaFast > emaSlow;
       const bearish = emaFast < emaSlow;
-      const longCarry = fundingAvg <= -config.enterThreshold;
-      const shortCrowding = fundingAvg >= config.enterThreshold;
+      const longCarry = fundingAvg <= -enterThreshold;
+      const shortCrowding = fundingAvg >= enterThreshold;
       const side = bullish && longCarry
         ? "BUY"
         : bearish && shortCrowding
           ? "SELL"
           : "HOLD";
       const amplitude =
-        (Math.abs(fundingAvg) - config.enterThreshold) / config.enterThreshold;
+        (Math.abs(fundingAvg) - enterThreshold) / enterThreshold;
       const confidence = Math.min(1, Math.max(0, amplitude));
 
       return strategySignal(

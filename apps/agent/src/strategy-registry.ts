@@ -1,3 +1,4 @@
+import { FUNDING_TREND_ENTER_THRESHOLD } from "@dodash/models";
 import {
   createBreakoutStrategy,
   createEmaCrossStrategy,
@@ -32,12 +33,13 @@ export const createConfiguredStrategyRegistry = (
       case "breakout":
         strategy = createBreakoutStrategy({ id, lookback: 20, baseSize: 0.01 });
         break;
-      // Seuils figés a priori (models/funding-rate-strategy.md §5), non
-      // calibré : CALIBRATED_STRATEGY_IDS inchangé (INV-F6).
+      // Seuil figé §5 (percentile p75 in-sample, dao #38 — variant non
+      // validé OOS, INV-F9), non calibré : CALIBRATED_STRATEGY_IDS
+      // inchangé (INV-F6) ; permission en déni partout (C1).
       case FUNDING_TREND_STRATEGY_ID:
         strategy = createFundingTrendStrategy({
           id,
-          enterThreshold: 5e-5,
+          enterThreshold: FUNDING_TREND_ENTER_THRESHOLD,
           baseSize: 0.01,
         });
         break;
