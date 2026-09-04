@@ -134,6 +134,7 @@ describe("submitPerpOrderIntent", () => {
           marginSummary: { accountValue: "5000", totalRawUsd: "1200" },
         });
       }
+      if (body.type === "userFills") return jsonResponse([]);
       return jsonResponse({
         universe: [{ name: "BTC", szDecimals: 5, maxLeverage: 40 }],
       });
@@ -156,6 +157,7 @@ describe("submitPerpOrderIntent", () => {
         status: "SETTLED",
         outcome: "ACCEPTED",
         clientOrderId: validRequest.clientOrderId,
+        fillPersistenceFailures: 0,
       },
     });
   });
@@ -222,7 +224,12 @@ describe("recoverPerpOrders", () => {
       sql,
       now: () => 0,
     });
-    expect(report).toEqual({ recovered: 0, unresolved: 0, unavailable: true });
+    expect(report).toEqual({
+      recovered: 0,
+      unresolved: 0,
+      fillPersistenceFailures: 0,
+      unavailable: true,
+    });
   });
 
   it("reprend les intentions en vol via la réconciliation", async () => {

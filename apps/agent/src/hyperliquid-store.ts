@@ -1,6 +1,10 @@
-import type {
-  HyperliquidOrderOutcome,
-  PerpOrderIntent,
+import {
+  isWellFormedPerpFillFact,
+  type DashboardPerpFillRow,
+  type DashboardPerpOrderRow,
+  type HyperliquidOrderOutcome,
+  type PerpFillFact,
+  type PerpOrderIntent,
 } from "@dodash/models";
 
 import type { PerpOrderRecord, PerpOrderStore } from "./hyperliquid-orchestrator.js";
@@ -25,14 +29,109 @@ export const PERP_ORDERS_SCHEMA = `
   )
 `;
 
+/**
+ * Table dédiée des fills perp (dao #31) : migration strictement
+ * additive (CREATE TABLE IF NOT EXISTS, pas de DROP, pas d'ALTER sur
+ * les tables existantes) — les lignes préexistantes de
+ * `dodash_perp_orders` ne sont jamais touchées. Source de vérité :
+ * models/hyperliquid-fill-persistence.md §3.
+ */
+export const PERP_FILLS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS dodash_perp_fills (
+    client_order_id TEXT NOT NULL,
+    fill_id TEXT NOT NULL,
+    fill_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (client_order_id, fill_id)
+  )
+`;
+
 export const ensurePerpOrderSchema = (adapter: PerpOrderSqlAdapter): void => {
   adapter.run(PERP_ORDERS_SCHEMA, []);
+  adapter.run(PERP_FILLS_SCHEMA, []);
 };
 
 interface PerpOrderRow {
   readonly client_order_id: string;
   readonly intent_json: string;
 }
+
+export const DASHBOARD_PERP_PNL_MAX_ORDERS = 50;
+export const DASHBOARD_PERP_PNL_DEFAULT_LIMIT = 30;
+
+export interface PerpPnlProjectionRows {
+  readonly orders: readonly DashboardPerpOrderRow[];
+  readonly fills: readonly DashboardPerpFillRow[];
+}
+
+interface PerpOrderStatusRow {
+  readonly client_order_id: string;
+  readonly intent_json: string;
+  readonly outcome: string | null;
+  readonly settled_at: number | null;
+}
+
+interface PerpFillIdRow {
+  readonly client_order_id: string;
+  readonly fill_json: string;
+}
+
+/**
+ * Lecture bornée des lignes de projection PnL perp (dao #31) : les N
+ * ordres perp résolus les plus récents et les fills de ces ordres.
+ * Lecture-seule, LIMIT uniquement ; un limit hors [1, 50] est refusé
+ * (fail-closed). Source de vérité :
+ * models/hyperliquid-fill-persistence.md §4.
+ */
+export const loadPerpPnlProjectionRows = (
+  adapter: PerpOrderSqlAdapter,
+  limit: number,
+): PerpPnlProjectionRows => {
+  if (
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > DASHBOARD_PERP_PNL_MAX_ORDERS
+  ) {
+    throw new Error("INVALID_PERP_PNL_LIMIT");
+  }
+  ensurePerpOrderSchema(adapter);
+  const orders = adapter
+    .all<PerpOrderStatusRow>(
+      `SELECT client_order_id, intent_json, outcome, settled_at
+         FROM dodash_perp_orders
+        WHERE outcome IS NOT NULL
+        ORDER BY settled_at DESC, client_order_id DESC
+        LIMIT ?`,
+      [limit],
+    )
+    .map(
+      (row): DashboardPerpOrderRow => ({
+        clientOrderId: row.client_order_id,
+        intentJson: row.intent_json,
+        outcome: row.outcome,
+        settledAt: row.settled_at,
+      }),
+    );
+  const orderIds = orders.map((row) => row.clientOrderId);
+  const fills =
+    orderIds.length === 0
+      ? []
+      : adapter
+          .all<PerpFillIdRow>(
+            `SELECT client_order_id, fill_json
+               FROM dodash_perp_fills
+              WHERE client_order_id IN (${orderIds.map(() => "?").join(", ")})
+              ORDER BY client_order_id ASC, fill_id ASC`,
+            orderIds,
+          )
+          .map(
+            (row): DashboardPerpFillRow => ({
+              clientOrderId: row.client_order_id,
+              fillJson: row.fill_json,
+            }),
+          );
+  return Object.freeze({ orders: Object.freeze(orders), fills: Object.freeze(fills) });
+};
 
 export const createSqlitePerpOrderStore = (
   adapter: PerpOrderSqlAdapter,
@@ -92,5 +191,30 @@ export const createSqlitePerpOrderStore = (
         }
       }
       return Object.freeze(records);
+    },
+    async persistFills(
+      clientOrderId: string,
+      fills: readonly PerpFillFact[],
+      persistedAt: number,
+    ) {
+      ensurePerpOrderSchema(adapter);
+      // Frontière fail-closed : chaque fill est validé AVANT toute
+      // écriture — un lot contenant un fill hors domaine est rejeté en
+      // échec typé, sans écriture partielle (models/
+      // hyperliquid-fill-persistence.md §3). L'écriture est idempotente
+      // : re-réconcilier ne duplique jamais un fill.
+      for (const fill of fills) {
+        if (!isWellFormedPerpFillFact(fill)) {
+          throw new Error("INVALID_PERP_FILL_FACT");
+        }
+      }
+      for (const fill of fills) {
+        adapter.run(
+          `INSERT OR IGNORE INTO dodash_perp_fills
+             (client_order_id, fill_id, fill_json, created_at)
+           VALUES (?, ?, ?, ?)`,
+          [clientOrderId, fill.fillId, JSON.stringify(fill), persistedAt],
+        );
+      }
     },
   });

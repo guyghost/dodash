@@ -217,7 +217,12 @@ export const recoverPerpOrders = async ({
 }): Promise<PerpRecoveryOutcome> => {
   const settings = resolveHyperliquidSettings(settingsInput);
   if (!settings.ok) {
-    return { recovered: 0, unresolved: 0, unavailable: true };
+    return {
+      recovered: 0,
+      unresolved: 0,
+      fillPersistenceFailures: 0,
+      unavailable: true,
+    };
   }
   const store: PerpOrderStore = createSqlitePerpOrderStore(sql);
   const runner = createHyperliquidPerpRunner({

@@ -1,5 +1,6 @@
 import {
   HYPERLIQUID_PERP_POLICY,
+  type PerpFillFact,
   type PerpOrderIntent,
   type PerpRiskGate,
 } from "@dodash/models";
@@ -420,6 +421,68 @@ export const fetchHyperliquidFundingHistory = async (
     samples.push({ time, fundingRate: rate });
   }
   return Object.freeze(samples);
+};
+
+/**
+ * Lecture des fills d'un ordre perp côté venue (dao #31) : POST /info
+ * { type: "userFills", user }, endpoint public sans signature, filtré
+ * par le cloid dérivé du clientOrderId. Chaque fill portant notre cloid
+ * est typé fermé (PerpFillFact) ; un champ hors domaine rejette la
+ * lecture entière (null) — jamais de zéro substitué, jamais un fill
+ * inventé (pattern INV-F2). Les entrées sans notre cloid (ordres placés
+ * hors du bot) sont ignorées. Source de vérité :
+ * models/hyperliquid-fill-persistence.md §2.2.
+ */
+export const fetchHyperliquidOrderFills = async (
+  settings: HyperliquidExecutionSettings,
+  clientOrderId: string,
+  dependencies: HyperliquidRequestDependencies = {},
+): Promise<readonly PerpFillFact[] | null> => {
+  const cloid = hyperliquidCloidFromClientOrderId(clientOrderId);
+  const parsed = (await boundedRequest(dependencies, settings, HYPERLIQUID_INFO_PATH, {
+    type: "userFills",
+    user: settings.walletAddress,
+  })) as unknown;
+  if (!Array.isArray(parsed)) return null;
+  const fills: PerpFillFact[] = [];
+  for (const entry of parsed) {
+    const entryCloid = (entry as { cloid?: unknown } | null)?.cloid;
+    if (typeof entryCloid !== "string" || entryCloid !== cloid) continue;
+    const fillId = finiteFrom((entry as { tid?: unknown } | null)?.tid);
+    const price = finiteFrom((entry as { px?: unknown } | null)?.px);
+    const quantity = finiteFrom((entry as { sz?: unknown } | null)?.sz);
+    const fee = finiteFrom((entry as { fee?: unknown } | null)?.fee);
+    const closedPnl = finiteFrom((entry as { closedPnl?: unknown } | null)?.closedPnl);
+    const fillTime = finiteFrom((entry as { time?: unknown } | null)?.time);
+    const side = (entry as { side?: unknown } | null)?.side;
+    if (
+      fillId === null ||
+      !Number.isSafeInteger(fillId) ||
+      fillId <= 0 ||
+      price === null ||
+      price <= 0 ||
+      quantity === null ||
+      quantity <= 0 ||
+      fee === null ||
+      fee < 0 ||
+      closedPnl === null ||
+      fillTime === null ||
+      !Number.isSafeInteger(fillTime) ||
+      (side !== "B" && side !== "A")
+    ) {
+      return null;
+    }
+    fills.push({
+      fillId: String(fillId),
+      side: side === "B" ? "BUY" : "SELL",
+      price,
+      quantity,
+      fee,
+      closedPnl,
+      fillTime,
+    });
+  }
+  return Object.freeze(fills);
 };
 
 /**

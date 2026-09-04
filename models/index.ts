@@ -388,6 +388,21 @@ export type {
   DashboardPnlOrderRow,
   DashboardPnlProtection,
 } from "./dashboard-pnl-history.js";
+export {
+  projectDashboardPerpPnlHistory,
+  DASHBOARD_PERP_PNL_DEFAULT_LIMIT,
+  DASHBOARD_PERP_PNL_MAX_ORDERS,
+  isWellFormedPerpFillFact,
+} from "./hyperliquid-fill-persistence.js";
+export type {
+  DashboardPerpFill,
+  DashboardPerpFillRow,
+  DashboardPerpOrderRow,
+  DashboardPerpPnlErrorCode,
+  DashboardPerpPnlHistory,
+  DashboardPerpPnlResult,
+  PerpFillFact,
+} from "./hyperliquid-fill-persistence.js";
 export { multiProductPortfolioMachine } from "./multi-product-portfolio.machine.js";
 export type {
   MultiProductPortfolioContext,

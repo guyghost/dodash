@@ -32,6 +32,7 @@ import {
   admitHyperliquidPerpAgent,
 } from "./configuration.js";
 import {
+  PERP_FILLS_SCHEMA,
   PERP_ORDERS_SCHEMA,
   createSqlitePerpOrderStore,
   type PerpOrderSqlAdapter,
@@ -267,6 +268,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       )
     `;
     this.ctx.storage.sql.exec(PERP_ORDERS_SCHEMA);
+    // dao #31 : fills perp — migration additive (CREATE TABLE IF NOT
+    // EXISTS), idempotente, aucune ligne existante modifiée (C1).
+    this.ctx.storage.sql.exec(PERP_FILLS_SCHEMA);
   }
 
   private ensureProductIdColumn(table: string): void {
