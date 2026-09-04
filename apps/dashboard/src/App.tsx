@@ -355,13 +355,14 @@ export function App({
       actor.send({ type: "REQUEST_FAILED", error: toDashboardError(error) });
     };
     if (state === "loading" || state === "refreshing") {
+      // dao #34 : la hiérarchie portefeuille est portée par le contrat
+      // `/state` — plus aucune lecture `/portfolio` séparée.
       void Promise.all([
         gateway.loadState(target),
         gateway.loadCycles(target),
         gateway.loadPnlHistory(target),
-        gateway.loadPortfolioSummary(target),
       ])
-        .then(([nextAgent, nextCycles, nextPnl, nextPortfolio]) => {
+        .then(([nextAgent, nextCycles, nextPnl]) => {
           actor.send({
             type: "STATE_LOADED",
             remotePhase: nextAgent.phase,
@@ -371,7 +372,7 @@ export function App({
             setAgent(nextAgent);
             setCycles(nextCycles);
             setPnlHistory(nextPnl);
-            setPortfolioSummary(nextPortfolio);
+            setPortfolioSummary(nextAgent.portfolioSummary);
           }
         })
         .catch(fail);
@@ -386,10 +387,9 @@ export function App({
           command === "start" ? pendingStartRef.current : undefined,
         )
         .then(async (nextAgent) => {
-          const [nextCycles, nextPnl, nextPortfolio] = await Promise.all([
+          const [nextCycles, nextPnl] = await Promise.all([
             gateway.loadCycles(target),
             gateway.loadPnlHistory(target),
-            gateway.loadPortfolioSummary(target),
           ]);
           actor.send({
             type: "COMMAND_SUCCEEDED",
@@ -400,7 +400,7 @@ export function App({
             setAgent(nextAgent);
             setCycles(nextCycles);
             setPnlHistory(nextPnl);
-            setPortfolioSummary(nextPortfolio);
+            setPortfolioSummary(nextAgent.portfolioSummary);
           }
           pendingStartRef.current = undefined;
         })

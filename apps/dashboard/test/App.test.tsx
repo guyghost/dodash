@@ -24,6 +24,7 @@ const stoppedAgent = (): AgentStateView => ({
   nextWakeAt: null,
   lastTradeAt: null,
   lastCycle: null,
+  portfolioSummary: singleProductSummary(),
   indicators: null,
 });
 
@@ -90,7 +91,6 @@ const createGateway = (
   loadState: async () => stoppedAgent(),
   loadCycles: async (): Promise<readonly CycleView[]> => [],
   loadPnlHistory: async () => emptyPnlHistory(),
-  loadPortfolioSummary: async () => singleProductSummary(),
   command: async () => stoppedAgent(),
   ...overrides,
 });
@@ -295,16 +295,11 @@ describe("dashboard journey", () => {
       ...stoppedAgent(),
       enabled: true,
       phase: "waiting" as const,
+      // dao #34 : la hiérarchie portefeuille est portée par l'état `/state`.
+      portfolioSummary: portfolioSummary(),
     };
     render(
-      <App
-        gateways={gateways(
-          createGateway({
-            loadState: async () => active,
-            loadPortfolioSummary: async () => portfolioSummary(),
-          }),
-        )}
-      />,
+      <App gateways={gateways(createGateway({ loadState: async () => active }))} />,
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
@@ -333,14 +328,7 @@ describe("dashboard journey", () => {
       phase: "waiting" as const,
     };
     render(
-      <App
-        gateways={gateways(
-          createGateway({
-            loadState: async () => active,
-            loadPortfolioSummary: async () => singleProductSummary(),
-          }),
-        )}
-      />,
+      <App gateways={gateways(createGateway({ loadState: async () => active }))} />,
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));

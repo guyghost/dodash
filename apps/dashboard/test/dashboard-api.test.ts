@@ -37,6 +37,7 @@ const state = {
     signalCount: 1,
     completedAt: 1_700_000_000_000,
   },
+  portfolioSummary: { ok: true, value: { kind: "single-product" } },
   previousIndicators: {
     snapshotId: "indicators-1",
     candleClosedAt: 1_700_000_000_000,
@@ -89,53 +90,53 @@ const pnlHistory = {
   },
 };
 
-describe("portfolio summary boundary", () => {
-  const portfolioValue = {
-    kind: "portfolio",
-    phase: "running",
-    killSwitchActive: false,
-    products: [
-      {
-        productId: "BTC-USD",
-        phase: "waiting",
-        status: "running",
-        cash: 5_000,
-        positionQuantity: 0.1,
-        averagePrice: 60_000,
-        marketPrice: 62_000,
-        grossExposure: 6_200,
-        maxGrossExposure: 20_000,
-        dailyPnl: 42.5,
-        lastCycle: {
-          cycleId: "cycle-1",
-          triggeredAt: 1_700_000_000_000,
-          completedAt: 1_700_000_004_000,
-          outcome: "ORDER_CONFIRMED",
-          marketPrice: 62_000,
-        },
-      },
-      {
-        productId: "SOL-USD",
-        phase: "halted",
-        status: "halted",
-        cash: 1_000,
-        positionQuantity: 0,
-        averagePrice: 0,
-        marketPrice: null,
-        grossExposure: 0,
-        maxGrossExposure: 5_000,
-        dailyPnl: -10,
-        lastCycle: null,
-      },
-    ],
-    consolidated: {
+const portfolioValue = {
+  kind: "portfolio",
+  phase: "running",
+  killSwitchActive: false,
+  products: [
+    {
+      productId: "BTC-USD",
+      phase: "waiting",
+      status: "running",
+      cash: 5_000,
+      positionQuantity: 0.1,
+      averagePrice: 60_000,
+      marketPrice: 62_000,
       grossExposure: 6_200,
-      maxGrossExposure: 30_000,
-      dailyPnl: 32.5,
-      maxDailyLoss: 1_500,
+      maxGrossExposure: 20_000,
+      dailyPnl: 42.5,
+      lastCycle: {
+        cycleId: "cycle-1",
+        triggeredAt: 1_700_000_000_000,
+        completedAt: 1_700_000_004_000,
+        outcome: "ORDER_CONFIRMED",
+        marketPrice: 62_000,
+      },
     },
-  };
+    {
+      productId: "SOL-USD",
+      phase: "halted",
+      status: "halted",
+      cash: 1_000,
+      positionQuantity: 0,
+      averagePrice: 0,
+      marketPrice: null,
+      grossExposure: 0,
+      maxGrossExposure: 5_000,
+      dailyPnl: -10,
+      lastCycle: null,
+    },
+  ],
+  consolidated: {
+    grossExposure: 6_200,
+    maxGrossExposure: 30_000,
+    dailyPnl: 32.5,
+    maxDailyLoss: 1_500,
+  },
+};
 
+describe("portfolio summary boundary", () => {
   it("projects a validated portfolio summary with a quiescent product", () => {
     const view: PortfolioSummaryView = parsePortfolioSummary(portfolioValue);
     expect(view.kind).toBe("portfolio");
@@ -209,28 +210,50 @@ describe("portfolio summary boundary", () => {
     });
     expect(padded.kind === "portfolio" && padded.products).toHaveLength(8);
   });
+});
 
-  it("unwraps the agent envelope and reads the snapshot on the proxy route", async () => {
+describe("state portfolio contract (dao #34)", () => {
+  it("carries the portfolio hierarchy on the /state contract", async () => {
     const request = vi.fn<typeof fetch>(async () =>
-      Response.json({ ok: true, value: portfolioValue }),
+      Response.json({
+        ...state,
+        portfolioSummary: { ok: true, value: portfolioValue },
+      }),
     );
     const gateway = createHttpGateway("https://dashboard-api.example", "secret", request);
-    const view = await gateway.loadPortfolioSummary("btc agent");
+    const view = await gateway.loadState("btc agent");
 
+    // Une seule lecture : la hiérarchie voyage dans `/state`, aucun appel
+    // `/portfolio` séparé.
     const [url] = request.mock.calls[0] ?? [];
-    expect(url).toBe("https://dashboard-api.example/api/agents/btc%20agent/portfolio");
-    expect(String(url)).not.toContain("?");
-    expect(view.kind).toBe("portfolio");
+    expect(url).toBe("https://dashboard-api.example/api/agents/btc%20agent/state");
+    expect(String(url)).not.toContain("portfolio");
+    // Cohérence : chiffres identiques à la projection #32 revalidée.
+    expect(view.portfolioSummary).toEqual(parsePortfolioSummary(portfolioValue));
+    expect(view.portfolioSummary.kind).toBe("portfolio");
   });
 
-  it("rejects a failed or shapeless envelope", async () => {
-    const request = vi.fn<typeof fetch>(async () =>
-      Response.json({ ok: false, error: { code: "INVALID_PORTFOLIO_SESSION" } }),
-    );
-    const gateway = createHttpGateway("https://dashboard-api.example", "secret", request);
-    await expect(gateway.loadPortfolioSummary("btc agent")).rejects.toThrow(
-      DashboardRequestError,
-    );
+  it("rejects a failed, missing or shapeless embedded envelope", async () => {
+    expect(() =>
+      parseAgentState({
+        ...state,
+        portfolioSummary: { ok: false, error: { code: "INVALID_PORTFOLIO_SESSION" } },
+      }),
+    ).toThrow(DashboardRequestError);
+    const { portfolioSummary: _omitted, ...withoutField } = state;
+    expect(() => parseAgentState(withoutField)).toThrow(DashboardRequestError);
+    expect(() =>
+      parseAgentState({
+        ...state,
+        portfolioSummary: { ok: true, value: { kind: "whatever" } },
+      }),
+    ).toThrow(DashboardRequestError);
+  });
+
+  it("keeps a mono-product state valid with the single-product answer", () => {
+    expect(parseAgentState(state).portfolioSummary).toEqual({
+      kind: "single-product",
+    });
   });
 });
 

@@ -132,6 +132,34 @@ describe("Agent Worker live preflight route", () => {
     });
   });
 
+  it("routes an authenticated state read carrying the portfolio hierarchy", async () => {
+    const portfolioSummary = {
+      ok: true as const,
+      value: { kind: "single-product" as const },
+    };
+    const getAgentState = vi.fn(() => ({
+      version: 1 as const,
+      enabled: false,
+      updatedAt: 0,
+      portfolioSummary,
+    }));
+    const env = {
+      CONTROL_API_TOKEN: token,
+      TRADING_AGENT: { getByName: () => ({ getAgentState }) },
+    } as unknown as TradingEnv;
+    const response = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/state", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(getAgentState).toHaveBeenCalledOnce();
+    await expect(response.json()).resolves.toMatchObject({
+      portfolioSummary: { ok: true, value: { kind: "single-product" } },
+    });
+  });
+
   it("rejects an unauthenticated portfolio read before touching the Agent", async () => {
     const getPortfolioSummary = vi.fn();
     const env = {
