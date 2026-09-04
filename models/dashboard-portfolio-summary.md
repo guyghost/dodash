@@ -197,3 +197,19 @@ phase-produit ↔ statut n'est exigé.
   de performance) ; agrégats inter-agents (un DO = un portefeuille).
 - Verdicts de conformité, alertes ou notifications dérivées des plafonds.
 - Admissions live/perp par créneau (C4 de #24), toute écriture ou commande.
+
+## 8. Convergence sur le contrat `/state` (dao #34)
+
+Amendement postérieur : la hiérarchie portefeuille est désormais exposée par
+le contrat `/state` lui-même — champ additionnel `portfolioSummary`, résultat
+de la présente projection (§3), calculé à la lecture sur le même instantané.
+Contrat, invariants et revue : `models/state-portfolio-contract.md` (dao #34).
+
+- La vue (§5) consomme ce champ des réponses `/state` (et des réponses de
+  commande qui transportent l'état) : plus aucune lecture `/portfolio` par le
+  dashboard.
+- La route `/portfolio` (§4) est conservée à contrat inchangé : surface de
+  contrôle de cohérence avec `/state` (chiffres identiques exigés, test au
+  commit) et lecture légère.
+- Aucun état, événement ou transition de `dashboardSessionMachine` n'est
+  ajouté : la hiérarchie emprunte le chemin `STATE_LOADED` existant.

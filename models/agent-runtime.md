@@ -44,6 +44,11 @@ contexte de la machine.
 - `EFFECT_CANCEL_FAILED` marque une défaillance terminale puis passe par
   `persisting`. Après `PERSIST_SUCCEEDED`, cette défaillance est prioritaire sur
   stop, kill et scheduling et atteint uniquement `failed`.
+- La réponse `/state` (et les réponses de commande qui transportent l'état)
+  expose en supplément `portfolioSummary`, projection pure de la hiérarchie
+  portefeuille calculée à la lecture et jamais persistée — contrat et
+  invariants dans `models/state-portfolio-contract.md` (dao #34). La forme
+  mono-produit de la réponse est figée : champs additionnels uniquement.
 
 ## Contrôle et permissions
 
