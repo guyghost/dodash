@@ -52,3 +52,28 @@ portion de branchement non testée n'est livrée. La rétrocompatibilité
 mono-produit est garantie par construction (normalisation par le pipeline
 legacy existant) et vérifiable par égalité stricte. Rien à redire : modèle
 approuvé pour implémentation.
+
+## Revue complémentaire — amendement §11 (dao #43, 2026-09-04)
+
+L'amendement documente un défaut de branchement observé en conditions réelles
+(déploiement paper #42) : la couture d'admission consolidée est câblée sans
+condition dans les effets mono-produit alors que la machine portefeuille
+n'existe pas sur cette voie. La cause avancée est vérifiée dans le code
+(`createEffects` câble `proposePortfolioRisk` ; `INITIAL_AGENT_STATE` laisse
+`portfolioSession` à `null` ; le refus `UNKNOWN_PRODUCT` est fail-closed) et
+conforme à l'esprit du modèle : la machine décide, et faute de machine, le
+refus est la seule issue sûre (INV-P5, C3).
+
+La décision retenue — configurer les instances paper de production en mode
+portefeuille N ≥ 2 (§9) et réserver la voie legacy mono-produit — est un
+amendement de configuration d'instance, pas une modification du cœur de
+risque : `checkRisk`, l'allocateur, le courtier paper et la machine du §5
+sont inchangés ; l'instance de référence réutilise les admissions existantes
+(§9.6) et reste paper-only (INV-P7). Le correctif du câblage conditionnel
+(rendre la couture réellement optionnelle en mono-produit, conformément au
+commentaire de l'interpréteur) est correctement renvoyé à un passage dédié
+Model → Review → Implement → Verify avec ses tests d'égalité (C2).
+
+Amendement approuvé en revue. Aucun seuil ni invariant du modèle n'est
+affaibli ; le plafond consolidé (INV-P1) et le coupe-circuit quotidien
+(INV-P2) s'appliquent tels quels à l'instance de référence.
