@@ -1,5 +1,21 @@
 export { calculateMetrics } from "./metrics.js";
 export type { BacktestMetrics, EquityPoint } from "./metrics.js";
+export {
+  BENCHMARK_REGIME_THRESHOLD,
+  benchmarkRegime,
+  evaluateV2,
+} from "./evaluation-v2.js";
+export type {
+  BenchmarkRegime,
+  EvaluationV2BenchmarkInput,
+  EvaluationV2ContextualMetrics,
+  EvaluationV2Entry,
+  EvaluationV2Error,
+  EvaluationV2ErrorCode,
+  EvaluationV2MetricsInput,
+  EvaluationV2PrimaryMetrics,
+  EvaluationV2Result,
+} from "./evaluation-v2.js";
 export { withConfidenceCalibration } from "./confidence-calibrated-strategy.js";
 export { withTargetSignalNotional } from "./target-notional-strategy.js";
 export { loadCoinbaseHistoricalDataset } from "./coinbase-history.js";
