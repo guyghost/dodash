@@ -221,6 +221,10 @@ export const recoverPerpOrders = async ({
       recovered: 0,
       unresolved: 0,
       fillPersistenceFailures: 0,
+      fillBackfillFilled: 0,
+      fillBackfillFailures: 0,
+      fillBackfillUnresolved: 0,
+      fillBackfillTruncated: false,
       unavailable: true,
     };
   }

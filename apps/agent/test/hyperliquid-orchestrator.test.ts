@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createHyperliquidPerpRunner,
   createInMemoryPerpOrderStore,
+  PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE,
   type HyperliquidPerpRunner,
   type PerpOrderStore,
 } from "../src/hyperliquid-orchestrator.js";
@@ -95,7 +96,9 @@ const createHarness = (
     _init?: unknown,
   ): Promise<Response> => {
     const next = (queue.length > 1 ? queue.shift() : queue[0]) as Response;
-    return next;
+    // Corps frais à chaque appel : une Response ne se consomme qu'une
+    // fois, et le rattrapage (dao #33) relit la même réponse venue.
+    return next.clone();
   });
   const dependencies: HyperliquidRequestDependencies = {
     fetch: fetchMock as unknown as typeof fetch,
@@ -232,6 +235,12 @@ describe("createHyperliquidPerpRunner", () => {
       recovered: 1,
       unresolved: 0,
       fillPersistenceFailures: 0,
+      // L'ordre réconcilié n'a aucun fill (lecture []): il devient un
+      // créneau du rattrapage borné, re-relu sans ligne inventée.
+      fillBackfillFilled: 0,
+      fillBackfillFailures: 0,
+      fillBackfillUnresolved: 1,
+      fillBackfillTruncated: false,
     });
     expect(await store.loadUnresolvedOrderIntents()).toEqual([]);
 
@@ -255,6 +264,10 @@ describe("createHyperliquidPerpRunner", () => {
       recovered: 0,
       unresolved: 1,
       fillPersistenceFailures: 0,
+      fillBackfillFilled: 0,
+      fillBackfillFailures: 0,
+      fillBackfillUnresolved: 0,
+      fillBackfillTruncated: false,
     });
     expect(await store.loadUnresolvedOrderIntents()).toHaveLength(1);
   });
@@ -480,8 +493,213 @@ describe("persistance des fills réconciliés (dao #31)", () => {
       recovered: 1,
       unresolved: 0,
       fillPersistenceFailures: 0,
+      fillBackfillFilled: 0,
+      fillBackfillFailures: 0,
+      fillBackfillUnresolved: 0,
+      fillBackfillTruncated: false,
     });
     expect(persistedFills[0]?.clientOrderId).toBe("perp-00000007");
     expect(persistedFills[0]?.fills[0]?.closedPnl).toBe(12.5);
+  });
+});
+
+describe("rattrapage borné des fills manqués (dao #33)", () => {
+  const venueFill = (clientOrderId: string, overrides: Record<string, unknown> = {}) => ({
+    coin: "BTC",
+    px: "100050.0",
+    sz: "0.003",
+    side: "B",
+    time: 1_756_416_000_500,
+    startPosition: 0,
+    dir: "Open Long",
+    closedPnl: "0.0",
+    hash: "0xabc",
+    oid: 308427057,
+    crossed: true,
+    fee: "0.15",
+    tid: 441994346001,
+    cloid: hyperliquidCloidFromClientOrderId(clientOrderId),
+    ...overrides,
+  });
+
+  const seedAcceptedOrder = async (
+    store: PerpOrderStore,
+    clientOrderId: string,
+    settledAt: number,
+  ): Promise<void> => {
+    await store.persistOrderIntent({
+      clientOrderId,
+      intent: INTENT,
+      createdAt: settledAt - 1_000,
+    });
+    await store.persistOutcome(clientOrderId, "ACCEPTED", settledAt);
+  };
+
+  it("comble un créneau détecté avec les fills de la venue, sans le re-relu ensuite", async () => {
+    const { runner, store, persistedFills, fetchMock } = createHarness([
+      jsonResponse([venueFill("perp-00000021", { sz: "0.005", closedPnl: "3.5" })]),
+    ]);
+    await seedAcceptedOrder(store, "perp-00000021", 1_756_416_000_000);
+
+    const report = await runner.recoverPending();
+    expect(report).toEqual({
+      recovered: 0,
+      unresolved: 0,
+      fillPersistenceFailures: 0,
+      fillBackfillFilled: 1,
+      fillBackfillFailures: 0,
+      fillBackfillUnresolved: 0,
+      fillBackfillTruncated: false,
+    });
+    expect(persistedFills).toEqual([
+      {
+        clientOrderId: "perp-00000021",
+        fills: [
+          {
+            fillId: "441994346001",
+            side: "BUY",
+            price: 100_050,
+            quantity: 0.005,
+            fee: 0.15,
+            closedPnl: 3.5,
+            fillTime: 1_756_416_000_500,
+          },
+        ],
+      },
+    ]);
+
+    // Le créneau comblé sort de la détection : aucun nouvel appel venue.
+    const callsAfterFirstCycle = fetchMock.mock.calls.length;
+    const second = await runner.recoverPending();
+    expect(second.fillBackfillFilled).toBe(0);
+    expect(second.fillBackfillUnresolved).toBe(0);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterFirstCycle);
+  });
+
+  it("n'invente aucune ligne quand la venue ne connaît pas le fill", async () => {
+    const { runner, store, persistedFills } = createHarness([jsonResponse([])]);
+    await seedAcceptedOrder(store, "perp-00000021", 1_756_416_000_000);
+
+    const report = await runner.recoverPending();
+    expect(report.fillBackfillFilled).toBe(0);
+    expect(report.fillBackfillUnresolved).toBe(1);
+    expect(report.fillBackfillFailures).toBe(0);
+    expect(report.fillBackfillTruncated).toBe(false);
+    expect(persistedFills).toEqual([]);
+  });
+
+  it("respecte le plafond par cycle et reporte le reste au cycle suivant", async () => {
+    const cap = PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE;
+    const { runner, store, fetchMock } = createHarness([jsonResponse([])]);
+    for (let index = 1; index <= cap + 2; index += 1) {
+      await seedAcceptedOrder(
+        store,
+        `perp-${String(index).padStart(8, "0")}`,
+        1_756_416_000_000 + index,
+      );
+    }
+
+    const first = await runner.recoverPending();
+    expect(first.fillBackfillTruncated).toBe(true);
+    expect(first.fillBackfillUnresolved).toBe(cap);
+    expect(first.fillBackfillFailures).toBe(0);
+    expect(first.fillBackfillFilled).toBe(0);
+    const callsAfterFirstCycle = fetchMock.mock.calls.length;
+    expect(callsAfterFirstCycle).toBe(cap);
+
+    // Rattrapage partiel : les créneaux vides restent en tête de
+    // détection (ils ne sortent que comblés) — le tail de 2 créneaux
+    // plus anciens est reporté, jamais servi tant que la tête n'est pas
+    // comblée : exactement cap nouvelles lectures venue, pas une de plus.
+    const second = await runner.recoverPending();
+    expect(second.fillBackfillTruncated).toBe(true);
+    expect(second.fillBackfillUnresolved).toBe(cap);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterFirstCycle + cap);
+  });
+
+  it("ne réécrit jamais un ordre ayant déjà un fill — seul le créneau est relu", async () => {
+    const existingFill: PerpFillFact = Object.freeze({
+      fillId: "441994346000",
+      side: "BUY",
+      price: 100_000,
+      quantity: 0.005,
+      fee: 0.15,
+      closedPnl: 0,
+      fillTime: 1_756_416_000_400,
+    });
+    const { runner, store, persistedFills, fetchMock } = createHarness([
+      jsonResponse([venueFill("perp-00000022")]),
+    ]);
+    await seedAcceptedOrder(store, "perp-00000021", 1_756_416_000_000);
+    await store.persistFills("perp-00000021", [existingFill], 1_756_416_000_100);
+    await seedAcceptedOrder(store, "perp-00000022", 1_756_416_001_000);
+
+    const report = await runner.recoverPending();
+    expect(report.fillBackfillFilled).toBe(1);
+    expect(report.fillBackfillUnresolved).toBe(0);
+    const fillCalls = bodiesOf(fetchMock).filter(
+      (body) => body.type === "userFills",
+    );
+    expect(fillCalls).toHaveLength(1);
+    expect(fillCalls[0]?.user).toBe(settings.walletAddress);
+    // L'ordre déjà comblé : exactement l'écriture de setup, jamais une
+    // réécriture par le rattrapage.
+    expect(
+      persistedFills.filter((entry) => entry.clientOrderId === "perp-00000021"),
+    ).toHaveLength(1);
+    expect(
+      persistedFills.filter((entry) => entry.clientOrderId === "perp-00000022"),
+    ).toHaveLength(1);
+  });
+
+  it("compte un échec de lecture venue sans jamais échouer la reprise (C3)", async () => {
+    const { runner, store } = createHarness([
+      new Response("gateway timeout", { status: 504 }),
+    ]);
+    await seedAcceptedOrder(store, "perp-00000021", 1_756_416_000_000);
+
+    const report = await runner.recoverPending();
+    expect(report).toEqual({
+      recovered: 0,
+      unresolved: 0,
+      fillPersistenceFailures: 1,
+      fillBackfillFilled: 0,
+      fillBackfillFailures: 1,
+      fillBackfillUnresolved: 1,
+      fillBackfillTruncated: false,
+    });
+  });
+
+  it("annule le rattrapage sans toucher aux ordres en vol si la détection échoue", async () => {
+    const base = createInMemoryPerpOrderStore();
+    const brokenDetection: PerpOrderStore = {
+      ...base,
+      loadAcceptedOrderIdsMissingFills: async () => {
+        throw new Error("sqlite locked");
+      },
+    };
+    const { runner, store } = createHarness(
+      [
+        jsonResponse({ status: "ok", data: { status: { status: "filled" } } }),
+        jsonResponse([venueFill("perp-00000007")]),
+      ],
+      brokenDetection,
+    );
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000007",
+      intent: INTENT,
+      createdAt: 1_756_416_000_000,
+    });
+
+    const report = await runner.recoverPending();
+    expect(report).toEqual({
+      recovered: 1,
+      unresolved: 0,
+      fillPersistenceFailures: 0,
+      fillBackfillFilled: 0,
+      fillBackfillFailures: 1,
+      fillBackfillUnresolved: 0,
+      fillBackfillTruncated: false,
+    });
   });
 });

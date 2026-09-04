@@ -192,6 +192,32 @@ export const createSqlitePerpOrderStore = (
       }
       return Object.freeze(records);
     },
+    async loadAcceptedOrderIdsMissingFills(limit: number) {
+      if (!Number.isSafeInteger(limit) || limit < 1) {
+        throw new Error("INVALID_PERP_FILL_BACKFILL_LIMIT");
+      }
+      ensurePerpOrderSchema(adapter);
+      // Détection lecture-seule des créneaux (dao #33, §2.5) : ordres
+      // résolus ACCEPTED sans aucune ligne de fill, le plus récemment
+      // réglé d'abord (départage déterministe par identifiant). Aucune
+      // écriture, aucune table ni colonne nouvelle.
+      return Object.freeze(
+        adapter
+          .all<{ readonly client_order_id: string }>(
+            `SELECT o.client_order_id
+               FROM dodash_perp_orders AS o
+              WHERE o.outcome = 'ACCEPTED'
+                AND NOT EXISTS (
+                  SELECT 1 FROM dodash_perp_fills AS f
+                   WHERE f.client_order_id = o.client_order_id
+                )
+              ORDER BY o.settled_at DESC, o.client_order_id DESC
+              LIMIT ?`,
+            [limit],
+          )
+          .map((row) => row.client_order_id),
+      );
+    },
     async persistFills(
       clientOrderId: string,
       fills: readonly PerpFillFact[],
