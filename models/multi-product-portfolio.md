@@ -283,3 +283,30 @@ Non livré ce cycle (futur passage Model → Review → Implement → Verify) :
   multi-produits ;
 - l'allocation inter-produits avancée (poids par créneau) — l'allocateur
   existant, déjà multi-produits et déterministe, est conservé tel quel.
+
+## 11. Amendement 2026-09-04 (dao #43) — politique d'instance paper production
+
+Constat opérationnel (déploiement paper #42, instance `btc-usd-paper`) : une
+instance démarrée par `/start` **mono-produit** rejette systématiquement chaque
+décision en `RISK_REJECTED` (errorCode `null`). Cause exacte : la couture
+d'admission consolidée (§9.3, INV-P5) est câblée sans condition dans les effets
+de cycle (`createEffects`), alors que l'état mono-produit ne crée jamais
+`portfolioSession` (voix legacy §9.1/N=1) — chaque `RISK_PROPOSED` reçoit donc
+`UNKNOWN_PRODUCT` (refus fermé). Le cœur de risque n'est pas en cause :
+`checkRisk` local approuve (l'allocateur plafonne déjà le notional à
+`maxDecisionNotional`) ; c'est la couture qui n'a pas de machine portefeuille
+à interroger.
+
+**Décision (config d'instance, cœur de risque inchangé)** : les instances
+paper de production (24/7, préfixe isolé) sont configurées en **mode
+portefeuille N ≥ 2 créneaux** (§9), seul chemin où la couture d'admission est
+branchée sur un orchestrateur `running`. Le chemin mono-produit (voix legacy
+N=1) reste réservé aux essais locaux et tests tant qu'une proposition dédiée
+ne corrige pas le câblage conditionnel de la couture, selon
+Model → Review → Implement → Verify.
+
+Instance de référence (runbook
+`docs/operations/paper-deployment-runbook.md`) : créneaux BTC-USD + ETH-USD,
+`initialCapital` 10 000 par créneau, `maxDecisionNotional` 2 000,
+`portfolioRisk` consolidé { `maxGrossExposure` 20 000, `maxDailyLoss` 1 000 },
+`executionMode` paper (INV-P7).

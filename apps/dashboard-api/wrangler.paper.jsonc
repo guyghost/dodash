@@ -1,0 +1,20 @@
+// Config paper isolée (dao #42) — préfixe dodash-paper-*, service binding vers
+// l'agent paper. Ne jamais déployer en production avec ce fichier.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "dodash-paper-dashboard-api",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "services": [
+    {
+      "binding": "AGENT_SERVICE",
+      "service": "dodash-paper-agent"
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+// Config paper isolée (dao #42) — préfixe dodash-paper-*, service binding vers
+// le worker paper, dataset Analytics Engine dédié. Ne jamais déployer en
+// production avec ce fichier. Aucun secret ici : LIVE_TRADING_ENABLED et
+// HYPERLIQUID_PERP_TRADING_ENABLED sont verrouillés à "false" (C1 paper only).
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "dodash-paper-agent",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "LIVE_TRADING_ENABLED": "false",
+    "HYPERLIQUID_PERP_TRADING_ENABLED": "false"
+  },
+  "analytics_engine_datasets": [
+    {
+      "binding": "TRADING_TELEMETRY",
+      "dataset": "dodash_paper_trading"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TRADING_AGENT",
+        "class_name": "TradingAgent"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["TradingAgent"]
+    }
+  ],
+  "services": [
+    {
+      "binding": "MARKET_DATA",
+      "service": "dodash-paper-mcp-market-data"
+    }
+  ]
+}

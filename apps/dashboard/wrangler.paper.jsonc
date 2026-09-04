@@ -1,0 +1,36 @@
+// Config paper isolée (dao #42) — préfixe dodash-paper-*, service binding vers
+// l'API paper. Ne jamais déployer en production avec ce fichier. Nécessite
+// `pnpm --filter @dodash/dashboard build` (assets ./dist/client).
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "dodash-paper-dashboard",
+  "main": "cloudflare/index.ts",
+  "compatibility_date": "2026-08-18",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*", "/health"]
+  },
+  "services": [
+    {
+      "binding": "DASHBOARD_API",
+      "service": "dodash-paper-dashboard-api"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "519437",
+      "simple": {
+        "limit": 100,
+        "period": 60
+      }
+    }
+  ]
+}
