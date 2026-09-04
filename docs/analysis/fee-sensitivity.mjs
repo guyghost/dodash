@@ -5,7 +5,6 @@
 import { loadCoinbaseHistoricalDataset, runBacktestSuite } from "./packages/backtest/dist/index.js";
 import { DEFAULT_INDICATOR_CONFIG } from "./packages/indicators-prolog/dist/index.js";
 
-const DAY = 86_400_000;
 const productId = "BTC-USD";
 const startAt = Date.parse("2025-09-01T00:00:00Z");
 const endAt = Date.parse("2026-09-01T00:00:00Z");
