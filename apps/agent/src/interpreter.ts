@@ -395,6 +395,26 @@ export const runTradingCycle = async (
             await send({ type: "RISK_FAILED", error: workflowError("risk", "RISK_FAILURE") });
             break;
           }
+          // Couture portefeuille (models/multi-product-portfolio.md §9.3) :
+          // après un checkRisk local approuvé, l'interpréteur du produit
+          // propose l'exposition projetée à l'orchestrateur du §5 et ne
+          // poursuit (RISK_APPROVED) que sur décision `approved` (INV-P5).
+          // Sans couture câblée (mono-produit), comportement strictement
+          // identique (C2). Un refus consolidé ne checkpointe jamais un
+          // risque approuvé (C3) et se consolide en RISK_REJECTED produit.
+          if (
+            result.value.status === "APPROVED" &&
+            input.effects.proposePortfolioRisk !== undefined
+          ) {
+            const admission = await input.effects.proposePortfolioRisk(
+              input.configuration.productId,
+              result.value.projectedPositionNotional,
+            );
+            if (!admission.approved) {
+              await send({ type: "RISK_REJECTED" });
+              break;
+            }
+          }
           const next = Object.freeze({ ...current, risk: result.value });
           if (
             !(await checkpoint(next, (error) => ({

@@ -98,6 +98,16 @@ export type OrderSubmission =
       readonly error: WorkflowError;
     };
 
+/**
+ * Décision d'admission consolidée (models/multi-product-portfolio.md §9.3) :
+ * produite par la garde de `multiProductPortfolioMachine` (INV-P5) — les
+ * effets ne font que transporter la proposition, ils ne décident jamais.
+ */
+export interface PortfolioAdmissionDecision {
+  readonly approved: boolean;
+  readonly reasonCode: string | null;
+}
+
 export interface TradingCycleEffects {
   reconcileAccount(
     portfolio: PaperPortfolio,
@@ -148,6 +158,15 @@ export interface TradingCycleEffects {
     artifacts: CycleArtifacts | null,
     machine: PersistedTradingMachine,
   ): Promise<Result<void, WorkflowError>>;
+  /**
+   * Couture portefeuille optionnelle (models/multi-product-portfolio.md
+   * §9.3) : consultée en phase `checkingRisk` après un `checkRisk` local
+   * approuvé, avec l'exposition brute projetée du produit. Absente en
+   * mono-produit — comportement strictement identique (C2). La décision
+   * consolidée vient de la machine §5 ; `RISK_APPROVED` n'est émis que
+   * sur `approved`.
+   */
+  proposePortfolioRisk?(productId: string, proposedGrossExposure: number): Promise<PortfolioAdmissionDecision>;
 }
 
 export interface RunTradingCycleInput {

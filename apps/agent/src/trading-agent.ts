@@ -1,4 +1,4 @@
-import { err, ok, type OrderIntent, type Result } from "@dodash/domain";
+import { err, ok, type OrderIntent, type ProductId, type Result } from "@dodash/domain";
 import { executePaperOrder } from "@dodash/paper-execution";
 import type { RiskDecision } from "@dodash/risk";
 import {
@@ -17,7 +17,10 @@ import { Agent } from "agents";
 
 import {
   admitAgentConfiguration,
+  isMultiProductConfigurationInput,
   parseAgentConfiguration,
+  parseMultiProductAgentConfiguration,
+  projectProductSlotConfiguration,
   type AgentConfiguration,
 } from "./configuration.js";
 import {
@@ -70,15 +73,29 @@ import {
 } from "./coinbase-execution.js";
 import { createTradingCycleEffects } from "./trading-effects.js";
 import { runTradingCycle } from "./interpreter.js";
+import {
+  createPortfolioMachineSession,
+  initialProductRuntime,
+  portfolioEventForProductPhase,
+  portfolioProductIds,
+  productGrossExposure,
+  proposePortfolioRisk,
+  resolveRestoredPortfolioSession,
+  sendPortfolioEvent,
+  type PersistedPortfolioMachine,
+  type PortfolioSessionState,
+} from "./portfolio-runtime.js";
 import { createTradingMachineSession, type PersistedTradingMachine } from "./machine-session.js";
 import {
   INITIAL_AGENT_STATE,
   machineIsEnabled,
+  portfolioIsEnabled,
   resolveCycleDailyRiskCompletion,
   resolveCycleDailyRiskStart,
   resolveCycleInvocation,
   resolveLiveStartContinuity,
   type CycleSummary,
+  type PortfolioProductRuntime,
   type TradingAgentState,
 } from "./state.js";
 import {
@@ -138,7 +155,9 @@ export type AgentCommandResult =
           | "PERP_PRODUCT_NOT_ALLOWED"
           | "PERP_POLICY_MISMATCH"
           | "PERP_ADMISSION_REQUIRED"
-          | "HYPERLIQUID_EXECUTION_UNAVAILABLE";
+          | "HYPERLIQUID_EXECUTION_UNAVAILABLE"
+          | "MULTI_PRODUCT_LIVE_UNSUPPORTED"
+          | "MULTI_PRODUCT_UNSUPPORTED";
       };
     };
 
@@ -219,6 +238,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         outcome TEXT NOT NULL,
         artifacts_json TEXT NOT NULL,
         error_json TEXT,
+        product_id TEXT,
         updated_at INTEGER NOT NULL
       )
     `;
@@ -230,10 +250,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         status TEXT NOT NULL,
         exchange_order_id TEXT,
         execution_json TEXT,
+        product_id TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `;
+    // §9.7 : tables existantes étendues du productId — migration
+    // idempotente pour les instances créées avant le branchement.
+    this.ensureProductIdColumn("dodash_cycles");
+    this.ensureProductIdColumn("dodash_orders");
     this.sql`
       CREATE TABLE IF NOT EXISTS dodash_sell_workflows (
         client_order_id TEXT PRIMARY KEY,
@@ -244,9 +269,73 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     this.ctx.storage.sql.exec(PERP_ORDERS_SCHEMA);
   }
 
+  private ensureProductIdColumn(table: string): void {
+    const columns = this.ctx.storage.sql
+      .exec(`PRAGMA table_info(${table})`)
+      .toArray() as unknown as readonly { name: string }[];
+    if (!columns.some((column) => column.name === "product_id")) {
+      this.ctx.storage.sql.exec(
+        `ALTER TABLE ${table} ADD COLUMN product_id TEXT`,
+      );
+    }
+  }
+
+  /**
+   * Restauration fail-closed de la session portefeuille (C3, règle
+   * models/agent-runtime.md) : tout champ ajouté est normalisé ; un
+   * instantané invalide est un refus fermé explicite — jamais un
+   * démarrage dégradé silencieux.
+   */
+  private restorePortfolioSession(): void {
+    const persisted =
+      (this.state as { portfolioSession?: unknown }).portfolioSession ?? null;
+    if (persisted === null) {
+      // Instantané legacy : normalisation unique des champs ajoutés
+      // (règle models/agent-runtime.md) — aucune écriture si déjà fait.
+      if (
+        this.state.portfolioSession !== null ||
+        this.state.portfolioRestoreError !== null
+      ) {
+        this.setState({
+          ...this.state,
+          portfolioSession: null,
+          portfolioRestoreError: null,
+        });
+      }
+      return;
+    }
+    const restored = resolveRestoredPortfolioSession(persisted);
+    if (restored.ok) {
+      this.setState({
+        ...this.state,
+        portfolioSession: restored.session,
+        portfolioRestoreError: null,
+      });
+      return;
+    }
+    console.error(
+      JSON.stringify({
+        type: "PORTFOLIO_RESTORE_FAILED",
+        reason: restored.reason,
+      }),
+    );
+    this.setState({
+      ...this.state,
+      portfolioSession: null,
+      portfolioRestoreError: restored.reason,
+      enabled: false,
+      updatedAt: Date.now(),
+    });
+  }
+
   override async onStart(): Promise<void> {
     this.ensureTradingPersistenceSchema();
-
+    this.restorePortfolioSession();
+    const portfolio = this.state.portfolioSession;
+    if (this.state.enabled && portfolio !== null) {
+      await this.ensureIntervalSchedule(portfolio.configuration.intervalSeconds);
+      return;
+    }
     if (this.state.enabled && this.state.configuration !== null) {
       await this.ensureIntervalSchedule(this.state.configuration.intervalSeconds);
     }
@@ -319,6 +408,12 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     permissions: ControlPermissions,
   ): Promise<AgentCommandResult> {
     this.ensureTradingPersistenceSchema();
+    // Branchement runtime multi-produits (models/multi-product-portfolio.md
+    // §9) : N ≥ 2 créneaux pilotent le portefeuille ; N = 1 suit la voie
+    // legacy normalisée, sémantique strictement identique (C2).
+    if (isMultiProductConfigurationInput(configurationInput)) {
+      return this.startPortfolioAgent(configurationInput, permissions);
+    }
     const configuration = parseAgentConfiguration(configurationInput);
     if (!configuration.ok) {
       return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
@@ -462,10 +557,16 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   async stopAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
+    if (this.state.portfolioSession !== null) {
+      return this.stopPortfolioAgent(permissions);
+    }
     return this.control({ type: "STOP_REQUESTED", permissions });
   }
 
   async killAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
+    if (this.state.portfolioSession !== null) {
+      return this.killPortfolioAgent(permissions);
+    }
     return this.control({
       type: "KILL_SWITCH_ENGAGED",
       permissions,
@@ -475,6 +576,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
   async resetAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
     this.ensureTradingPersistenceSchema();
+    if (this.state.portfolioSession !== null) {
+      return this.resetPortfolioAgent(permissions);
+    }
     if (this.state.machine === null || this.state.configuration === null) {
       return { ok: false, error: { code: "NOT_CONFIGURED" } };
     }
@@ -496,6 +600,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
   async runNow(): Promise<AgentCommandResult> {
     this.ensureTradingPersistenceSchema();
+    if (this.state.portfolioSession !== null) {
+      await this.runPortfolio(true);
+      return { ok: true, state: this.state };
+    }
     if (this.state.configuration === null || this.state.machine === null) {
       return { ok: false, error: { code: "NOT_CONFIGURED" } };
     }
@@ -505,6 +613,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
   async scheduledTick(): Promise<void> {
     this.ensureTradingPersistenceSchema();
+    if (this.state.portfolioSession !== null) {
+      await this.runPortfolio(true);
+      return;
+    }
     await this.recoverPendingPerpOrders();
     if (!this.state.enabled) return;
     await this.runCurrent(true);
@@ -741,6 +853,483 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     }
   }
 
+  /**
+   * Démarrage du portefeuille (models/multi-product-portfolio.md §9.1,
+   * §9.6) : configuration figée modifiable uniquement à l'état quiescent ;
+   * chaque créneau est admis individuellement par les admissions
+   * existantes — un seul refus ⇒ démarrage refusé (C4/INV-P7 : le
+   * multi-produits hors paper reste rejeté fail-closed) ; l'orchestrateur
+   * du §5 doit être `running` après PORTFOLIO_STARTED, sinon refus (C3).
+   */
+  private async startPortfolioAgent(
+    configurationInput: unknown,
+    permissions: ControlPermissions,
+  ): Promise<AgentCommandResult> {
+    const parsed = parseMultiProductAgentConfiguration(configurationInput);
+    if (!parsed.ok) {
+      return {
+        ok: false,
+        error: {
+          code:
+            parsed.error.code === "MULTI_PRODUCT_LIVE_UNSUPPORTED"
+              ? "MULTI_PRODUCT_LIVE_UNSUPPORTED"
+              : "INVALID_CONFIGURATION",
+        },
+      };
+    }
+    const multi = parsed.value;
+    // C4/INV-P7 : défense en profondeur — la configuration est déjà
+    // paper-only au parse ; la porte runtime ne lève jamais la porte.
+    if (multi.executionMode !== "paper") {
+      return { ok: false, error: { code: "MULTI_PRODUCT_LIVE_UNSUPPORTED" } };
+    }
+    if (multi.portfolioRisk === undefined) {
+      return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+    }
+    if (
+      (this.state.portfolioSession !== null &&
+        portfolioIsEnabled(this.state.portfolioSession)) ||
+      (this.state.machine !== null && machineIsEnabled(this.state.machine.value))
+    ) {
+      return { ok: false, error: { code: "INVALID_STATE" } };
+    }
+    // §9.6 : admission individuelle de chaque créneau par les admissions
+    // existantes (politiques figées) ; une seule admission refusée ⇒
+    // démarrage refusé.
+    for (const slot of multi.products) {
+      const projected = projectProductSlotConfiguration(multi, slot.productId);
+      if (!projected.ok) {
+        return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+      }
+      const admission = admitAgentConfiguration(projected.value);
+      if (admission.status === "REJECTED") {
+        return { ok: false, error: { code: admission.reasonCode } };
+      }
+    }
+    if (this.state.schedule !== null) {
+      await this.cancelSchedule(this.state.schedule.id);
+    }
+
+    const portfolioSession = createPortfolioMachineSession({
+      products: multi.products.map((slot) => slot.productId),
+      limits: multi.portfolioRisk,
+    });
+    portfolioSession.send({ type: "PORTFOLIO_STARTED" });
+    const portfolioRecord = portfolioSession.record;
+    portfolioSession.stop();
+    // Fail-closed (C3) : un orchestrateur non `running` n'amorce jamais.
+    if (portfolioRecord.value !== "running") {
+      return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+    }
+
+    const products: Record<string, PortfolioProductRuntime> = {};
+    for (const slot of multi.products) {
+      const productSession = createTradingMachineSession({
+        agentId: this.name,
+        strategyIds: multi.strategyIds,
+        maxMarketStalenessMs: multi.maxMarketStalenessMs,
+      });
+      productSession.send({ type: "START_REQUESTED", permissions });
+      const machine = productSession.record;
+      productSession.stop();
+      products[slot.productId] = initialProductRuntime(
+        machine,
+        multi.initialCapital,
+      );
+    }
+
+    this.setState({
+      ...INITIAL_AGENT_STATE,
+      enabled: true,
+      portfolioSession: Object.freeze({
+        configuration: multi,
+        portfolio: portfolioRecord,
+        products: Object.freeze(products),
+      }),
+      portfolioRestoreError: null,
+      updatedAt: Date.now(),
+    });
+
+    await this.runPortfolio(false);
+    return { ok: true, state: this.state };
+  }
+
+  private async stopPortfolioAgent(
+    permissions: ControlPermissions,
+  ): Promise<AgentCommandResult> {
+    const session = this.state.portfolioSession;
+    if (session === null) {
+      return { ok: false, error: { code: "NOT_CONFIGURED" } };
+    }
+    for (const productId of portfolioProductIds(session)) {
+      const product = session.products[productId];
+      if (product === undefined || !machineIsEnabled(product.machine.value)) {
+        continue;
+      }
+      await this.controlProduct(session, productId, {
+        type: "STOP_REQUESTED",
+        permissions,
+      });
+    }
+    await this.runPortfolio(false);
+    return { ok: true, state: this.state };
+  }
+
+  /**
+   * Kill portefeuille (§5, §9.5) : l'orchestrateur passe en `draining`
+   * (plus aucune admission consolidée), chaque produit actif draine son
+   * propre cycle ; le portefeuille atteint `halted` à la quiescence.
+   */
+  private async killPortfolioAgent(
+    permissions: ControlPermissions,
+  ): Promise<AgentCommandResult> {
+    const session = this.state.portfolioSession;
+    if (session === null) {
+      return { ok: false, error: { code: "NOT_CONFIGURED" } };
+    }
+    this.persistPortfolio(
+      sendPortfolioEvent(session.portfolio, {
+        type: "KILL_SWITCH_ENGAGED",
+        controlId: crypto.randomUUID(),
+      }),
+    );
+    for (const productId of portfolioProductIds(session)) {
+      const product = session.products[productId];
+      if (product === undefined || !machineIsEnabled(product.machine.value)) {
+        continue;
+      }
+      await this.controlProduct(session, productId, {
+        type: "KILL_SWITCH_ENGAGED",
+        permissions,
+        controlId: crypto.randomUUID(),
+      });
+    }
+    await this.runPortfolio(false);
+    return { ok: true, state: this.state };
+  }
+
+  private async resetPortfolioAgent(
+    permissions: ControlPermissions,
+  ): Promise<AgentCommandResult> {
+    const session = this.state.portfolioSession;
+    if (session === null) {
+      return { ok: false, error: { code: "NOT_CONFIGURED" } };
+    }
+    for (const productId of portfolioProductIds(session)) {
+      await this.controlProduct(session, productId, {
+        type: "RESET",
+        permissions,
+      });
+    }
+    const latest = this.state.portfolioSession;
+    if (latest !== null) {
+      this.persistPortfolio(sendPortfolioEvent(latest.portfolio, { type: "RESET" }));
+    }
+    return { ok: true, state: this.state };
+  }
+
+  /** Événement de contrôle typé vers la machine d'un seul produit. */
+  private async controlProduct(
+    session: PortfolioSessionState,
+    productId: ProductId,
+    event: TradingCycleEvent,
+  ): Promise<void> {
+    const product = session.products[productId];
+    if (product === undefined) return;
+    const machine = createTradingMachineSession(
+      {
+        agentId: this.name,
+        strategyIds: session.configuration.strategyIds,
+        maxMarketStalenessMs: session.configuration.maxMarketStalenessMs,
+      },
+      product.machine,
+    );
+    machine.send(event);
+    const record = machine.record;
+    machine.stop();
+    this.persistProductMachine(productId, record);
+  }
+
+  private persistPortfolio(portfolio: PersistedPortfolioMachine): void {
+    const session = this.state.portfolioSession;
+    if (session === null) return;
+    this.setState({
+      ...this.state,
+      portfolioSession: { ...session, portfolio },
+      updatedAt: Date.now(),
+    });
+  }
+
+  private persistProductMachine(
+    productId: ProductId,
+    machine: PersistedTradingMachine,
+  ): void {
+    const session = this.state.portfolioSession;
+    if (session === null) return;
+    const product = session.products[productId];
+    if (product === undefined) return;
+    const products = { ...session.products, [productId]: { ...product, machine } };
+    const next = { ...session, products: Object.freeze(products) };
+    this.setState({
+      ...this.state,
+      portfolioSession: next,
+      enabled: portfolioIsEnabled(next),
+      updatedAt: Date.now(),
+    });
+  }
+
+  /**
+   * §9.4 : publication de l'exposition et du PnL quotidien d'un produit
+   * à l'orchestrateur du §5 depuis le dernier état persisté (au réveil
+   * et après chaque cycle produit).
+   */
+  private reportProductExposureFromState(productId: ProductId): void {
+    const session = this.state.portfolioSession;
+    if (session === null) return;
+    const product = session.products[productId];
+    if (product === undefined) return;
+    this.persistPortfolio(
+      sendPortfolioEvent(session.portfolio, {
+        type: "PRODUCT_EXPOSURE_REPORTED",
+        productId,
+        grossExposure: productGrossExposure(
+          product.portfolio,
+          product.lastCycle?.marketPrice ?? null,
+        ),
+        dailyPnl: product.dailyPnl,
+      }),
+    );
+  }
+
+  /**
+   * Ordonnancement déterministe (INV-P4) : les créneaux sont parcourus
+   * dans l'ordre trié figé de la configuration ; l'arrêt ou l'échec d'un
+   * produit ne re-planifie jamais les autres (INV-P3). L'alarme partagée
+   * n'est retirée qu'à la quiescence du portefeuille entier.
+   */
+  private async runPortfolio(triggerAlarm: boolean): Promise<void> {
+    const session = this.state.portfolioSession;
+    if (session === null) return;
+    if (triggerAlarm) {
+      for (const productId of portfolioProductIds(session)) {
+        this.reportProductExposureFromState(productId);
+      }
+    }
+    for (const productId of portfolioProductIds(session)) {
+      const current = this.state.portfolioSession;
+      if (current === null) return;
+      const product = current.products[productId];
+      if (
+        product === undefined ||
+        !machineIsEnabled(product.machine.value)
+      ) {
+        continue;
+      }
+      await this.runProductCycle(current, productId, triggerAlarm);
+    }
+    const current = this.state.portfolioSession;
+    if (current !== null && !portfolioIsEnabled(current)) {
+      await this.removeIntervalSchedule();
+    }
+  }
+
+  /** Cycle d'un seul produit : projection §9.2 de models/agent-runtime.md. */
+  private async runProductCycle(
+    session: PortfolioSessionState,
+    productId: ProductId,
+    triggerAlarm: boolean,
+  ): Promise<void> {
+    const startedAt = Date.now();
+    const product = session.products[productId];
+    if (product === undefined) return;
+    const projected = projectProductSlotConfiguration(session.configuration, productId);
+    if (!projected.ok) {
+      // Créneau restauré incohérent : refus fermé du produit (C3) sans
+      // re-planifier les autres (INV-P3).
+      const latest = this.state.portfolioSession;
+      if (latest !== null) {
+        this.persistPortfolio(
+          sendPortfolioEvent(latest.portfolio, {
+            type: "PRODUCT_FAILED",
+            productId,
+          }),
+        );
+      }
+      return;
+    }
+    const configuration = projected.value;
+    const identity = resolveCycleInvocation(
+      product.machine,
+      triggerAlarm,
+      Date.now(),
+      crypto.randomUUID(),
+    );
+    const artifacts =
+      identity.loadCycleId === null
+        ? null
+        : this.loadArtifacts(identity.loadCycleId, productId);
+    const knownPrice = product.lastCycle?.marketPrice ?? null;
+    const startingEquity =
+      product.portfolio.cash +
+      product.portfolio.positionQuantity *
+        (knownPrice ?? product.portfolio.averagePrice);
+    const dailyRiskAtStart = resolveCycleDailyRiskStart(
+      configuration.executionMode,
+      product.dailyRiskWindow ?? null,
+      product.dailyPnl,
+      identity.triggeredAt,
+      startingEquity,
+    );
+    const result = await runTradingCycle({
+      agentId: this.name,
+      configuration,
+      machine: product.machine,
+      artifacts,
+      previousIndicators: product.previousIndicators,
+      portfolio: product.portfolio,
+      dailyPnl: dailyRiskAtStart.dailyPnl,
+      dailyRiskWindow: dailyRiskAtStart.window,
+      lastTradeAt: product.lastTradeAt,
+      triggeredAt: identity.triggeredAt,
+      cycleId: identity.cycleId,
+      triggerAlarm,
+      effects: this.createProductEffects(configuration),
+    });
+
+    const lastPrice = result.artifacts?.market?.candles.at(-1)?.close ?? null;
+    const equity =
+      lastPrice === null
+        ? startingEquity
+        : result.portfolio.cash + result.portfolio.positionQuantity * lastPrice;
+    const dailyRisk = resolveCycleDailyRiskCompletion(
+      configuration.executionMode,
+      result.dailyRiskWindow,
+      result.dailyPnl,
+      identity.triggeredAt,
+      equity,
+    );
+    const executed = result.artifacts?.execution !== undefined;
+    const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
+    const updated: PortfolioProductRuntime = Object.freeze({
+      machine: result.machine,
+      portfolio: result.portfolio,
+      dailyRiskWindow: dailyRisk.window,
+      dailyPnl: dailyRisk.dailyPnl,
+      lastTradeAt: executed
+        ? result.artifacts?.triggeredAt ?? product.lastTradeAt
+        : product.lastTradeAt,
+      previousIndicators: result.previousIndicators,
+      lastCycle: lastCycle ?? product.lastCycle,
+    });
+    const currentSession = this.state.portfolioSession;
+    if (currentSession !== null) {
+      const products = { ...currentSession.products, [productId]: updated };
+      const next = { ...currentSession, products: Object.freeze(products) };
+      this.setState({
+        ...this.state,
+        portfolioSession: next,
+        enabled: portfolioIsEnabled(next),
+        updatedAt: Date.now(),
+      });
+    }
+
+    // §9.4 : rapport d'exposition après le cycle produit.
+    this.reportProductExposureFromState(productId);
+    // §9.5 : l'état terminal du produit est publié à l'orchestrateur —
+    // les autres produits ne sont jamais re-planifiés (INV-P3).
+    const terminalEvent = portfolioEventForProductPhase(productId, result.machine.value);
+    if (terminalEvent !== null) {
+      const latest = this.state.portfolioSession;
+      if (latest !== null) {
+        this.persistPortfolio(sendPortfolioEvent(latest.portfolio, terminalEvent));
+      }
+    }
+
+    if (result.artifacts !== null) {
+      const cycleEvent: TradingTelemetryEvent = {
+        schemaVersion: 1,
+        type: "cycle.completed",
+        timestamp: Date.now(),
+        agentId: this.name,
+        productId,
+        executionMode: configuration.executionMode,
+        phase: result.machine.value,
+        outcome: result.machine.context.outcome,
+        errorCode: result.machine.context.lastError?.code ?? null,
+        latencyMs: Math.max(0, Date.now() - startedAt),
+        dailyPnl: dailyRisk.dailyPnl,
+        accountEquity: result.accountEquity,
+        positionQuantity: result.portfolio.positionQuantity,
+        otherExposureNotional: result.otherExposureNotional,
+        executionObserved: executed,
+        openOrderCount: null,
+      };
+      emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);
+      this.emitOperatorSideEffects("cycle", cycleEvent);
+    }
+  }
+
+  /**
+   * Effets d'un créneau (§9.2) : projection à l'identique de
+   * models/agent-runtime.md, avec le productId sur la persistance ; la
+   * couture d'admission consolidée (§9.3) est câblée sur l'orchestrateur
+   * du §5 — la garde décide, l'effet transporte (INV-P5).
+   */
+  private createProductEffects(
+    configuration: AgentConfiguration,
+  ): TradingCycleEffects {
+    const productId = configuration.productId;
+    const base = createTradingCycleEffects({
+      configuration,
+      env: this.env,
+      agentName: this.name,
+      ensureIntervalSchedule: (intervalSeconds) =>
+        this.ensureIntervalSchedule(intervalSeconds),
+      // INV-P3 : l'alarme partagée appartient au portefeuille — un
+      // produit en cancellation ne la retire jamais (paper : rien à
+      // liquider, le drain est porté par le portefeuille).
+      removeIntervalSchedule: () => Promise.resolve(),
+      checkpoint: (artifacts) => this.checkpoint(artifacts, productId),
+      persistMachine: async (nextMachine) =>
+        this.persistProductMachine(productId, nextMachine),
+      persistOrderIntent: (cycleId, intent) =>
+        this.persistOrderIntent(cycleId, intent, productId),
+      submitPaperOrder: (intent, marketPrice, portfolio, executedAt, config) =>
+        this.submitPaperOrder(intent, marketPrice, portfolio, executedAt, config, productId),
+      submitLiveOrder: (settings, intent, riskDecision, authorization) =>
+        this.submitLiveOrder(settings, intent, riskDecision, authorization),
+      submitPerpOrder: (settings, intent, riskDecision, marketPrice) =>
+        this.submitPerpSignalOrder(settings, intent, riskDecision, marketPrice),
+      reconcilePaperOrder: (intent) => this.reconcilePaperOrder(intent, productId),
+      reconcileLiveOrder: (settings, intent, riskDecision, portfolio) =>
+        this.reconcileLiveOrder(settings, intent, riskDecision, portfolio),
+      reconcilePerpOrder: (settings, intent) =>
+        this.reconcilePerpSignalOrder(settings, intent),
+      persistCycle: (cycleArtifacts, nextMachine) =>
+        this.persistCycle(cycleArtifacts, nextMachine, productId),
+      loadKnownProtectiveOrderIds: () => this.loadKnownProtectiveOrderIds(),
+      getKillContext: () => null,
+      applyKilledAccount: () => undefined,
+    });
+    return {
+      ...base,
+      cancelCurrentEffect: async () => ok(undefined),
+      proposePortfolioRisk: async (proposedProductId, proposedGrossExposure) => {
+        const current = this.state.portfolioSession;
+        if (current === null) {
+          return { approved: false, reasonCode: "UNKNOWN_PRODUCT" };
+        }
+        const proposal = proposePortfolioRisk(
+          current.portfolio,
+          proposedProductId,
+          proposedGrossExposure,
+        );
+        this.persistPortfolio(proposal.record);
+        return proposal.decision;
+      },
+    };
+  }
+
   private createEffects(configuration: AgentConfiguration): TradingCycleEffects {
     return createTradingCycleEffects({
       configuration,
@@ -833,18 +1422,29 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
   private async checkpoint(
     artifacts: CycleArtifacts,
+    productId?: ProductId,
   ): Promise<ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>> {
     try {
       const now = Date.now();
+      const phase =
+        productId === undefined
+          ? this.state.machine?.value ?? "unknown"
+          : this.state.portfolioSession?.products[productId]?.machine.value ??
+            "unknown";
+      const outcome =
+        productId === undefined
+          ? this.state.machine?.context.outcome ?? "RUNNING"
+          : this.state.portfolioSession?.products[productId]?.machine.context
+              .outcome ?? "RUNNING";
       this.sql`
         INSERT INTO dodash_cycles (
           cycle_id, triggered_at, completed_at, phase, outcome,
-          artifacts_json, error_json, updated_at
+          artifacts_json, error_json, product_id, updated_at
         ) VALUES (
           ${artifacts.cycleId}, ${artifacts.triggeredAt}, NULL,
-          ${this.state.machine?.value ?? "unknown"},
-          ${this.state.machine?.context.outcome ?? "RUNNING"},
-          ${JSON.stringify(artifacts)}, NULL, ${now}
+          ${phase},
+          ${outcome},
+          ${JSON.stringify(artifacts)}, NULL, ${productId ?? null}, ${now}
         )
         ON CONFLICT(cycle_id) DO UPDATE SET
           phase = excluded.phase,
@@ -858,16 +1458,24 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     }
   }
 
-  private loadArtifacts(cycleId: string): CycleArtifacts | null {
-    const row = this.sql<{ artifacts_json: string }>`
-      SELECT artifacts_json FROM dodash_cycles WHERE cycle_id = ${cycleId} LIMIT 1
-    `.at(0);
+  private loadArtifacts(cycleId: string, productId?: ProductId): CycleArtifacts | null {
+    const row =
+      productId === undefined
+        ? this.sql<{ artifacts_json: string }>`
+            SELECT artifacts_json FROM dodash_cycles WHERE cycle_id = ${cycleId} LIMIT 1
+          `.at(0)
+        : this.sql<{ artifacts_json: string }>`
+            SELECT artifacts_json FROM dodash_cycles
+            WHERE cycle_id = ${cycleId} AND product_id = ${productId}
+            LIMIT 1
+          `.at(0);
     return row === undefined ? null : parseJson<CycleArtifacts>(row.artifacts_json);
   }
 
   private async persistOrderIntent(
     cycleId: string,
     intent: OrderIntent,
+    productId?: ProductId,
   ): Promise<ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>> {
     try {
       const now = Date.now();
@@ -883,10 +1491,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       this.sql`
         INSERT INTO dodash_orders (
           client_order_id, cycle_id, intent_json, status,
-          exchange_order_id, execution_json, created_at, updated_at
+          exchange_order_id, execution_json, product_id, created_at, updated_at
         ) VALUES (
           ${intent.clientOrderId}, ${cycleId}, ${serialized}, 'INTENT_PERSISTED',
-          NULL, NULL, ${now}, ${now}
+          NULL, NULL, ${productId ?? null}, ${now}, ${now}
         )
         ON CONFLICT(client_order_id) DO UPDATE SET
           updated_at = excluded.updated_at
@@ -903,8 +1511,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     portfolio: TradingAgentState["portfolio"],
     executedAt: number,
     configuration: AgentConfiguration,
+    productId?: ProductId,
   ): Promise<OrderSubmission> {
-    const reconciled = await this.reconcilePaperOrder(intent);
+    const reconciled = await this.reconcilePaperOrder(intent, productId);
     if (reconciled.ok && reconciled.value.status === "CONFIRMED") {
       return reconciled.value;
     }
@@ -931,14 +1540,26 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
     try {
       const now = Date.now();
-      this.sql`
-        UPDATE dodash_orders SET
-          status = 'CONFIRMED',
-          exchange_order_id = ${submission.exchangeOrderId},
-          execution_json = ${JSON.stringify(submission)},
-          updated_at = ${now}
-        WHERE client_order_id = ${intent.clientOrderId}
-      `;
+      if (productId === undefined) {
+        this.sql`
+          UPDATE dodash_orders SET
+            status = 'CONFIRMED',
+            exchange_order_id = ${submission.exchangeOrderId},
+            execution_json = ${JSON.stringify(submission)},
+            updated_at = ${now}
+          WHERE client_order_id = ${intent.clientOrderId}
+        `;
+      } else {
+        this.sql`
+          UPDATE dodash_orders SET
+            status = 'CONFIRMED',
+            exchange_order_id = ${submission.exchangeOrderId},
+            execution_json = ${JSON.stringify(submission)},
+            updated_at = ${now}
+          WHERE client_order_id = ${intent.clientOrderId}
+            AND product_id = ${productId}
+        `;
+      }
       return submission;
     } catch {
       return {
@@ -950,16 +1571,25 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
   private async reconcilePaperOrder(
     intent: OrderIntent,
+    productId?: ProductId,
   ): Promise<
     | ReturnType<typeof ok<OrderSubmission>>
     | ReturnType<typeof err<WorkflowError>>
   > {
     try {
-      const row = this.sql<{ status: string; execution_json: string | null }>`
-        SELECT status, execution_json FROM dodash_orders
-        WHERE client_order_id = ${intent.clientOrderId}
-        LIMIT 1
-      `.at(0);
+      const row =
+        productId === undefined
+          ? this.sql<{ status: string; execution_json: string | null }>`
+              SELECT status, execution_json FROM dodash_orders
+              WHERE client_order_id = ${intent.clientOrderId}
+              LIMIT 1
+            `.at(0)
+          : this.sql<{ status: string; execution_json: string | null }>`
+              SELECT status, execution_json FROM dodash_orders
+              WHERE client_order_id = ${intent.clientOrderId}
+                AND product_id = ${productId}
+              LIMIT 1
+            `.at(0);
       if (row?.status === "CONFIRMED" && row.execution_json !== null) {
         const submission = parseJson<OrderSubmission>(row.execution_json);
         if (submission !== null && submission.status === "CONFIRMED") {
@@ -1384,6 +2014,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   private async persistCycle(
     artifacts: CycleArtifacts | null,
     machine: PersistedTradingMachine,
+    productId?: ProductId,
   ): Promise<ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>> {
     if (artifacts === null) return ok(undefined);
     try {
@@ -1391,7 +2022,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       this.sql`
         INSERT INTO dodash_cycles (
           cycle_id, triggered_at, completed_at, phase, outcome,
-          artifacts_json, error_json, updated_at
+          artifacts_json, error_json, product_id, updated_at
         ) VALUES (
           ${artifacts.cycleId}, ${artifacts.triggeredAt}, ${now},
           ${machine.value}, ${machine.context.outcome},
@@ -1400,7 +2031,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
               ? null
               : JSON.stringify(machine.context.lastError)
           },
-          ${now}
+          ${productId ?? null}, ${now}
         )
         ON CONFLICT(cycle_id) DO UPDATE SET
           completed_at = excluded.completed_at,
