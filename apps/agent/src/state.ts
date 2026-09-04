@@ -4,6 +4,7 @@ import {
   resolveDailyRiskWindow,
   type CycleOutcome,
   type DailyRiskWindow,
+  type DashboardPortfolioSummaryResult,
   type WorkflowError,
 } from "@dodash/models";
 
@@ -77,6 +78,23 @@ export const INITIAL_AGENT_STATE: TradingAgentState = Object.freeze({
 });
 
 export type { PortfolioProductRuntime, PortfolioSessionState };
+
+/**
+ * Réponse du contrat `/state` (dao #34, models/state-portfolio-contract.md)
+ * : l'état synchronisé figé (C1 — champs préexistants inchangés) plus la
+ * hiérarchie portefeuille `portfolioSummary`, projection pure calculée à la
+ * lecture et jamais persistée — aucune normalisation de restauration
+ * supplémentaire (ST6). Sur échec local fermé, `portfolioSummary` vaut
+ * `{ ok: false, error: { code } }` (ST4), jamais une hiérarchie partielle.
+ */
+export interface AgentStateSnapshot extends TradingAgentState {
+  readonly portfolioSummary: DashboardPortfolioSummaryResult;
+}
+
+export const toAgentStateSnapshot = (
+  state: TradingAgentState,
+  portfolioSummary: DashboardPortfolioSummaryResult,
+): AgentStateSnapshot => Object.freeze({ ...state, portfolioSummary });
 
 /**
  * INV-P3 (quiescence) : le portefeuille reste actif tant qu'au moins un

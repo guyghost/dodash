@@ -34,6 +34,8 @@ export interface AgentStateView {
     readonly signalCount: number;
     readonly completedAt: number;
   } | null;
+  /** dao #34 : hiérarchie portefeuille transportée par le contrat `/state`. */
+  readonly portfolioSummary: PortfolioSummaryView;
   readonly indicators: {
     readonly rsi: number;
     readonly emaFast: number;
@@ -153,7 +155,6 @@ export interface DashboardGateway {
   loadState(agentName: string): Promise<AgentStateView>;
   loadCycles(agentName: string): Promise<readonly CycleView[]>;
   loadPnlHistory(agentName: string): Promise<PnlHistoryView>;
-  loadPortfolioSummary(agentName: string): Promise<PortfolioSummaryView>;
   command(
     agentName: string,
     command: DashboardDirectCommand | "kill",
@@ -279,6 +280,16 @@ export const parseAgentState = (value: unknown): AgentStateView => {
   const machineContext = value.machine.context;
   if (!isRecord(machineContext)) throw invalidResponse();
 
+  // dao #34 (models/state-portfolio-contract.md §5) : la hiérarchie
+  // portefeuille voyage dans le contrat `/state` ; le parseur strict de
+  // #32 (parsePortfolioSummary) revalide `value` intégralement, et un
+  // échec local `ok: false` est une erreur typée, jamais un rendu dégradé.
+  const portfolioEnvelope = value.portfolioSummary;
+  if (!isRecord(portfolioEnvelope) || portfolioEnvelope.ok !== true || !("value" in portfolioEnvelope)) {
+    throw invalidResponse();
+  }
+  const portfolioSummary = parsePortfolioSummary(portfolioEnvelope.value);
+
   const lastCycleValue = value.lastCycle;
   let lastCycle: AgentStateView["lastCycle"] = null;
   if (lastCycleValue !== null) {
@@ -315,6 +326,7 @@ export const parseAgentState = (value: unknown): AgentStateView => {
     nextWakeAt: optionalTime(machineContext.nextWakeAt),
     lastTradeAt: optionalTime(value.lastTradeAt),
     lastCycle,
+    portfolioSummary,
     indicators: parseIndicators(value.previousIndicators),
   });
 };
@@ -603,15 +615,6 @@ export const createHttpGateway = (
       parsePnlHistory(
         await call(`/api/agents/${encodeURIComponent(agentName)}/pnl?limit=30`),
       ),
-    loadPortfolioSummary: async (agentName: string) => {
-      // dao #32 : l'Agent renvoie l'enveloppe `{ ok, value }` (même contrat
-      // que /pnl) ; on la déballe avant revalidation stricte.
-      const payload = await call(`/api/agents/${encodeURIComponent(agentName)}/portfolio`);
-      if (!isRecord(payload) || payload.ok !== true || !("value" in payload)) {
-        throw invalidResponse();
-      }
-      return parsePortfolioSummary(payload.value);
-    },
     command: async (
       agentName: string,
       command: DashboardDirectCommand | "kill",

@@ -1,6 +1,9 @@
 import {
   multiProductPortfolioMachine,
+  projectDashboardPortfolioSummary,
   tradingCycleMachine,
+  type DashboardPortfolioProductInput,
+  type DashboardPortfolioSummaryResult,
   type MultiProductPortfolioContext,
   type MultiProductPortfolioEvent,
   type MultiProductPortfolioInput,
@@ -191,6 +194,56 @@ export interface PortfolioSessionState {
 export const portfolioProductIds = (
   session: PortfolioSessionState,
 ): readonly ProductId[] => session.configuration.products.map((p) => p.productId);
+
+/**
+ * Seam pur du contrat `/state` (dao #34, models/state-portfolio-contract.md)
+ * : construction de l'entrée puis projection #32 (`dashboard-portfolio-
+ * summary.md §3`). Les surfaces `/state` et `/portfolio` délèguent au même
+ * seam sur le même instantané — chiffres identiques par construction (ST5).
+ * Retourne un échec fermé de #32 sur créneau sans runtime ni statut (C3),
+ * jamais une hiérarchie partielle (ST4).
+ */
+export const projectPortfolioSessionSummary = (
+  session: PortfolioSessionState | null,
+): DashboardPortfolioSummaryResult => {
+  if (session === null) return projectDashboardPortfolioSummary(null);
+  const products: DashboardPortfolioProductInput[] = [];
+  for (const slot of session.configuration.products) {
+    const product = session.products[slot.productId];
+    const status = session.portfolio.context.statuses[slot.productId];
+    // Fail-closed (C3) : un créneau configuré sans runtime ni statut
+    // orchestrateur est une session incohérente, jamais un produit omis.
+    if (product === undefined || status === undefined) {
+      return { ok: false, error: { code: "INVALID_PORTFOLIO_SESSION" } };
+    }
+    products.push({
+      productId: slot.productId,
+      phase: product.machine.value,
+      status,
+      cash: product.portfolio.cash,
+      positionQuantity: product.portfolio.positionQuantity,
+      averagePrice: product.portfolio.averagePrice,
+      dailyPnl: product.dailyPnl,
+      maxGrossExposure: slot.risk.maxGrossExposure,
+      lastCycle:
+        product.lastCycle === null
+          ? null
+          : {
+              cycleId: product.lastCycle.cycleId,
+              triggeredAt: product.lastCycle.triggeredAt,
+              completedAt: product.lastCycle.completedAt,
+              outcome: product.lastCycle.outcome,
+              marketPrice: product.lastCycle.marketPrice,
+            },
+    });
+  }
+  return projectDashboardPortfolioSummary({
+    phase: session.portfolio.value,
+    killSwitchActive: session.portfolio.context.killSwitchActive,
+    portfolioRisk: session.configuration.portfolioRisk ?? null,
+    products,
+  });
+};
 
 export const initialProductRuntime = (
   machine: PersistedTradingMachine,

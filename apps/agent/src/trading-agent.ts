@@ -6,11 +6,9 @@ import {
   DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
   DASHBOARD_PNL_HISTORY_MAX_CYCLES,
   projectDashboardPnlHistory,
-  projectDashboardPortfolioSummary,
   type ControlPermissions,
   type DashboardPnlHistoryResult,
   type DashboardPnlOrderRow,
-  type DashboardPortfolioProductInput,
   type DashboardPortfolioSummaryResult,
   type TradingCycleEvent,
   type LivePreflightFailureReason,
@@ -83,6 +81,7 @@ import {
   portfolioEventForProductPhase,
   portfolioProductIds,
   productGrossExposure,
+  projectPortfolioSessionSummary,
   proposePortfolioRisk,
   resolveRestoredPortfolioSession,
   sendPortfolioEvent,
@@ -98,6 +97,8 @@ import {
   resolveCycleDailyRiskStart,
   resolveCycleInvocation,
   resolveLiveStartContinuity,
+  toAgentStateSnapshot,
+  type AgentStateSnapshot,
   type CycleSummary,
   type PortfolioProductRuntime,
   type TradingAgentState,
@@ -144,7 +145,7 @@ export interface TradingEnv extends Env {
 }
 
 export type AgentCommandResult =
-  | { readonly ok: true; readonly state: TradingAgentState }
+  | { readonly ok: true; readonly state: AgentStateSnapshot }
   | {
       readonly ok: false;
       readonly error: {
@@ -497,7 +498,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     });
 
     await this.runCurrent(false);
-    return { ok: true, state: this.state };
+    return { ok: true, state: this.stateSnapshot() };
   }
 
   async preflightLive(
@@ -602,20 +603,20 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     const machine = session.record;
     session.stop();
     await this.persistMachine(machine);
-    return { ok: true, state: this.state };
+    return { ok: true, state: this.stateSnapshot() };
   }
 
   async runNow(): Promise<AgentCommandResult> {
     this.ensureTradingPersistenceSchema();
     if (this.state.portfolioSession !== null) {
       await this.runPortfolio(true);
-      return { ok: true, state: this.state };
+      return { ok: true, state: this.stateSnapshot() };
     }
     if (this.state.configuration === null || this.state.machine === null) {
       return { ok: false, error: { code: "NOT_CONFIGURED" } };
     }
     await this.runCurrent(true);
-    return { ok: true, state: this.state };
+    return { ok: true, state: this.stateSnapshot() };
   }
 
   async scheduledTick(): Promise<void> {
@@ -629,8 +630,19 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     await this.runCurrent(true);
   }
 
-  getAgentState(): TradingAgentState {
-    return this.state;
+  /**
+   * Contrat `/state` (dao #34) : état figé plus hiérarchie portefeuille
+   * projetée à la lecture par le même seam pur que `/portfolio` (ST5).
+   */
+  private stateSnapshot(): AgentStateSnapshot {
+    return toAgentStateSnapshot(
+      this.state,
+      projectPortfolioSessionSummary(this.state.portfolioSession),
+    );
+  }
+
+  getAgentState(): AgentStateSnapshot {
+    return this.stateSnapshot();
   }
 
   listRecentCycles(limit = 50): readonly Record<string, unknown>[] {
@@ -704,50 +716,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   /**
-   * Projection portefeuille lecture-seule (dao #32) : lecture en mémoire
-   * de l'instantané `portfolioSession`, aucun SQL ni appel réseau sortant.
-   * Source normative : models/dashboard-portfolio-summary.md §3-§4.
+   * Projection portefeuille lecture-seule (dao #32, convergée sur le
+   * contrat `/state` par #34) : lecture en mémoire de l'instantané
+   * `portfolioSession`, aucun SQL ni appel réseau sortant, même seam pur
+   * que `/state` — chiffres identiques par construction (ST5).
+   * Source normative : models/dashboard-portfolio-summary.md §3-§4 et
+   * models/state-portfolio-contract.md §2.
    */
   getPortfolioSummary(): DashboardPortfolioSummaryResult {
-    const session = this.state.portfolioSession;
-    // §3.1 : mono-produit = réponse valide `single-product` (backward-compat).
-    if (session === null) return projectDashboardPortfolioSummary(null);
-    const products: DashboardPortfolioProductInput[] = [];
-    for (const slot of session.configuration.products) {
-      const product = session.products[slot.productId];
-      const status = session.portfolio.context.statuses[slot.productId];
-      // Fail-closed (C3) : un créneau configuré sans runtime ni statut
-      // orchestrateur est une session incohérente, jamais un produit omis.
-      if (product === undefined || status === undefined) {
-        return { ok: false, error: { code: "INVALID_PORTFOLIO_SESSION" } };
-      }
-      products.push({
-        productId: slot.productId,
-        phase: product.machine.value,
-        status,
-        cash: product.portfolio.cash,
-        positionQuantity: product.portfolio.positionQuantity,
-        averagePrice: product.portfolio.averagePrice,
-        dailyPnl: product.dailyPnl,
-        maxGrossExposure: slot.risk.maxGrossExposure,
-        lastCycle:
-          product.lastCycle === null
-            ? null
-            : {
-                cycleId: product.lastCycle.cycleId,
-                triggeredAt: product.lastCycle.triggeredAt,
-                completedAt: product.lastCycle.completedAt,
-                outcome: product.lastCycle.outcome,
-                marketPrice: product.lastCycle.marketPrice,
-              },
-      });
-    }
-    return projectDashboardPortfolioSummary({
-      phase: session.portfolio.value,
-      killSwitchActive: session.portfolio.context.killSwitchActive,
-      portfolioRisk: session.configuration.portfolioRisk ?? null,
-      products,
-    });
+    return projectPortfolioSessionSummary(this.state.portfolioSession);
   }
 
   private async control(event: TradingCycleEvent): Promise<AgentCommandResult> {
@@ -799,7 +776,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     };
     emitTradingTelemetry(this.env.TRADING_TELEMETRY, controlEvent);
     this.emitOperatorSideEffects("control", controlEvent);
-    return { ok: true, state: this.state };
+    return { ok: true, state: this.stateSnapshot() };
   }
 
   private async runCurrent(
@@ -1005,7 +982,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     });
 
     await this.runPortfolio(false);
-    return { ok: true, state: this.state };
+    return { ok: true, state: this.stateSnapshot() };
   }
 
   private async stopPortfolioAgent(
@@ -1026,7 +1003,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       });
     }
     await this.runPortfolio(false);
-    return { ok: true, state: this.state };
+    return { ok: true, state: this.stateSnapshot() };
   }
 
   /**
@@ -1059,7 +1036,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       });
     }
     await this.runPortfolio(false);
-    return { ok: true, state: this.state };
+    return { ok: true, state: this.stateSnapshot() };
   }
 
   private async resetPortfolioAgent(
@@ -1079,7 +1056,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     if (latest !== null) {
       this.persistPortfolio(sendPortfolioEvent(latest.portfolio, { type: "RESET" }));
     }
-    return { ok: true, state: this.state };
+    return { ok: true, state: this.stateSnapshot() };
   }
 
   /** Événement de contrôle typé vers la machine d'un seul produit. */

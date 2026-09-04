@@ -37,6 +37,7 @@ let state: AgentStateView = Object.freeze({
     signalCount: 3,
     completedAt: startedAt - 886_000,
   }),
+  portfolioSummary: Object.freeze({ kind: "single-product" as const }),
   indicators: Object.freeze({
     rsi: 61.8,
     emaFast: 63_782.24,
@@ -198,6 +199,9 @@ const portfolioSummary: PortfolioSummaryView = Object.freeze({
   }),
 });
 
+// dao #34 : la hiérarchie portefeuille voyage dans le contrat `/state`.
+state = Object.freeze({ ...state, portfolioSummary });
+
 const nextState = (patch: Partial<AgentStateView>): AgentStateView =>
   Object.freeze({ ...state, ...patch, updatedAt: Date.now() });
 
@@ -214,10 +218,6 @@ export const createDemoGateway = (): DashboardGateway =>
     loadPnlHistory: async (_agentName: string) => {
       await wait();
       return pnlHistory;
-    },
-    loadPortfolioSummary: async (_agentName: string) => {
-      await wait();
-      return portfolioSummary;
     },
     submitPerpOrder: async (
       _agentName: string,
