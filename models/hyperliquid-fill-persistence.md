@@ -2,6 +2,9 @@
 
 Statut : APPROUVÉ
 Date : 2026-09-04
+Amendement : dao #33 (2026-09-04) — rattrapage borné des fills manqués
+(§2.5, invariants 11–12). Les invariants 1–10 du modèle initial sont
+inchangés.
 Prérequis : `hyperliquid-execution.md` (machine d'ordre, réconciliation),
 `hyperliquid-orchestration.md` (runner et ports), `agent-runtime.md`
 (persistance avant fin de phase), `dashboard-pnl-history.md`
@@ -107,8 +110,61 @@ lecture ou d'écriture des fills produit :
   du ressort du comportement existant, inchangé.
 
 La lecture des fills est tentée une fois par clôture d'issue ACCEPTED : pas
-de boucle de retry, pas de backfill automatique (§7 hors périmètre). Un fill
-absent est un fait absent, jamais approximé.
+de boucle de retry. Un fill absent est un fait absent, jamais approximé ; il
+reste rattrapable par le mécanisme borné du §2.5 (dao #33), jamais reconstruit.
+
+### 2.5 Rattrapage borné des fills manqués (dao #33)
+
+Point ouvert du modèle initial : un fill absent de `userFills` au moment de la
+clôture (latence de la venue, interruption du bot entre soumission et
+lecture) laissait un **créneau vide définitif** — un ordre `ACCEPTED` sans
+aucune ligne de fill, jamais relu.
+
+**Règle de détection (lecture-seule)** : un créneau est un ordre
+`outcome = 'ACCEPTED'` sans aucune ligne dans `dodash_perp_fills`. La
+détection est un `SELECT ... NOT EXISTS` borné `LIMIT`, recalculé à chaque
+cycle de reprise depuis les tables existantes : aucune écriture de
+détection, aucun état nouveau, aucune table ni colonne additionnelle.
+
+**Point d'ancrage** : le rattrapage vit dans la réconciliation existante
+(`recoverPending`), après la reprise des intentions en vol. Aucun nouvel
+état, événement ou transition de machine (invariant 6 inchangé) ; le
+rattrapage n'altère jamais les compteurs `recovered`/`unresolved` des ordres
+en vol, ni le résultat d'aucun cycle.
+
+**Rattrapage** : pour chaque créneau, la même lecture venue que §2.2
+(`userFills` filtré par `cloid` — plafond 1 MiB, timeout, erreurs fermées,
+couture #31/#27) est relue, puis insertion idempotente
+`(client_order_id, fill_id)`. Aucune ligne n'est inventée : une venue qui ne
+connaît pas le fill renvoie `[]` et le créneau reste vide (invariant 9). Un
+ordre IOC accepté jamais exécuté est un créneau légitimement vide : il reste
+détecté et re-relu, dont le coût est borné par le plafond ci-dessous.
+
+**Plafond par cycle** : au plus `PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE = 10`
+créneaux relus par cycle de reprise, ordre déterministe — le plus récemment
+réglé d'abord (`settled_at DESC`, puis `client_order_id DESC` pour
+départage), même fenêtre que la projection §4 dont la fidélité bénéficie en
+premier. Justification : chaque créneau coûte au plus une lecture venue
+plafonnée (1 MiB, timeout) ; 10 borne le surcoût d'un cycle de reprise à un
+ordre de grandeur sous la fenêtre de projection (50 ordres), et la
+répétition cyclique garantit une couverture progressive des créneaux, du
+plus frais au plus ancien. **Plafond atteint ⇒ rattrapage partiel** : les
+créneaux restants sont reportés au cycle suivant (ils sortent de la
+détection seulement lorsqu'ils sont comblés) et le caractère partiel est
+consigné en télémétrie (`fillBackfillTruncated`).
+
+**Télémétrie** (signal de sortie, invariant 10 inchangé) : le compte rendu
+de reprise gagne quatre compteurs additifs — `fillBackfillFilled`
+(créneaux comblés), `fillBackfillFailures` (créneaux en échec de
+lecture/écriture), `fillBackfillUnresolved` (créneaux tournés sans fill
+persisté : venue vide ou échec), `fillBackfillTruncated` (plafond atteint).
+Un échec de rattrapage produit un log structuré fermé et ne fait jamais
+échouer le cycle de reprise (invariant 5 étendu au rattrapage, invariant
+12).
+
+**Limite assumée** : la couture de lecture reste `userFills` (historique
+récent de la venue). Un fill plus vieux que cette fenêtre n'est pas
+rattrapable sans `userFillsByTime` — hors périmètre (§7), jamais approximé.
 
 ## 3. Schéma SQLite
 
@@ -129,6 +185,9 @@ CREATE TABLE IF NOT EXISTS dodash_perp_fills (
   frontière : un fill mal formé est rejeté en échec typé, jamais écrit).
 - Requêtes de projection : `SELECT` bornés `LIMIT`, jointure
   `client_order_id`, aucune écriture.
+- Détection des créneaux (dao #33, §2.5) : `SELECT` lecture-seul avec
+  `NOT EXISTS` et `LIMIT` — aucune table ni colonne nouvelle, aucune
+  migration additionnelle (invariant 11).
 
 ## 4. Projection PnL perp (lecture-seule)
 
@@ -171,6 +230,9 @@ Le dashboard UI n'est pas dans ce périmètre : seule la donnée projetée exist
   résultats `SETTLED`/`REFUSED`/`FAILED` ; seul le champ de compteur
   `fillPersistenceFailures` s'ajoute aux résultats `SETTLED` et au compte
   rendu de reprise (additif, observabilité).
+- Compte rendu de reprise (dao #33) : les quatre compteurs
+  `fillBackfill*` s'ajoutent (additif, observabilité) ; `recovered` et
+  `unresolved` restent le compte des seuls ordres en vol.
 - Mode paper, cycle spot, projection spot : non concernés.
 
 ## 6. Invariants
@@ -187,13 +249,17 @@ Le dashboard UI n'est pas dans ce périmètre : seule la donnée projetée exist
 | 8 | La projection est une fonction pure lecture-seule, fenêtre bornée `LIMIT`, fail-closed globale : donnée malformée → échec typé, jamais une projection partielle ni une valeur inventée. |
 | 9 | Une issue `REJECTED` ne produit aucune ligne de fill ; une absence de fill (`[]` ou lecture `null`) n'invente aucune ligne. |
 | 10 | La télémétrie des fills est un signal de sortie : le compteur ne sélectionne aucune stratégie, n'approuve aucun risque et ne change aucune transition. |
+| 11 | Le rattrapage (§2.5) est borné et déterministe : au plus `PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE` créneaux par cycle de reprise, ordre `settled_at DESC, client_order_id DESC`, détection lecture-seule (`NOT EXISTS`, `LIMIT`) sans aucune écriture ni état nouveau ; plafond atteint ⇒ rattrapage partiel consigné et reporté au cycle suivant. |
+| 12 | Un échec de rattrapage (détection, lecture venue ou écriture) est un log structuré + un compteur du rapport de reprise : jamais un échec de réconciliation, jamais un échec de cycle, jamais une ligne inventée (invariant 9 applicable). |
 
 ## 7. Hors périmètre
 
 - Dashboard UI perp (rendu, route proxy) : la donnée projetée seule est
   livrée ; une route suivra un jalon dédié.
-- Backfill des fills manquants (lecture ratée une fois = fills absents) et
-  réconciliation périodique des ordres déjà `settled` : un jalon séparé
-  devra être modelé avant toute activation.
+- Réconciliation périodique programmée des ordres déjà `settled`
+  (planificateur dédié, au-delà du rattrapage du §2.5 déclenché par les
+  cycles de reprise existants).
+- Rattrapage par `userFillsByTime` des fills plus vieux que l'historique
+  récent `userFills` de la venue (limite assumée du §2.5).
 - Funding, positions ouvertes, PnL non réalisé, fiscalité, conversion.
 - Toute écriture pilotée par la projection : lecture-seule, sans commande.
