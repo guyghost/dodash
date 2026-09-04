@@ -44,6 +44,15 @@ export type {
   ProtectiveExitExecution,
   RegimeGatingSummary,
 } from "./replay.js";
+export { replayMultiProductBacktest } from "./multi-product-replay.js";
+export type {
+  MultiProductBacktestConfig,
+  MultiProductBacktestError,
+  MultiProductBacktestProductConfig,
+  MultiProductBacktestResult,
+  MultiProductPosition,
+  MultiProductProductResult,
+} from "./multi-product-replay.js";
 export { runBacktestSuite } from "./suite.js";
 export type {
   BacktestScenarioSummary,
