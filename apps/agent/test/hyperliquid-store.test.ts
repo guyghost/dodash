@@ -276,3 +276,97 @@ describe("persistance des fills perp (dao #31)", () => {
     expect(() => loadPerpPnlProjectionRows(adapter, 1.5)).toThrow();
   });
 });
+
+describe("détection des créneaux de rattrapage (dao #33)", () => {
+  it("détecte les ordres ACCEPTED sans fill, du plus récemment réglé au plus ancien", async () => {
+    const store = createSqlitePerpOrderStore(freshAdapter());
+    // ancien comblé : jamais un créneau
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000001",
+      intent: INTENT,
+      createdAt: 1_756_415_000_000,
+    });
+    await store.persistOutcome("perp-00000001", "ACCEPTED", 1_756_415_000_600);
+    await store.persistFills("perp-00000001", [FILL], 1_756_415_000_550);
+    // rejeté sans fill : jamais un créneau
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000002",
+      intent: INTENT,
+      createdAt: 1_756_415_100_000,
+    });
+    await store.persistOutcome("perp-00000002", "REJECTED", 1_756_415_100_600);
+    // non résolu : jamais un créneau
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000003",
+      intent: INTENT,
+      createdAt: 1_756_415_200_000,
+    });
+    // deux créneaux : le plus récemment réglé d'abord
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000004",
+      intent: INTENT,
+      createdAt: 1_756_415_300_000,
+    });
+    await store.persistOutcome("perp-00000004", "ACCEPTED", 1_756_415_300_600);
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000005",
+      intent: INTENT,
+      createdAt: 1_756_415_400_000,
+    });
+    await store.persistOutcome("perp-00000005", "ACCEPTED", 1_756_415_400_600);
+
+    const gaps = await store.loadAcceptedOrderIdsMissingFills(10);
+    expect(gaps).toEqual(["perp-00000005", "perp-00000004"]);
+  });
+
+  it("départage déterministement les créneaux réglés au même instant", async () => {
+    const store = createSqlitePerpOrderStore(freshAdapter());
+    for (const clientOrderId of ["perp-00000009", "perp-00000010"]) {
+      await store.persistOrderIntent({
+        clientOrderId,
+        intent: INTENT,
+        createdAt: 1_756_415_000_000,
+      });
+      await store.persistOutcome(
+        clientOrderId,
+        "ACCEPTED",
+        1_756_415_000_600,
+      );
+    }
+    const gaps = await store.loadAcceptedOrderIdsMissingFills(10);
+    expect(gaps).toEqual(["perp-00000010", "perp-00000009"]);
+  });
+
+  it("sort un créneau de la détection une fois comblé, sans doublon", async () => {
+    const adapter = freshAdapter();
+    const store = createSqlitePerpOrderStore(adapter);
+    await store.persistOrderIntent({
+      clientOrderId: "perp-00000001",
+      intent: INTENT,
+      createdAt: 1_756_415_000_000,
+    });
+    await store.persistOutcome("perp-00000001", "ACCEPTED", 1_756_415_000_600);
+    expect(await store.loadAcceptedOrderIdsMissingFills(10)).toEqual([
+      "perp-00000001",
+    ]);
+
+    await store.persistFills("perp-00000001", [FILL], 1_756_415_000_550);
+    await store.persistFills("perp-00000001", [FILL], 1_756_415_000_550);
+    expect(await store.loadAcceptedOrderIdsMissingFills(10)).toEqual([]);
+    const rows = adapter.all<{ fill_id: string }>(
+      "SELECT fill_id FROM dodash_perp_fills",
+      [],
+    );
+    expect(rows).toEqual([{ fill_id: FILL.fillId }]);
+  });
+
+  it("refuse une limite hors domaine (fail-closed)", async () => {
+    const store = createSqlitePerpOrderStore(freshAdapter());
+    await expect(
+      store.loadAcceptedOrderIdsMissingFills(0),
+    ).rejects.toThrow("INVALID_PERP_FILL_BACKFILL_LIMIT");
+    await expect(
+      store.loadAcceptedOrderIdsMissingFills(1.5),
+    ).rejects.toThrow("INVALID_PERP_FILL_BACKFILL_LIMIT");
+  });
+});

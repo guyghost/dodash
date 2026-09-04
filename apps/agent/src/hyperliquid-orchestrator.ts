@@ -58,6 +58,14 @@ export interface PerpOrderStore {
     fills: readonly PerpFillFact[],
     persistedAt: number,
   ): Promise<void>;
+  /**
+   * Détection lecture-seule des créneaux de rattrapage (dao #33) : les
+   * ordres résolus ACCEPTED sans aucune ligne de fill, ordre
+   * déterministe (le plus récemment réglé d'abord), borné LIMIT.
+   * Aucune écriture — source de vérité :
+   * models/hyperliquid-fill-persistence.md §2.5.
+   */
+  loadAcceptedOrderIdsMissingFills(limit: number): Promise<readonly string[]>;
   loadUnresolvedOrderIntents(): Promise<readonly PerpOrderRecord[]>;
 }
 
@@ -77,6 +85,31 @@ export const createInMemoryPerpOrderStore = (): PerpOrderStore => {
         const key = `${clientOrderId}:${fill.fillId}`;
         if (!fills.has(key)) fills.set(key, fill);
       }
+    },
+    async loadAcceptedOrderIdsMissingFills(limit) {
+      if (!Number.isSafeInteger(limit) || limit < 1) {
+        throw new Error("INVALID_PERP_FILL_BACKFILL_LIMIT");
+      }
+      // L'ordre d'insertion de `outcomes` est l'ordre de règlement ; le
+      // parcours inverse est le plus récemment réglé d'abord,
+      // déterministe (équivalent in-memory de settled_at DESC).
+      const gaps: string[] = [];
+      for (const [clientOrderId, outcome] of [...outcomes].reverse()) {
+        if (outcome !== "ACCEPTED") continue;
+        const prefix = `${clientOrderId}:`;
+        let hasFill = false;
+        for (const key of fills.keys()) {
+          if (key.startsWith(prefix)) {
+            hasFill = true;
+            break;
+          }
+        }
+        if (!hasFill) {
+          gaps.push(clientOrderId);
+          if (gaps.length === limit) break;
+        }
+      }
+      return gaps;
     },
     async loadUnresolvedOrderIntents() {
       return [...intents.values()]
@@ -103,7 +136,27 @@ export interface HyperliquidRecoveryReport {
    * télémétrie, jamais une décision (C3).
    */
   readonly fillPersistenceFailures: number;
+  /**
+   * Rattrapage borné des fills manqués (dao #33, §2.5) : créneaux
+   * comblés / en échec / tournés sans fill, et plafond atteint
+   * (rattrapage partiel, reste reporté au cycle suivant). Signal de
+   * sortie only — `recovered`/`unresolved` comptent les seuls ordres
+   * en vol.
+   */
+  readonly fillBackfillFilled: number;
+  readonly fillBackfillFailures: number;
+  readonly fillBackfillUnresolved: number;
+  readonly fillBackfillTruncated: boolean;
 }
+
+/**
+ * Plafond de rattrapage par cycle de reprise (dao #33, §2.5) : au plus
+ * N créneaux relus par cycle, chaque lecture étant plafonnée par la
+ * couture (#31/#27 : 1 MiB, timeout, erreurs fermées). Un ordre de
+ * grandeur sous la fenêtre de projection (50 ordres) ; la répétition
+ * cyclique couvre le reste, récemment réglé d'abord.
+ */
+export const PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE = 10;
 
 export interface HyperliquidPerpRunner {
   runOrder(request: {
@@ -181,14 +234,26 @@ export const createHyperliquidPerpRunner = ({
   let fillPersistenceFailures = 0;
 
   /**
+   * Issue fermée d'une lecture+persistance de fills (dao #31/#33) :
+   * PERSISTED (≥ 1 fill écrit), EMPTY (venue sans fill pour le cloid),
+   * READ_FAILED, WRITE_FAILED. Les échecs sont déjà consignés (log
+   * structuré + compteur) par cette fonction — jamais rehaussés.
+   */
+  type FillPersistIssue =
+    | { readonly kind: "PERSISTED"; readonly count: number }
+    | { readonly kind: "EMPTY" }
+    | { readonly kind: "READ_FAILED" }
+    | { readonly kind: "WRITE_FAILED" };
+
+  /**
    * Lecture venue des fills d'un ordre accepté, puis persistance
    * idempotente via le port. Sobre : une seule tentative par clôture
    * d'issue, aucun retry, aucune ligne inventée en cas d'absence.
-   * Source de vérité : models/hyperliquid-fill-persistence.md §2.3–2.4.
+   * Source de vérité : models/hyperliquid-fill-persistence.md §2.3–2.5.
    */
   const persistReconciledFills = async (
     clientOrderId: string,
-  ): Promise<void> => {
+  ): Promise<FillPersistIssue> => {
     let fills: readonly PerpFillFact[] | null = null;
     try {
       fills = await fetchHyperliquidOrderFills(
@@ -208,10 +273,10 @@ export const createHyperliquidPerpRunner = ({
           fillPersistenceFailures,
         }),
       );
-      return;
+      return { kind: "READ_FAILED" };
     }
     // Aucun fill : aucune ligne inventée (invariant 9).
-    if (fills.length === 0) return;
+    if (fills.length === 0) return { kind: "EMPTY" };
     try {
       await store.persistFills(
         clientOrderId,
@@ -227,7 +292,75 @@ export const createHyperliquidPerpRunner = ({
           fillPersistenceFailures,
         }),
       );
+      return { kind: "WRITE_FAILED" };
     }
+    return { kind: "PERSISTED", count: fills.length };
+  };
+
+  /**
+   * Rattrapage borné des fills manqués (dao #33, §2.5) : détecte les
+   * créneaux (ordres ACCEPTED sans fill, lecture-seule), relis au plus
+   * PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE d'entre eux en ordre
+   * déterministe via la même couture, insertion idempotente. Plafond
+   * atteint ⇒ rattrapage partiel consigné (`fillBackfillTruncated`) et
+   * reporté : un créneau ne sort de la détection que comblé. Un échec
+   * de rattrapage est un log + un compteur, jamais un échec de cycle
+   * (invariant 12) — la détection impossible annule le rattrapage sans
+   * toucher à la reprise des ordres en vol.
+   */
+  const backfillMissingFills = async (): Promise<{
+    readonly fillBackfillFilled: number;
+    readonly fillBackfillFailures: number;
+    readonly fillBackfillUnresolved: number;
+    readonly fillBackfillTruncated: boolean;
+  }> => {
+    let detected: readonly string[];
+    try {
+      detected = await store.loadAcceptedOrderIdsMissingFills(
+        PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE + 1,
+      );
+    } catch {
+      console.error(
+        JSON.stringify({
+          type: "PERP_FILL_BACKFILL_DETECTION_FAILED",
+        }),
+      );
+      return {
+        fillBackfillFilled: 0,
+        fillBackfillFailures: 1,
+        fillBackfillUnresolved: 0,
+        fillBackfillTruncated: false,
+      };
+    }
+    const scanned = detected.slice(0, PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE);
+    const truncated = detected.length > PERP_FILL_BACKFILL_MAX_GAPS_PER_CYCLE;
+    let filled = 0;
+    let failures = 0;
+    let unresolved = 0;
+    for (const clientOrderId of scanned) {
+      const issue = await persistReconciledFills(clientOrderId);
+      if (issue.kind === "PERSISTED") filled += 1;
+      else {
+        unresolved += 1;
+        if (issue.kind !== "EMPTY") failures += 1;
+      }
+    }
+    console.log(
+      JSON.stringify({
+        type: "PERP_FILL_BACKFILL",
+        scanned: scanned.length,
+        filled,
+        failures,
+        unresolved,
+        truncated,
+      }),
+    );
+    return {
+      fillBackfillFilled: filled,
+      fillBackfillFailures: failures,
+      fillBackfillUnresolved: unresolved,
+      fillBackfillTruncated: truncated,
+    };
   };
 
   const finishOutcome = async (
@@ -407,10 +540,15 @@ export const createHyperliquidPerpRunner = ({
         const result = await reconcileInFlight(machine, record.clientOrderId);
         if (result.status === "SETTLED") recovered += 1;
       }
+      // Rattrapage borné des créneaux sans fill (dao #33, §2.5) : après
+      // la reprise des ordres en vol, jamais entrelacé avec elle — son
+      // échec éventuel n'altère ni `recovered` ni `unresolved`.
+      const backfill = await backfillMissingFills();
       return Object.freeze({
         recovered,
         unresolved: pending.length - recovered,
         fillPersistenceFailures,
+        ...backfill,
       });
     },
   };
