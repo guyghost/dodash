@@ -19,6 +19,7 @@
     "study:confidence-quantile-sensitivity": "node scripts/confidence-quantile-sensitivity.mjs",
     "study:confidence-quantile-sample-size": "node scripts/confidence-quantile-sample-size-audit.mjs",
     "study:confidence-calibration": "node scripts/confidence-calibration-walkforward.mjs",
+    "eval:v2": "node scripts/evaluation-v2-report.mjs",
     "test": "vitest run"
   },
   "dependencies": {
