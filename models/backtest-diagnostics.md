@@ -71,6 +71,47 @@ rejetée lorsque son notionnel approuvé est inférieur à son notionnel alloué
 au-delà de cette même tolérance. La tolérance vaut
 `max(1, referenceNotional) × Number.EPSILON × 64`.
 
+## Évaluation v2 — métriques primaires et régime du benchmark
+
+L'évaluation d'un run distingue deux niveaux de lecture. Les métriques
+primaires décrivent le résultat absolu ; les métriques contextuelles relient
+ce résultat à son marché. Seules les métriques primaires peuvent soutenir un
+verdict.
+
+### Métriques primaires
+
+Pour chaque scénario d'un run, l'évaluation rapporte exactement : le PnL
+absolu net, en dollars et en fraction du capital initial, réalisé et latent
+distincts ; le win rate liquidatif (INV-26, `backtest-run.md`) ; le drawdown
+maximal ; le Sharpe annualisé ; le turnover ; les frais payés.
+
+### Métrique contextuelle : excess vs benchmark
+
+L'excess vs benchmark est rétrogradé en métrique contextuelle : perdre moins
+que le benchmark n'est pas un résultat positif en absolu. Il ne soutient
+aucun verdict et n'est rapporté qu'accompagné du régime du benchmark.
+
+Le régime du benchmark est calculé, jamais déclaré à la main. Il dérive du
+rendement total du benchmark buy-and-hold sur exactement la même fenêtre, au
+seuil figé à zéro : rendement `>= 0` vaut `HAUSSIER`, rendement `< 0` vaut
+`BAISSIER`. Le seuil fait partie du modèle ; un rapport dont le régime ne
+provient pas de ce calcul est invalide.
+
+### Règle de lecture
+
+Ces métriques décrivent des faits absolus. Elles n'activent aucune stratégie,
+ne déclarent aucun edge et n'autorisent aucune transition vers le live. Un
+PnL positif en marché haussier, comme un excess positif en marché baissier,
+reste un fait mesuré.
+
+### Compatibilité de lecture des artefacts existants
+
+Les artefacts produits avant cet amendement peuvent omettre le win rate
+liquidatif ou le régime du benchmark. Leur lecture ne échoue pas : une
+métrique absente reste absente (`null`), sans valeur reconstituée, inférée
+ni réinterprétée. Le régime d'un artefact legacy est recalculé depuis son
+benchmark, jamais repris d'un champ absent.
+
 ## Validation et erreurs
 
 Les identifiants doivent être non vides, les prix finis et strictement positifs,
@@ -101,3 +142,9 @@ remplacer une valeur invalide par zéro.
    `activeSignalCount` valeurs finies et positives ou nulles et reproduit le
    `count`, le `min`, la médiane R7, le p95 R7 et le `max` du résumé.
 8. Sans option explicite, `diagnosticSamples = null` au niveau replay et suite.
+9. Le régime du benchmark d'une évaluation est dérivé du rendement du
+   benchmark par le seuil figé à zéro ; il n'est jamais un paramètre d'entrée
+   ni une valeur déclarée.
+10. Une métrique primaire absente d'un artefact legacy reste `null` à la
+    lecture ; aucune valeur n'est reconstituée et aucun verdict n'est porté
+    sur les seules métriques contextuelles.
