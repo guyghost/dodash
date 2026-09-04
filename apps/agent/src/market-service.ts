@@ -55,6 +55,17 @@ const error = (
   retryable: boolean,
 ): WorkflowError => ({ phase: "market-data", code, retryable });
 
+// models/effects.md : classification fermée des réponses non-OK du binding
+// marché — un refus d'authentification (401/403, secret partagé incorrect)
+// n'est jamais une panne réseau et n'appelle aucun retry.
+const responseError = (status: number): WorkflowError => {
+  if (status === 401 || status === 403) {
+    return error("AUTHENTICATION_FAILURE", false);
+  }
+  if (status === 429) return error("RATE_LIMITED", true);
+  return error("NETWORK_UNAVAILABLE", status >= 500);
+};
+
 const fetchTickerPrice = async (
   service: MarketService,
   internalToken: string,
@@ -88,11 +99,7 @@ const fetchTickerPrice = async (
       }),
     );
     await response.body?.cancel().catch(() => undefined);
-    return err(
-      response.status === 429
-        ? error("RATE_LIMITED", true)
-        : error("NETWORK_UNAVAILABLE", response.status >= 500),
-    );
+    return err(responseError(response.status));
   }
 
   try {
@@ -118,7 +125,7 @@ export const fetchMarketSnapshot = async (
   triggeredAt: number,
 ): Promise<Result<MarketSnapshot, WorkflowError>> => {
   if (internalToken.length < 32) {
-    return err(error("NETWORK_UNAVAILABLE", false));
+    return err(error("AUTHENTICATION_FAILURE", false));
   }
 
   const duration = TIMEFRAME_MILLISECONDS[configuration.timeframe];
@@ -157,11 +164,7 @@ export const fetchMarketSnapshot = async (
       }),
     );
     await response.body?.cancel().catch(() => undefined);
-    return err(
-      response.status === 429
-        ? error("RATE_LIMITED", true)
-        : error("NETWORK_UNAVAILABLE", response.status >= 500),
-    );
+    return err(responseError(response.status));
   }
 
   try {
