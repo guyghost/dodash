@@ -96,11 +96,23 @@ for app in mcp-market-data agent dashboard-api dashboard; do
   (cd apps/$app && npx wrangler secret list -c wrangler.paper.jsonc)
 done
 
-# 5) Instance paper BTC-USD (auth dashboard-api → agent), cadence 60 s
+# 5) Instance paper BTC-USD — MODE PORTEFEUILLE N ≥ 2 (dao #43, amendement
+#    §11 de models/multi-product-portfolio.md). La voie mono-produit rejette
+#    systématiquement en RISK_REJECTED (couture d'admission sans machine
+#    portefeuille) : ne plus l'utiliser en production paper.
 T2=…  # recharger le token opérateur
 curl -s -X POST https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agents/btc-usd-paper/start \
   -H "Authorization: Bearer $T2" -H "Content-Type: application/json" \
-  -d '{"productId":"BTC-USD","intervalSeconds":60,"executionMode":"paper"}'
+  -d '{
+    "timeframe": "ONE_MINUTE",
+    "strategyIds": ["breakout", "ema-cross", "rsi-reversion"],
+    "intervalSeconds": 60,
+    "executionMode": "paper",
+    "initialCapital": 10000,
+    "maxDecisionNotional": 2000,
+    "products": [{"productId": "BTC-USD"}, {"productId": "ETH-USD"}],
+    "portfolioRisk": {"maxGrossExposure": 20000, "maxDailyLoss": 1000}
+  }'
 
 curl -s "https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agents/btc-usd-paper/state" \
   -H "Authorization: Bearer $T2"
@@ -110,8 +122,10 @@ cd apps/agent && npx wrangler tail dodash-paper-agent --format json   # → "typ
 ```
 
 **Horodatage de début de collecte #36 (télémétrie paper continue, verdict
-endpoint à 14 j)** : `2026-09-04T16:42:13Z` (POST /start accepté). Échéance
-d'arbitrage : 2026-09-18.
+endpoint à 14 j)** : `2026-09-04T17:01:15Z` (POST /start accepté, instance
+reconfigurée en mode portefeuille — voir §4bis). Échéance d'arbitrage :
+2026-09-18. La fenêtre ouverte à 16:42:13Z est invalidée par cette
+reconfiguration (dao #43) ; c'est l'horodatage 17:01:15Z qui fait foi.
 
 ## 4. Épreuve effectuée (2026-09-04)
 
@@ -136,13 +150,43 @@ signaleuse (INV-P5, fail-closed) — aucun ordre placé, `dailyPnl: 0`,
 `RATE_LIMITED` (phase `market-data`, retryable, rate limit public Coinbase) ;
 le cycle suivant a réussi (auto-récupéré).
 
+## 4bis. Incident #43 — RISK_REJECTED systématique (résolu, 2026-09-04)
+
+**Symptôme** : tous les cycles porteurs d'une décision finissent
+`RISK_REJECTED` (errorCode `null`) — aucun ordre paper exécuté.
+
+**Cause exacte** (hypothèse sizing réfutée : l'allocateur plafonne déjà le
+notional à `min(capitalAvailable, maxDecisionNotional)` = 2 000, `checkRisk`
+local approuve) : la couture d'admission consolidée (INV-P5) est câblée sans
+condition dans les effets de cycle mono-produit (`createEffects`), alors que
+la voie `/start` mono-produit ne crée jamais `portfolioSession` — chaque
+`RISK_PROPOSED` reçoit `{approved:false, UNKNOWN_PRODUCT}` (refus fermé),
+d'où le rejet systématique.
+
+**Correctif (config d'instance, cœur de risque inchangé)** : redémarrage de
+l'instance en **mode portefeuille N ≥ 2** (amendement §11 de
+`models/multi-product-portfolio.md`, revu) — créneaux BTC-USD + ETH-USD,
+`initialCapital` 10 000/créneau, `portfolioRisk` consolidé
+{20 000, 1 000}. Procédure : `POST /stop` puis `POST /start` avec le corps
+multi-produits du §3. Le câblage conditionnel de la couture mono-produit
+reste un correctif de code à part (passage Model → Review → Implement →
+Verify dédié).
+
+**Épreuve** (tail `dodash-paper-agent`, 4 alarmes × 2 produits = 8 cycles) :
+4× `ORDER_CONFIRMED` (`executionObserved: true`, positions paper ouvertes :
+BTC-USD 0,00853 @ 79 724 ; ETH-USD 0,01538 @ 2 459 ; PnL paper ~-0,60 USD,
+cohérent avec frais 6 bps + slippage 2 bps), 1× `NO_ACTION`,
+3× `RISK_REJECTED` **ponctuels** (refus déterministes normaux — cooldown /
+côté sans position). Plus aucun rejet systématique. Nouvelle fenêtre #36 :
+17:01:15Z (§3).
+
 ## 5. Coûts attendus (free tier)
 
-Cadence 60 s ≈ 1 440 cycles/jour ≈ ~4 500 requêtes/jour (alarme + fetch marché
-via service binding + persistance) : très en dessous des 100 000 requêtes/jour
-Workers, ~100k points Analytics Engine/jour et du volume KV. Coût attendu :
-**0 $** (free tier). Surveillance conseillée à J+2 : stockage SQLite du DO
-(historique de cycles) et quota Workers du compte.
+Cadence 60 s × 2 créneaux (dao #43) ≈ 2 880 cycles/jour ≈ ~9 000 requêtes/jour
+(alarme + fetch marché par produit via service binding + persistance) : très en
+dessous des 100 000 requêtes/jour Workers, ~100k points Analytics Engine/jour
+et du volume KV. Coût attendu : **0 $** (free tier). Surveillance conseillée à
+J+2 : stockage SQLite du DO (historique de cycles) et quota Workers du compte.
 
 ## 6. Teardown (à NE PAS exécuter tant que la collecte #36 court — C3)
 
@@ -175,12 +219,11 @@ curl -s -X POST https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agen
 
 ## 7. Points ouverts
 
-1. **RISK_REJECTED systématique** : les signaux 1 min (breakout/ema-cross/
-   rsi-reversion) sont produits mais refusés par le layer risque (sizing NATIVE
-   sur capital 10 000 vs `maxOrderNotional` 2 000 — hypothèse à confirmer).
-   Aucun ordre paper d'exécution observé. Si la collecte #36 doit couvrir le
-   tronc exécution paper, un ajustement de configuration d'instance (pas de
-   code) est à instruire via Model → Review avant la fenêtre de 14 j.
+1. **RISK_REJECTED systématique — RÉSOLU (dao #43, §4bis)** : instance
+   reconfigurée en mode portefeuille N ≥ 2 ; exécutions paper observées.
+   Restant : les `RISK_REJECTED` ponctuels résiduels sont du comportement
+   normal du layer risque (cooldown 60 s, réduction sans position) ; à
+   surveiller seulement si leur taux devenait majoritaire.
 2. `RATE_LIMITED` ponctuel (retryable) sur la phase `market-data` : à surveiller
    en continu ; rien à faire tant que le taux d'échec reste marginal.
 3. Les workers paper exposent `/health` en public (workers.dev) : sans risque
