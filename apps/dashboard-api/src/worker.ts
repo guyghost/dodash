@@ -7,6 +7,7 @@ const agentActions = new Set([
   "state",
   "cycles",
   "pnl",
+  "portfolio",
   "preflight",
   "start",
   "stop",
@@ -88,7 +89,7 @@ const parseRoute = (url: URL): ParsedRoute | null => {
   };
 };
 
-const readActions = new Set(["state", "cycles", "pnl"]);
+const readActions = new Set(["state", "cycles", "pnl", "portfolio"]);
 
 const methodAllowed = (method: string, action: string): boolean =>
   (method === "GET" && readActions.has(action)) ||

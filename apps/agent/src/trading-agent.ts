@@ -6,9 +6,12 @@ import {
   DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
   DASHBOARD_PNL_HISTORY_MAX_CYCLES,
   projectDashboardPnlHistory,
+  projectDashboardPortfolioSummary,
   type ControlPermissions,
   type DashboardPnlHistoryResult,
   type DashboardPnlOrderRow,
+  type DashboardPortfolioProductInput,
+  type DashboardPortfolioSummaryResult,
   type TradingCycleEvent,
   type LivePreflightFailureReason,
   type WorkflowError,
@@ -698,6 +701,53 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       orders,
       boundedLimit,
     );
+  }
+
+  /**
+   * Projection portefeuille lecture-seule (dao #32) : lecture en mémoire
+   * de l'instantané `portfolioSession`, aucun SQL ni appel réseau sortant.
+   * Source normative : models/dashboard-portfolio-summary.md §3-§4.
+   */
+  getPortfolioSummary(): DashboardPortfolioSummaryResult {
+    const session = this.state.portfolioSession;
+    // §3.1 : mono-produit = réponse valide `single-product` (backward-compat).
+    if (session === null) return projectDashboardPortfolioSummary(null);
+    const products: DashboardPortfolioProductInput[] = [];
+    for (const slot of session.configuration.products) {
+      const product = session.products[slot.productId];
+      const status = session.portfolio.context.statuses[slot.productId];
+      // Fail-closed (C3) : un créneau configuré sans runtime ni statut
+      // orchestrateur est une session incohérente, jamais un produit omis.
+      if (product === undefined || status === undefined) {
+        return { ok: false, error: { code: "INVALID_PORTFOLIO_SESSION" } };
+      }
+      products.push({
+        productId: slot.productId,
+        phase: product.machine.value,
+        status,
+        cash: product.portfolio.cash,
+        positionQuantity: product.portfolio.positionQuantity,
+        averagePrice: product.portfolio.averagePrice,
+        dailyPnl: product.dailyPnl,
+        maxGrossExposure: slot.risk.maxGrossExposure,
+        lastCycle:
+          product.lastCycle === null
+            ? null
+            : {
+                cycleId: product.lastCycle.cycleId,
+                triggeredAt: product.lastCycle.triggeredAt,
+                completedAt: product.lastCycle.completedAt,
+                outcome: product.lastCycle.outcome,
+                marketPrice: product.lastCycle.marketPrice,
+              },
+      });
+    }
+    return projectDashboardPortfolioSummary({
+      phase: session.portfolio.value,
+      killSwitchActive: session.portfolio.context.killSwitchActive,
+      portfolioRisk: session.configuration.portfolioRisk ?? null,
+      products,
+    });
   }
 
   private async control(event: TradingCycleEvent): Promise<AgentCommandResult> {

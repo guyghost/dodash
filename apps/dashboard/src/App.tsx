@@ -32,6 +32,8 @@ import {
   type CycleView,
   type DashboardGateway,
   type PnlHistoryView,
+  type PortfolioProductStatusView,
+  type PortfolioSummaryView,
   type StartConfiguration,
 } from "./dashboard-api.js";
 import { createDemoGateway } from "./demo-gateway.js";
@@ -84,6 +86,15 @@ const bps = new Intl.NumberFormat("fr-FR", {
   maximumFractionDigits: 2,
   minimumFractionDigits: 2,
 });
+
+const portfolioStatusLabel = (status: PortfolioProductStatusView): string =>
+  status === "running"
+    ? "ACTIF"
+    : status === "stopped"
+      ? "ARRÊTÉ"
+      : status === "halted"
+        ? "SUSPENDU"
+        : "EN ÉCHEC";
 
 const equityPath = (points: readonly { readonly t: number; readonly equity: number }[]): string => {
   if (points.length < 2) return "";
@@ -285,6 +296,7 @@ export function App({
   const [agent, setAgent] = useState<AgentStateView | null>(null);
   const [cycles, setCycles] = useState<readonly CycleView[]>([]);
   const [pnlHistory, setPnlHistory] = useState<PnlHistoryView | null>(null);
+  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummaryView | null>(null);
   const [agentName, setAgentName] = useState("btc-usd--multi");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [token, setToken] = useState("");
@@ -347,8 +359,9 @@ export function App({
         gateway.loadState(target),
         gateway.loadCycles(target),
         gateway.loadPnlHistory(target),
+        gateway.loadPortfolioSummary(target),
       ])
-        .then(([nextAgent, nextCycles, nextPnl]) => {
+        .then(([nextAgent, nextCycles, nextPnl, nextPortfolio]) => {
           actor.send({
             type: "STATE_LOADED",
             remotePhase: nextAgent.phase,
@@ -358,6 +371,7 @@ export function App({
             setAgent(nextAgent);
             setCycles(nextCycles);
             setPnlHistory(nextPnl);
+            setPortfolioSummary(nextPortfolio);
           }
         })
         .catch(fail);
@@ -372,9 +386,10 @@ export function App({
           command === "start" ? pendingStartRef.current : undefined,
         )
         .then(async (nextAgent) => {
-          const [nextCycles, nextPnl] = await Promise.all([
+          const [nextCycles, nextPnl, nextPortfolio] = await Promise.all([
             gateway.loadCycles(target),
             gateway.loadPnlHistory(target),
+            gateway.loadPortfolioSummary(target),
           ]);
           actor.send({
             type: "COMMAND_SUCCEEDED",
@@ -385,6 +400,7 @@ export function App({
             setAgent(nextAgent);
             setCycles(nextCycles);
             setPnlHistory(nextPnl);
+            setPortfolioSummary(nextPortfolio);
           }
           pendingStartRef.current = undefined;
         })
@@ -1204,9 +1220,103 @@ export function App({
             )}
           </section>
 
+          {portfolioSummary?.kind === "portfolio" && (
+            <section>
+              <SectionHeading
+                index="08"
+                title="PORTEFEUILLE"
+                detail="VUE MULTI-PRODUITS · LECTURE SEULE"
+              />
+              <div className="portfolio-grid">
+                {portfolioSummary.products.map((product) => (
+                  <article className="paper-card product-card" key={product.productId}>
+                    <div className="card-topline">
+                      <span className="card-label teal-bg">{product.productId}</span>
+                      <span
+                        className={`phase-badge ${
+                          product.status === "running" ? "online" : "offline"
+                        }`}
+                      >
+                        {portfolioStatusLabel(product.status)}
+                      </span>
+                    </div>
+                    <h2>{phaseLabel(product.phase as DashboardRemotePhase)}</h2>
+                    <div className="metric-grid">
+                      <Metric
+                        label="EXPOSITION"
+                        value={money.format(product.grossExposure)}
+                        accent="blue-text"
+                      />
+                      <Metric
+                        label="PLAFOND PRODUIT"
+                        value={money.format(product.maxGrossExposure)}
+                      />
+                      <Metric
+                        label="PNL JOUR"
+                        value={money.format(product.dailyPnl)}
+                        accent={product.dailyPnl >= 0 ? "green-text" : "red-text"}
+                      />
+                      <Metric
+                        label="POSITION"
+                        value={quantity.format(product.positionQuantity)}
+                      />
+                    </div>
+                    <p className="next-wake">
+                      Dernier cycle :{" "}
+                      {product.lastCycle === null
+                        ? "aucun"
+                        : `${product.lastCycle.outcome} · ${compactDate.format(product.lastCycle.completedAt)}`}
+                    </p>
+                  </article>
+                ))}
+                <article className="paper-card consolidated-card">
+                  <div className="card-topline">
+                    <span className="card-label orange-bg">CONSOLIDÉ</span>
+                    <span
+                      className={`phase-badge ${
+                        portfolioSummary.killSwitchActive ? "offline" : "online"
+                      }`}
+                    >
+                      {portfolioSummary.killSwitchActive
+                        ? "KILL SWITCH ENGAGÉ"
+                        : phaseLabel(portfolioSummary.phase as DashboardRemotePhase)}
+                    </span>
+                  </div>
+                  <h2>Garde-fous du portefeuille</h2>
+                  <div className="metric-grid">
+                    <Metric
+                      label="EXPOSITION CONSOLIDÉE"
+                      value={money.format(portfolioSummary.consolidated.grossExposure)}
+                      accent="blue-text"
+                    />
+                    <Metric
+                      label="PLAFOND PORTEFEUILLE"
+                      value={money.format(portfolioSummary.consolidated.maxGrossExposure)}
+                    />
+                    <Metric
+                      label="PNL JOUR CONSOLIDÉ"
+                      value={money.format(portfolioSummary.consolidated.dailyPnl)}
+                      accent={
+                        portfolioSummary.consolidated.dailyPnl >= 0 ? "green-text" : "red-text"
+                      }
+                    />
+                    <Metric
+                      label="PLAFOND PERTE JOUR"
+                      value={money.format(portfolioSummary.consolidated.maxDailyLoss)}
+                    />
+                  </div>
+                  <p className="next-wake">
+                    {portfolioSummary.products.length} produits · lecture seule, aucune décision
+                    automatique
+                  </p>
+                </article>
+              </div>
+            </section>
+          )}
+
           <section>
             <SectionHeading
-              index="08"
+              index="09"
               title="PERPÉTUELS · HYPERLIQUID"
               detail="ORDRE OPÉRATEUR · GARDES SERVEUR"
             />

@@ -85,6 +85,48 @@ export interface PnlHistoryView {
     | null;
 }
 
+export type PortfolioProductStatusView = "running" | "stopped" | "halted" | "failed";
+
+export interface PortfolioLastCycleView {
+  readonly cycleId: string;
+  readonly triggeredAt: number;
+  readonly completedAt: number;
+  readonly outcome: string;
+  readonly marketPrice: number | null;
+}
+
+export interface PortfolioProductView {
+  readonly productId: string;
+  readonly phase: string;
+  readonly status: PortfolioProductStatusView;
+  readonly cash: number;
+  readonly positionQuantity: number;
+  readonly averagePrice: number;
+  readonly marketPrice: number | null;
+  readonly grossExposure: number;
+  readonly maxGrossExposure: number;
+  readonly dailyPnl: number;
+  readonly lastCycle: PortfolioLastCycleView | null;
+}
+
+export interface PortfolioConsolidatedView {
+  readonly grossExposure: number;
+  readonly maxGrossExposure: number;
+  readonly dailyPnl: number;
+  readonly maxDailyLoss: number;
+}
+
+/** dao #32 : `portfolio` = instance multi-produits ; `single-product` = vue inchangée. */
+export type PortfolioSummaryView =
+  | {
+      readonly kind: "portfolio";
+      readonly phase: string;
+      readonly killSwitchActive: boolean;
+      readonly products: readonly PortfolioProductView[];
+      readonly consolidated: PortfolioConsolidatedView;
+    }
+  | { readonly kind: "single-product" };
+
 export interface StartConfiguration {
   readonly productId: string;
   readonly timeframe: string;
@@ -111,6 +153,7 @@ export interface DashboardGateway {
   loadState(agentName: string): Promise<AgentStateView>;
   loadCycles(agentName: string): Promise<readonly CycleView[]>;
   loadPnlHistory(agentName: string): Promise<PnlHistoryView>;
+  loadPortfolioSummary(agentName: string): Promise<PortfolioSummaryView>;
   command(
     agentName: string,
     command: DashboardDirectCommand | "kill",
@@ -157,6 +200,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
+const isNonNegativeFinite = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
 const isSafeTime = (value: unknown): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
@@ -395,6 +440,116 @@ export const parsePnlHistory = (value: unknown): PnlHistoryView => {
   });
 };
 
+const PORTFOLIO_PRODUCT_PHASES = new Set<string>(DASHBOARD_REMOTE_PHASES);
+const PORTFOLIO_PRODUCT_STATUSES = new Set<string>([
+  "running",
+  "stopped",
+  "halted",
+  "failed",
+]);
+const PORTFOLIO_MAX_PRODUCTS = 8;
+
+/**
+ * dao #32 : revalidation stricte de la projection portefeuille (V3) :
+ * types, finitude, domaines, ensembles fermés, tableau produits plafonné
+ * au nombre de créneaux admissibles. Toute dérive = erreur typée, jamais
+ * un rendu dégradé.
+ */
+export const parsePortfolioSummary = (value: unknown): PortfolioSummaryView => {
+  if (!isRecord(value) || (value.kind !== "portfolio" && value.kind !== "single-product")) {
+    throw invalidResponse();
+  }
+  if (value.kind === "single-product") return Object.freeze(value) as PortfolioSummaryView;
+
+  if (
+    typeof value.phase !== "string" ||
+    typeof value.killSwitchActive !== "boolean" ||
+    !Array.isArray(value.products) ||
+    !isRecord(value.consolidated)
+  ) {
+    throw invalidResponse();
+  }
+  const products = value.products.slice(0, PORTFOLIO_MAX_PRODUCTS).map((item) => {
+    if (
+      !isRecord(item) ||
+      typeof item.productId !== "string" ||
+      item.productId.length === 0 ||
+      typeof item.phase !== "string" ||
+      !PORTFOLIO_PRODUCT_PHASES.has(item.phase) ||
+      typeof item.status !== "string" ||
+      !PORTFOLIO_PRODUCT_STATUSES.has(item.status) ||
+      !isFiniteNumber(item.cash) ||
+      !isNonNegativeFinite(item.positionQuantity) ||
+      !isNonNegativeFinite(item.averagePrice) ||
+      !isFiniteNumber(item.dailyPnl) ||
+      !isFiniteNumber(item.grossExposure) ||
+      !isFiniteNumber(item.maxGrossExposure) ||
+      item.maxGrossExposure <= 0 ||
+      !(item.marketPrice === null || isFiniteNumber(item.marketPrice))
+    ) {
+      throw invalidResponse();
+    }
+    let lastCycle: PortfolioLastCycleView | null = null;
+    if (item.lastCycle !== null) {
+      if (
+        !isRecord(item.lastCycle) ||
+        typeof item.lastCycle.cycleId !== "string" ||
+        item.lastCycle.cycleId.length === 0 ||
+        !isSafeTime(item.lastCycle.triggeredAt) ||
+        !isSafeTime(item.lastCycle.completedAt) ||
+        typeof item.lastCycle.outcome !== "string" ||
+        item.lastCycle.outcome.length === 0 ||
+        !(item.lastCycle.marketPrice === null || isFiniteNumber(item.lastCycle.marketPrice))
+      ) {
+        throw invalidResponse();
+      }
+      lastCycle = Object.freeze({
+        cycleId: item.lastCycle.cycleId,
+        triggeredAt: item.lastCycle.triggeredAt,
+        completedAt: item.lastCycle.completedAt,
+        outcome: item.lastCycle.outcome,
+        marketPrice: item.lastCycle.marketPrice,
+      });
+    }
+    return Object.freeze({
+      productId: item.productId,
+      phase: item.phase,
+      status: item.status as PortfolioProductStatusView,
+      cash: Number(item.cash),
+      positionQuantity: Number(item.positionQuantity),
+      averagePrice: Number(item.averagePrice),
+      marketPrice: item.marketPrice as number | null,
+      grossExposure: Number(item.grossExposure),
+      maxGrossExposure: Number(item.maxGrossExposure),
+      dailyPnl: Number(item.dailyPnl),
+      lastCycle,
+    });
+  });
+  const consolidated = value.consolidated;
+  if (
+    !isFiniteNumber(consolidated.grossExposure) ||
+    !isFiniteNumber(consolidated.maxGrossExposure) ||
+    consolidated.maxGrossExposure <= 0 ||
+    !isFiniteNumber(consolidated.dailyPnl) ||
+    !isFiniteNumber(consolidated.maxDailyLoss) ||
+    consolidated.maxDailyLoss <= 0
+  ) {
+    throw invalidResponse();
+  }
+  return Object.freeze({
+    kind: "portfolio" as const,
+    phase: value.phase,
+    killSwitchActive: value.killSwitchActive,
+    products: Object.freeze(products),
+    consolidated: Object.freeze({
+      grossExposure: Number(consolidated.grossExposure),
+      maxGrossExposure: Number(consolidated.maxGrossExposure),
+      dailyPnl: Number(consolidated.dailyPnl),
+      maxDailyLoss: Number(consolidated.maxDailyLoss),
+    }),
+  });
+};
+
 const boundedJson = async (response: Response): Promise<unknown> => {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > 1_000_000) throw invalidResponse();
@@ -448,6 +603,15 @@ export const createHttpGateway = (
       parsePnlHistory(
         await call(`/api/agents/${encodeURIComponent(agentName)}/pnl?limit=30`),
       ),
+    loadPortfolioSummary: async (agentName: string) => {
+      // dao #32 : l'Agent renvoie l'enveloppe `{ ok, value }` (même contrat
+      // que /pnl) ; on la déballe avant revalidation stricte.
+      const payload = await call(`/api/agents/${encodeURIComponent(agentName)}/portfolio`);
+      if (!isRecord(payload) || payload.ok !== true || !("value" in payload)) {
+        throw invalidResponse();
+      }
+      return parsePortfolioSummary(payload.value);
+    },
     command: async (
       agentName: string,
       command: DashboardDirectCommand | "kill",

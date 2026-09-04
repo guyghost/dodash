@@ -29,6 +29,7 @@ type TradingAgentRpc = Pick<
   TradingAgent,
   | "getAgentState"
   | "getPnlHistory"
+  | "getPortfolioSummary"
   | "killAgent"
   | "listRecentCycles"
   | "preflightLive"
@@ -74,6 +75,12 @@ const handleApi = async (
         DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
     );
     const result = await agent.getPnlHistory(rawLimit);
+    return json(result, result.ok ? 200 : 500);
+  }
+  if (request.method === "GET" && action === "portfolio") {
+    // Instantané lecture-seul sans query (dao #32, §4) : lecture en
+    // mémoire de portfolioSession, aucune réponse partielle.
+    const result = agent.getPortfolioSummary();
     return json(result, result.ok ? 200 : 500);
   }
   if (request.method !== "POST") {

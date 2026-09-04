@@ -7,7 +7,9 @@ import {
   parseAgentState,
   parseCycles,
   parsePnlHistory,
+  parsePortfolioSummary,
   type PnlHistoryView,
+  type PortfolioSummaryView,
 } from "../src/dashboard-api.js";
 
 const state = {
@@ -86,6 +88,151 @@ const pnlHistory = {
     protectiveOrderConfirmed: true,
   },
 };
+
+describe("portfolio summary boundary", () => {
+  const portfolioValue = {
+    kind: "portfolio",
+    phase: "running",
+    killSwitchActive: false,
+    products: [
+      {
+        productId: "BTC-USD",
+        phase: "waiting",
+        status: "running",
+        cash: 5_000,
+        positionQuantity: 0.1,
+        averagePrice: 60_000,
+        marketPrice: 62_000,
+        grossExposure: 6_200,
+        maxGrossExposure: 20_000,
+        dailyPnl: 42.5,
+        lastCycle: {
+          cycleId: "cycle-1",
+          triggeredAt: 1_700_000_000_000,
+          completedAt: 1_700_000_004_000,
+          outcome: "ORDER_CONFIRMED",
+          marketPrice: 62_000,
+        },
+      },
+      {
+        productId: "SOL-USD",
+        phase: "halted",
+        status: "halted",
+        cash: 1_000,
+        positionQuantity: 0,
+        averagePrice: 0,
+        marketPrice: null,
+        grossExposure: 0,
+        maxGrossExposure: 5_000,
+        dailyPnl: -10,
+        lastCycle: null,
+      },
+    ],
+    consolidated: {
+      grossExposure: 6_200,
+      maxGrossExposure: 30_000,
+      dailyPnl: 32.5,
+      maxDailyLoss: 1_500,
+    },
+  };
+
+  it("projects a validated portfolio summary with a quiescent product", () => {
+    const view: PortfolioSummaryView = parsePortfolioSummary(portfolioValue);
+    expect(view.kind).toBe("portfolio");
+    if (view.kind !== "portfolio") return;
+    expect(view.products).toHaveLength(2);
+    expect(view.products[0]).toMatchObject({
+      productId: "BTC-USD",
+      grossExposure: 6_200,
+      lastCycle: { cycleId: "cycle-1", outcome: "ORDER_CONFIRMED" },
+    });
+    expect(view.products[1]).toMatchObject({ status: "halted", lastCycle: null });
+    expect(view.consolidated).toEqual({
+      grossExposure: 6_200,
+      maxGrossExposure: 30_000,
+      dailyPnl: 32.5,
+      maxDailyLoss: 1_500,
+    });
+  });
+
+  it("accepts a single-product answer for a mono-product agent", () => {
+    expect(parsePortfolioSummary({ kind: "single-product" })).toEqual({
+      kind: "single-product",
+    });
+  });
+
+  it("rejects malformed portfolio records", () => {
+    expect(() => parsePortfolioSummary({ kind: "whatever" })).toThrow(
+      DashboardRequestError,
+    );
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        products: [
+          { ...portfolioValue.products[0], phase: "waitingHard" },
+        ],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        products: [{ ...portfolioValue.products[0], status: "paused" }],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        products: [{ ...portfolioValue.products[0], positionQuantity: -0.1 }],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        products: [{ ...portfolioValue.products[0], lastCycle: { cycleId: "c" } }],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        consolidated: { ...portfolioValue.consolidated, maxDailyLoss: 0 },
+      }),
+    ).toThrow(DashboardRequestError);
+  });
+
+  it("caps the products array at the admissible slot count", () => {
+    const padded = parsePortfolioSummary({
+      ...portfolioValue,
+      products: Array.from({ length: 12 }, (_, index) => ({
+        ...portfolioValue.products[0],
+        productId: `P-${index}`,
+      })),
+    });
+    expect(padded.kind === "portfolio" && padded.products).toHaveLength(8);
+  });
+
+  it("unwraps the agent envelope and reads the snapshot on the proxy route", async () => {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json({ ok: true, value: portfolioValue }),
+    );
+    const gateway = createHttpGateway("https://dashboard-api.example", "secret", request);
+    const view = await gateway.loadPortfolioSummary("btc agent");
+
+    const [url] = request.mock.calls[0] ?? [];
+    expect(url).toBe("https://dashboard-api.example/api/agents/btc%20agent/portfolio");
+    expect(String(url)).not.toContain("?");
+    expect(view.kind).toBe("portfolio");
+  });
+
+  it("rejects a failed or shapeless envelope", async () => {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json({ ok: false, error: { code: "INVALID_PORTFOLIO_SESSION" } }),
+    );
+    const gateway = createHttpGateway("https://dashboard-api.example", "secret", request);
+    await expect(gateway.loadPortfolioSummary("btc agent")).rejects.toThrow(
+      DashboardRequestError,
+    );
+  });
+});
 
 describe("dashboard API boundary", () => {
   it("freezes a live start to the confirmed daily strategy envelope", () => {
