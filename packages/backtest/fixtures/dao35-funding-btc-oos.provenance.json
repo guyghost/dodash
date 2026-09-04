@@ -1,0 +1,19 @@
+{
+  "dataset": "dao35-funding-btc-oos",
+  "endpoint": "https://api.hyperliquid.xyz/info",
+  "request": "POST /info { type: \"fundingHistory\", coin, startTime, endTime }",
+  "coin": "BTC",
+  "window": {
+    "startAt": 1788220800000,
+    "endAt": 1788480000000
+  },
+  "collectedAt": "2026-09-04T10:07:49.700Z",
+  "recordCount": 72,
+  "requestCount": 2,
+  "bounded": {
+    "maxResponseBytes": 1000000,
+    "timeoutMs": 10000
+  },
+  "protocol": "models/funding-edge-campaign.md §B (v2, DAO #35)",
+  "sha256": "e5a129f127a41314614346b0df5b755bc7603453156255b4754601168d90e1ab"
+}
