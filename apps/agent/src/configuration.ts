@@ -26,6 +26,17 @@ export const STRATEGY_IDS = [
 
 export type StrategyId = (typeof STRATEGY_IDS)[number];
 
+/**
+ * Stratégies actives par défaut. Les stratégies ajoutées après coup
+ * (ex. funding-trend, dao #27) sont opt-in : elles n'entrent pas dans le
+ * défaut, conformément à leurs invariants d'activation.
+ */
+const DEFAULT_STRATEGY_IDS: readonly StrategyId[] = [
+  "rsi-reversion",
+  "ema-cross",
+  "breakout",
+];
+
 export type AgentSizingPolicy =
   | { readonly type: "NATIVE" }
   | {
@@ -215,7 +226,11 @@ const inputSchema = z.object({
       "ONE_DAY",
     ])
     .default("ONE_MINUTE"),
-  strategyIds: z.array(z.enum(STRATEGY_IDS)).min(1).max(3).default([...STRATEGY_IDS]),
+  strategyIds: z
+    .array(z.enum(STRATEGY_IDS))
+    .min(1)
+    .max(3)
+    .default([...DEFAULT_STRATEGY_IDS]),
   intervalSeconds: z.number().int().min(10).max(86_400).default(60),
   maxMarketStalenessMs: z.number().int().positive().default(90_000),
   candleLimit: z.number().int().min(2).max(350).default(200),

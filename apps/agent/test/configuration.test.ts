@@ -20,6 +20,17 @@ const admit = (input: unknown) => {
 };
 
 describe("parseAgentConfiguration", () => {
+  it("defaults to the legacy strategy set without funding-trend (dao #27, opt-in)", () => {
+    const result = parseAgentConfiguration({ productId: "BTC-USD" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.strategyIds).toEqual([
+      "breakout",
+      "ema-cross",
+      "rsi-reversion",
+    ]);
+  });
+
   it("normalizes a valid paper configuration", () => {
     const result = parseAgentConfiguration({
       productId: "btc-usd",

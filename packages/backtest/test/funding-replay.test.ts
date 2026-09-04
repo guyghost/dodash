@@ -112,6 +112,7 @@ const config = (
   runId: "funding-replay-test",
   agentId: "funding-replay-agent",
   productId: product.value,
+  intervalMs: 60_000,
   initialCapital: 10_000,
   maxDecisionNotional: 5_000,
   minNetQuantity: 0.0001,
