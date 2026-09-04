@@ -47,6 +47,13 @@ export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = Object.freeze({
   trendStrengthPeriod: 14,
 });
 
+/**
+ * Période figée du funding moyen glissant (models/funding-rate-strategy.md
+ * §4) : source unique, consommée par la couture runtime et le backtest.
+ * Figée a priori, tout balayage exclu.
+ */
+export const FUNDING_AVG_PERIOD = 72;
+
 export interface TradeSample {
   readonly price: number;
   readonly size: number;
@@ -65,6 +72,17 @@ export interface OrderBookSnapshot {
 export interface IndicatorMicrostructure {
   readonly trades?: readonly TradeSample[];
   readonly orderBook?: OrderBookSnapshot;
+}
+
+/**
+ * Entrée funding optionnelle (models/funding-rate-strategy.md §4) : taux
+ * alignés par SUFFIXE sur les dernières `rates.length` bougies de la
+ * série passée, période glissante explicite. Absente ⇒ aucune requête
+ * Prolog additionnelle, snapshot bit-identique (INV-F1).
+ */
+export interface IndicatorFunding {
+  readonly rates: readonly number[];
+  readonly avgPeriod: number;
 }
 
 export interface OrderBookVwap {
@@ -105,11 +123,18 @@ export interface IndicatorSnapshot {
   readonly volumeTrend: number | null;
   readonly vwapDeviation: number | null;
   readonly trendStrength: number;
+  /**
+   * Funding moyen glissant (models/funding-rate-strategy.md) : absent du
+   * snapshot tant qu'aucune entrée funding n'est fournie (INV-F1) ou
+   * pendant l'échauffement (rates.length < avgPeriod, INV-F3).
+   */
+  readonly fundingAvg?: number;
 }
 
 export type IndicatorError =
   | { readonly code: "INVALID_CANDLES"; readonly cause: MarketValidationError }
   | { readonly code: "INVALID_CONFIG" }
+  | { readonly code: "INVALID_FUNDING_DATA" }
   | { readonly code: "INVALID_MICROSTRUCTURE" }
   | { readonly code: "INSUFFICIENT_CANDLES"; readonly required: number; readonly actual: number }
   | { readonly code: "PROLOG_PARSE_ERROR" }
@@ -241,6 +266,22 @@ export const requiredIndicatorCandles = (config: IndicatorConfig): number =>
 const isPositiveFinite = (value: number): boolean =>
   Number.isFinite(value) && value > 0;
 
+/**
+ * Validation funding fail-closed (INV-F2) : alignement SUFFIXE — `rates`
+ * couvre les dernières `rates.length` bougies, d'où `rates.length ≤
+ * candleCount` (amendement C1-suite, models/funding-rate-strategy.md
+ * §4) ; taux tous finis, période entière ≥ 2.
+ */
+const validFunding = (
+  funding: IndicatorFunding,
+  candleCount: number,
+): boolean =>
+  Number.isSafeInteger(funding.avgPeriod) &&
+  funding.avgPeriod >= 2 &&
+  Array.isArray(funding.rates) &&
+  funding.rates.length <= candleCount &&
+  funding.rates.every((rate) => Number.isFinite(rate));
+
 const validMicrostructure = (
   microstructure: IndicatorMicrostructure | undefined,
 ): boolean => {
@@ -284,6 +325,7 @@ export const computeIndicators = async (
   candles: readonly Candle[],
   config: IndicatorConfig = DEFAULT_INDICATOR_CONFIG,
   microstructure?: IndicatorMicrostructure,
+  funding?: IndicatorFunding,
 ): Promise<Result<IndicatorSnapshot, IndicatorError>> => {
   const validated = validateCandleSeries(candles);
   if (!validated.ok) {
@@ -295,6 +337,9 @@ export const computeIndicators = async (
   }
   if (!validMicrostructure(microstructure)) {
     return err({ code: "INVALID_MICROSTRUCTURE" });
+  }
+  if (funding !== undefined && !validFunding(funding, validated.value.length)) {
+    return err({ code: "INVALID_FUNDING_DATA" });
   }
 
   const required = requiredIndicatorCandles(config);
@@ -368,6 +413,20 @@ export const computeIndicators = async (
     const result = await queryNumber(session, indicator, goal);
     if (!result.ok) return result;
     candleValues[indicator] = result.value;
+  }
+
+  // INV-F1 : aucune entrée funding ⇒ aucune requête Prolog additionnelle.
+  // INV-F3 : échauffement (longueur < période) ⇒ champ absent du snapshot.
+  const fundingReady =
+    funding !== undefined && funding.rates.length >= funding.avgPeriod;
+  if (fundingReady) {
+    const fundingResult = await queryNumber(
+      session,
+      "funding-average",
+      `funding_average(${asPrologList(funding.rates)}, ${funding.avgPeriod}, Value).`,
+    );
+    if (!fundingResult.ok) return fundingResult;
+    candleValues.FundingAvg = fundingResult.value;
   }
 
   const periodicReturns: Record<string, number> = {};
@@ -529,6 +588,9 @@ export const computeIndicators = async (
       volumeTrend,
       vwapDeviation,
       trendStrength: candleValues.TrendStrength ?? 0,
+      ...(fundingReady
+        ? { fundingAvg: candleValues.FundingAvg }
+        : {}),
     }),
   );
 };

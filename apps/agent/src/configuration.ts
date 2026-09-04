@@ -21,6 +21,7 @@ export const STRATEGY_IDS = [
   "rsi-reversion",
   "ema-cross",
   "breakout",
+  "funding-trend",
 ] as const;
 
 export type StrategyId = (typeof STRATEGY_IDS)[number];

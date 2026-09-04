@@ -71,6 +71,11 @@ export type HyperliquidReconciliationIssue =
   | { readonly kind: "RESOLVED"; readonly outcome: "ACCEPTED" | "REJECTED" }
   | { readonly kind: "UNKNOWN" };
 
+export interface HyperliquidFundingSample {
+  readonly time: number;
+  readonly fundingRate: number;
+}
+
 export interface HyperliquidMeta {
   readonly universe: ReadonlyArray<{
     readonly name: string;
@@ -375,4 +380,81 @@ export const derivePerpRiskGate = ({
     dailyPnl,
     otherGrossExposureNotional: otherGross,
   });
+};
+
+/**
+ * Lecture de l'historique de funding (C1, models/funding-rate-strategy.md
+ * §2) : POST /info { type: "fundingHistory", coin, startTime }, endpoint
+ * public sans signature. Issue fermée : observations typées, ou null si
+ * indisponible/hors spec — jamais de zéros substitués (INV-F2). Le champ
+ * fundingRate est sérialisé en chaîne numérique par l'API : coercition
+ * via finiteFrom, toute autre forme rejette la lecture entière.
+ */
+export const fetchHyperliquidFundingHistory = async (
+  settings: HyperliquidExecutionSettings,
+  request: { readonly coin: string; readonly startTime: number },
+  dependencies: HyperliquidRequestDependencies = {},
+): Promise<readonly HyperliquidFundingSample[] | null> => {
+  if (
+    typeof request.coin !== "string" ||
+    request.coin.length === 0 ||
+    !Number.isSafeInteger(request.startTime) ||
+    request.startTime < 0
+  ) {
+    return null;
+  }
+  const parsed = (await boundedRequest(dependencies, settings, HYPERLIQUID_INFO_PATH, {
+    type: "fundingHistory",
+    coin: request.coin,
+    startTime: request.startTime,
+  })) as unknown;
+  if (!Array.isArray(parsed)) return null;
+  const samples: HyperliquidFundingSample[] = [];
+  for (const entry of parsed) {
+    const time = finiteFrom((entry as { time?: unknown } | null)?.time);
+    const rate = finiteFrom(
+      (entry as { fundingRate?: unknown } | null)?.fundingRate,
+    );
+    if (time === null || rate === null) return null;
+    if (time < request.startTime) return null;
+    samples.push({ time, fundingRate: rate });
+  }
+  return Object.freeze(samples);
+};
+
+/**
+ * Agrégation pure horaire → 1:1 par bougie de décision (C1) : moyenne
+ * des taux observés dans [start, start + tf) de chaque bougie. Une
+ * bougie sans observation rend la série invalide (null, INV-F2) — la
+ * couture amont ne produira pas d'entrée funding partielle.
+ */
+export const fundingRatesForCandles = (
+  candles: readonly { readonly start: number }[],
+  samples: readonly HyperliquidFundingSample[],
+): readonly number[] | null => {
+  if (candles.length < 2) return null;
+  const last = candles[candles.length - 1];
+  const previous = candles[candles.length - 2];
+  if (last === undefined || previous === undefined) return null;
+  const timeframe = last.start - previous.start;
+  if (!Number.isSafeInteger(timeframe) || timeframe <= 0) return null;
+  const rates: number[] = [];
+  let cursor = 0;
+  for (const candle of candles) {
+    const end = candle.start + timeframe;
+    let sum = 0;
+    let count = 0;
+    while (cursor < samples.length) {
+      const sample = samples[cursor];
+      if (sample === undefined || sample.time >= end) break;
+      if (sample.time >= candle.start) {
+        sum += sample.fundingRate;
+        count += 1;
+      }
+      cursor += 1;
+    }
+    if (count === 0) return null;
+    rates.push(sum / count);
+  }
+  return Object.freeze(rates);
 };

@@ -14,6 +14,7 @@ import {
 import {
   computeIndicators,
   requiredIndicatorCandles,
+  FUNDING_AVG_PERIOD,
   type IndicatorConfig,
   type IndicatorError,
   type IndicatorSnapshot,
@@ -111,6 +112,10 @@ export interface BacktestConfig {
   // Nécessite regimeFilter (la permission n'a de sens que si un régime
   // est observé).
   readonly regimePermissions?: RegimePermissions;
+  // Coût de funding (models/funding-rate-strategy.md §6) : série 1:1
+  // alignée sur les bougies de décision (rates[i] couvre la bougie i).
+  // Absente ⇒ replay bit-identique (INV-F1/F7).
+  readonly fundingRates?: readonly number[];
 }
 
 export interface RegimeGatingSummary {
@@ -151,6 +156,9 @@ export interface BacktestResult {
   readonly metrics: BacktestMetrics;
   readonly finalPortfolio: PaperPortfolio;
   readonly processedCandles: number;
+  // Somme signée des coûts de funding appliqués au cash (INV-F7) :
+  // positive = payée par les longs. 0 sans entrée funding.
+  readonly fundingPaid: number;
   readonly protectiveExits: readonly ProtectiveExitExecution[];
   readonly diagnostics: BacktestDiagnostics;
   readonly diagnosticSamples: BacktestDiagnosticSamples | null;
@@ -212,7 +220,10 @@ const validConfig = (config: BacktestConfig): boolean =>
       config.regimeFilter !== undefined)) &&
   (config.regimePermissions === undefined ||
     (isValidRegimePermissions(config.regimePermissions) &&
-      config.regimeFilter !== undefined));
+      config.regimeFilter !== undefined)) &&
+  (config.fundingRates === undefined ||
+    (Array.isArray(config.fundingRates) &&
+      config.fundingRates.every((rate) => Number.isFinite(rate))));
 
 const validPreparedIndicators = (
   prepared: PreparedBacktestIndicators,
@@ -318,6 +329,14 @@ export const replayBacktest = async (
       cause: executionSchedule.error,
     });
   }
+  // INV-F2 : longueur 1:1 exigée entre la série de funding et les
+  // bougies de décision (la finitude est vérifiée dans validConfig).
+  if (
+    config.fundingRates !== undefined &&
+    config.fundingRates.length !== validated.value.length
+  ) {
+    return err({ code: "INVALID_BACKTEST_CONFIG" });
+  }
 
   const warmup = requiredIndicatorCandles(config.indicators);
   if (
@@ -386,6 +405,31 @@ export const replayBacktest = async (
   const countDenied = (strategyId: string): void => {
     regimeCounters.signalsFiltered += 1;
     deniedByStrategy.set(strategyId, (deniedByStrategy.get(strategyId) ?? 0) + 1);
+  };
+
+  // INV-F7 : coût de funding déduit du cash à la clôture de chaque
+  // bougie couverte (position ouverte). Aucun effet sans série (INV-F1).
+  let fundingPaid = 0;
+  const applyFundingCost = (candle: Candle, rateIndex: number): void => {
+    const rate = config.fundingRates?.[rateIndex];
+    if (rate === undefined || portfolio.positionQuantity === 0) return;
+    const cost = portfolio.positionQuantity * candle.close * rate;
+    fundingPaid += cost;
+    portfolio = { ...portfolio, cash: portfolio.cash - cost };
+  };
+  // Double usage de la série (models/funding-rate-strategy.md §6) :
+  // l'indicateur reçoit le suffixe aligné sur les bougies du préfixe
+  // évalué (alignement suffixe, §4). Prepared path non concerné : les
+  // snapshots préparés font autorité sur les valeurs d'indicateur.
+  const fundingInputFor = (
+    candleCount: number,
+  ): { readonly rates: readonly number[]; readonly avgPeriod: number } | undefined => {
+    const rates = config.fundingRates;
+    if (rates === undefined) return undefined;
+    return {
+      rates: rates.slice(Math.max(0, candleCount - FUNDING_AVG_PERIOD), candleCount),
+      avgPeriod: FUNDING_AVG_PERIOD,
+    };
   };
 
   const actorFailure = (): BacktestReplayError | null => {
@@ -634,6 +678,7 @@ export const replayBacktest = async (
     }
 
     if (index < warmup - 1) {
+      applyFundingCost(candle, index);
       equityCurve.push(
         Object.freeze({
           at: candle.start,
@@ -647,7 +692,12 @@ export const replayBacktest = async (
     const preparedSnapshot = preparedIndicators?.snapshots[index];
     const indicatorResult =
       preparedSnapshot === undefined || preparedSnapshot === null
-        ? await computeIndicators(history, config.indicators)
+        ? await computeIndicators(
+            history,
+            config.indicators,
+            undefined,
+            fundingInputFor(history.length),
+          )
         : ok(preparedSnapshot);
     if (!indicatorResult.ok) {
       return err({ code: "INDICATOR_FAILURE", cause: indicatorResult.error });
@@ -865,6 +915,7 @@ export const replayBacktest = async (
     }
     pendingOrders = Object.freeze(approvedOrders);
 
+    applyFundingCost(candle, index);
     equityCurve.push(
       Object.freeze({
         at: candle.start,
@@ -923,6 +974,7 @@ export const replayBacktest = async (
       metrics,
       finalPortfolio: Object.freeze({ ...portfolio }),
       processedCandles: validated.value.length,
+      fundingPaid,
       protectiveExits: Object.freeze(protectiveExits),
       diagnostics: diagnostics.value,
       diagnosticSamples:

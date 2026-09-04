@@ -1,6 +1,10 @@
 import { allocateSignals } from "@dodash/allocator";
-import { computeIndicators } from "@dodash/indicators-prolog";
+import {
+  computeIndicators,
+  FUNDING_AVG_PERIOD,
+} from "@dodash/indicators-prolog";
 import { checkRisk } from "@dodash/risk";
+import { FUNDING_TREND_STRATEGY_ID } from "@dodash/strategies";
 import {
   resolveDailyRiskWindow,
   type TradingCycleEvent,
@@ -8,7 +12,7 @@ import {
   type WorkflowErrorCode,
   type WorkflowPhase,
 } from "@dodash/models";
-import type { Timeframe } from "@dodash/domain";
+import type { Candle, Timeframe } from "@dodash/domain";
 
 import { createTradingMachineSession } from "./machine-session.js";
 import { createConfiguredStrategyRegistry } from "./strategy-registry.js";
@@ -54,6 +58,38 @@ const missingArtifact = (phase: WorkflowPhase): WorkflowError => {
                   ? "RECONCILIATION_FAILURE"
                   : "PERSISTENCE_FAILURE";
   return workflowError(phase, code);
+};
+
+/**
+ * Couture funding (models/funding-rate-strategy.md §3) : double porte
+ * (mode perp ∧ funding-trend configuré ∧ effet câblé) puis
+ * pré-validation fail-closed — toute forme hors contrat est traitée
+ * comme une indisponibilité (null), jamais un échec de cycle pour un
+ * input optionnel (C3). Une indisponibilité attendue est télémétrée.
+ */
+const resolveFundingInput = async (
+  input: RunTradingCycleInput,
+  candles: readonly Candle[],
+): Promise<{ readonly rates: readonly number[]; readonly avgPeriod: number } | undefined> => {
+  const { configuration, effects } = input;
+  if (
+    configuration.executionMode !== "perp" ||
+    !configuration.strategyIds.includes(FUNDING_TREND_STRATEGY_ID) ||
+    effects.fetchFundingData === undefined
+  ) {
+    return undefined;
+  }
+  const rates = await effects.fetchFundingData(configuration, candles);
+  const valid =
+    rates !== null &&
+    rates.length >= 1 &&
+    rates.length <= candles.length &&
+    rates.every((rate) => Number.isFinite(rate));
+  if (!valid) {
+    console.warn(JSON.stringify({ event: "funding_data_unavailable" }));
+    return undefined;
+  }
+  return { rates, avgPeriod: FUNDING_AVG_PERIOD };
 };
 
 export const runTradingCycle = async (
@@ -224,9 +260,15 @@ export const runTradingCycle = async (
             await send({ type: "INDICATORS_FAILED", error: missingArtifact("indicators") });
             break;
           }
+          const fundingInput = await resolveFundingInput(
+            input,
+            artifacts.market.candles,
+          );
           const result = await computeIndicators(
             artifacts.market.candles,
             input.configuration.indicators,
+            undefined,
+            fundingInput,
           );
           if (!result.ok) {
             await send({

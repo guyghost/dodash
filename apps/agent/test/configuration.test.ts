@@ -122,6 +122,22 @@ describe("parseAgentConfiguration", () => {
     expect(result.value.risk.maxDailyLoss).toBe(1_000);
   });
 
+  it("admet funding-trend dans l'enum des stratégies (dao #27)", () => {
+    const result = parseAgentConfiguration({
+      productId: "BTC-USD",
+      strategyIds: ["funding-trend"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.strategyIds).toEqual(["funding-trend"]);
+  });
+
+  it("rejette une configuration live spot contenant funding-trend (C3)", () => {
+    expect(
+      admit({ productId: "GRT-USD", executionMode: "live", strategyIds: ["funding-trend"] }),
+    ).toEqual({ status: "REJECTED", reasonCode: "LIVE_POLICY_MISMATCH" });
+  });
+
   it("admits paper configurations without applying the live envelope", () => {
     expect(admit({ productId: "BTC-USD" })).toEqual({ status: "APPROVED" });
   });
