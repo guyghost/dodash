@@ -1,0 +1,26 @@
+// Config paper isolée (dao #42) — préfixe dodash-paper-*, KV dédié.
+// Ne jamais déployer en production avec ce fichier. Aucun secret ici.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "dodash-paper-mcp-market-data",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  // workers_dev activé pour les health checks paper (aucun endpoint sensible
+  // sans INTERNAL_SERVICE_TOKEN).
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "COINBASE_API_BASE_URL": "https://api.coinbase.com",
+    "MARKET_CACHE_TTL_SECONDS": "30"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "MARKET_CACHE",
+      "id": "abddec98934a40a4b4c85f8d00e5f055"
+    }
+  ]
+}
