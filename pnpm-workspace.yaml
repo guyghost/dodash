@@ -4,6 +4,8 @@ packages:
   - apps/*
 overrides:
   fast-uri: ^3.1.6
+  # GHSA-rgj7-g3m4-5g8c / GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 — libheif via wrangler>miniflare (pin exact 0.35.2)
+  sharp: 0.35.4
 allowBuilds:
   core-js-pure: false
   esbuild: true
