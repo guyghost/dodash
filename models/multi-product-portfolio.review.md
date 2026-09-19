@@ -106,3 +106,21 @@ normative sans toucher aux machines ni aux transitions.
 Amendement approuvé en revue. Invariants INV-P1 à INV-P8 inchangés ;
 INV-P9 ajouté (aucune instance portefeuille paper de production en sizing
 `NATIVE` sans `sizingPolicy` explicite documenté au runbook).
+
+## Revue complémentaire — amendement §13 (dao #50, 2026-09-19)
+
+L'amendement change la politique d'instance paper (#36bis alignée sur
+`LIVE_TRADING_POLICY` en ONE_DAY) sans toucher au modèle : machines,
+événements, transitions, admissions et invariants INV-P1 à INV-P9 sont
+inchangés — l'instance reste paper (INV-P7), portefeuille N ≥ 2 (§11),
+sizing notional (§12). La motivation factuelle est vérifiée : grille #40
+exécutée en ONE_DAY (`edge-research-grid.ts:553`), fenêtre OOS daily,
+verdict #36 §4 (espérance brute 1-min négative, ETH non mesuré). Le corps
+`/start` documenté est accepté par le schéma existant (timeframe
+`ONE_DAY`, staleness 7 200 000, `maxDecisionNotional` 600 > plafond
+d'échauffement) ; le rollback prévu (retour au corps #36 historique) est
+documenté au runbook §3. La porte live n'est pas ouverte : ce alignement
+est une répétition paper de la politique, `production-launch` reste
+l'unique chemin vers le live.
+
+Amendement approuvé en revue.
