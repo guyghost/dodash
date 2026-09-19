@@ -100,18 +100,28 @@ done
 #    §11 de models/multi-product-portfolio.md). La voie mono-produit rejette
 #    systématiquement en RISK_REJECTED (couture d'admission sans machine
 #    portefeuille) : ne plus l'utiliser en production paper.
+# 5bis) Instance #36bis (dao #50, arbitrage #36 — répétition générale
+#    pré-live) : POST /stop de l'instance 1-min résiduelle PUIS /start
+#    aligné sur LIVE_TRADING_POLICY (ONE_DAY, 3 600 s, staleness 2 h,
+#    sizing notional — défaut §12 dao #49, redondamment explicite ici).
+#    Le corps ONE_MINUTE/60 s de la fenêtre #36 est historique : voir le
+#    verdict docs/analysis/analyse-paper-verdict-36-2026-09-18.md et
+#    l'historique git du runbook.
 T2=…  # recharger le token opérateur
+curl -s -X POST https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agents/btc-usd-paper/stop \
+  -H "Authorization: Bearer $T2"
 curl -s -X POST https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agents/btc-usd-paper/start \
   -H "Authorization: Bearer $T2" -H "Content-Type: application/json" \
   -d '{
-    "timeframe": "ONE_MINUTE",
+    "timeframe": "ONE_DAY",
     "strategyIds": ["breakout", "ema-cross", "rsi-reversion"],
-    "intervalSeconds": 60,
+    "intervalSeconds": 3600,
+    "maxMarketStalenessMs": 7200000,
     "executionMode": "paper",
     "initialCapital": 10000,
-    "maxDecisionNotional": 2000,
+    "maxDecisionNotional": 600,
     "sizingPolicy": {"type": "TARGET_SIGNAL_NOTIONAL", "targetSignalNotional": 1000, "confidenceCalibration": "POWER_THIRD"},
-    "products": [{"productId": "BTC-USD"}, {"productId": "ETH-USD"}],
+    "products": [{"productId": "BTC-USD", "risk": {"maxOrderNotional": 600}}, {"productId": "ETH-USD", "risk": {"maxOrderNotional": 600}}],
     "portfolioRisk": {"maxGrossExposure": 20000, "maxDailyLoss": 1000}
   }'
 
@@ -189,7 +199,7 @@ dessous des 100 000 requêtes/jour Workers, ~100k points Analytics Engine/jour
 et du volume KV. Coût attendu : **0 $** (free tier). Surveillance conseillée à
 J+2 : stockage SQLite du DO (historique de cycles) et quota Workers du compte.
 
-## 6. Teardown (à NE PAS exécuter tant que la collecte #36 court — C3)
+## 6. Teardown (collecte #36 close le 2026-09-18T17:01:15Z, verdict rendu ; à ne pas exécuter tant que la fenêtre #36bis court — C3)
 
 Le déploiement doit rester en place ≥ 14 jours (verdict endpoint #36).
 Procédure d'arrêt complet, dans l'ordre inverse des dépendances, chaque nom

@@ -339,3 +339,28 @@ Règle normative ajoutée (INV-P9) : **aucune instance portefeuille paper de
 production ne démarre en sizing `NATIVE` sans `sizingPolicy` explicite au
 `/start` documenté au runbook** — un sizing en quantité partagée entre
 produits de prix différents est une erreur d'unité, pas un choix.
+
+## 13. Amendement 2026-09-19 (dao #50, arbitrage #36) — instance #36bis
+alignée sur la politique ONE_DAY
+
+Arbitrage #36 (verdict `docs/analysis/analyse-paper-verdict-36-2026-09-18.md`) :
+la plateforme paper 24/7 est validée sans réserve, mais le mix BTC 1-min
+montre une espérance brute négative (-0,11 USD/fill sur 3 454 fills, 14 j)
+et surtout **n'a aucune base de preuves backtest** — la campagne d'edge #40
+comme la fenêtre OOS successeure sont exécutées en `ONE_DAY`
+(`packages/backtest/scripts/edge-research-grid.ts`). La fenêtre #36 a mesuré
+une configuration que le programme de validation n'a jamais candidate.
+
+**Décision** : l'instance paper de production suivante (#36bis) est une
+répétition générale pré-live — corps `/start` calé sur `LIVE_TRADING_POLICY`
+(`models/live-trading-policy.ts`) : `timeframe` `ONE_DAY`,
+`intervalSeconds` 3 600, `maxMarketStalenessMs` 7 200 000,
+`maxDecisionNotional` 600, sizing notional §12 (TARGET_SIGNAL_NOTIONAL
+1 000, POWER_THIRD), créneaux BTC-USD + ETH-USD en mode portefeuille N ≥ 2
+avec budget par créneau `maxOrderNotional` 600, plafonds consolidés
+{20 000, 1 000}. Le mix 1-min est retiré : l'instance 1-min résiduelle est
+arrêtée (`POST /stop`) au démarrage de #36bis, aucune instance 1-min n'est
+relancée. L'hypothèse de dépendance au régime du 1-min (verdict §4.2) est
+routée vers la boucle backtest (campagne #40, `regime-aware-selector`), pas
+vers le paper. Le passage live reste hors périmètre :
+`models/production-launch.md` et `models/live-preflight.ts` inchangés.
