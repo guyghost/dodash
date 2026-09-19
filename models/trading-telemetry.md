@@ -37,6 +37,33 @@ missing production binding is instead a deployment/preflight gate failure.
 Threshold changes require a new reviewed model and invalidate operations
 evidence for the production-launch gate.
 
+## Amendment 2026-09-19 (dao #47) — broker rejection detail in the Analytics
+Engine projection
+
+Finding (window #36): 496 `ORDER_REJECTED` cycles, 100% BTC-USD, but the
+Analytics Engine projection only carried the terminal `WorkflowError` code
+(blob6) — distinguishing `INSUFFICIENT_CASH` from `INSUFFICIENT_POSITION`
+required a manual Durable Object read, deferring the anomaly diagnosis across
+four analysis checkpoints.
+
+Decision: records move to schema version 2 and the positional projection
+gains **blob7 = broker rejection detail**. Rules:
+
+- blob6 keeps carrying the closed `WorkflowError` code and is never
+  overloaded;
+- blob7 carries the closed execution-adapter vocabulary — paper:
+  `packages/paper-execution` (`INSUFFICIENT_CASH`, `INSUFFICIENT_POSITION`,
+  `INVALID_BROKER_CONFIG`, `INVALID_MARKET_PRICE`, `INVALID_FILL_RESULT`) —
+  and only when blob6 is `ORDER_REJECTED`; `NONE` otherwise (including
+  `control.completed` and `preflight.completed` records);
+- the detail travels on the optional `WorkflowError.detail` diagnostic field
+  (`models/trading-cycle.types.ts`) from the execution seam to the terminal
+cycle event; it never drives a guard, transition or decision;
+- no machine state, event or transition changes: telemetry only.
+
+Verification contract: an `ORDER_REJECTED` cycle is diagnosable from a single
+Analytics Engine query (`blob2`, `blob7`) with no Durable Object read.
+
 ## Invariants
 
 1. No secret, bearer token, JWT, private key, raw request body or Coinbase

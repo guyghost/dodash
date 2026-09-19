@@ -229,3 +229,20 @@ curl -s -X POST https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agen
    en continu ; rien à faire tant que le taux d'échec reste marginal.
 3. Les workers paper exposent `/health` en public (workers.dev) : sans risque
    identifié (aucune donnée), à revoir si le périmètre évolue.
+4. **Diagnostic ORDER_REJECTED depuis l'AE (dao #47, 2026-09-19)** : depuis le
+   schéma télémétrie v2, blob7 porte le code fin fermé du refus broker
+   (`INSUFFICIENT_CASH` / `INSUFFICIENT_POSITION` / …) — plus besoin de lire
+   le Durable Object pour qualifier un refus :
+
+   ```sh
+   curl -s -X POST \
+     https://api.cloudflare.com/client/v4/accounts/bab940ffcf652079ec6172c267afa11e/analytics_engine/sql \
+     -H "Authorization: Bearer $CF_OAUTH" -H "Content-Type: text/plain" \
+     --data "SELECT blob2 AS product, blob7 AS broker_code, count() AS n \
+             FROM dodash_paper_trading \
+             WHERE blob1 = 'cycle.completed' AND blob5 = 'ORDER_REJECTED' \
+             GROUP BY product, broker_code ORDER BY n DESC"
+   ```
+
+   (les cycles antérieurs au redéploiement v2 affichent `NONE` en blob7 ;
+   lecture DO réservée aux cas non couverts par le vocabulaire fermé).

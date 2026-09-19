@@ -1,10 +1,12 @@
+import type { WorkflowError } from "@dodash/models";
+
 export type TradingTelemetryEventType =
   | "cycle.completed"
   | "control.completed"
   | "preflight.completed";
 
 export interface TradingTelemetryEvent {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly type: TradingTelemetryEventType;
   readonly timestamp: number;
   readonly agentId: string;
@@ -13,6 +15,12 @@ export interface TradingTelemetryEvent {
   readonly phase: string;
   readonly outcome: string;
   readonly errorCode: string | null;
+  /**
+   * Code fin du refus broker (dao #47) : vocabulaire fermé de
+   * `packages/paper-execution`, uniquement quand `errorCode` vaut
+   * `ORDER_REJECTED` ; `null` sinon (et pour control/preflight).
+   */
+  readonly brokerRejectionCode: string | null;
   readonly latencyMs: number;
   readonly dailyPnl: number | null;
   readonly accountEquity: number | null;
@@ -35,6 +43,18 @@ export interface TradingTelemetryLogger {
   error(message: string): void;
 }
 
+/**
+ * Extraction du code fin depuis l'erreur terminale d'un cycle : le détail
+ * n'est lu que sur `ORDER_REJECTED` (blob6 reste le code WorkflowError,
+ * jamais surchargé).
+ */
+export const brokerRejectionCodeOf = (
+  error: WorkflowError | null | undefined,
+): string | null =>
+  error !== null && error !== undefined && error.code === "ORDER_REJECTED"
+    ? error.detail ?? null
+    : null;
+
 const finiteOrZero = (value: number | null): number =>
   value !== null && Number.isFinite(value) ? value : 0;
 
@@ -48,6 +68,10 @@ export const emitTradingTelemetry = (
   try {
     sink.writeDataPoint({
       indexes: [event.agentId],
+      // Projection positionnelle Analytics Engine (models/trading-telemetry.md,
+      // § Amendement dao #47) : blob1 type · blob2 produit · blob3 mode ·
+      // blob4 phase · blob5 outcome · blob6 code WorkflowError ·
+      // blob7 code fin broker ("NONE" si absent).
       blobs: [
         event.type,
         event.productId,
@@ -55,6 +79,7 @@ export const emitTradingTelemetry = (
         event.phase,
         event.outcome,
         event.errorCode ?? "NONE",
+        event.brokerRejectionCode ?? "NONE",
       ],
       doubles: [
         event.timestamp,

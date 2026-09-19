@@ -55,6 +55,17 @@ export interface WorkflowError {
   readonly phase: WorkflowPhase;
   readonly code: WorkflowErrorCode;
   readonly retryable: boolean;
+  /**
+   * Code fin optionnel du refus quand `code` vaut `ORDER_REJECTED` :
+   * vocabulaire fermé de l'adaptateur d'exécution paper
+   * (`packages/paper-execution`) — `INSUFFICIENT_CASH`,
+   * `INSUFFICIENT_POSITION`, `INVALID_BROKER_CONFIG`,
+   * `INVALID_MARKET_PRICE`, `INVALID_FILL_RESULT`. Absent pour tout
+   * autre code ou adaptateur sans code fin (dao #47 — projection
+   * télémétrie blob7). Champ de diagnostic uniquement : il ne pilote
+   * aucune garde, transition ou décision.
+   */
+  readonly detail?: string;
 }
 
 export interface ControlPermissions {

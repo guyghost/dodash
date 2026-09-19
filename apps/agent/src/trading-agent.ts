@@ -105,6 +105,7 @@ import {
 } from "./state.js";
 import {
   emitTradingTelemetry,
+  brokerRejectionCodeOf,
   type TradingTelemetryEvent,
   type TradingTelemetrySink,
 } from "./telemetry.js";
@@ -185,6 +186,11 @@ export type LivePreflightCommandResult =
 
 const storageError = storageWorkflowError;
 const executionError = executionWorkflowError;
+/** Refus broker paper : porte le code fin fermé de l'exécution pure (dao #47). */
+const paperRejectionError = (detail: string): WorkflowError => ({
+  ...executionWorkflowError("ORDER_REJECTED", false),
+  detail,
+});
 const reconciliationError = (retryable = true): WorkflowError =>
   reconciliationWorkflowError("RECONCILIATION_FAILURE", retryable);
 
@@ -535,7 +541,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       protections.value,
     );
     emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
-      schemaVersion: 1,
+      schemaVersion: 2,
       type: "preflight.completed",
       timestamp: Date.now(),
       agentId: this.name,
@@ -547,6 +553,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         report.assessment.status === "REJECTED"
           ? report.assessment.reasonCode
           : null,
+      brokerRejectionCode: null,
       latencyMs: Math.max(0, Date.now() - startedAt),
       dailyPnl: null,
       accountEquity: null,
@@ -754,7 +761,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     await this.persistMachine(machine);
     await this.runCurrent(false, resumeCycleId);
     const controlEvent: TradingTelemetryEvent = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       type: "control.completed",
       timestamp: Date.now(),
       agentId: this.name,
@@ -766,6 +773,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         this.state.machine?.context.lastError?.code ??
         machine.context.lastError?.code ??
         null,
+      brokerRejectionCode: brokerRejectionCodeOf(
+        this.state.machine?.context.lastError ?? machine.context.lastError,
+      ),
       latencyMs: Math.max(0, Date.now() - startedAt),
       dailyPnl: this.state.dailyPnl,
       accountEquity: null,
@@ -858,7 +868,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
     if (result.artifacts !== null) {
       const cycleEvent: TradingTelemetryEvent = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         type: "cycle.completed",
         timestamp: Date.now(),
         agentId: this.name,
@@ -867,6 +877,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         phase: result.machine.value,
         outcome: result.machine.context.outcome,
         errorCode: result.machine.context.lastError?.code ?? null,
+        brokerRejectionCode: brokerRejectionCodeOf(
+          result.machine.context.lastError,
+        ),
         latencyMs: Math.max(0, Date.now() - startedAt),
         dailyPnl: dailyRisk.dailyPnl,
         accountEquity: result.accountEquity,
@@ -1278,7 +1291,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
     if (result.artifacts !== null) {
       const cycleEvent: TradingTelemetryEvent = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         type: "cycle.completed",
         timestamp: Date.now(),
         agentId: this.name,
@@ -1287,6 +1300,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         phase: result.machine.value,
         outcome: result.machine.context.outcome,
         errorCode: result.machine.context.lastError?.code ?? null,
+        brokerRejectionCode: brokerRejectionCodeOf(
+          result.machine.context.lastError,
+        ),
         latencyMs: Math.max(0, Date.now() - startedAt),
         dailyPnl: dailyRisk.dailyPnl,
         accountEquity: result.accountEquity,
@@ -1559,7 +1575,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     if (!execution.ok) {
       return {
         status: "REJECTED",
-        error: executionError("ORDER_REJECTED", false),
+        error: paperRejectionError(execution.error.code),
       };
     }
     const submission: OrderSubmission = {
