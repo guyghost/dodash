@@ -110,6 +110,7 @@ curl -s -X POST https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agen
     "executionMode": "paper",
     "initialCapital": 10000,
     "maxDecisionNotional": 2000,
+    "sizingPolicy": {"type": "TARGET_SIGNAL_NOTIONAL", "targetSignalNotional": 1000, "confidenceCalibration": "POWER_THIRD"},
     "products": [{"productId": "BTC-USD"}, {"productId": "ETH-USD"}],
     "portfolioRisk": {"maxGrossExposure": 20000, "maxDailyLoss": 1000}
   }'

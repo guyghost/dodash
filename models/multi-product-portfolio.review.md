@@ -77,3 +77,32 @@ Model → Review → Implement → Verify avec ses tests d'égalité (C2).
 Amendement approuvé en revue. Aucun seuil ni invariant du modèle n'est
 affaibli ; le plafond consolidé (INV-P1) et le coupe-circuit quotidien
 (INV-P2) s'appliquent tels quels à l'instance de référence.
+
+## Revue complémentaire — amendement §12 (dao #49, 2026-09-19)
+
+L'amendement corrige une erreur d'unité documentée par le verdict #36
+(`docs/analysis/analyse-paper-verdict-36-2026-09-18.md` §4.3) : le défaut
+`sizingPolicy: NATIVE` du schéma multi-produits faisait émettre à toutes les
+stratégies `baseSize 0,01` en quantité partagée — ETH (~25 USD/signaux)
+trade ~27× plus petit que BTC. La cause est vérifiée dans le code
+(`configuration.ts`, défaut hérité par `multiProductInputSchema` ;
+`strategy-registry.ts`, `baseSize` natif ; runbook §3 sans `sizingPolicy`),
+cohérente avec la télémétrie (4,6 rotations ETH contre 119,2 BTC, fills
+~11 USD contre ~346 USD).
+
+La décision — faire passer le défaut `sizingPolicy` du schéma partagé
+(`inputSchema`) de `NATIVE` à `LIVE_TRADING_POLICY.sizingPolicy`
+(`TARGET_SIGNAL_NOTIONAL` 1 000, `POWER_THIRD`), sizingPolicy explicite
+primant — est un changement de défaut de schéma, pas du cœur : les
+décorateurs `withTargetSignalNotional`/`withConfidenceCalibration`, le cœur
+pur `resolveTargetSignalQuantity` et les stratégies sont inchangés. Changer
+le défaut au seul niveau multi casserait l'égalité INV-P6 (la voie legacy
+paper défautait aussi sur `NATIVE` — la fusion `LIVE_TRADING_POLICY`
+n'existait qu'en mode live) : le défaut partagé préserve la projection
+N = 1 par construction, égalité couverte par le test existant. L'enveloppe
+live est inchangée (elle imposait déjà ce sizing). INV-P9 ajoute une règle
+normative sans toucher aux machines ni aux transitions.
+
+Amendement approuvé en revue. Invariants INV-P1 à INV-P8 inchangés ;
+INV-P9 ajouté (aucune instance portefeuille paper de production en sizing
+`NATIVE` sans `sizingPolicy` explicite documenté au runbook).

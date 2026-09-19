@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { LIVE_TRADING_POLICY } from "@dodash/models";
+
 import * as configurationModule from "../src/configuration.js";
 import type { AgentConfiguration } from "../src/configuration.js";
 
@@ -240,6 +242,11 @@ describe("configuration multi-produits (dao #24)", () => {
       maxPositionNotional: 10_000,
     });
     expect(result.value.products[1]?.risk.maxOrderNotional).toBe(1_000);
+    expect(result.value.sizingPolicy).toEqual({
+      type: "TARGET_SIGNAL_NOTIONAL",
+      targetSignalNotional: 1_000,
+      confidenceCalibration: "POWER_THIRD",
+    });
     expect(Object.isFrozen(result.value)).toBe(true);
     expect(Object.isFrozen(result.value.products)).toBe(true);
     expect(Object.isFrozen(result.value.portfolioRisk)).toBe(true);
@@ -254,6 +261,39 @@ describe("configuration multi-produits (dao #24)", () => {
     if (!result.ok) return;
     expect(result.value.products).toHaveLength(1);
     expect("portfolioRisk" in result.value).toBe(false);
+  });
+
+  it("définit le sizing notional par défaut des instances portefeuille (dao #49, INV-P9)", () => {
+    const result = configurationModule.parseMultiProductAgentConfiguration({
+      strategyIds: ["ema-cross"],
+      portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+      products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sizingPolicy).toEqual(
+      LIVE_TRADING_POLICY.sizingPolicy,
+    );
+  });
+
+  it("préserve un sizingPolicy explicite au-dessus du défaut notional (dao #49)", () => {
+    const result = configurationModule.parseMultiProductAgentConfiguration({
+      strategyIds: ["ema-cross"],
+      sizingPolicy: {
+        type: "TARGET_SIGNAL_NOTIONAL",
+        targetSignalNotional: 500,
+        confidenceCalibration: "POWER_THIRD",
+      },
+      portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+      products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sizingPolicy).toEqual({
+      type: "TARGET_SIGNAL_NOTIONAL",
+      targetSignalNotional: 500,
+      confidenceCalibration: "POWER_THIRD",
+    });
   });
 
   it("refuse fail-closed le multi-produits à la porte runtime (N ≥ 2)", () => {

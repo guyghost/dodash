@@ -310,3 +310,32 @@ Instance de référence (runbook
 `initialCapital` 10 000 par créneau, `maxDecisionNotional` 2 000,
 `portfolioRisk` consolidé { `maxGrossExposure` 20 000, `maxDailyLoss` 1 000 },
 `executionMode` paper (INV-P7).
+
+## 12. Amendement 2026-09-19 (dao #49) — sizing notional par défaut des
+instances portefeuille paper
+
+Constat (fenêtre #36, verdict `docs/analysis/analyse-paper-verdict-36-2026-09-18.md`
+§4.3) : le `/start` multi-produits du runbook ne passait pas `sizingPolicy` ;
+le défaut du schéma multi était `NATIVE`, donc toutes les stratégies émettaient
+`baseSize 0,01` en **quantité** partagée entre produits (`strategy-registry.ts`)
+— le créneau ETH (~25 USD/signaux) trade ~27× plus petit que BTC (~780 USD).
+ETH a fini la fenêtre à 4,6 rotations contre 119,2 pour BTC : ses verdicts sont
+statistiquement vides (sous-utilisation, pas d'edge mesuré).
+
+**Décision** : le défaut `sizingPolicy` du **schéma de configuration partagé**
+(`inputSchema`, donc à la fois la voie legacy mono-produit et le schéma
+multi-produits) passe de `NATIVE` à `LIVE_TRADING_POLICY.sizingPolicy`
+(`TARGET_SIGNAL_NOTIONAL` 1 000, calibration `POWER_THIRD`). Le sizing par
+défaut de toutes les configurations paper est donc **notional** ; un
+`sizingPolicy` explicite au `/start` reste admis et prime ; `NATIVE` reste
+disponible en opt-in explicite (essais locaux, tests). Le cœur de sizing
+(`packages/strategies`), les décorateurs et `resolveTargetSignalQuantity` :
+inchangés. L'enveloppe live (fusion `LIVE_TRADING_POLICY`) est inchangée —
+elle imposait déjà ce sizing. La projection legacy N = 1 (INV-P6) reste
+exactement identique par construction : les deux voies partagent le même
+défaut de schéma, l'égalité des sorties est couverte par le test existant.
+
+Règle normative ajoutée (INV-P9) : **aucune instance portefeuille paper de
+production ne démarre en sizing `NATIVE` sans `sizingPolicy` explicite au
+`/start` documenté au runbook** — un sizing en quantité partagée entre
+produits de prix différents est une erreur d'unité, pas un choix.

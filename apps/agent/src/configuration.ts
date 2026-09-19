@@ -238,7 +238,7 @@ const inputSchema = z.object({
   maxDecisionNotional: z.number().positive().default(2_000),
   minNetQuantity: z.number().nonnegative().default(0.000_001),
   executionMode: z.enum(["paper", "live", "perp"]).default("paper"),
-  sizingPolicy: sizingPolicySchema.default({ type: "NATIVE" }),
+  sizingPolicy: sizingPolicySchema.default({ ...LIVE_TRADING_POLICY.sizingPolicy }),
   indicators: indicatorSchema.default({
     ...DEFAULT_INDICATOR_CONFIG,
     returnPeriods: [...DEFAULT_INDICATOR_CONFIG.returnPeriods],
@@ -247,9 +247,10 @@ const inputSchema = z.object({
   broker: brokerSchema.default({ feeBps: 6, slippageBps: 2 }),
 });
 
-// Schéma multi-produits (models/multi-product-portfolio.md §7) : les
-// créneaux remplacent le `productId` unique ; les plafonds consolidés
-// sont requis ; seul le paper est admis (INV-P7).
+// Schéma multi-produits (models/multi-product-portfolio.md §7, §12 dao #49) :
+// les créneaux remplacent le `productId` unique ; les plafonds consolidés
+// sont requis ; seul le paper est admis (INV-P7). Le sizing hérite du défaut
+// notional du schéma partagé (INV-P9) — identique mono et multi (INV-P6).
 const multiProductInputSchema = inputSchema
   .omit({ productId: true, executionMode: true })
   .extend({
