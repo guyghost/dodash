@@ -19,7 +19,7 @@ const settings = (): OperatorNotificationSettings => ({
 });
 
 const baseEvent = (): TradingTelemetryEvent => ({
-	schemaVersion: 1,
+	schemaVersion: 2,
 	type: "cycle.completed",
 	timestamp: 1_700_000_000_000,
 	agentId: "agent-1",
@@ -28,6 +28,7 @@ const baseEvent = (): TradingTelemetryEvent => ({
 	phase: "persisting",
 	outcome: "ORDER_CONFIRMED",
 	errorCode: null,
+	brokerRejectionCode: null,
 	latencyMs: 12,
 	dailyPnl: 5,
 	accountEquity: null,
