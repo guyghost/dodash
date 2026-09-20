@@ -243,9 +243,9 @@ button:focus-visible {
   border-left: 5px solid var(--red);
   padding: 8px 10px;
   background: #fff1f3;
-  color: #8d1d37 !important;
+  color: #8d1d37;
   font-family: ui-monospace, monospace;
-  font-size: 12px !important;
+  font-size: 12px;
 }
 
 .loading-panel {
@@ -274,7 +274,7 @@ button:focus-visible {
 .agent-meta {
   margin: 0 0 28px;
   font-family: ui-monospace, monospace;
-  font-size: 12px !important;
+  font-size: 12px;
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
@@ -312,7 +312,7 @@ button:focus-visible {
   border-top: 1px dashed #cfc6b5;
   padding-top: 18px;
   font-family: ui-monospace, monospace;
-  font-size: 12px !important;
+  font-size: 12px;
 }
 
 .text-button {
@@ -424,14 +424,14 @@ fieldset { margin: 22px 0; border: 1.5px solid var(--ink); padding: 16px; }
 legend { padding: 0 8px; font-size: 10px; font-weight: 800; }
 
 .check-label {
-  display: inline-flex !important;
+  display: inline-flex;
   grid-template-columns: auto 1fr;
   align-items: center;
-  margin: 0 24px 0 0 !important;
+  margin: 0 24px 0 0;
 }
 
 .check-label input { width: 18px; height: 18px; accent-color: var(--green); }
-.live-confirmation { max-width: 380px; margin-bottom: 20px !important; color: var(--red) !important; }
+.live-confirmation { max-width: 380px; margin-bottom: 20px; color: var(--red); }
 .table-card { overflow-x: auto; box-shadow: 6px 6px 0 var(--ink); }
 table { width: 100%; border-collapse: collapse; min-width: 820px; }
 th, td { padding: 15px 17px; border-bottom: 1px solid #d8d0c1; text-align: left; }
