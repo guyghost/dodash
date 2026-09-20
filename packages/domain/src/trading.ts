@@ -51,7 +51,6 @@ export type TradingValidationError =
   | { readonly code: "INVALID_LIMIT_PRICE" }
   | { readonly code: "MARKET_WITH_LIMIT_PRICE" }
   | { readonly code: "EMPTY_STRATEGIES" }
-  | { readonly code: "INVALID_POSITION" }
   | { readonly code: "INVALID_FILL" }
   | { readonly code: "INVALID_ORDER_INDEX" };
 
@@ -80,19 +79,6 @@ export const createSignal = (
   }
   if (input.side === "HOLD" && input.suggestedSize !== 0) {
     return err({ code: "HOLD_WITH_SIZE" });
-  }
-  return ok(Object.freeze({ ...input }));
-};
-
-export const createPosition = (
-  input: Position,
-): Result<Position, TradingValidationError> => {
-  if (
-    !Number.isFinite(input.quantity) ||
-    !isPositiveFinite(input.averagePrice) ||
-    !Number.isFinite(input.unrealizedPnl)
-  ) {
-    return err({ code: "INVALID_POSITION" });
   }
   return ok(Object.freeze({ ...input }));
 };

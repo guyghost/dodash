@@ -14,13 +14,12 @@ export type {
   ProductId,
   Timeframe,
 } from "./market.js";
-export { err, mapResult, ok } from "./result.js";
+export { err, ok } from "./result.js";
 export type { Result } from "./result.js";
 export {
   createClientOrderId,
   createFill,
   createOrderIntent,
-  createPosition,
   createSignal,
 } from "./trading.js";
 export type {
