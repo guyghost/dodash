@@ -66,6 +66,49 @@ describe("tradingCycleMachine", () => {
     });
     expect(actor.getSnapshot().value).toBe("persisting");
     expect(actor.getSnapshot().context.outcome).toBe("FAILED");
+    expect(actor.getSnapshot().context.terminalFailure).toBe(false);
+    expect(actor.getSnapshot().context.lastError?.code).toBe(
+      "RECONCILIATION_FAILURE",
+    );
+
+    // Invariant (revue) : une panne d'inspection de compte n'arrête pas
+    // l'agent — l'issue est persistée puis le cycle suivant est replanifié.
+    actor.send({ type: "PERSIST_SUCCEEDED" });
+    expect(actor.getSnapshot().value).toBe("scheduling");
+    actor.send({ type: "SCHEDULE_SUCCEEDED", nextWakeAt: 20_000 });
+    expect(actor.getSnapshot().value).toBe("waiting");
+  });
+
+  it("replanifie après épuisement des retries de réconciliation de compte", () => {
+    const actor = createTradingActor();
+    send(
+      actor,
+      { type: "START_REQUESTED", permissions: permission },
+      { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 2_000 },
+      { type: "ALARM_FIRED", cycleId: "cycle-1", triggeredAt: 10_000 },
+    );
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      send(
+        actor,
+        {
+          type: "ACCOUNT_RECONCILIATION_FAILED",
+          error: error("reconciliation", "NETWORK_UNAVAILABLE", true),
+        },
+        { type: "RETRY_TIMER_ELAPSED" },
+      );
+    }
+    actor.send({
+      type: "ACCOUNT_RECONCILIATION_FAILED",
+      error: error("reconciliation", "NETWORK_UNAVAILABLE", true),
+    });
+
+    expect(actor.getSnapshot().value).toBe("persisting");
+    expect(actor.getSnapshot().context.outcome).toBe("FAILED");
+    expect(actor.getSnapshot().context.attempts.reconciliation).toBe(4);
+    expect(actor.getSnapshot().context.terminalFailure).toBe(false);
+
+    actor.send({ type: "PERSIST_SUCCEEDED" });
+    expect(actor.getSnapshot().value).toBe("scheduling");
   });
 
   it("refuse un démarrage sans les deux permissions", () => {
