@@ -85,6 +85,13 @@ describe("fetchMarketSnapshot", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.candles.at(-1)?.start).toBe(60_000);
+    expect(result.value.valuationMark).toEqual({
+      price: 10,
+      source: "COINBASE_CANDLE_CLOSE",
+      timeframe: "ONE_MINUTE",
+      candleClosedAt: 120_000,
+      maxMarketStalenessMs: configuration().maxMarketStalenessMs,
+    });
   });
 
   it("fails closed when the internal secret is missing", async () => {

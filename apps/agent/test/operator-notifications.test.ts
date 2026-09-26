@@ -19,7 +19,7 @@ const settings = (): OperatorNotificationSettings => ({
 });
 
 const baseEvent = (): TradingTelemetryEvent => ({
-	schemaVersion: 2,
+	schemaVersion: 3,
 	type: "cycle.completed",
 	timestamp: 1_700_000_000_000,
 	agentId: "agent-1",
@@ -34,6 +34,13 @@ const baseEvent = (): TradingTelemetryEvent => ({
 	accountEquity: null,
 	positionQuantity: null,
 	otherExposureNotional: 100,
+	valuationQuality: "not_applicable",
+	valuationPriceSource: "NONE",
+	valuationPrice: null,
+	valuationObservedAt: null,
+	valuationAgeMs: null,
+	consolidatedExposureNotional: null,
+	exposureQuality: "not_applicable",
 	executionObserved: false,
 	openOrderCount: null,
 });

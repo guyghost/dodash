@@ -6,10 +6,13 @@ import {
   DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
   DASHBOARD_PNL_HISTORY_MAX_CYCLES,
   projectDashboardPnlHistory,
+  isValidPaperValuationMark,
+  projectPaperValuation,
   type ControlPermissions,
   type DashboardPnlHistoryResult,
   type DashboardPnlOrderRow,
   type DashboardPortfolioSummaryResult,
+  type PaperValuationMark,
   type TradingCycleEvent,
   type LivePreflightFailureReason,
   type WorkflowError,
@@ -301,6 +304,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
    * démarrage dégradé silencieux.
    */
   private restorePortfolioSession(): void {
+    const rawTopLevelMark = (this.state as { lastPaperMark?: unknown }).lastPaperMark;
+    const normalizedTopLevelMark = isValidPaperValuationMark(rawTopLevelMark)
+      ? rawTopLevelMark
+      : null;
+    if (this.state.lastPaperMark !== normalizedTopLevelMark) {
+      this.setState({ ...this.state, lastPaperMark: normalizedTopLevelMark });
+    }
     const persisted =
       (this.state as { portfolioSession?: unknown }).portfolioSession ?? null;
     if (persisted === null) {
@@ -541,7 +551,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       protections.value,
     );
     emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
-      schemaVersion: 2,
+      schemaVersion: 3,
       type: "preflight.completed",
       timestamp: Date.now(),
       agentId: this.name,
@@ -559,6 +569,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       accountEquity: null,
       positionQuantity: null,
       otherExposureNotional: null,
+      valuationQuality: "not_applicable",
+      valuationPriceSource: "NONE",
+      valuationPrice: null,
+      valuationObservedAt: null,
+      valuationAgeMs: null,
+      consolidatedExposureNotional: null,
+      exposureQuality: "not_applicable",
       executionObserved: false,
       openOrderCount: report.openOrderCount,
     });
@@ -642,9 +659,11 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
    * projetée à la lecture par le même seam pur que `/portfolio` (ST5).
    */
   private stateSnapshot(): AgentStateSnapshot {
+    const asOf = Date.now();
     return toAgentStateSnapshot(
       this.state,
-      projectPortfolioSessionSummary(this.state.portfolioSession),
+      projectPortfolioSessionSummary(this.state.portfolioSession, asOf),
+      asOf,
     );
   }
 
@@ -730,8 +749,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
    * Source normative : models/dashboard-portfolio-summary.md §3-§4 et
    * models/state-portfolio-contract.md §2.
    */
-  getPortfolioSummary(): DashboardPortfolioSummaryResult {
-    return projectPortfolioSessionSummary(this.state.portfolioSession);
+  getPortfolioSummary(asOf = Date.now()): DashboardPortfolioSummaryResult {
+    return projectPortfolioSessionSummary(this.state.portfolioSession, asOf);
   }
 
   private async control(event: TradingCycleEvent): Promise<AgentCommandResult> {
@@ -761,7 +780,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     await this.persistMachine(machine);
     await this.runCurrent(false, resumeCycleId);
     const controlEvent: TradingTelemetryEvent = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       type: "control.completed",
       timestamp: Date.now(),
       agentId: this.name,
@@ -781,6 +800,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       accountEquity: null,
       positionQuantity: this.state.portfolio.positionQuantity,
       otherExposureNotional: null,
+      valuationQuality: "not_applicable",
+      valuationPriceSource: "NONE",
+      valuationPrice: null,
+      valuationObservedAt: null,
+      valuationAgeMs: null,
+      consolidatedExposureNotional: null,
+      exposureQuality: "not_applicable",
       executionObserved: false,
       openOrderCount: null,
     };
@@ -851,11 +877,16 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     );
     const executed = result.artifacts?.execution !== undefined;
     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
+    const acceptedPaperMark: PaperValuationMark | null =
+      configuration.executionMode === "paper"
+        ? result.artifacts?.market?.valuationMark ?? this.state.lastPaperMark
+        : null;
     this.setState({
       ...this.state,
       machine: result.machine,
       enabled: machineIsEnabled(result.machine.value),
       portfolio: result.portfolio,
+      lastPaperMark: acceptedPaperMark,
       dailyRiskWindow: dailyRisk.window,
       dailyPnl: dailyRisk.dailyPnl,
       lastTradeAt: executed
@@ -867,10 +898,25 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     });
 
     if (result.artifacts !== null) {
+      const eventAt = Date.now();
+      const projectedValuation = configuration.executionMode === "paper"
+        ? projectPaperValuation({
+            cash: result.portfolio.cash,
+            positionQuantity: result.portfolio.positionQuantity,
+            mark: acceptedPaperMark,
+            asOf: eventAt,
+          })
+        : null;
+      const paperValuation = projectedValuation?.ok === true
+        ? projectedValuation.value
+        : null;
+      const exposureNotional = configuration.executionMode === "paper"
+        ? paperValuation?.exposureNotional ?? null
+        : null;
       const cycleEvent: TradingTelemetryEvent = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         type: "cycle.completed",
-        timestamp: Date.now(),
+        timestamp: eventAt,
         agentId: this.name,
         productId: configuration.productId,
         executionMode: configuration.executionMode,
@@ -882,9 +928,21 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         ),
         latencyMs: Math.max(0, Date.now() - startedAt),
         dailyPnl: dailyRisk.dailyPnl,
-        accountEquity: result.accountEquity,
+        accountEquity: configuration.executionMode === "paper"
+          ? paperValuation?.equity ?? null
+          : result.accountEquity,
         positionQuantity: result.portfolio.positionQuantity,
-        otherExposureNotional: result.otherExposureNotional,
+        otherExposureNotional: configuration.executionMode === "paper"
+          ? null
+          : result.otherExposureNotional,
+        valuationQuality: paperValuation?.quality ?? (configuration.executionMode === "paper" ? "unavailable" : "not_applicable"),
+        valuationPriceSource: paperValuation?.markSource ?? "NONE",
+        valuationPrice: paperValuation?.markPrice ?? null,
+        valuationObservedAt: paperValuation?.candleClosedAt ?? null,
+        valuationAgeMs: paperValuation?.ageMs ?? null,
+        consolidatedExposureNotional: exposureNotional,
+        exposureQuality: paperValuation?.exposureQuality ??
+          (configuration.executionMode === "paper" ? "unavailable" : "not_applicable"),
         executionObserved: executed,
         openOrderCount: null,
       };
@@ -1254,6 +1312,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     );
     const executed = result.artifacts?.execution !== undefined;
     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
+    const lastPaperMark = result.artifacts?.market?.valuationMark ?? product.lastPaperMark;
     const updated: PortfolioProductRuntime = Object.freeze({
       machine: result.machine,
       portfolio: result.portfolio,
@@ -1262,6 +1321,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       lastTradeAt: executed
         ? result.artifacts?.triggeredAt ?? product.lastTradeAt
         : product.lastTradeAt,
+      lastPaperMark,
       previousIndicators: result.previousIndicators,
       lastCycle: lastCycle ?? product.lastCycle,
     });
@@ -1290,10 +1350,25 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     }
 
     if (result.artifacts !== null) {
+      const eventAt = Date.now();
+      const projectedValuation = projectPaperValuation({
+        cash: result.portfolio.cash,
+        positionQuantity: result.portfolio.positionQuantity,
+        mark: lastPaperMark,
+        asOf: eventAt,
+      });
+      const paperValuation = projectedValuation.ok ? projectedValuation.value : null;
+      const portfolioSummary = this.getPortfolioSummary(eventAt);
+      const consolidatedExposure = portfolioSummary.ok && portfolioSummary.value.kind === "portfolio"
+        ? portfolioSummary.value.consolidated.grossExposure
+        : null;
+      const consolidatedExposureQuality = portfolioSummary.ok && portfolioSummary.value.kind === "portfolio"
+        ? portfolioSummary.value.consolidated.exposureQuality
+        : "unavailable";
       const cycleEvent: TradingTelemetryEvent = {
-        schemaVersion: 2,
+        schemaVersion: 3,
         type: "cycle.completed",
-        timestamp: Date.now(),
+        timestamp: eventAt,
         agentId: this.name,
         productId,
         executionMode: configuration.executionMode,
@@ -1305,9 +1380,16 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         ),
         latencyMs: Math.max(0, Date.now() - startedAt),
         dailyPnl: dailyRisk.dailyPnl,
-        accountEquity: result.accountEquity,
+        accountEquity: paperValuation?.equity ?? null,
         positionQuantity: result.portfolio.positionQuantity,
-        otherExposureNotional: result.otherExposureNotional,
+        otherExposureNotional: null,
+        valuationQuality: paperValuation?.quality ?? "unavailable",
+        valuationPriceSource: paperValuation?.markSource ?? "NONE",
+        valuationPrice: paperValuation?.markPrice ?? null,
+        valuationObservedAt: paperValuation?.candleClosedAt ?? null,
+        valuationAgeMs: paperValuation?.ageMs ?? null,
+        consolidatedExposureNotional: consolidatedExposure,
+        exposureQuality: consolidatedExposureQuality,
         executionObserved: executed,
         openOrderCount: null,
       };
@@ -2105,6 +2187,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       completedAt: Date.now(),
       outcome: machine.context.outcome,
       marketPrice: artifacts.market?.candles.at(-1)?.close ?? null,
+      valuationMark: artifacts.market?.valuationMark ?? null,
       signalCount: artifacts.signals?.length ?? 0,
       clientOrderId: artifacts.order?.clientOrderId ?? null,
       exchangeOrderId: artifacts.execution?.exchangeOrderId ?? null,

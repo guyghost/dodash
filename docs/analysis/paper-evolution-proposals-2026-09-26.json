@@ -1,0 +1,108 @@
+[
+  {
+    "key": "VALUATION",
+    "title": "Fiabiliser la valorisation paper : équité au prix daté et exposition consolidée vérifiable",
+    "type": "technical-change",
+    "description": "P0 — Sur les 320 cycles de #36bis observés jusqu’au 26-09-2026 08:51Z, accountEquity reste exactement 10 000 USD pour chacun des deux produits, malgré un achat chacun le 22-09 et des dailyPnl variables. Le Worker déployé calcule cash + quantité * averagePrice dans reconcileAccount et émet result.accountEquity, alors que runProductCycle calcule séparément une valeur sur le close. otherExposureNotional est également un zéro de stub. Proposer une projection de valorisation déterministe partagée (prix/source/date/qualité), distincte du coût d’acquisition et des valeurs de risque. Expliciter stale/unavailable, les frais, le mark après fill et le jour UTC. Revoir séparément toute conséquence sur les décisions de risque ; ne pas injecter aveuglément le nouveau PnL dans les gardes.\nPreuves : docs/analysis/analyse-paper-session-2026-09-26.md. Modèle proposé : models/paper-campaign-evolution-2026-09-26.draft.md. Revue préparatoire : models/paper-campaign-evolution-2026-09-26.review.md. Cette proposition prépare une évolution ; aucune activation live ni modification du déploiement ne fait partie de sa création. Model → Review → Implement → Verify obligatoire ; les modèles décident des transitions, les LLM restent dans des AI Workers de signaux.",
+    "criteria": [
+      "Amender et faire revoir les modèles de valorisation, télémétrie, runtime et contrat dailyRisk avant le code ; figer la provenance et la validité temporelle du prix.",
+      "À cash et quantité fixes, une variation du prix de valorisation change equity de quantité × variation ; achat/frais, vente partielle et absence de fill respectent les identités comptables.",
+      "API/dashboard/AE publient une mesure cohérente, datée et qualifiée ; absence/péremption de prix ne produit ni faux zéro ni équité au coût présentée comme fraîche.",
+      "Exposition consolidée issue de l’orchestrateur ou explicitement indisponible ; les valeurs de stub ne constituent aucune preuve de limite de risque respectée.",
+      "Tests de régression mono-produit et portefeuille, panne marché, reprise persistée et jour UTC ; prouver que les seuils et admissions de risque ne changent pas sans modèle revu.",
+      "Exécuter les contrôles locaux requis et produire une preuve sur une fixture avec position ouverte ; déploiement paper et nouvelle campagne font l’objet d’une étape distincte."
+    ],
+    "id": 57,
+    "dependsOn": [],
+    "status": "rejected-no-valid-votes",
+    "statusReason": "DAO recorded rejection after zero of eight agents could launch: Herdr workspace PermissionDenied; see docs/operations/incident-dao-deliberation-paper-2026-09-26.md. This is not a council vote."
+  },
+  {
+    "key": "DIAGNOSTICS",
+    "title": "Rendre les cycles paper auditables : causes marché, retries récupérés et bougies réellement évaluées",
+    "type": "technical-change",
+    "description": "P1 — 121/320 cycles finissent FAILED : 96 STALE_MARKET_DATA et 25 RATE_LIMITED. Pourtant blob6 signale RATE_LIMITED sur 56 cycles, dont 31 récupérés, y compris un ORDER_CONFIRMED. STALE_MARKET_DATA confond divergence ticker et âge de bougie ; NO_ACTION confond absence de signal et bougie déjà évaluée/hors fenêtre. AE v2 ne permet donc pas d’attribuer tous les échecs à #56 ni de mesurer la couverture quotidienne. Ajouter une projection diagnostique versionnée avec causes fermées, code terminal distinct de l’historique récupéré, compteurs de tentatives, candleClosedAt, runId, configuration/version et raison de non-décision. Conserver #56 comme proposition existante pour l’arbitrage du garde.\nPreuves : docs/analysis/analyse-paper-session-2026-09-26.md. Modèle proposé : models/paper-campaign-evolution-2026-09-26.draft.md. Revue préparatoire : models/paper-campaign-evolution-2026-09-26.review.md. Cette proposition prépare une évolution ; aucune activation live ni modification du déploiement ne fait partie de sa création. Model → Review → Implement → Verify obligatoire ; les modèles décident des transitions, les LLM restent dans des AI Workers de signaux.",
+    "criteria": [
+      "Modèle de télémétrie revu avant code : vocabulaire fermé et compatibilité de blob6/blob7, sans effets décisionnels.",
+      "Une même requête distingue erreur terminale, erreur récupérée et tentative ; tester 429 puis succès, 429 épuisé et succès direct.",
+      "Distinguer TICKER_INCOHERENT de CANDLE_TOO_OLD, NO_SIGNAL de DUPLICATE_CANDLE et âge expiré, et exposer la raison fermée de RISK_REJECTED.",
+      "Relier les événements au produit, cycle, bougie, campagne et version/configuration ; ne journaliser aucun secret ni corps brut.",
+      "Calculer la couverture des bougies éligibles ONE_DAY séparément des réveils horaires ; une bougie répétée ne compte pas comme une nouvelle décision.",
+      "Tests de projection et requêtes AE pondérées par _sample_interval ; l’échantillonnage et les valeurs absentes rendent les mesures concernées explicitement estimées ou indisponibles."
+    ],
+    "id": 58,
+    "dependsOn": [],
+    "status": "open"
+  },
+  {
+    "key": "RETRIES",
+    "title": "Planifier les retries marché après 429 avec délai persistant et budget de décision borné",
+    "type": "technical-change",
+    "dependsKeys": [
+      "DIAGNOSTICS"
+    ],
+    "description": "P1 — Sur les dernières 24 heures capturées, 13/48 cycles échouent en RATE_LIMITED et 10 autres se récupèrent après ce code. Dans le Worker déployé, retryingMarketData envoie immédiatement RETRY_TIMER_ELAPSED ; Retry-After existe dans le client Coinbase mais sa propagation jusqu’au calendrier doit être complétée. Remplacer le retry immédiat par un calendrier borné modélisé dans XState, avec nextRetryAt persistant, deadline du signal et priorité stop/kill. La cause amont des quotas n’est pas établie : mesurer avant de promettre un gain ; pas d’augmentation de quotas ni de contournement fournisseur.\nPreuves : docs/analysis/analyse-paper-session-2026-09-26.md. Modèle proposé : models/paper-campaign-evolution-2026-09-26.draft.md. Revue préparatoire : models/paper-campaign-evolution-2026-09-26.review.md. Cette proposition prépare une évolution ; aucune activation live ni modification du déploiement ne fait partie de sa création. Model → Review → Implement → Verify obligatoire ; les modèles décident des transitions, les LLM restent dans des AI Workers de signaux.",
+    "criteria": [
+      "Modéliser/revoir fetching → retryScheduled → fetching ou échec persisté ; fixer budget, délais, plafond et traitement de Retry-After avant code.",
+      "Propager et valider Retry-After ; pas de nouvelle tentative avant nextRetryAt, ni après expiration de la décision ; pas de boucle active ou attente longue en mémoire.",
+      "Persister l’échéance avant l’effet de programmation ; redémarrage du DO, stop/kill et annulation ne provoquent aucun ordre supplémentaire.",
+      "Préserver INV-P3 du portefeuille : un retry produit ne perd pas les échéances des autres produits ni l’alarme partagée.",
+      "Tests à horloge injectée : 429 répétés, header absent/invalide, épuisement, reprise, produit voisin et deadline ; vérification locale requise.",
+      "Comparer ensuite les taux terminal/récupéré et la couverture quotidienne sur des fenêtres versionnées ; aucune garantie de disparition des 429 sans preuve."
+    ],
+    "id": 59,
+    "dependsOn": [
+      58
+    ],
+    "status": "open"
+  },
+  {
+    "key": "HISTORY",
+    "title": "Réconcilier les preuves historiques paper : signe des coûts, PnL brut et drawdown",
+    "type": "technical-change",
+    "description": "P1 — Le script paper-cost-decomposition-2026-09-18.mjs calcule marketPnl = totalDelta - cost alors que cost est positif. Le verdict #36 rapporte net BTC -647,51 USD et coûts 953,95 USD, puis conclut brut -1 601,46 USD. L’identité correcte donne un brut estimé +306,44 USD si ces entrées sont fiables ; ETH donne +47,30 USD. Le PnL pendant les seuls cycles avec fill n’est pas un gain brut moyen par trade. Le drawdown historique est également présenté depuis le capital initial au lieu d’un sommet antérieur. Préparer un erratum traçable et un calculateur réconcilié ; ne pas remplacer ces erreurs par une affirmation d’edge positif. Réexaminer la prémisse économique de #50 sans annuler ses décisions ni relancer le mix 1-min.\nPreuves : docs/analysis/analyse-paper-session-2026-09-26.md. Modèle proposé : models/paper-campaign-evolution-2026-09-26.draft.md. Revue préparatoire : models/paper-campaign-evolution-2026-09-26.review.md. Cette proposition prépare une évolution ; aucune activation live ni modification du déploiement ne fait partie de sa création. Model → Review → Implement → Verify obligatoire ; les modèles décident des transitions, les LLM restent dans des AI Workers de signaux.",
+    "criteria": [
+      "Figer le contrat de calcul et faire revoir les conventions de coûts : net = gross - costs, latent/réalisé distincts, définition du drawdown depuis le sommet.",
+      "Reproduire les fenêtres exactes avec sources archivées et contrôler la validité de l’équité, les fills et _sample_interval ; sources insuffisantes → inconclusive.",
+      "Tester l’identité net/brut sur frais seuls, gain brut absorbé par frais, position ouverte, zéro fill et données manquantes ; aucun coût compté deux fois.",
+      "Publier un erratum préservant le rapport original et distinguer valeurs recalculées/estimées/non reconstructibles ; corriger explicitement les prémisses reprises par #50.",
+      "Ne pas confondre variation d’équité pendant un fill, PnL par trade clos, rendement et preuve statistique ; aucune décision de stratégie ou de live dans cette proposition."
+    ],
+    "id": 60,
+    "dependsOn": [],
+    "status": "open"
+  },
+  {
+    "key": "CAMPAIGN",
+    "title": "Modéliser une campagne paper probante : manifeste figé, couverture daily et verdict inconclusif explicite",
+    "type": "technical-change",
+    "dependsIds": [
+      56
+    ],
+    "dependsKeys": [
+      "VALUATION",
+      "DIAGNOSTICS",
+      "RETRIES",
+      "HISTORY"
+    ],
+    "description": "P2 — #36bis fournit 320 réveils horaires depuis le premier cycle post-redémarrage du 19-09 16:54Z, mais seulement deux fills et une équité non exploitable pour la performance. La date de départ souvent citée au 20-09 est une borne d’analyse, pas le redémarrage réel observé (annulation le 19-09 15:54:46Z). Une durée calendaire seule ne valide ni couverture des décisions daily ni rentabilité. Proposer une machine XState de campagne, manifeste runId/policyHash/versions/dates/capital, couverture de bougies éligibles, qualité des mesures et critères pré-enregistrés. Le verdict distingue stabilité de plateforme, validité de mesure et preuve économique. Toute modification de politique/version ouvre un segment distinct. Le lancement effectif attend résolution des dépendances et autorisation opérateur dédiée.\nPreuves : docs/analysis/analyse-paper-session-2026-09-26.md. Modèle proposé : models/paper-campaign-evolution-2026-09-26.draft.md. Revue préparatoire : models/paper-campaign-evolution-2026-09-26.review.md. Cette proposition prépare une évolution ; aucune activation live ni modification du déploiement ne fait partie de sa création. Model → Review → Implement → Verify obligatoire ; les modèles décident des transitions, les LLM restent dans des AI Workers de signaux.",
+    "criteria": [
+      "Modéliser et revoir draft/reviewed/collecting/invalidated/evaluating/operationallyValidated/inconclusive avec événements, gardes et effets explicites avant implémentation.",
+      "Fixer avant départ les seuils de couverture et taille d’échantillon justifiés, échéance, politique, versions et hash ; pas de seuil choisi après observation du PnL.",
+      "Horaires réels et manifeste auditable ; ne pas confondre date de déploiement, annulation, redémarrage et premier cycle ; conserver les fenêtres précédentes.",
+      "COMPTE des bougies daily distinctes, échecs pendant fenêtre éligible, ancienneté des marques, retries et fills ; deux fills seuls ne démontrent pas une espérance.",
+      "Changement de configuration/version invalide ou segmente la campagne selon modèle ; données manquantes/échantillonnées ou métriques invalide → inconclusive.",
+      "Modèle de lancement live et alertes gelées inchangés ; aucun GO live automatique, aucun reset/stop/déploiement produit par la préparation de la proposition.",
+      "Rejouer des fixtures de changement de version, manque de couverture, panne/reprise et échéance ; rapport reproductible avec même verdict pour mêmes preuves."
+    ],
+    "id": 61,
+    "dependsOn": [
+      56,
+      57,
+      58,
+      59,
+      60
+    ],
+    "status": "open"
+  }
+]

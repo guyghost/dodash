@@ -33,7 +33,18 @@ const orderRow = (
 });
 
 const market = (close: number) => ({
-  market: { productId: "BTC-USD", timeframe: "FIVE_MINUTE", candles: [{ close }] },
+  market: {
+    productId: "BTC-USD",
+    timeframe: "FIVE_MINUTE",
+    candles: [{ close }],
+    valuationMark: {
+      price: close,
+      source: "COINBASE_CANDLE_CLOSE",
+      timeframe: "FIVE_MINUTE",
+      candleClosedAt: t0 + 1_000,
+      maxMarketStalenessMs: 1_000_000,
+    },
+  },
 });
 
 const buyPlan = (stop: number, take: number) => ({
@@ -138,10 +149,10 @@ describe("projectDashboardPnlHistory", () => {
     if (!result.ok) throw new Error("projection must succeed");
 
     // Équité : post-trade marquée au close du cycle, ordre chronologique.
-    expect(result.value.equityCurve).toEqual([
-      { t: t0, equity: 401.5 + 0.1 * 60_000 },
-      { t: t0 + 300_000, equity: 401.5 + 0.1 * 61_000 },
-      { t: t0 + 600_000, equity: 1_619.5 },
+    expect(result.value.equityCurve.map(({ t, equity, valuation }) => ({ t, equity, quality: valuation.quality }))).toEqual([
+      { t: t0 + 4_000, equity: 401.5 + 0.1 * 60_000, quality: "fresh" },
+      { t: t0 + 304_000, equity: 401.5 + 0.1 * 61_000, quality: "fresh" },
+      { t: t0 + 604_000, equity: 1_619.5, quality: "fresh" },
     ]);
 
     // Cycles : plus récent d'abord.
@@ -206,7 +217,7 @@ describe("projectDashboardPnlHistory", () => {
         "order-2",
         "cycle-2",
         confirmedSubmission(
-          { cash: -698.5, positionQuantity: 0.2, averagePrice: 60_098.5 },
+          { cash: 198.5, positionQuantity: 0.2, averagePrice: 60_098.5 },
           { price: 61_050, quantity: 0.1, fee: 1.6 },
           "protective-2",
         ),
@@ -314,8 +325,67 @@ describe("projectDashboardPnlHistory", () => {
     if (perp === undefined) throw new Error("cycle missing");
     expect(perp.side).toBeNull();
     expect(result.value.equityCurve).toEqual([
-      { t: t0, equity: 1_000 },
+      expect.objectContaining({ t: t0 + 4_000, equity: 1_000, valuation: expect.objectContaining({ quality: "fresh" }) }),
     ]);
+  });
+
+  it("keeps a stale dated mark explicit and never refreshes it on a marketless cycle", () => {
+    const staleMark = {
+      price: 60_000,
+      source: "COINBASE_CANDLE_CLOSE",
+      timeframe: "FIVE_MINUTE",
+      candleClosedAt: t0 + 1_000,
+      maxMarketStalenessMs: 1_000,
+    };
+    const cycles = [
+      cycleRow("cycle-buy", t0, {
+        market: { ...market(60_000).market, valuationMark: staleMark },
+      }),
+      cycleRow("cycle-market-failed", t0 + 300_000, {}),
+    ];
+    const orders = [
+      orderRow(
+        "order-1",
+        "cycle-buy",
+        confirmedSubmission(
+          { cash: 401.5, positionQuantity: 0.1, averagePrice: 60_098.5 },
+          { price: 60_060, quantity: 0.1, fee: 1.5 },
+        ),
+      ),
+    ];
+    const result = projectDashboardPnlHistory(cycles, orders, 30);
+    if (!result.ok) throw new Error("projection must succeed");
+    expect(result.value.equityCurve.map((point) => point.valuation)).toMatchObject([
+      { quality: "stale", candleClosedAt: t0 + 1_000, ageMs: 3_000 },
+      { quality: "stale", candleClosedAt: t0 + 1_000, ageMs: 303_000 },
+    ]);
+    expect(result.value.equityCurve[1]?.equity).toBe(401.5 + 0.1 * 60_000);
+  });
+
+  it("does not infer a dated mark from a legacy candle for an open position", () => {
+    const legacy = {
+      market: { productId: "BTC-USD", timeframe: "FIVE_MINUTE", candles: [{ close: 60_000 }] },
+    };
+    const result = projectDashboardPnlHistory(
+      [cycleRow("legacy-cycle", t0, legacy)],
+      [
+        orderRow(
+          "order-legacy",
+          "legacy-cycle",
+          confirmedSubmission(
+            { cash: 401.5, positionQuantity: 0.1, averagePrice: 60_098.5 },
+            { price: 60_060, quantity: 0.1, fee: 1.5 },
+          ),
+        ),
+      ],
+      30,
+    );
+    if (!result.ok) throw new Error("legacy history must remain readable");
+    expect(result.value.equityCurve[0]).toMatchObject({
+      equity: null,
+      valuation: { quality: "unavailable", markPrice: null, candleClosedAt: null },
+    });
+    expect(result.value.cycles[0]?.marketPrice).toBe(60_000);
   });
 
   it("bounds the window and rejects cycles beyond the limit", () => {

@@ -25,7 +25,26 @@ const stoppedAgent = (): AgentStateView => ({
   lastTradeAt: null,
   lastCycle: null,
   portfolioSummary: singleProductSummary(),
+  paperValuation: null,
   indicators: null,
+});
+
+const testValuation = (
+  asOf: number,
+  equity: number | null,
+  markPrice: number | null,
+  exposureNotional = markPrice === null ? 0 : markPrice,
+) => ({
+  asOf,
+  equity,
+  exposureNotional,
+  exposureQuality: "fresh" as const,
+  markPrice,
+  markSource: markPrice === null ? null : "COINBASE_CANDLE_CLOSE" as const,
+  timeframe: markPrice === null ? null : "FIVE_MINUTE",
+  candleClosedAt: markPrice === null ? null : asOf - 1_000,
+  ageMs: markPrice === null ? null : 1_000,
+  quality: markPrice === null ? "unavailable" as const : "fresh" as const,
 });
 
 const emptyPnlHistory = (): PnlHistoryView => ({
@@ -43,6 +62,7 @@ const portfolioSummary = (): PortfolioSummaryView =>
     kind: "portfolio",
     phase: "running",
     killSwitchActive: false,
+    asOf: Date.UTC(2026, 7, 26, 12),
     products: [
       Object.freeze({
         productId: "BTC-USD",
@@ -52,7 +72,9 @@ const portfolioSummary = (): PortfolioSummaryView =>
         positionQuantity: 0.1,
         averagePrice: 60_000,
         marketPrice: 62_000,
+        valuation: testValuation(Date.UTC(2026, 7, 26, 12), 11_200, 62_000, 6_200),
         grossExposure: 6_200,
+        exposureQuality: "fresh" as const,
         maxGrossExposure: 20_000,
         dailyPnl: 42.5,
         lastCycle: Object.freeze({
@@ -71,14 +93,19 @@ const portfolioSummary = (): PortfolioSummaryView =>
         positionQuantity: 0,
         averagePrice: 0,
         marketPrice: null,
+        valuation: testValuation(Date.UTC(2026, 7, 26, 12), 1_000, null),
         grossExposure: 0,
+        exposureQuality: "fresh" as const,
         maxGrossExposure: 12_000,
         dailyPnl: -10,
         lastCycle: null,
       }),
     ],
     consolidated: Object.freeze({
+      equity: 12_200,
+      valuationQuality: "unavailable" as const,
       grossExposure: 6_200,
+      exposureQuality: "fresh" as const,
       maxGrossExposure: 30_000,
       dailyPnl: 32.5,
       maxDailyLoss: 1_500,
@@ -194,9 +221,9 @@ describe("dashboard journey", () => {
     };
     const pnlHistory: PnlHistoryView = {
       equityCurve: [
-        { t: startedAt - 600_000, equity: 6_401.5 },
-        { t: startedAt - 300_000, equity: 6_501.5 },
-        { t: startedAt, equity: 6_611.5 },
+        { t: startedAt - 600_000, equity: 6_401.5, valuation: testValuation(startedAt - 600_000, 6_401.5, 60_000) },
+        { t: startedAt - 300_000, equity: 6_501.5, valuation: testValuation(startedAt - 300_000, 6_501.5, 61_000) },
+        { t: startedAt, equity: 6_611.5, valuation: testValuation(startedAt, 6_611.5, 62_000) },
       ],
       cycles: [
         {
@@ -205,6 +232,7 @@ describe("dashboard journey", () => {
           completedAt: startedAt - 296_000,
           outcome: "ORDER_CONFIRMED",
           marketPrice: 60_000,
+          valuation: testValuation(startedAt - 296_000, 6_501.5, 60_000),
           side: "BUY",
           quantity: 0.1,
           fillPrice: 60_060,
@@ -218,6 +246,7 @@ describe("dashboard journey", () => {
           completedAt: null,
           outcome: "NO_ACTION",
           marketPrice: 61_000,
+          valuation: testValuation(startedAt, 6_611.5, 61_000),
           side: null,
           quantity: null,
           fillPrice: null,
@@ -309,7 +338,7 @@ describe("dashboard journey", () => {
     // Produit actif : phase machine et exposition vs plafond affichées.
     expect(screen.getByText("BTC-USD")).toBeTruthy();
     expect(screen.getByText("ACTIF")).toBeTruthy();
-    expect(screen.getAllByText("EXPOSITION").length).toBe(2);
+    expect(screen.getAllByText("EXPOSITION").length).toBe(3);
     // Produit quiescent (INV-P3) : visible, jamais masqué.
     expect(screen.getByText("ETH-USD")).toBeTruthy();
     expect(screen.getByText("SUSPENDU")).toBeTruthy();

@@ -181,6 +181,15 @@ export type {
   DailyRiskAssessment,
   DailyRiskWindow,
 } from "./daily-risk.js";
+export { isValidPaperValuationMark, projectPaperValuation } from "./paper-valuation.js";
+export type {
+  PaperValuation,
+  PaperValuationErrorCode,
+  PaperValuationInput,
+  PaperValuationMark,
+  PaperValuationQuality,
+  PaperValuationResult,
+} from "./paper-valuation.js";
 export { DASHBOARD_REMOTE_PHASES } from "./dashboard-session.types.js";
 export type {
   DashboardCommand,

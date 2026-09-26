@@ -36,6 +36,7 @@ export interface AgentStateView {
   } | null;
   /** dao #34 : hiérarchie portefeuille transportée par le contrat `/state`. */
   readonly portfolioSummary: PortfolioSummaryView;
+  readonly paperValuation: PaperValuationResultView | null;
   readonly indicators: {
     readonly rsi: number;
     readonly emaFast: number;
@@ -55,7 +56,8 @@ export interface CycleView {
 
 export interface PnlEquityPointView {
   readonly t: number;
-  readonly equity: number;
+  readonly equity: number | null;
+  readonly valuation: PaperValuationView;
 }
 
 export interface PnlCycleView {
@@ -64,6 +66,7 @@ export interface PnlCycleView {
   readonly completedAt: number | null;
   readonly outcome: string;
   readonly marketPrice: number | null;
+  readonly valuation: PaperValuationView | null;
   readonly side: "BUY" | "SELL" | null;
   readonly quantity: number | null;
   readonly fillPrice: number | null;
@@ -87,6 +90,23 @@ export interface PnlHistoryView {
     | null;
 }
 
+export interface PaperValuationView {
+  readonly asOf: number;
+  readonly equity: number | null;
+  readonly exposureNotional: number | null;
+  readonly exposureQuality: "fresh" | "stale" | "unavailable";
+  readonly markPrice: number | null;
+  readonly markSource: "COINBASE_CANDLE_CLOSE" | null;
+  readonly timeframe: string | null;
+  readonly candleClosedAt: number | null;
+  readonly ageMs: number | null;
+  readonly quality: "fresh" | "stale" | "unavailable";
+}
+
+export type PaperValuationResultView =
+  | { readonly ok: true; readonly value: PaperValuationView }
+  | { readonly ok: false; readonly error: { readonly code: string } };
+
 export type PortfolioProductStatusView = "running" | "stopped" | "halted" | "failed";
 
 export interface PortfolioLastCycleView {
@@ -105,14 +125,19 @@ export interface PortfolioProductView {
   readonly positionQuantity: number;
   readonly averagePrice: number;
   readonly marketPrice: number | null;
-  readonly grossExposure: number;
+  readonly valuation: PaperValuationView;
+  readonly grossExposure: number | null;
+  readonly exposureQuality: "fresh" | "stale" | "unavailable";
   readonly maxGrossExposure: number;
   readonly dailyPnl: number;
   readonly lastCycle: PortfolioLastCycleView | null;
 }
 
 export interface PortfolioConsolidatedView {
-  readonly grossExposure: number;
+  readonly equity: number | null;
+  readonly valuationQuality: "fresh" | "stale" | "unavailable";
+  readonly grossExposure: number | null;
+  readonly exposureQuality: "fresh" | "stale" | "unavailable";
   readonly maxGrossExposure: number;
   readonly dailyPnl: number;
   readonly maxDailyLoss: number;
@@ -124,6 +149,7 @@ export type PortfolioSummaryView =
       readonly kind: "portfolio";
       readonly phase: string;
       readonly killSwitchActive: boolean;
+      readonly asOf: number;
       readonly products: readonly PortfolioProductView[];
       readonly consolidated: PortfolioConsolidatedView;
     }
@@ -239,6 +265,72 @@ const parseConfiguration = (value: unknown): AgentConfigurationView | null => {
   });
 };
 
+const parsePaperValuation = (value: unknown): PaperValuationView | null => {
+  if (value === null) return null;
+  if (
+    !isRecord(value) ||
+    !isSafeTime(value.asOf) ||
+    !(value.equity === null || isFiniteNumber(value.equity)) ||
+    !(value.exposureNotional === null || isNonNegativeFinite(value.exposureNotional)) ||
+    (value.exposureQuality !== "fresh" && value.exposureQuality !== "stale" && value.exposureQuality !== "unavailable") ||
+    !(value.markPrice === null || (isFiniteNumber(value.markPrice) && value.markPrice > 0)) ||
+    !(value.markSource === null || value.markSource === "COINBASE_CANDLE_CLOSE") ||
+    !(value.timeframe === null || (typeof value.timeframe === "string" && value.timeframe.length > 0)) ||
+    !(value.candleClosedAt === null || isSafeTime(value.candleClosedAt)) ||
+    !(value.ageMs === null || isSafeTime(value.ageMs)) ||
+    (value.quality !== "fresh" && value.quality !== "stale" && value.quality !== "unavailable")
+  ) {
+    throw invalidResponse();
+  }
+  const hasMark = value.markPrice !== null;
+  if (
+    hasMark !== (value.markSource !== null) ||
+    hasMark !== (value.timeframe !== null) ||
+    hasMark !== (value.candleClosedAt !== null) ||
+    hasMark !== (value.ageMs !== null) ||
+    (typeof value.candleClosedAt === "number" &&
+      typeof value.asOf === "number" &&
+      value.candleClosedAt > value.asOf) ||
+    (value.quality === "unavailable" && hasMark) ||
+    ((value.quality === "fresh" || value.quality === "stale") && !hasMark) ||
+    (value.exposureNotional === null && value.exposureQuality !== "unavailable") ||
+    (value.exposureNotional !== null && value.exposureQuality === "unavailable")
+  ) {
+    throw invalidResponse();
+  }
+  return Object.freeze({
+    asOf: value.asOf as number,
+    equity: value.equity,
+    exposureNotional: value.exposureNotional as number | null,
+    exposureQuality: value.exposureQuality,
+    markPrice: value.markPrice,
+    markSource: value.markSource as PaperValuationView["markSource"],
+    timeframe: value.timeframe as string | null,
+    candleClosedAt: value.candleClosedAt as number | null,
+    ageMs: value.ageMs as number | null,
+    quality: value.quality,
+  });
+};
+
+const parsePaperValuationResult = (
+  value: unknown,
+): PaperValuationResultView | null => {
+  if (value === null) return null;
+  if (!isRecord(value) || typeof value.ok !== "boolean") throw invalidResponse();
+  if (value.ok) {
+    const projected = parsePaperValuation(value.value);
+    if (projected === null) throw invalidResponse();
+    return Object.freeze({ ok: true, value: projected });
+  }
+  if (!isRecord(value.error) || typeof value.error.code !== "string") {
+    throw invalidResponse();
+  }
+  return Object.freeze({
+    ok: false,
+    error: Object.freeze({ code: value.error.code }),
+  });
+};
+
 const parseIndicators = (value: unknown): AgentStateView["indicators"] => {
   if (value === null) return null;
   if (
@@ -270,8 +362,8 @@ export const parseAgentState = (value: unknown): AgentStateView => {
     !phases.has(phase) ||
     typeof value.enabled !== "boolean" ||
     !Number.isSafeInteger(value.updatedAt) ||
-    !isFiniteNumber(value.portfolio.cash) ||
-    !isFiniteNumber(value.portfolio.positionQuantity) ||
+    !isNonNegativeFinite(value.portfolio.cash) ||
+    !isNonNegativeFinite(value.portfolio.positionQuantity) ||
     !isFiniteNumber(value.portfolio.averagePrice) ||
     !isFiniteNumber(value.dailyPnl)
   ) {
@@ -289,6 +381,32 @@ export const parseAgentState = (value: unknown): AgentStateView => {
     throw invalidResponse();
   }
   const portfolioSummary = parsePortfolioSummary(portfolioEnvelope.value);
+  const paperValuation = parsePaperValuationResult(value.paperValuation ?? null);
+  if (paperValuation?.ok === true) {
+    const measurement = paperValuation.value;
+    const expectedEquity = value.portfolio.positionQuantity === 0
+      ? value.portfolio.cash
+      : measurement.markPrice === null
+        ? null
+        : value.portfolio.cash + value.portfolio.positionQuantity * measurement.markPrice;
+    const expectedExposure = value.portfolio.positionQuantity === 0
+      ? 0
+      : measurement.markPrice === null
+        ? null
+        : Math.abs(value.portfolio.positionQuantity) * measurement.markPrice;
+    const expectedExposureQuality = value.portfolio.positionQuantity === 0
+      ? "fresh"
+      : expectedExposure === null
+        ? "unavailable"
+        : measurement.quality;
+    if (
+      measurement.equity !== expectedEquity ||
+      measurement.exposureNotional !== expectedExposure ||
+      measurement.exposureQuality !== expectedExposureQuality
+    ) {
+      throw invalidResponse();
+    }
+  }
 
   const lastCycleValue = value.lastCycle;
   let lastCycle: AgentStateView["lastCycle"] = null;
@@ -327,6 +445,7 @@ export const parseAgentState = (value: unknown): AgentStateView => {
     lastTradeAt: optionalTime(value.lastTradeAt),
     lastCycle,
     portfolioSummary,
+    paperValuation,
     indicators: parseIndicators(value.previousIndicators),
   });
 };
@@ -383,10 +502,38 @@ export const parsePnlHistory = (value: unknown): PnlHistoryView => {
     throw invalidResponse();
   }
   const equityCurve = value.equityCurve.slice(0, 50).map((point) => {
-    if (!isRecord(point) || !isSafeTime(point.t) || !isFiniteNumber(point.equity)) {
+    if (!isRecord(point) || !isSafeTime(point.t)) {
       throw invalidResponse();
     }
-    return Object.freeze({ t: point.t, equity: point.equity });
+    if (!(point.equity === null || isFiniteNumber(point.equity))) throw invalidResponse();
+    const isLegacyPoint = point.valuation === undefined || point.valuation === null;
+    const valuation = isLegacyPoint
+      ? Object.freeze({
+          asOf: point.t,
+          equity: null,
+          exposureNotional: null,
+          exposureQuality: "unavailable" as const,
+          markPrice: null,
+          markSource: null,
+          timeframe: null,
+          candleClosedAt: null,
+          ageMs: null,
+          quality: "unavailable" as const,
+        })
+      : parsePaperValuation(point.valuation);
+    if (
+      valuation === null ||
+      (!isLegacyPoint && !(point.equity === null || isFiniteNumber(point.equity))) ||
+      (!isLegacyPoint && point.equity !== valuation.equity) ||
+      point.t !== valuation.asOf
+    ) {
+      throw invalidResponse();
+    }
+    return Object.freeze({
+      t: point.t,
+      equity: isLegacyPoint ? null : point.equity as number | null,
+      valuation,
+    });
   });
   const cycles = value.cycles.slice(0, 50).map((cycle) => {
     if (
@@ -400,12 +547,14 @@ export const parsePnlHistory = (value: unknown): PnlHistoryView => {
     ) {
       throw invalidResponse();
     }
+    const valuation = parsePaperValuation(cycle.valuation ?? null);
     return Object.freeze({
       cycleId: cycle.cycleId,
       triggeredAt: cycle.triggeredAt,
       completedAt: cycle.completedAt,
       outcome: cycle.outcome,
       marketPrice: optionalPositiveFinite(cycle.marketPrice),
+      valuation,
       side: cycle.side,
       quantity: optionalTradeField(cycle.side, cycle.quantity, true),
       fillPrice: optionalTradeField(cycle.side, cycle.fillPrice, true),
@@ -476,11 +625,13 @@ export const parsePortfolioSummary = (value: unknown): PortfolioSummaryView => {
   if (
     typeof value.phase !== "string" ||
     typeof value.killSwitchActive !== "boolean" ||
+    !(value.asOf === undefined || isSafeTime(value.asOf)) ||
     !Array.isArray(value.products) ||
     !isRecord(value.consolidated)
   ) {
     throw invalidResponse();
   }
+  const asOf = typeof value.asOf === "number" ? value.asOf : 0;
   const products = value.products.slice(0, PORTFOLIO_MAX_PRODUCTS).map((item) => {
     if (
       !isRecord(item) ||
@@ -494,11 +645,53 @@ export const parsePortfolioSummary = (value: unknown): PortfolioSummaryView => {
       !isNonNegativeFinite(item.positionQuantity) ||
       !isNonNegativeFinite(item.averagePrice) ||
       !isFiniteNumber(item.dailyPnl) ||
-      !isFiniteNumber(item.grossExposure) ||
       !isFiniteNumber(item.maxGrossExposure) ||
       item.maxGrossExposure <= 0 ||
-      !(item.marketPrice === null || isFiniteNumber(item.marketPrice))
+      !(item.marketPrice === undefined || item.marketPrice === null || isFiniteNumber(item.marketPrice))
     ) {
+      throw invalidResponse();
+    }
+    const isLegacyProduct = item.valuation === undefined;
+    const parsedValuation = isLegacyProduct ? null : parsePaperValuation(item.valuation);
+    if (!isLegacyProduct && parsedValuation === null) throw invalidResponse();
+    const valuation = parsedValuation ?? Object.freeze({
+      asOf,
+      equity: item.positionQuantity === 0 ? item.cash : null,
+      exposureNotional: item.positionQuantity === 0 ? 0 : null,
+      exposureQuality: item.positionQuantity === 0 ? "fresh" as const : "unavailable" as const,
+      markPrice: null,
+      markSource: null,
+      timeframe: null,
+      candleClosedAt: null,
+      ageMs: null,
+      quality: "unavailable" as const,
+    });
+    const marketPrice = isLegacyProduct ? null : item.marketPrice as number | null;
+    const grossExposure = isLegacyProduct
+      ? item.positionQuantity === 0 ? 0 : null
+      : item.grossExposure;
+    const exposureQuality = isLegacyProduct
+      ? item.positionQuantity === 0 ? "fresh" as const : "unavailable" as const
+      : item.exposureQuality;
+    const invalidNewMeasurement = !isLegacyProduct && (
+      !(item.grossExposure === null || isNonNegativeFinite(item.grossExposure)) ||
+      (item.exposureQuality !== "fresh" && item.exposureQuality !== "stale" && item.exposureQuality !== "unavailable") ||
+      valuation.markPrice !== marketPrice ||
+      valuation.equity !== (
+        item.positionQuantity === 0
+          ? item.cash
+          : valuation.markPrice === null
+            ? null
+            : item.cash + item.positionQuantity * valuation.markPrice
+      ) ||
+      valuation.exposureNotional !== grossExposure ||
+      valuation.exposureQuality !== exposureQuality ||
+      (item.positionQuantity === 0 && (grossExposure !== 0 || exposureQuality !== "fresh")) ||
+      (item.positionQuantity > 0 && grossExposure === null && exposureQuality !== "unavailable") ||
+      (item.positionQuantity > 0 && grossExposure !== null &&
+        (valuation.markPrice === null || grossExposure !== item.positionQuantity * valuation.markPrice || exposureQuality !== valuation.quality))
+    );
+    if (valuation.asOf !== asOf || invalidNewMeasurement) {
       throw invalidResponse();
     }
     let lastCycle: PortfolioLastCycleView | null = null;
@@ -530,8 +723,10 @@ export const parsePortfolioSummary = (value: unknown): PortfolioSummaryView => {
       cash: Number(item.cash),
       positionQuantity: Number(item.positionQuantity),
       averagePrice: Number(item.averagePrice),
-      marketPrice: item.marketPrice as number | null,
-      grossExposure: Number(item.grossExposure),
+      marketPrice,
+      valuation,
+      grossExposure: grossExposure as number | null,
+      exposureQuality: exposureQuality as "fresh" | "stale" | "unavailable",
       maxGrossExposure: Number(item.maxGrossExposure),
       dailyPnl: Number(item.dailyPnl),
       lastCycle,
@@ -539,7 +734,6 @@ export const parsePortfolioSummary = (value: unknown): PortfolioSummaryView => {
   });
   const consolidated = value.consolidated;
   if (
-    !isFiniteNumber(consolidated.grossExposure) ||
     !isFiniteNumber(consolidated.maxGrossExposure) ||
     consolidated.maxGrossExposure <= 0 ||
     !isFiniteNumber(consolidated.dailyPnl) ||
@@ -548,13 +742,67 @@ export const parsePortfolioSummary = (value: unknown): PortfolioSummaryView => {
   ) {
     throw invalidResponse();
   }
+  if (
+    ("equity" in consolidated && !(consolidated.equity === null || isFiniteNumber(consolidated.equity))) ||
+    ("grossExposure" in consolidated && !(consolidated.grossExposure === null || isNonNegativeFinite(consolidated.grossExposure))) ||
+    ("valuationQuality" in consolidated && consolidated.valuationQuality !== "fresh" && consolidated.valuationQuality !== "stale" && consolidated.valuationQuality !== "unavailable") ||
+    ("exposureQuality" in consolidated && consolidated.exposureQuality !== "fresh" && consolidated.exposureQuality !== "stale" && consolidated.exposureQuality !== "unavailable")
+  ) {
+    throw invalidResponse();
+  }
+  const hasConsolidatedValuation =
+    isFiniteNumber(consolidated.equity) || consolidated.equity === null;
+  const hasConsolidatedQuality =
+    consolidated.valuationQuality === "fresh" || consolidated.valuationQuality === "stale" || consolidated.valuationQuality === "unavailable";
+  const hasConsolidatedExposureQuality =
+    consolidated.exposureQuality === "fresh" || consolidated.exposureQuality === "stale" || consolidated.exposureQuality === "unavailable";
+  const hasNewConsolidatedContract =
+    hasConsolidatedValuation &&
+    hasConsolidatedQuality &&
+    hasConsolidatedExposureQuality &&
+    (consolidated.grossExposure === null || isNonNegativeFinite(consolidated.grossExposure));
+  const calculatedEquity = products.every((product) => product.valuation.equity !== null)
+    ? products.reduce((sum, product) => sum + (product.valuation.equity ?? 0), 0)
+    : null;
+  const calculatedExposure = products.every((product) => product.grossExposure !== null)
+    ? products.reduce((sum, product) => sum + (product.grossExposure ?? 0), 0)
+    : null;
+  const calculatedValuationQuality = calculatedEquity === null || products.some((product) => product.valuation.quality === "unavailable")
+    ? "unavailable" as const
+    : products.some((product) => product.valuation.quality === "stale")
+      ? "stale" as const
+      : "fresh" as const;
+  const calculatedExposureQuality = calculatedExposure === null || products.some((product) => product.exposureQuality === "unavailable")
+    ? "unavailable" as const
+    : products.some((product) => product.exposureQuality === "stale")
+      ? "stale" as const
+      : "fresh" as const;
+  if (
+    !Number.isFinite(products.reduce((sum, product) => sum + product.dailyPnl, 0)) ||
+    (hasNewConsolidatedContract && value.products.length <= PORTFOLIO_MAX_PRODUCTS &&
+      (consolidated.equity !== calculatedEquity ||
+        consolidated.valuationQuality !== calculatedValuationQuality ||
+        consolidated.grossExposure !== calculatedExposure ||
+        consolidated.exposureQuality !== calculatedExposureQuality))
+  ) {
+    throw invalidResponse();
+  }
+  const keepFullConsolidated = hasNewConsolidatedContract && value.products.length > PORTFOLIO_MAX_PRODUCTS;
+  const consolidatedEquity = keepFullConsolidated ? consolidated.equity as number | null : calculatedEquity;
+  const consolidatedValuationQuality = keepFullConsolidated ? consolidated.valuationQuality as "fresh" | "stale" | "unavailable" : calculatedValuationQuality;
+  const consolidatedExposure = keepFullConsolidated ? consolidated.grossExposure as number | null : calculatedExposure;
+  const consolidatedExposureQuality = keepFullConsolidated ? consolidated.exposureQuality as "fresh" | "stale" | "unavailable" : calculatedExposureQuality;
   return Object.freeze({
     kind: "portfolio" as const,
     phase: value.phase,
     killSwitchActive: value.killSwitchActive,
+    asOf,
     products: Object.freeze(products),
     consolidated: Object.freeze({
-      grossExposure: Number(consolidated.grossExposure),
+      equity: consolidatedEquity,
+      valuationQuality: consolidatedValuationQuality,
+      grossExposure: consolidatedExposure,
+      exposureQuality: consolidatedExposureQuality,
       maxGrossExposure: Number(consolidated.maxGrossExposure),
       dailyPnl: Number(consolidated.dailyPnl),
       maxDailyLoss: Number(consolidated.maxDailyLoss),

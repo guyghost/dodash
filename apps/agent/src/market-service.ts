@@ -215,6 +215,12 @@ export const fetchMarketSnapshot = async (
       );
     }
 
+    const lastCandle = integrity.value.at(-1);
+    if (lastCandle === undefined) return err(error("INVALID_RESPONSE", false));
+    const candleClosedAt = lastCandle.start + duration;
+    if (!Number.isSafeInteger(candleClosedAt)) {
+      return err(error("INVALID_RESPONSE", false));
+    }
     return ok(
       Object.freeze({
         productId: product.value,
@@ -222,6 +228,13 @@ export const fetchMarketSnapshot = async (
         candles: integrity.value,
         source: parsed.data.source,
         cached: parsed.data.cached,
+        valuationMark: Object.freeze({
+          price: lastCandle.close,
+          source: "COINBASE_CANDLE_CLOSE" as const,
+          timeframe: parsed.data.timeframe,
+          candleClosedAt,
+          maxMarketStalenessMs: configuration.maxMarketStalenessMs,
+        }),
       }),
     );
   } catch {

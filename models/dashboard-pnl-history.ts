@@ -1,3 +1,10 @@
+import {
+  isValidPaperValuationMark,
+  projectPaperValuation,
+  type PaperValuation,
+  type PaperValuationMark,
+} from "./paper-valuation.js";
+
 export const DASHBOARD_PNL_HISTORY_MAX_CYCLES = 50;
 export const DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT = 30;
 const DASHBOARD_PNL_HISTORY_MIN_LIMIT = 1;
@@ -35,7 +42,8 @@ export interface DashboardPnlOrderRow {
 
 export interface DashboardPnlEquityPoint {
   readonly t: number;
-  readonly equity: number;
+  readonly equity: number | null;
+  readonly valuation: PaperValuation;
 }
 
 export interface DashboardPnlCycleHistory {
@@ -44,6 +52,7 @@ export interface DashboardPnlCycleHistory {
   readonly completedAt: number | null;
   readonly outcome: string;
   readonly marketPrice: number | null;
+  readonly valuation: PaperValuation | null;
   readonly side: "BUY" | "SELL" | null;
   readonly quantity: number | null;
   readonly fillPrice: number | null;
@@ -94,6 +103,8 @@ type SubmissionFacts =
 
 interface ArtifactsFacts {
   readonly marketPrice: number | null;
+  readonly hasMarketSnapshot: boolean;
+  readonly valuationMark: PaperValuationMark | null;
   readonly side: "BUY" | "SELL" | null;
   readonly quantity: number | null;
   readonly stopLossPrice: number | null;
@@ -200,14 +211,20 @@ const parseArtifacts = (raw: string): ArtifactsFacts | null => {
   if (!isRecord(parsed)) return null;
 
   let marketPrice: number | null = null;
+  let hasMarketSnapshot = false;
+  let valuationMark: PaperValuationMark | null = null;
   if (parsed.market !== undefined) {
     if (!isRecord(parsed.market) || !Array.isArray(parsed.market.candles)) {
       return null;
     }
+    hasMarketSnapshot = true;
     const last = parsed.market.candles.at(-1);
     if (last !== undefined) {
       if (!isRecord(last) || !isPositiveFinite(last.close)) return null;
       marketPrice = last.close;
+    }
+    if (isValidPaperValuationMark(parsed.market.valuationMark)) {
+      valuationMark = parsed.market.valuationMark;
     }
   }
 
@@ -243,7 +260,15 @@ const parseArtifacts = (raw: string): ArtifactsFacts | null => {
     }
   }
 
-  return { marketPrice, side, quantity, stopLossPrice, takeProfitPrice };
+  return {
+    marketPrice,
+    hasMarketSnapshot,
+    valuationMark,
+    side,
+    quantity,
+    stopLossPrice,
+    takeProfitPrice,
+  };
 };
 
 const parseCycleRow = (
@@ -321,6 +346,7 @@ export const projectDashboardPnlHistory = (
   }
 
   let carriedPortfolio: PortfolioFacts | null = null;
+  let carriedMark: PaperValuationMark | null = null;
   let protectionCandidate: DashboardPnlProtection | null = null;
   const equityCurve: DashboardPnlEquityPoint[] = [];
   const cyclesAscending: DashboardPnlCycleHistory[] = [];
@@ -330,6 +356,7 @@ export const projectDashboardPnlHistory = (
     if (invalidCycle !== null) return failure(invalidCycle);
     const artifacts = parseArtifacts(cycleRow.artifactsJson);
     if (artifacts === null) return failure("INVALID_ARTIFACTS_JSON");
+    if (artifacts.hasMarketSnapshot) carriedMark = artifacts.valuationMark;
 
     const previousPortfolio = carriedPortfolio;
     let trade:
@@ -398,21 +425,30 @@ export const projectDashboardPnlHistory = (
           (trade.fillPrice - previousPortfolio.averagePrice) * closedQuantity -
           trade.fee;
       }
-      if (artifacts.marketPrice !== null) {
+      if (artifacts.valuationMark !== null) {
         const direction = trade.side === "SELL" ? -1 : 1;
         slippageBps =
-          ((trade.fillPrice - artifacts.marketPrice) / artifacts.marketPrice) *
+          ((trade.fillPrice - artifacts.valuationMark.price) / artifacts.valuationMark.price) *
           10_000 *
           direction;
       }
     }
 
-    if (carriedPortfolio !== null && artifacts.marketPrice !== null) {
+    let valuation: PaperValuation | null = null;
+    if (carriedPortfolio !== null) {
+      const asOf = cycleRow.completedAt ?? cycleRow.triggeredAt;
+      const projected = projectPaperValuation({
+        cash: carriedPortfolio.cash,
+        positionQuantity: carriedPortfolio.positionQuantity,
+        mark: carriedMark,
+        asOf,
+      });
+      if (!projected.ok) return failure("INVALID_ARTIFACTS_JSON");
+      valuation = projected.value;
       equityCurve.push({
-        t: cycleRow.triggeredAt,
-        equity:
-          carriedPortfolio.cash +
-          carriedPortfolio.positionQuantity * artifacts.marketPrice,
+        t: asOf,
+        equity: valuation.equity,
+        valuation,
       });
     }
 
@@ -422,6 +458,7 @@ export const projectDashboardPnlHistory = (
       completedAt: cycleRow.completedAt,
       outcome: cycleRow.outcome,
       marketPrice: artifacts.marketPrice,
+      valuation,
       side: trade?.side ?? null,
       quantity: trade?.quantity ?? null,
       fillPrice: trade?.fillPrice ?? null,

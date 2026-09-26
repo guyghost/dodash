@@ -7,7 +7,7 @@ import {
 } from "../src/telemetry.js";
 
 const event = (): TradingTelemetryEvent => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   type: "cycle.completed",
   timestamp: 100,
   agentId: "grt-usd--multi",
@@ -22,6 +22,13 @@ const event = (): TradingTelemetryEvent => ({
   accountEquity: 990,
   positionQuantity: 5,
   otherExposureNotional: 0,
+  valuationQuality: "not_applicable",
+  valuationPriceSource: "NONE",
+  valuationPrice: null,
+  valuationObservedAt: null,
+  valuationAgeMs: null,
+  consolidatedExposureNotional: null,
+  exposureQuality: "not_applicable",
   executionObserved: true,
   openOrderCount: null,
 });
@@ -47,8 +54,11 @@ describe("trading telemetry", () => {
         "ORDER_CONFIRMED",
         "NONE",
         "NONE",
+        "not_applicable",
+        "NONE",
+        "not_applicable",
       ],
-      doubles: [100, 25, -10, 990, 5, 0, 1, 0, 1, 1],
+      doubles: [100, 25, -10, 990, 5, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
     });
   });
 
@@ -68,7 +78,7 @@ describe("trading telemetry", () => {
 
     expect(sink.writeDataPoint).toHaveBeenCalledWith(
       expect.objectContaining({
-        blobs: [
+        blobs: expect.arrayContaining([
           "cycle.completed",
           "GRT-USD",
           "live",
@@ -76,9 +86,48 @@ describe("trading telemetry", () => {
           "ORDER_REJECTED",
           "ORDER_REJECTED",
           "INSUFFICIENT_CASH",
-        ],
+        ]),
       }),
     );
+  });
+
+  it("ajoute les marques paper après les positions Analytics Engine figées", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    emitTradingTelemetry(
+      sink,
+      {
+        ...event(),
+        executionMode: "paper",
+        valuationQuality: "fresh",
+        valuationPriceSource: "COINBASE_CANDLE_CLOSE",
+        valuationPrice: 62_000,
+        valuationObservedAt: 90,
+        valuationAgeMs: 10,
+        consolidatedExposureNotional: 61_000,
+        exposureQuality: "fresh",
+      },
+      logger,
+    );
+    const point = sink.writeDataPoint.mock.calls[0]?.[0];
+    expect(point?.blobs.slice(0, 7)).toEqual([
+      "cycle.completed",
+      "GRT-USD",
+      "paper",
+      "waiting",
+      "ORDER_CONFIRMED",
+      "NONE",
+      "NONE",
+    ]);
+    expect(point?.blobs.slice(7)).toEqual([
+      "fresh",
+      "COINBASE_CANDLE_CLOSE",
+      "fresh",
+    ]);
+    expect(point?.doubles).toEqual([
+      100, 25, -10, 990, 5, 0, 1, 0, 1, 1,
+      62_000, 90, 10, 61_000, 1, 1, 1, 1,
+    ]);
   });
 
   it("n'extrait le code fin que d'un refus ORDER_REJECTED porteur d'un détail (dao #47)", () => {

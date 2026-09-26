@@ -81,15 +81,19 @@ points de code, INV-P4 de #24) :
 | Phase machine | `products[p].machine.value` | membre de `DASHBOARD_REMOTE_PHASES` |
 | Statut orchestrateur | `portfolio.context.statuses[p]` | membre de `running \| stopped \| halted \| failed` |
 | Position / trésorerie | `cash` (fini), `positionQuantity`, `averagePrice` du runtime | position et prix moyen `≥ 0` (spot paper, pas de short) |
-| Dernier close connu | `lastCycle.marketPrice` | `null` ou `> 0` |
-| Exposition brute | `\|positionQuantity\| × (marketPrice ?? averagePrice)` | même formule que `productGrossExposure` (§9.4 de #28) |
+| Dernier close connu | `lastPaperMark.price` | date/source explicites; `null` si inconnu |
+| Qualité du mark | `asOf - lastPaperMark.candleClosedAt` comparé à `maxMarketStalenessMs` | `fresh`, `stale` ou `unavailable` |
+| Equity mesurée | `projectPaperValuation(cash, quantity, lastPaperMark, asOf)` | `null` si position ouverte et mark absent; cash exact si position plate |
+| Exposition brute mesurée | `\|positionQuantity\| × mark.price` | `null` si position ouverte et mark absent; mark périmé reste marqué `stale` |
 | Plafond produit | `slot.risk.maxGrossExposure` du créneau | `> 0` |
 | PnL quotidien | `products[p].dailyPnl` | fini |
 | Dernier cycle | `cycleId`, `triggeredAt`, `completedAt`, `outcome`, `marketPrice` | `clientOrderId`, `exchangeOrderId` et `error` exclus (C3) |
 
 `lastCycle` est celui du runtime produit (dernier cycle **persisté et
-terminé** de ce produit) ; un produit jamais réveillé projette `lastCycle:
-null` et une exposition sur `averagePrice` (0 à l'initialisation).
+terminé** de ce produit). `lastPaperMark` est indépendant : un cycle en échec
+ne rafraîchit pas son horodatage. Un produit sans mark ne projette aucune
+exposition numérique; `averagePrice` reste informatif mais ne sert jamais de
+repli de valorisation.
 
 ### 3.3 Agrégat consolidé
 
@@ -97,19 +101,25 @@ null` et une exposition sur `averagePrice` (0 à l'initialisation).
 | --- | --- |
 | Phase portefeuille | `portfolio.value` (orchestrateur) |
 | Kill switch | `portfolio.context.killSwitchActive` |
-| Exposition consolidée | `Σ_p grossExposure_p`, sommes itérées en ordre `productId` trié (l'addition flottante n'est pas associative) |
+| Equity consolidée | `Σ_p equity_p`, sommes itérées en ordre `productId` trié si chaque position a un mark |
+| Exposition consolidée | `Σ_p grossExposure_p`, sommes itérées en ordre `productId` trié si chaque position a un mark |
 | Plafond consolidé | `portfolioRisk.maxGrossExposure` |
 | PnL quotidien consolidé | `Σ_p dailyPnl_p`, même ordre trié |
 | Plafond de perte | `portfolioRisk.maxDailyLoss` |
 
 Les sommes consolidées affichées sont calculées depuis les **faits produits**
-de §3.2 : ce sont des chiffres de lecture, pas les sommes de décision de
-l'orchestrateur (`portfolio.context.exposure`/`dailyPnl`, qui peuvent retarder
-transitoirement). Aucune des deux sources n'est substituée à l'autre ; l'UI
-ne prétend jamais que la machine a arbitré sur ces nombres exacts.
+de §3.2 et portent leur qualité agrégée. Elles ne se substituent pas aux sommes
+de décision de l'orchestrateur (`portfolio.context.exposure`/`dailyPnl`, qui
+peuvent retarder transitoirement). Les gardes et admissions demeurent
+inchangées dans #62; l'UI ne prétend jamais qu'elles ont arbitré sur ces
+mesures d'affichage.
 
-Les plafonds sont exposés tels quels (faits de configuration) ; la projection
-n'affiche **pas** de verdict « conforme/dépassé » : comparer est une décision,
+Si au moins un produit avec position ouverte n'a pas de mark, equity et
+`grossExposure` consolidées valent `null` et `quality=unavailable`; si au moins
+un mark est stale, la somme demeure affichable avec `quality=stale`. Un zéro
+numérique n'est jamais un substitut à une absence. Les plafonds sont exposés
+tels quels (faits de configuration) ; la projection n'affiche **pas** de
+verdict « conforme/dépassé » : comparer est une décision,
 le dashboard les présente côte à côte et l'opérateur juge (S6, même posture
 que les badges « non protégé » de #26).
 

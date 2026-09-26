@@ -12,6 +12,24 @@ import {
   type PortfolioSummaryView,
 } from "../src/dashboard-api.js";
 
+const markValuation = (
+  asOf: number,
+  equity: number | null,
+  markPrice: number | null,
+  exposureNotional = markPrice === null ? 0 : markPrice,
+) => ({
+  asOf,
+  equity,
+  exposureNotional,
+  exposureQuality: markPrice === null ? "fresh" : "fresh",
+  markPrice,
+  markSource: markPrice === null ? null : "COINBASE_CANDLE_CLOSE",
+  timeframe: markPrice === null ? null : "FIVE_MINUTE",
+  candleClosedAt: markPrice === null ? null : asOf - 10_000,
+  ageMs: markPrice === null ? null : 10_000,
+  quality: markPrice === null ? "unavailable" : "fresh",
+});
+
 const state = {
   version: 1,
   enabled: true,
@@ -38,6 +56,10 @@ const state = {
     completedAt: 1_700_000_000_000,
   },
   portfolioSummary: { ok: true, value: { kind: "single-product" } },
+  paperValuation: {
+    ok: true,
+    value: markValuation(1_700_000_000_000, 9_620, 62_000, 620),
+  },
   previousIndicators: {
     snapshotId: "indicators-1",
     candleClosedAt: 1_700_000_000_000,
@@ -51,8 +73,8 @@ const state = {
 
 const pnlHistory = {
   equityCurve: [
-    { t: 1_700_000_000_000, equity: 6_401.5 },
-    { t: 1_700_000_300_000, equity: 6_501.5 },
+    { t: 1_700_000_000_000, equity: 6_401.5, valuation: markValuation(1_700_000_000_000, 6_401.5, 60_000) },
+    { t: 1_700_000_300_000, equity: 6_501.5, valuation: markValuation(1_700_000_300_000, 6_501.5, 61_000) },
   ],
   cycles: [
     {
@@ -61,6 +83,7 @@ const pnlHistory = {
       completedAt: 1_700_000_304_000,
       outcome: "ORDER_CONFIRMED",
       marketPrice: 62_000,
+      valuation: markValuation(1_700_000_304_000, 1_619.5, 62_000),
       side: "SELL",
       quantity: 0.1,
       fillPrice: 62_010,
@@ -74,6 +97,7 @@ const pnlHistory = {
       completedAt: 1_700_000_004_000,
       outcome: "ORDER_CONFIRMED",
       marketPrice: 60_000,
+      valuation: markValuation(1_700_000_004_000, 6_401.5, 60_000),
       side: "BUY",
       quantity: 0.1,
       fillPrice: 60_060,
@@ -94,6 +118,7 @@ const portfolioValue = {
   kind: "portfolio",
   phase: "running",
   killSwitchActive: false,
+  asOf: 1_700_000_100_000,
   products: [
     {
       productId: "BTC-USD",
@@ -103,7 +128,9 @@ const portfolioValue = {
       positionQuantity: 0.1,
       averagePrice: 60_000,
       marketPrice: 62_000,
+      valuation: markValuation(1_700_000_100_000, 11_200, 62_000, 6_200),
       grossExposure: 6_200,
+      exposureQuality: "fresh",
       maxGrossExposure: 20_000,
       dailyPnl: 42.5,
       lastCycle: {
@@ -122,14 +149,19 @@ const portfolioValue = {
       positionQuantity: 0,
       averagePrice: 0,
       marketPrice: null,
+      valuation: markValuation(1_700_000_100_000, 1_000, null),
       grossExposure: 0,
+      exposureQuality: "fresh",
       maxGrossExposure: 5_000,
       dailyPnl: -10,
       lastCycle: null,
     },
   ],
   consolidated: {
+    equity: 12_200,
+    valuationQuality: "unavailable",
     grossExposure: 6_200,
+    exposureQuality: "fresh",
     maxGrossExposure: 30_000,
     dailyPnl: 32.5,
     maxDailyLoss: 1_500,
@@ -149,7 +181,10 @@ describe("portfolio summary boundary", () => {
     });
     expect(view.products[1]).toMatchObject({ status: "halted", lastCycle: null });
     expect(view.consolidated).toEqual({
+      equity: 12_200,
+      valuationQuality: "unavailable",
       grossExposure: 6_200,
+      exposureQuality: "fresh",
       maxGrossExposure: 30_000,
       dailyPnl: 32.5,
       maxDailyLoss: 1_500,
@@ -159,6 +194,34 @@ describe("portfolio summary boundary", () => {
   it("accepts a single-product answer for a mono-product agent", () => {
     expect(parsePortfolioSummary({ kind: "single-product" })).toEqual({
       kind: "single-product",
+    });
+  });
+
+  it("normalizes legacy portfolio summaries without provenance to unavailable marks", () => {
+    const { asOf: _asOf, ...legacyValue } = portfolioValue;
+    const parsed = parsePortfolioSummary({
+      ...legacyValue,
+      products: portfolioValue.products.map(({ valuation: _valuation, exposureQuality: _quality, ...product }) => product),
+      consolidated: {
+        grossExposure: portfolioValue.consolidated.grossExposure,
+        maxGrossExposure: portfolioValue.consolidated.maxGrossExposure,
+        dailyPnl: portfolioValue.consolidated.dailyPnl,
+        maxDailyLoss: portfolioValue.consolidated.maxDailyLoss,
+      },
+    });
+    if (parsed.kind !== "portfolio") throw new Error("expected portfolio");
+    expect(parsed.asOf).toBe(0);
+    expect(parsed.products[0]).toMatchObject({
+      marketPrice: null,
+      grossExposure: null,
+      exposureQuality: "unavailable",
+      valuation: { equity: null, quality: "unavailable" },
+    });
+    expect(parsed.consolidated).toMatchObject({
+      equity: null,
+      grossExposure: null,
+      valuationQuality: "unavailable",
+      exposureQuality: "unavailable",
     });
   });
 
@@ -367,6 +430,17 @@ describe("pnl history boundary", () => {
     });
     expect(view.cycles[0]).toMatchObject({ side: null, fee: null });
     expect(view.protection).toBeNull();
+  });
+
+  it("does not preserve unproven equity values from legacy PnL responses", () => {
+    const legacy = parsePnlHistory({
+      ...pnlHistory,
+      equityCurve: pnlHistory.equityCurve.map(({ t, equity }) => ({ t, equity })),
+      cycles: pnlHistory.cycles.map(({ valuation: _valuation, ...cycle }) => cycle),
+    });
+    expect(legacy.equityCurve.every((point) => point.equity === null)).toBe(true);
+    expect(legacy.equityCurve.every((point) => point.valuation.quality === "unavailable")).toBe(true);
+    expect(legacy.cycles.every((cycle) => cycle.valuation === null)).toBe(true);
   });
 
   it("caps the pnl window like the Agent envelope", () => {

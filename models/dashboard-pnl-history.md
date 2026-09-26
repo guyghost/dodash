@@ -40,8 +40,8 @@ dodash_orders (
 )
 ```
 
-Champs extraits de `artifacts_json` (cycle) : dernier close de marché
-(`market.candles[-1].close`), intention (`order.side`, `order.quantity`),
+Champs extraits de `artifacts_json` (cycle) : mark paper daté
+(`market.valuationMark`), intention (`order.side`, `order.quantity`),
 fill d'exécution (`execution.fill.price/quantity/fee`) et plan protecteur
 (`risk.stopLossPrice`, `risk.takeProfitPrice` lorsque `risk.status=APPROVED`).
 
@@ -88,21 +88,30 @@ calcul à cette fonction ; aucun Worker UI, proxy ou edge ne calcule un chiffre.
 
 ### 3.3 Formules (traçables aux enregistrements bruts)
 
-Pour chaque cycle chronologique, avec `mark` = dernier close du marché du
-cycle et `fill` = fill confirmé de son ordre :
+Pour chaque cycle chronologique, `mark` vient de
+`market.valuationMark` (prix, source, timeframe, `candleClosedAt` et
+`maxMarketStalenessMs`) et `fill` du fill confirmé de son ordre. La qualité est
+calculée par `projectPaperValuation` à `completed_at` (ou `triggered_at` si la
+fin manque) :
 
 | Grandeur | Formule | Conditions |
 | --- | --- | --- |
-| Point d'équité | `cash + positionQuantity × mark` à `triggered_at` | `mark > 0` et portefeuille porté connu |
+| Point d'équité | `projectPaperValuation(postTradePortfolio, mark, completed_at)` | `fresh` ou `stale` avec provenance; sans mark et position ouverte, `equity=null` |
 | Frais | `fill.fee` | ordre confirmé avec fill |
-| Slippage constaté | `(fill.price − mark) / mark × 10⁴ × (+1 BUY, −1 SELL)` en bps | `mark > 0` et fill ; positif = défavorable |
+| Slippage constaté | `(fill.price − mark.price) / mark.price × 10⁴ × (+1 BUY, −1 SELL)` en bps | mark disponible et fill ; positif = défavorable |
 | PnL réalisé | `min(previousPos, qty) × (fill.price − previousAvg) − fill.fee` sur un SELL qui réduit une position longue portée ; `null` sinon | portefeuille précédent connu (SELL et `previousPos > 0`) |
-| Courbe | points d'équité ordonnés par `triggered_at` croissant | — |
+| Courbe | points d'équité datés, ordonnés par `completed_at` croissant | qualité, date/source du mark exposées avec chaque point |
 
 `previousPos`/`previousAvg` sont ceux du portefeuille porté **avant** la
 soumission courante. Un BUY ouvre : `realizedPnl = null` (rien n'est réalisé).
 Un `PROTECTION_FAILED` portant un fill de vente est traité comme un SELL
 (même formule) : la sortie forcée est un fait réalisé.
+
+Un cycle sans nouveau snapshot peut réutiliser le dernier mark uniquement si
+celui-ci se trouve dans la fenêtre SQL courante; son âge continue depuis son
+`candleClosedAt` d’origine et il devient `stale` sans rafraîchir la date.
+L’historique legacy sans `valuationMark` reste lisible mais n’ajoute pas de
+point d’équité pour une position ouverte. Aucun prix moyen n’est substitué.
 
 ### 3.4 Position et protections ouvertes
 
@@ -122,8 +131,9 @@ Un `PROTECTION_FAILED` portant un fill de vente est traité comme un SELL
   un échec typé (`INVALID_CYCLE_ROW`, `INVALID_ARTIFACTS_JSON`,
   `INVALID_ORDER_ROW`, `INVALID_EXECUTION_JSON`, `INVALID_LIMIT`) et **aucune
   réponse partielle** : aucun chiffre n'est jamais inventé ou approximé.
-- Champs absents (cycle sans marché, sans ordre, sans fill) sont projetés en
-  `null` : c'est un état valide et affiché tel quel.
+- Champs absents (cycle sans mark, sans ordre, sans fill) sont projetés en
+  `null` : c'est un état valide et affiché tel quel. Le prix, l’âge, la source
+  et la qualité du mark sont validés ensemble.
 
 ## 4. Route et frontière
 

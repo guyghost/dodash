@@ -26,3 +26,28 @@ La projection phase → effet est totale pour les phases actives et ne contient
 aucune branche pilotée par un texte libre. Le mode paper et le mode live
 partagent les mêmes événements ; seuls leurs adapters d’autorisation,
 d’exécution et de réconciliation diffèrent.
+
+## Revue complémentaire — DAO #62 (2026-09-26)
+
+Le dernier mark paper est un fait daté conservé hors contexte XState. Seul un
+snapshot marché accepté le remplace; une erreur ne rafraîchit jamais son âge.
+Le mark persiste source, timeframe, close de bougie et limite de staleness. Un
+état legacy sans provenance se normalise à `null`; aucun coût d’acquisition ou
+heure de déclenchement n’est utilisé comme substitut.
+
+L’API calcule la qualité à partir du mark stocké et d’un `asOf` courant. Le
+reporting paper est séparé de l’entrée dailyRisk transmise au workflow. Aucun
+événement, garde ou effet d’ordre XState n’est modifié par ce modèle.
+
+Verdict de modèle : approuvé sous réserve des vérifications listées ci-dessus.
+
+## Implémentation et vérification DAO #62 — 2026-09-26
+
+Les snapshots produit legacy, marques absentes et marques incohérentes sont
+normalisés sans inventer de provenance; un mark valide survit à un cycle sans
+nouveau snapshot sans rafraîchir son âge. L’API de projection reçoit un `asOf`
+explicite et reste séparée des entrées dailyRisk et des transitions XState.
+
+Vérification : tests `models` 430/430, tests `agent` 264/264 et vérifications
+TypeScript des trois paquets concernés réussis. Les tests de restauration,
+reprise après panne marché et projection API sont inclus dans ces suites.

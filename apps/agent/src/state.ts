@@ -1,10 +1,13 @@
 import type { PaperPortfolio } from "@dodash/paper-execution";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 import {
+  projectPaperValuation,
   resolveDailyRiskWindow,
   type CycleOutcome,
   type DailyRiskWindow,
   type DashboardPortfolioSummaryResult,
+  type PaperValuationMark,
+  type PaperValuationResult,
   type WorkflowError,
 } from "@dodash/models";
 
@@ -27,6 +30,8 @@ export interface CycleSummary {
   readonly completedAt: number;
   readonly outcome: CycleOutcome;
   readonly marketPrice: number | null;
+  /** Mark accepted during this cycle; null for legacy or marketless cycles. */
+  readonly valuationMark: PaperValuationMark | null;
   readonly signalCount: number;
   readonly clientOrderId: string | null;
   readonly exchangeOrderId: string | null;
@@ -40,6 +45,7 @@ export interface TradingAgentState {
   readonly enabled: boolean;
   readonly schedule: AgentScheduleState | null;
   readonly portfolio: PaperPortfolio;
+  readonly lastPaperMark: PaperValuationMark | null;
   readonly dailyRiskWindow: DailyRiskWindow | null;
   readonly dailyPnl: number;
   readonly lastTradeAt: number | null;
@@ -67,6 +73,7 @@ export const INITIAL_AGENT_STATE: TradingAgentState = Object.freeze({
     positionQuantity: 0,
     averagePrice: 0,
   }),
+  lastPaperMark: null,
   dailyRiskWindow: null,
   dailyPnl: 0,
   lastTradeAt: null,
@@ -89,12 +96,32 @@ export type { PortfolioProductRuntime, PortfolioSessionState };
  */
 export interface AgentStateSnapshot extends TradingAgentState {
   readonly portfolioSummary: DashboardPortfolioSummaryResult;
+  /** Current read-time paper mark projection; null outside paper mode. */
+  readonly paperValuation: PaperValuationResult | null;
 }
 
 export const toAgentStateSnapshot = (
   state: TradingAgentState,
   portfolioSummary: DashboardPortfolioSummaryResult,
-): AgentStateSnapshot => Object.freeze({ ...state, portfolioSummary });
+  asOf = Date.now(),
+): AgentStateSnapshot => {
+  const paperValuation =
+    state.configuration?.executionMode === "paper"
+      ? resolvePaperValuation(state, asOf)
+      : null;
+  return Object.freeze({ ...state, portfolioSummary, paperValuation });
+};
+
+const resolvePaperValuation = (
+  state: TradingAgentState,
+  asOf: number,
+): PaperValuationResult =>
+  projectPaperValuation({
+    cash: state.portfolio.cash,
+    positionQuantity: state.portfolio.positionQuantity,
+    mark: state.lastPaperMark,
+    asOf,
+  });
 
 /**
  * INV-P3 (quiescence) : le portefeuille reste actif tant qu'au moins un
