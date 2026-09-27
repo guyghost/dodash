@@ -10,6 +10,12 @@ export interface DailyRiskAssessment {
   readonly dailyPnl: number;
 }
 
+/**
+ * Existing risk-window contract: the caller supplies its current risk mark.
+ * This function does not select a price source or freshness policy. Replacing
+ * that input with paper telemetry valuation changes risk behavior and needs a
+ * separately reviewed model; DAO #62 leaves it unchanged.
+ */
 export const resolveDailyRiskWindow = (
   current: DailyRiskWindow | null,
   now: number,

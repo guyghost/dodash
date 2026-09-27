@@ -636,13 +636,26 @@ export function App({
     snapshot.value === "refreshing";
   const activePipeline = PIPELINE.findIndex((item) => item.phase === agent?.phase);
   const liveStartBlocked = executionMode === "live" && liveConfirmation !== "LIVE";
-  const markPrice = agent?.lastCycle?.marketPrice ?? null;
+  const paperValuation = agent?.paperValuation?.ok
+    ? agent.paperValuation.value
+    : null;
   const equity =
-    agent === null
-      ? null
-      : agent.portfolio.cash +
-        agent.portfolio.positionQuantity *
-          (markPrice ?? agent.portfolio.averagePrice);
+    paperValuation?.equity ??
+    (agent?.portfolioSummary.kind === "portfolio"
+      ? agent.portfolioSummary.consolidated.equity
+      : null);
+  const exposure =
+    paperValuation?.exposureNotional ??
+    (agent?.portfolioSummary.kind === "portfolio"
+      ? agent.portfolioSummary.consolidated.grossExposure
+      : null);
+  const equityQuality = paperValuation?.quality ??
+    (agent?.paperValuation?.ok === false ? "unavailable" : null);
+  const equityAge = paperValuation?.ageMs ?? null;
+  const plottedEquityCurve =
+    pnlHistory?.equityCurve.filter(
+      (point): point is typeof point & { readonly equity: number } => point.equity !== null,
+    ) ?? [];
 
   return (
     <main className="dashboard-shell">
@@ -803,6 +816,11 @@ export function App({
                     accent="blue-text"
                   />
                   <Metric
+                    label="EXPOSITION"
+                    value={exposure === null ? "INDISPONIBLE" : money.format(exposure)}
+                    accent="blue-text"
+                  />
+                  <Metric
                     label="PNL JOUR"
                     value={money.format(agent.dailyPnl)}
                     accent={agent.dailyPnl >= 0 ? "green-text" : "red-text"}
@@ -816,6 +834,15 @@ export function App({
                     value={money.format(agent.portfolio.averagePrice)}
                   />
                 </div>
+                {agent.configuration?.executionMode === "paper" && (
+                  <p className="next-wake" aria-live="polite">
+                    Mark {equityQuality === "fresh" ? "frais" : equityQuality === "stale" ? "périmé" : "indisponible"}
+                    {equityAge === null ? "" : ` · âge ${Math.round(equityAge / 1_000)} s`}
+                    {paperValuation?.markPrice === null || paperValuation?.markPrice === undefined
+                      ? " · aucun close daté"
+                      : ` · close ${money.format(paperValuation.markPrice)}`}
+                  </p>
+                )}
               </article>
 
               <article className="paper-card control-card">
@@ -1107,7 +1134,7 @@ export function App({
                       {pnlHistory.equityCurve.length} POINTS
                     </span>
                   </div>
-                  {pnlHistory.equityCurve.length < 2 ? (
+                  {plottedEquityCurve.length < 2 ? (
                     <p className="empty-state">Aucun point d’équité.</p>
                   ) : (
                     <svg
@@ -1117,7 +1144,7 @@ export function App({
                       role="img"
                       aria-label="Courbe d’équité"
                     >
-                      <path d={equityPath(pnlHistory.equityCurve)} />
+                      <path d={equityPath(plottedEquityCurve)} />
                     </svg>
                   )}
                   {/* biome-ignore lint/a11y/useSemanticElements: groupe de badges de présentation */}
@@ -1244,7 +1271,7 @@ export function App({
                     <div className="metric-grid">
                       <Metric
                         label="EXPOSITION"
-                        value={money.format(product.grossExposure)}
+                        value={product.grossExposure === null ? "INDISPONIBLE" : money.format(product.grossExposure)}
                         accent="blue-text"
                       />
                       <Metric
@@ -1261,6 +1288,10 @@ export function App({
                         value={quantity.format(product.positionQuantity)}
                       />
                     </div>
+                    <p className="next-wake">
+                      Valorisation {product.valuation.quality} · exposition {product.exposureQuality}
+                      {product.valuation.ageMs === null ? "" : ` · mark âgé de ${Math.round(product.valuation.ageMs / 1_000)} s`}
+                    </p>
                     <p className="next-wake">
                       Dernier cycle :{" "}
                       {product.lastCycle === null
@@ -1286,8 +1317,12 @@ export function App({
                   <div className="metric-grid">
                     <Metric
                       label="EXPOSITION CONSOLIDÉE"
-                      value={money.format(portfolioSummary.consolidated.grossExposure)}
+                      value={portfolioSummary.consolidated.grossExposure === null ? "INDISPONIBLE" : money.format(portfolioSummary.consolidated.grossExposure)}
                       accent="blue-text"
+                    />
+                    <Metric
+                      label="ÉQUITÉ CONSOLIDÉE"
+                      value={portfolioSummary.consolidated.equity === null ? "INDISPONIBLE" : money.format(portfolioSummary.consolidated.equity)}
                     />
                     <Metric
                       label="PLAFOND PORTEFEUILLE"
@@ -1307,7 +1342,7 @@ export function App({
                   </div>
                   <p className="next-wake">
                     {portfolioSummary.products.length} produits · lecture seule, aucune décision
-                    automatique
+                    automatique · valuation {portfolioSummary.consolidated.valuationQuality} · exposition {portfolioSummary.consolidated.exposureQuality}
                   </p>
                 </article>
               </div>

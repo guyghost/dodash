@@ -325,6 +325,34 @@ describe("resolveRestoredPortfolioSession", () => {
     expect(after.decision).toEqual(before.decision);
   });
 
+  it("normalise les marques absentes ou incohérentes en indisponible (DAO #62)", () => {
+    const legacy = structuredClone(validSession()) as unknown as {
+      products: Record<string, Record<string, unknown>>;
+    };
+    delete legacy.products["AAA-USD"]?.lastPaperMark;
+    const restoredLegacy = resolveRestoredPortfolioSession(legacy);
+    expect(restoredLegacy.ok).toBe(true);
+    if (restoredLegacy.ok) {
+      expect(restoredLegacy.session.products["AAA-USD"]?.lastPaperMark).toBeNull();
+    }
+
+    const incoherent = structuredClone(validSession()) as unknown as {
+      products: Record<string, Record<string, unknown>>;
+    };
+    incoherent.products["AAA-USD"]!.lastPaperMark = {
+      price: -1,
+      source: "COINBASE_CANDLE_CLOSE",
+      timeframe: "FIVE_MINUTE",
+      candleClosedAt: 1_000,
+      maxMarketStalenessMs: 90_000,
+    };
+    const restoredIncoherent = resolveRestoredPortfolioSession(incoherent);
+    expect(restoredIncoherent.ok).toBe(true);
+    if (restoredIncoherent.ok) {
+      expect(restoredIncoherent.session.products["AAA-USD"]?.lastPaperMark).toBeNull();
+    }
+  });
+
   it("refuse un instantané corrompu (C3)", () => {
     const cases: unknown[] = [];
     const nanExposure = structuredClone(validSession());

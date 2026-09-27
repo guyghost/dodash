@@ -8,16 +8,14 @@ Modèle : `dashboard-portfolio-summary.md`
 
 ### Cas nominaux
 - [x] N produits avec derniers cycles : phase machine produit, statut
-      orchestrateur, exposition brute `|position| × (marketPrice ??
-      averagePrice)` — formule reprise à l'identique de
-      `productGrossExposure` (§9.4 de #28, S1), plafond produit vs
-      consolidé côte à côte.
+      orchestrateur, plafond produit vs consolidé côte à côte. Le prix affiché
+      vient désormais d'un mark daté.
 - [x] Sommes consolidées itérées en `productId` trié (S7, héritage INV-P4) :
       rejeu déterministe testé.
 - [x] Produit quiescent (`halted`/`stopped`/`failed`) : dernier état
       persisté affiché, jamais masqué (S6) — cas dédié en test.
-- [x] Produit jamais réveillé : `lastCycle: null`, exposition nulle
-      (`positionQuantity = 0`), aucun chiffre inventé.
+- [x] Produit jamais réveillé : `lastCycle: null`; position plate = cash connu
+      et exposition nulle, position ouverte sans mark = indisponible.
 - [x] Mono-produit (`portfolioSession === null`) : `kind:
       "single-product"`, réponse valide et UI inchangée (backward-compat).
 
@@ -104,3 +102,23 @@ transition, zéro écriture, projection pure d'un instantané déjà restauré
 fail-closed, frontière proxy inchangée, mono-produit intact. Le principal
 risque (présenter une lecture d'agrégats comme la décision de l'orchestrateur)
 est couvert par §3.3, S1, S3 et les corrections 1–3 ci-dessus.
+
+## Revue complémentaire — DAO #62 (2026-09-26)
+
+La formule de lecture issue de #32 (`marketPrice ?? averagePrice`) ne peut plus
+servir de valorisation. Le dashboard consomme maintenant les marks datés de
+`PortfolioProductRuntime`, montre leur qualité/âge et ne publie aucune
+exposition chiffrée pour une position ouverte sans mark. Les sommes de lecture
+restent distinctes de `portfolio.context.exposure` et ne remplacent jamais la
+décision de l’orchestrateur.
+
+Le mark indisponible d’un produit à quantité nulle laisse l’equity cash
+exacte; le même mark manquant avec une position ouverte rend l’equity et
+l’exposition indisponibles. Un mark stale garde son ancien montant clairement
+qualifié.
+
+Vérification DAO #62 : la route `/state`, le parser client, le rendu dashboard
+et la compatibilité des anciennes sessions consomment les champs de qualité et
+normalisent les anciennes valeurs sans provenance à `unavailable`. Tests
+`models` 430/430, `agent` 264/264 et `dashboard` 45/45; TypeScript des trois
+paquets réussi.

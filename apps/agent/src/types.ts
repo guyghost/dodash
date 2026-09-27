@@ -11,7 +11,12 @@ import type { AllocationDecision } from "@dodash/allocator";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 import type { RiskDecision } from "@dodash/risk";
 import type { PaperPortfolio } from "@dodash/paper-execution";
-import type { DailyRiskWindow, ShutdownMode, WorkflowError } from "@dodash/models";
+import type {
+  DailyRiskWindow,
+  PaperValuationMark,
+  ShutdownMode,
+  WorkflowError,
+} from "@dodash/models";
 
 import type { AgentConfiguration } from "./configuration.js";
 import type { PersistedTradingMachine } from "./machine-session.js";
@@ -22,6 +27,8 @@ export interface MarketSnapshot {
   readonly candles: readonly Candle[];
   readonly source: "coinbase";
   readonly cached: boolean;
+  /** Missing only on artifacts written before DAO #62. */
+  readonly valuationMark?: PaperValuationMark;
 }
 
 export interface CycleExecution {

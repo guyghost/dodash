@@ -28,3 +28,23 @@ portent `NONE`. Aucun secret ni texte libre supplémentaire n'entre en
 télémétrie (invariants 1-4 inchangés).
 
 Amendement approuvé en revue.
+
+## Revue complémentaire — DAO #62 (2026-09-26)
+
+La valorisation paper ajoute une mesure `accountEquity` calculée sur le
+portefeuille post-fill et un close daté. La qualité, le prix, la date, l’âge et
+l’exposition consolidée sont exposés séparément des champs historiques du
+snapshot risque. `otherExposureNotional` vaut null en télémétrie paper tant que
+sa source est le stub. Aucune valeur nouvelle ne revient à `checkRisk` ou à la
+machine portefeuille.
+
+Le schemaVersion passe à 3; les blobs 1–7 et leurs sémantiques restent figés,
+notamment blob6/7. Les positions supplémentaires sont append-only et leurs
+sentinelles numériques disposent de bits de présence/qualité. Invariants
+secrets et absence de pilotage par télémétrie inchangés.
+
+Vérification DAO #62 : schemaVersion 3 append-only, blobs 1–7 préservés,
+positions existantes conservées et nouveaux champs/presence bits couverts par
+les tests de télémétrie de l’agent (suite `agent` 264/264). TypeScript réussi.
+Les champs absents restent distinguables de zéro; aucune donnée telemetry
+n’alimente le modèle de risque ou une transition.

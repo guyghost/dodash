@@ -82,3 +82,17 @@ zéro transition, zéro écriture, projection pure traçable, frontière
 proxy inchangée. Le principal risque (présenter une reconstruction
 comme une mesure d'autorité) est couvert par P1, P3 et les corrections
 1–2 ci-dessus.
+
+## Revue complémentaire — DAO #62 (2026-09-26)
+
+Les points PnL utilisent le `valuationMark` capturé dans les artefacts et la
+projection commune. Le temps de clôture de bougie reste distinct du temps de
+fin de cycle; l’âge stale n’est jamais rafraîchi par un cycle ultérieur sans
+snapshot. Les données historiques sans provenance restent lisibles mais
+n’alimentent pas l’équité d’une position ouverte.
+
+Vérification DAO #62 : agrégation d’historique, normalisation des cycles
+legacy, parser API et affichage UI couverts dans les suites `models` (430/430),
+`agent` (264/264) et `dashboard` (45/45). TypeScript des trois paquets réussi.
+Les données historiques restent en lecture seule; aucune provenance n’est
+reconstruite à partir du coût moyen ou de l’heure du cycle.

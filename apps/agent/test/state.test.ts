@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PersistedTradingMachine } from "../src/machine-session.js";
 import { parseAgentConfiguration } from "../src/configuration.js";
+import { INITIAL_AGENT_STATE, toAgentStateSnapshot } from "../src/state.js";
 import * as stateModule from "../src/state.js";
 
 const { resolveCycleInvocation } = stateModule;
@@ -221,6 +222,47 @@ describe("daily risk cycle boundaries", () => {
     ).toEqual({
       window: { utcDayStart: 0, openingEquity: 20_000 },
       dailyPnl: -750,
+    });
+  });
+});
+
+describe("paper valuation state projection (DAO #62)", () => {
+  it("marks the post-cycle portfolio from dated market data and never falls back to average price", () => {
+    const parsed = parseAgentConfiguration({ productId: "BTC-USD", executionMode: "paper" });
+    if (!parsed.ok) throw new Error("invalid paper fixture");
+    const state = {
+      ...INITIAL_AGENT_STATE,
+      configuration: parsed.value,
+      portfolio: { cash: 100, positionQuantity: 2, averagePrice: 40 },
+      lastPaperMark: {
+        price: 50,
+        source: "COINBASE_CANDLE_CLOSE" as const,
+        timeframe: "FIVE_MINUTE",
+        candleClosedAt: 900,
+        maxMarketStalenessMs: 100,
+      },
+    };
+    const summary = { ok: true as const, value: { kind: "single-product" as const } };
+    const fresh = toAgentStateSnapshot(state, summary, 1_000);
+    expect(fresh.paperValuation).toMatchObject({
+      ok: true,
+      value: {
+        equity: 200,
+        markPrice: 50,
+        candleClosedAt: 900,
+        ageMs: 100,
+        quality: "fresh",
+      },
+    });
+
+    const withoutMark = toAgentStateSnapshot(
+      { ...state, lastPaperMark: null },
+      summary,
+      1_000,
+    );
+    expect(withoutMark.paperValuation).toMatchObject({
+      ok: true,
+      value: { equity: null, markPrice: null, quality: "unavailable" },
     });
   });
 });

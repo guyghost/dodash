@@ -1,4 +1,5 @@
 import {
+  normalizePaperValuationMark,
   multiProductPortfolioMachine,
   projectDashboardPortfolioSummary,
   tradingCycleMachine,
@@ -8,6 +9,7 @@ import {
   type MultiProductPortfolioEvent,
   type MultiProductPortfolioInput,
   type PortfolioProductStatus,
+  type PaperValuationMark,
 } from "@dodash/models";
 import type { ProductId } from "@dodash/domain";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
@@ -180,6 +182,7 @@ export interface PortfolioProductRuntime {
   readonly dailyRiskWindow: DailyRiskWindow | null;
   readonly dailyPnl: number;
   readonly lastTradeAt: number | null;
+  readonly lastPaperMark: PaperValuationMark | null;
   readonly previousIndicators: IndicatorSnapshot | null;
   readonly lastCycle: CycleSummary | null;
 }
@@ -205,6 +208,7 @@ export const portfolioProductIds = (
  */
 export const projectPortfolioSessionSummary = (
   session: PortfolioSessionState | null,
+  asOf = Date.now(),
 ): DashboardPortfolioSummaryResult => {
   if (session === null) return projectDashboardPortfolioSummary(null);
   const products: DashboardPortfolioProductInput[] = [];
@@ -225,6 +229,7 @@ export const projectPortfolioSessionSummary = (
       averagePrice: product.portfolio.averagePrice,
       dailyPnl: product.dailyPnl,
       maxGrossExposure: slot.risk.maxGrossExposure,
+      lastPaperMark: product.lastPaperMark,
       lastCycle:
         product.lastCycle === null
           ? null
@@ -238,6 +243,7 @@ export const projectPortfolioSessionSummary = (
     });
   }
   return projectDashboardPortfolioSummary({
+    asOf,
     phase: session.portfolio.value,
     killSwitchActive: session.portfolio.context.killSwitchActive,
     portfolioRisk: session.configuration.portfolioRisk ?? null,
@@ -259,6 +265,7 @@ export const initialProductRuntime = (
     dailyRiskWindow: null,
     dailyPnl: 0,
     lastTradeAt: null,
+    lastPaperMark: null,
     previousIndicators: null,
     lastCycle: null,
   });
@@ -494,6 +501,7 @@ export const resolveRestoredPortfolioSession = (
       lastTradeAt: runtime.lastTradeAt ?? null,
       previousIndicators: runtime.previousIndicators ?? null,
       lastCycle: runtime.lastCycle ?? null,
+      lastPaperMark: normalizePaperValuationMark(runtime.lastPaperMark),
     });
   }
   if (Object.keys(rawProducts).length !== expectedProducts.length) {

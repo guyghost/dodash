@@ -1,0 +1,23 @@
+{
+  "method": "GET /health avec User-Agent Mozilla/5.0, sans authentification",
+  "results": {
+    "dodash-paper-agent": {
+      "httpStatus": 200,
+      "status": "ok"
+    },
+    "dodash-paper-mcp-market-data": {
+      "httpStatus": 200,
+      "status": "ok"
+    },
+    "dodash-paper-dashboard-api": {
+      "httpStatus": 200,
+      "status": "ok"
+    },
+    "dodash-paper-dashboard": {
+      "httpStatus": 200,
+      "status": "ok"
+    }
+  },
+  "note": "Premi\u00e8res sondes urllib sans User-Agent navigateur : 403 ; secondes sondes : 200 pour les quatre Workers.",
+  "checkCompletedBefore": "2026-09-26T08:55:59.588462+00:00"
+}

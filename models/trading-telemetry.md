@@ -64,6 +64,35 @@ cycle event; it never drives a guard, transition or decision;
 Verification contract: an `ORDER_REJECTED` cycle is diagnosable from a single
 Analytics Engine query (`blob2`, `blob7`) with no Durable Object read.
 
+## Amendment 2026-09-26 (DAO #62) — dated paper valuation and exposure quality
+
+Paper cycle `accountEquity` is the value from `projectPaperValuation` using the
+post-cycle portfolio and the last accepted, dated Coinbase candle close. It is
+not the acquisition-cost equity returned by paper account reconciliation.
+Each such record carries closed `valuationQuality` (`fresh`, `stale`,
+`unavailable`), `valuationPriceSource`, `valuationPrice`, `valuationObservedAt`
+and age. An unavailable mark yields null equity and price in the JSON log; AE's
+numeric zero sentinel is accompanied by presence/quality fields and is never
+read as an observed zero.
+
+The measured `consolidatedExposureNotional` is distinct from
+`otherExposureNotional`, which remains a risk-input field. For paper, publish
+consolidated exposure from the portfolio projection with `exposureQuality`;
+publish `otherExposureNotional=null` / unavailable while it still originates
+from the paper stub. No new value flows into `checkRisk` or the orchestrator's
+admission machine in this amendment. `dailyPnl` and its UTC window retain their
+existing risk-policy source.
+
+The record format advances to schema version 3. Analytics Engine appends its
+new positional fields after existing positions; blobs 1–7 are preserved
+exactly, including blob6's closed workflow error and blob7's closed broker
+rejection detail. Appended blobs are blob8 `valuationQuality`, blob9
+`valuationPriceSource`, blob10 `exposureQuality`. Appended doubles are
+`valuationPrice`, `valuationObservedAt`, `valuationAgeMs`,
+`consolidatedExposureNotional`, and presence bits for those nullable numbers.
+Quality/source vocabularies are closed; no free text, secrets, account
+identifiers or exchange-order identifiers are added.
+
 ## Invariants
 
 1. No secret, bearer token, JWT, private key, raw request body or Coinbase

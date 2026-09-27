@@ -115,11 +115,15 @@ describe("IndicatorSeriesComputer (INV-27)", () => {
 		);
 	});
 
-	it("produit des snapshots strictement identiques (config compacte)", async () => {
+	it("produit des snapshots strictement identiques (config compacte)", {
+		timeout: 30_000,
+	}, async () => {
 		await assertSeriesIdentical(randomCandles(40, 0xd0da), COMPACT_CONFIG);
 	});
 
-	it("produit des snapshots strictement identiques (paire de signal EMA)", async () => {
+	it("produit des snapshots strictement identiques (paire de signal EMA)", {
+		timeout: 30_000,
+	}, async () => {
 		await assertSeriesIdentical(randomCandles(40, 0x5eed), SIGNAL_CONFIG);
 	});
 

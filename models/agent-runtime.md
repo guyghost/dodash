@@ -28,8 +28,8 @@ contexte de la machine.
 ## État durable
 
 - L’état synchronisé contient uniquement la configuration validée, la phase et
-  le contexte XState, un résumé du dernier cycle, le portefeuille paper et le
-  dernier snapshot d’indicateurs.
+  le contexte XState, un résumé du dernier cycle, le portefeuille paper, le
+  dernier `lastPaperMark` accepté et le dernier snapshot d’indicateurs.
 - SQLite contient les cycles, intentions, statuts d’ordre, fills et erreurs.
 - L’état XState est persisté avant tout effet pouvant soumettre un ordre.
 - Une intention `SUBMITTING` retrouvée au réveil ne peut pas être soumise une
@@ -49,6 +49,38 @@ contexte de la machine.
   portefeuille calculée à la lecture et jamais persistée — contrat et
   invariants dans `models/state-portfolio-contract.md` (dao #34). La forme
   mono-produit de la réponse est figée : champs additionnels uniquement.
+
+## Amendement DAO #62 — mark paper et mesure exposée
+
+`lastPaperMark` est une donnée de mesure distincte du portefeuille comptable et
+du contexte de la machine. Sa forme est celle de
+`PaperValuationMark` (`price`, `source=COINBASE_CANDLE_CLOSE`, `timeframe`,
+`candleClosedAt`, `maxMarketStalenessMs`). Le runtime la remplace uniquement après un snapshot marché
+accepté, en dérivant `candleClosedAt` depuis le début de bougie et la table
+canonique `TIMEFRAME_MILLISECONDS`. Un échec marché conserve le dernier mark
+sans en rafraîchir la date. Le mark et sa date sont restaurés ensemble; un état
+legacy ou incohérent se normalise vers `null` et produit `unavailable`.
+Avant toute persistance, le mark candidat est validé puis copié et gelé par le
+modèle `normalizePaperValuationMark`. Un candidat absent ou invalide conserve
+uniquement le précédent mark s’il est lui aussi valide; une ancienne valeur
+invalide se normalise à `null`. La même règle s’applique aux sessions
+multi-produits et à leur restauration; elle ne choisit aucun effet ou
+événement XState.
+
+Pour un cycle paper, `accountEquity` de la télémétrie et de l’API est la
+projection de `portfolio.cash + portfolio.positionQuantity * mark.price`,
+après fill, via `projectPaperValuation`. L’heure de mesure est l’heure de fin
+du cycle; la qualité est recalculée sur cette heure et
+la politique de péremption capturée avec le mark. Le risque continue à recevoir ses
+entrées actuelles dans `RunTradingCycleResult`; le nouveau champ de télémétrie
+ne retourne pas vers l’interpréteur ni vers `checkRisk`.
+
+Dans une session multi-produits, `PortfolioProductRuntime` porte un
+`lastPaperMark` par produit. Le `portfolioSummary` API projette les valeurs et
+expositions depuis ces faits, à un `asOf` fourni, et qualifie l’agrégat. Les
+valeurs de l’orchestrateur utilisées par l’admission restent inchangées dans
+#62. À la restauration d’un snapshot pré-amendement, les marques manquantes
+restent indisponibles; elles ne sont pas reconstruites depuis `averagePrice`.
 
 ## Contrôle et permissions
 

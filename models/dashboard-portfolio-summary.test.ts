@@ -6,6 +6,14 @@ import {
   type DashboardPortfolioSessionInput,
 } from "./dashboard-portfolio-summary.js";
 
+const mark = (price: number, candleClosedAt = 1_700_000_200_000) => ({
+  price,
+  source: "COINBASE_CANDLE_CLOSE" as const,
+  timeframe: "1h",
+  candleClosedAt,
+  maxMarketStalenessMs: 3_600_000,
+});
+
 const productInput = (
   productId: string,
   overrides: Partial<DashboardPortfolioProductInput> = {},
@@ -19,6 +27,7 @@ const productInput = (
   dailyPnl: 0,
   maxGrossExposure: 20_000,
   lastCycle: null,
+  lastPaperMark: null,
   ...overrides,
 });
 
@@ -26,6 +35,7 @@ const sessionInput = (
   products: readonly DashboardPortfolioProductInput[],
   overrides: Partial<DashboardPortfolioSessionInput> = {},
 ): DashboardPortfolioSessionInput => ({
+  asOf: 1_700_000_300_000,
   phase: "running",
   killSwitchActive: false,
   portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 1_500 },
@@ -54,6 +64,7 @@ describe("dashboard portfolio summary projection", () => {
             outcome: "ORDER_CONFIRMED",
             marketPrice: 62_000,
           },
+          lastPaperMark: mark(62_000),
         }),
       ]),
     );
@@ -69,19 +80,25 @@ describe("dashboard portfolio summary projection", () => {
       productId: "BTC-USD",
       phase: "waiting",
       status: "running",
-      grossExposure: 6_200, // |0.1| × 62 000 (marketPrice)
+      marketPrice: 62_000,
+      grossExposure: 6_200,
+      exposureQuality: "fresh",
+      valuation: { quality: "fresh", equity: 11_200 },
       maxGrossExposure: 20_000,
       dailyPnl: 42.5,
     });
     expect(value.consolidated).toEqual({
+      equity: 11_200,
+      valuationQuality: "fresh",
       grossExposure: 6_200,
+      exposureQuality: "fresh",
       maxGrossExposure: 30_000,
       dailyPnl: 42.5,
       maxDailyLoss: 1_500,
     });
   });
 
-  it("uses the average price when no market close is known", () => {
+  it("does not use the acquisition price when the mark is unavailable", () => {
     const result = projectDashboardPortfolioSummary(
       sessionInput([
         productInput("BTC-USD", {
@@ -97,8 +114,16 @@ describe("dashboard portfolio summary projection", () => {
     if (value.kind !== "portfolio") return expect.unreachable();
     expect(value.products[0]).toMatchObject({
       marketPrice: null,
-      grossExposure: 6_000, // |0.1| × 60 000 (averagePrice)
+      grossExposure: null,
+      exposureQuality: "unavailable",
+      valuation: { quality: "unavailable", equity: null },
       lastCycle: null,
+    });
+    expect(value.consolidated).toMatchObject({
+      equity: null,
+      valuationQuality: "unavailable",
+      grossExposure: null,
+      exposureQuality: "unavailable",
     });
   });
 
@@ -117,6 +142,7 @@ describe("dashboard portfolio summary projection", () => {
             outcome: "NO_ACTION",
             marketPrice: 3_100,
           },
+          lastPaperMark: mark(3_100),
         }),
         productInput("BTC-USD", {
           positionQuantity: 0.1,
@@ -129,6 +155,7 @@ describe("dashboard portfolio summary projection", () => {
             outcome: "ORDER_CONFIRMED",
             marketPrice: 61_000,
           },
+          lastPaperMark: mark(61_000),
         }),
       ]),
     );
@@ -143,7 +170,10 @@ describe("dashboard portfolio summary projection", () => {
       "SOL-USD",
     ]);
     expect(value.consolidated).toEqual({
+      equity: 9_800 + 6_100 + 9_800 + 1_550 + 9_000,
+      valuationQuality: "unavailable",
       grossExposure: 6_100 + 1_550 + 0,
+      exposureQuality: "fresh",
       maxGrossExposure: 30_000,
       dailyPnl: 12.25 + 30 + -10.5,
       maxDailyLoss: 1_500,
@@ -167,8 +197,9 @@ describe("dashboard portfolio summary projection", () => {
               triggeredAt: 1_700_000_200_000,
               completedAt: 1_700_000_204_000,
               outcome: "FAILED",
-              marketPrice: 2_900,
-            },
+            marketPrice: 2_900,
+          },
+          lastPaperMark: mark(2_900),
           }),
         ],
         { phase: "draining", killSwitchActive: true },

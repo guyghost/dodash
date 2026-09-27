@@ -99,6 +99,14 @@ const startedPortfolio = (products: readonly string[]) => {
   return record;
 };
 
+const portfolioMark = Object.freeze({
+  price: 62_000,
+  source: "COINBASE_CANDLE_CLOSE" as const,
+  timeframe: "FIVE_MINUTE",
+  candleClosedAt: 306_000,
+  maxMarketStalenessMs: 1_000_000,
+});
+
 const sessionFixture = (): PortfolioSessionState => {
   const multi = multiConfiguration();
   const aaa = initialProductRuntime(productMachine("waiting"), multi.initialCapital);
@@ -111,12 +119,14 @@ const sessionFixture = (): PortfolioSessionState => {
         ...aaa,
         portfolio: { cash: 9_800, positionQuantity: 0.1, averagePrice: 60_000 },
         dailyPnl: 42.5,
+        lastPaperMark: portfolioMark,
         lastCycle: {
           cycleId: "cycle-aaa",
           triggeredAt: 300_000,
           completedAt: 306_000,
           outcome: "ORDER_CONFIRMED",
           marketPrice: 62_000,
+          valuationMark: portfolioMark,
           signalCount: 1,
           clientOrderId: "cli-aaa",
           exchangeOrderId: "ex-aaa",
@@ -140,9 +150,11 @@ describe("contrat /state — hiérarchie portefeuille (dao #34)", () => {
   it("expose la hiérarchie avec les chiffres exacts de la projection #32 (ST5)", () => {
     const session = sessionFixture();
     const state = agentWithSession(session);
+    const asOf = 400_000;
     const snapshot = toAgentStateSnapshot(
       state,
-      projectPortfolioSessionSummary(session),
+      projectPortfolioSessionSummary(session, asOf),
+      asOf,
     );
 
     // Surface de contrôle : projection #32 construite à la main depuis les
@@ -157,6 +169,7 @@ describe("contrat /state — hiérarchie portefeuille (dao #34)", () => {
         averagePrice: 60_000,
         dailyPnl: 42.5,
         maxGrossExposure: 20_000,
+        lastPaperMark: portfolioMark,
         lastCycle: {
           cycleId: "cycle-aaa",
           triggeredAt: 300_000,
@@ -174,10 +187,12 @@ describe("contrat /state — hiérarchie portefeuille (dao #34)", () => {
         averagePrice: 0,
         dailyPnl: -12.25,
         maxGrossExposure: 20_000,
+        lastPaperMark: null,
         lastCycle: null,
       },
     ];
     const expected = projectDashboardPortfolioSummary({
+      asOf,
       phase: "running",
       killSwitchActive: false,
       portfolioRisk: { maxGrossExposure: 10_000, maxDailyLoss: 5_000 },
@@ -185,7 +200,7 @@ describe("contrat /state — hiérarchie portefeuille (dao #34)", () => {
     });
     expect(snapshot.portfolioSummary).toEqual(expected);
     expect(snapshot.portfolioSummary).toEqual(
-      projectPortfolioSessionSummary(session),
+      projectPortfolioSessionSummary(session, asOf),
     );
     if (!snapshot.portfolioSummary.ok || snapshot.portfolioSummary.value.kind !== "portfolio") {
       throw new Error("expected a portfolio hierarchy");
@@ -206,9 +221,11 @@ describe("contrat /state — hiérarchie portefeuille (dao #34)", () => {
     expect(snapshot).toEqual({
       ...INITIAL_AGENT_STATE,
       portfolioSummary: { ok: true, value: { kind: "single-product" } },
+      paperValuation: null,
     });
-    const { portfolioSummary, ...frozenFields } = snapshot;
+    const { portfolioSummary, paperValuation, ...frozenFields } = snapshot;
     expect(frozenFields).toEqual(INITIAL_AGENT_STATE);
+    expect(paperValuation).toBeNull();
     // Mono-produit : hiérarchie vide valide, pas une erreur (§3.1 de #32).
     expect(portfolioSummary).toEqual({
       ok: true,

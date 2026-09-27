@@ -1,5 +1,12 @@
 import type { PortfolioProductStatus } from "./multi-product-portfolio.machine.js";
 import { DASHBOARD_REMOTE_PHASES } from "./dashboard-session.types.js";
+import {
+  isValidPaperValuationMark,
+  projectPaperValuation,
+  type PaperValuation,
+  type PaperValuationMark,
+  type PaperValuationQuality,
+} from "./paper-valuation.js";
 
 /**
  * Projection portefeuille du dashboard (dao #32) : fonction pure,
@@ -62,10 +69,12 @@ export interface DashboardPortfolioProductInput {
   /** Plafond d'exposition brute du créneau (`slot.risk.maxGrossExposure`). */
   readonly maxGrossExposure: number;
   readonly lastCycle: DashboardPortfolioLastCycle | null;
+  readonly lastPaperMark: PaperValuationMark | null;
 }
 
 /** Instantané orchestrateur + créneaux (copie de `portfolioSession`). */
 export interface DashboardPortfolioSessionInput {
+  readonly asOf: number;
   readonly phase: string;
   readonly killSwitchActive: boolean;
   /** Plafonds consolidés (§7 de #24) ; `null` = absents alors que des produits sont déclarés. */
@@ -80,17 +89,21 @@ export interface DashboardPortfolioProductSummary {
   readonly cash: number;
   readonly positionQuantity: number;
   readonly averagePrice: number;
-  /** Dernier close connu (dernier cycle persisté), `null` si jamais évalué. */
+  /** Dernier close connu (dernier mark accepté), `null` si jamais évalué. */
   readonly marketPrice: number | null;
-  /** `|positionQuantity| × (marketPrice ?? averagePrice)` — formule `productGrossExposure` (§9.4 de #28). */
-  readonly grossExposure: number;
+  readonly valuation: PaperValuation;
+  readonly grossExposure: number | null;
+  readonly exposureQuality: PaperValuationQuality;
   readonly maxGrossExposure: number;
   readonly dailyPnl: number;
   readonly lastCycle: DashboardPortfolioLastCycle | null;
 }
 
 export interface DashboardPortfolioConsolidated {
-  readonly grossExposure: number;
+  readonly equity: number | null;
+  readonly valuationQuality: PaperValuationQuality;
+  readonly grossExposure: number | null;
+  readonly exposureQuality: PaperValuationQuality;
   readonly maxGrossExposure: number;
   readonly dailyPnl: number;
   readonly maxDailyLoss: number;
@@ -100,6 +113,7 @@ export interface DashboardPortfolioSummary {
   readonly kind: "portfolio";
   readonly phase: string;
   readonly killSwitchActive: boolean;
+  readonly asOf: number;
   /** Créneaux triés par `productId` (ordre des points de code, S7). */
   readonly products: readonly DashboardPortfolioProductSummary[];
   readonly consolidated: DashboardPortfolioConsolidated;
@@ -144,12 +158,13 @@ const validateProductShape = (
 ): boolean =>
   isNonEmptyText(product.productId) &&
   REMOTE_PHASES.includes(product.phase) &&
-  PRODUCT_STATUSES.includes(product.status);
+  PRODUCT_STATUSES.includes(product.status) &&
+  (product.lastPaperMark === null || isValidPaperValuationMark(product.lastPaperMark));
 
 const validateProductFacts = (
   product: DashboardPortfolioProductInput,
 ): boolean =>
-  isFiniteNumber(product.cash) &&
+  isNonNegativeFinite(product.cash) &&
   isNonNegativeFinite(product.positionQuantity) &&
   isNonNegativeFinite(product.averagePrice) &&
   isFiniteNumber(product.dailyPnl) &&
@@ -178,6 +193,7 @@ export const projectDashboardPortfolioSummary = (
   }
 
   if (
+    !isSafeTime(session.asOf) ||
     typeof session.killSwitchActive !== "boolean" ||
     !PORTFOLIO_PHASES.includes(session.phase) ||
     !Array.isArray(session.products) ||
@@ -210,21 +226,55 @@ export const projectDashboardPortfolioSummary = (
 
   const sorted = [...session.products].sort(byProductId);
   for (const product of sorted) {
-    if (!validateProductFacts(product)) return failure("INVALID_PRODUCT_FACTS");
+    if (
+      !validateProductFacts(product) ||
+      (product.lastPaperMark !== null &&
+        product.lastPaperMark.candleClosedAt > session.asOf)
+    ) {
+      return failure("INVALID_PRODUCT_FACTS");
+    }
+  }
+  const valuations = sorted.map((product) =>
+    projectPaperValuation({
+      cash: product.cash,
+      positionQuantity: product.positionQuantity,
+      mark: product.lastPaperMark,
+      asOf: session.asOf,
+    }),
+  );
+  if (valuations.some((projection) => !projection.ok)) {
+    return failure("INVALID_PRODUCT_FACTS");
   }
 
   // §3.3 : sommes itérées en ordre trié (l'addition flottante n'est pas
   // associative) — chaque chiffre dérivé des faits produits (S1, S7).
   let consolidatedExposure = 0;
+  let consolidatedEquity = 0;
+  let exposureUnavailable = false;
+  let equityUnavailable = false;
+  let exposureStale = false;
+  let valuationUnavailable = false;
+  let valuationStale = false;
   let consolidatedDailyPnl = 0;
-  const products: DashboardPortfolioProductSummary[] = sorted.map((product) => {
-    const marketPrice = product.lastCycle?.marketPrice ?? null;
-    const grossExposure =
-      Math.abs(product.positionQuantity) *
-      (marketPrice ?? product.averagePrice);
-    consolidatedExposure += grossExposure;
+  const products: DashboardPortfolioProductSummary[] = [];
+  for (const [index, product] of sorted.entries()) {
+    const projected = valuations[index];
+    if (projected === undefined || !projected.ok) {
+      return failure("INVALID_PRODUCT_FACTS");
+    }
+    const valuation = projected.value;
+    const marketPrice = valuation.markPrice;
+    const grossExposure = valuation.exposureNotional;
+    const exposureQuality: PaperValuationQuality = valuation.exposureQuality;
+    if (grossExposure === null) exposureUnavailable = true;
+    else consolidatedExposure += grossExposure;
+    if (exposureQuality === "stale") exposureStale = true;
+    if (valuation.equity === null) equityUnavailable = true;
+    else consolidatedEquity += valuation.equity;
+    if (valuation.quality === "stale") valuationStale = true;
+    if (valuation.quality === "unavailable") valuationUnavailable = true;
     consolidatedDailyPnl += product.dailyPnl;
-    return Object.freeze({
+    products.push(Object.freeze({
       productId: product.productId,
       phase: product.phase,
       status: product.status,
@@ -232,12 +282,21 @@ export const projectDashboardPortfolioSummary = (
       positionQuantity: product.positionQuantity,
       averagePrice: product.averagePrice,
       marketPrice,
+      valuation,
       grossExposure,
+      exposureQuality,
       maxGrossExposure: product.maxGrossExposure,
       dailyPnl: product.dailyPnl,
       lastCycle: product.lastCycle,
-    });
-  });
+    }));
+  }
+  if (
+    !Number.isFinite(consolidatedExposure) ||
+    !Number.isFinite(consolidatedEquity) ||
+    !Number.isFinite(consolidatedDailyPnl)
+  ) {
+    return failure("INVALID_PRODUCT_FACTS");
+  }
 
   return Object.freeze({
     ok: true as const,
@@ -245,9 +304,15 @@ export const projectDashboardPortfolioSummary = (
       kind: "portfolio",
       phase: session.phase,
       killSwitchActive: session.killSwitchActive,
+      asOf: session.asOf,
       products: Object.freeze(products),
       consolidated: Object.freeze({
-        grossExposure: consolidatedExposure,
+        equity: equityUnavailable ? null : consolidatedEquity,
+        valuationQuality: equityUnavailable || valuationUnavailable
+          ? "unavailable"
+          : valuationStale ? "stale" : "fresh",
+        grossExposure: exposureUnavailable ? null : consolidatedExposure,
+        exposureQuality: exposureUnavailable ? "unavailable" : exposureStale ? "stale" : "fresh",
         maxGrossExposure: limits.maxGrossExposure,
         dailyPnl: consolidatedDailyPnl,
         maxDailyLoss: limits.maxDailyLoss,
