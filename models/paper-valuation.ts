@@ -74,6 +74,28 @@ export const isValidPaperValuationMark = (
   Number.isSafeInteger(value.maxMarketStalenessMs) &&
   value.maxMarketStalenessMs > 0;
 
+/** Validates, copies, and freezes a persisted paper valuation mark. */
+export const normalizePaperValuationMark = (
+  value: unknown,
+): PaperValuationMark | null => {
+  if (!isValidPaperValuationMark(value)) return null;
+  return Object.freeze({
+    price: value.price,
+    source: value.source,
+    timeframe: value.timeframe,
+    candleClosedAt: value.candleClosedAt,
+    maxMarketStalenessMs: value.maxMarketStalenessMs,
+  });
+};
+
+/** Accepts a new mark or preserves only a revalidated previous mark. */
+export const acceptPaperValuationMark = (
+  candidate: unknown,
+  previous: unknown,
+): PaperValuationMark | null =>
+  normalizePaperValuationMark(candidate) ??
+  normalizePaperValuationMark(previous);
+
 /**
  * Computes paper equity from cash and a dated market mark.
  *

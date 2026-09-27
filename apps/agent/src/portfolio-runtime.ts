@@ -1,5 +1,5 @@
 import {
-  isValidPaperValuationMark,
+  normalizePaperValuationMark,
   multiProductPortfolioMachine,
   projectDashboardPortfolioSummary,
   tradingCycleMachine,
@@ -501,9 +501,7 @@ export const resolveRestoredPortfolioSession = (
       lastTradeAt: runtime.lastTradeAt ?? null,
       previousIndicators: runtime.previousIndicators ?? null,
       lastCycle: runtime.lastCycle ?? null,
-      lastPaperMark: isValidPaperValuationMark(runtime.lastPaperMark)
-        ? Object.freeze(runtime.lastPaperMark)
-        : null,
+      lastPaperMark: normalizePaperValuationMark(runtime.lastPaperMark),
     });
   }
   if (Object.keys(rawProducts).length !== expectedProducts.length) {

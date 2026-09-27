@@ -94,6 +94,14 @@ source, date et qualité cohérentes. Analytics Engine conserve les blobs
 existants 1–7 (blob6 = erreur, blob7 = rejet broker); les champs de valuation
 et d’exposition s’ajoutent après eux sous un nouveau `schemaVersion`.
 
+Un `valuationMark` issu des artefacts de cycle n’est accepté qu’après
+validation complète et copie immuable via `normalizePaperValuationMark`. Une
+marque absente ou invalide conserve uniquement le précédent mark s’il passe à
+nouveau cette normalisation; un ancien mark invalide devient `null`. Cette
+normalisation s’applique au runtime mono-produit, à chaque produit d’une
+session et à leur restauration. Elle ne change ni l’issue du cycle ni une
+transition de la machine.
+
 Le changement de schéma API/AE est additif. La lecture des données legacy reste
 possible et produit des champs de marque indisponibles. Aucun secret, payload
 de requête ou identifiant de compte n’est ajouté.

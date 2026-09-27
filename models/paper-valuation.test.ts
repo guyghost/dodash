@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { projectPaperValuation } from "./paper-valuation.js";
+import {
+  acceptPaperValuationMark,
+  normalizePaperValuationMark,
+  projectPaperValuation,
+} from "./paper-valuation.js";
 
 const mark = (
   price: number,
@@ -133,5 +137,35 @@ describe("projectPaperValuation", () => {
       ok: false,
       error: { code: "INVALID_PORTFOLIO" },
     });
+  });
+});
+
+describe("paper valuation mark acceptance", () => {
+  it("copies and freezes a validated mark", () => {
+    const candidate = mark(1_200);
+    const accepted = normalizePaperValuationMark(candidate);
+
+    expect(accepted).toEqual(candidate);
+    expect(accepted).not.toBe(candidate);
+    expect(accepted && Object.isFrozen(accepted)).toBe(true);
+    candidate.price = 5;
+    expect(accepted?.price).toBe(1_200);
+  });
+
+  it("retains only a revalidated previous mark when a candidate is invalid", () => {
+    const previous = mark(1_100);
+    const accepted = acceptPaperValuationMark(
+      { ...mark(1_200), price: Number.NaN },
+      previous,
+    );
+
+    expect(accepted).toEqual(previous);
+    expect(accepted).not.toBe(previous);
+    expect(accepted && Object.isFrozen(accepted)).toBe(true);
+  });
+
+  it("returns null when both the new and previous marks are invalid", () => {
+    expect(acceptPaperValuationMark({ ...mark(1_200), source: "other" }, null)).toBeNull();
+    expect(acceptPaperValuationMark(null, { ...mark(1_100), candleClosedAt: -1 })).toBeNull();
   });
 });

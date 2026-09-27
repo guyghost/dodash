@@ -51,3 +51,12 @@ explicite et reste séparée des entrées dailyRisk et des transitions XState.
 Vérification : tests `models` 430/430, tests `agent` 264/264 et vérifications
 TypeScript des trois paquets concernés réussis. Les tests de restauration,
 reprise après panne marché et projection API sont inclus dans ces suites.
+
+## Revue complémentaire — persistance des marks de valorisation
+
+Le commentaire Copilot sur la persistance d’un `valuationMark` malformé est
+fondé : les deux chemins de cycle écrivaient directement l’objet d’artefact,
+alors que le contrat exige une marque acceptée. Le modèle demande une
+validation, une copie immuable avant persistance, et une nouvelle validation
+du précédent mark avant de le conserver. Cette correction reste une
+normalisation de mesure et ne modifie aucun choix ou événement XState.

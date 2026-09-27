@@ -6,7 +6,8 @@ import {
   DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
   DASHBOARD_PNL_HISTORY_MAX_CYCLES,
   projectDashboardPnlHistory,
-  isValidPaperValuationMark,
+  acceptPaperValuationMark,
+  normalizePaperValuationMark,
   projectPaperValuation,
   type ControlPermissions,
   type DashboardPnlHistoryResult,
@@ -305,9 +306,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
    */
   private restorePortfolioSession(): void {
     const rawTopLevelMark = (this.state as { lastPaperMark?: unknown }).lastPaperMark;
-    const normalizedTopLevelMark = isValidPaperValuationMark(rawTopLevelMark)
-      ? rawTopLevelMark
-      : null;
+    const normalizedTopLevelMark = normalizePaperValuationMark(rawTopLevelMark);
     if (this.state.lastPaperMark !== normalizedTopLevelMark) {
       this.setState({ ...this.state, lastPaperMark: normalizedTopLevelMark });
     }
@@ -879,7 +878,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
     const acceptedPaperMark: PaperValuationMark | null =
       configuration.executionMode === "paper"
-        ? result.artifacts?.market?.valuationMark ?? this.state.lastPaperMark
+        ? acceptPaperValuationMark(
+            result.artifacts?.market?.valuationMark,
+            this.state.lastPaperMark,
+          )
         : null;
     this.setState({
       ...this.state,
@@ -1312,7 +1314,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     );
     const executed = result.artifacts?.execution !== undefined;
     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
-    const lastPaperMark = result.artifacts?.market?.valuationMark ?? product.lastPaperMark;
+    const lastPaperMark = acceptPaperValuationMark(
+      result.artifacts?.market?.valuationMark,
+      product.lastPaperMark,
+    );
     const updated: PortfolioProductRuntime = Object.freeze({
       machine: result.machine,
       portfolio: result.portfolio,

@@ -60,6 +60,12 @@ accepté, en dérivant `candleClosedAt` depuis le début de bougie et la table
 canonique `TIMEFRAME_MILLISECONDS`. Un échec marché conserve le dernier mark
 sans en rafraîchir la date. Le mark et sa date sont restaurés ensemble; un état
 legacy ou incohérent se normalise vers `null` et produit `unavailable`.
+Avant toute persistance, le mark candidat est validé puis copié et gelé par le
+modèle `normalizePaperValuationMark`. Un candidat absent ou invalide conserve
+uniquement le précédent mark s’il est lui aussi valide; une ancienne valeur
+invalide se normalise à `null`. La même règle s’applique aux sessions
+multi-produits et à leur restauration; elle ne choisit aucun effet ou
+événement XState.
 
 Pour un cycle paper, `accountEquity` de la télémétrie et de l’API est la
 projection de `portfolio.cash + portfolio.positionQuantity * mark.price`,

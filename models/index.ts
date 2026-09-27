@@ -181,7 +181,7 @@ export type {
   DailyRiskAssessment,
   DailyRiskWindow,
 } from "./daily-risk.js";
-export { isValidPaperValuationMark, projectPaperValuation } from "./paper-valuation.js";
+export { acceptPaperValuationMark, isValidPaperValuationMark, normalizePaperValuationMark, projectPaperValuation } from "./paper-valuation.js";
 export type {
   PaperValuation,
   PaperValuationErrorCode,
