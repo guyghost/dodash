@@ -1,0 +1,88 @@
+{
+  "capturedAt": "2026-09-28T08:06:04Z",
+  "source": "wrangler tail dodash-paper-agent -c wrangler.paper.jsonc --format json (07:56:40 \u2192 08:06:04 UTC)",
+  "entries": [
+    {
+      "wallTime": 62,
+      "cpuTime": 28,
+      "truncated": false,
+      "executionModel": "durableObject",
+      "outcome": "ok",
+      "durableObjectId": "f46f55a308531063600ad7235601cf262f456d5f2d3ab9d9c793baeadb1174ff",
+      "scriptVersion": {
+        "id": "a1da8135-e577-4d49-901b-f7cdf5c2c55d"
+      },
+      "entrypoint": "TradingAgent",
+      "scriptName": "dodash-paper-agent",
+      "diagnosticsChannelEvents": [
+        {
+          "message": {
+            "type": "state:update",
+            "agent": "TradingAgent",
+            "name": "btc-usd-paper",
+            "payload": {},
+            "timestamp": 1790582521369
+          },
+          "channel": "agents:state",
+          "timestamp": 1790582521369
+        },
+        {
+          "message": {
+            "type": "state:update",
+            "agent": "TradingAgent",
+            "name": "btc-usd-paper",
+            "payload": {},
+            "timestamp": 1790582521369
+          },
+          "channel": "agents:state",
+          "timestamp": 1790582521369
+        },
+        {
+          "message": {
+            "type": "schedule:cancel",
+            "agent": "TradingAgent",
+            "name": "btc-usd-paper",
+            "payload": {
+              "callback": "scheduledTick",
+              "id": "SaBJxrp3Q"
+            },
+            "timestamp": 1790582521369
+          },
+          "channel": "agents:schedule",
+          "timestamp": 1790582521369
+        },
+        {
+          "message": {
+            "type": "schedule:create",
+            "agent": "TradingAgent",
+            "name": "btc-usd-paper",
+            "payload": {
+              "callback": "scheduledTick",
+              "id": "XpPoels9Z"
+            },
+            "timestamp": 1790582521369
+          },
+          "channel": "agents:schedule",
+          "timestamp": 1790582521369
+        },
+        {
+          "message": {
+            "type": "state:update",
+            "agent": "TradingAgent",
+            "name": "btc-usd-paper",
+            "payload": {},
+            "timestamp": 1790582521369
+          },
+          "channel": "agents:state",
+          "timestamp": 1790582521369
+        }
+      ],
+      "exceptions": [],
+      "logs": [],
+      "eventTimestamp": 1790582521367,
+      "event": {
+        "scheduledTime": "2026-09-28T08:02:01.000Z"
+      }
+    }
+  ]
+}

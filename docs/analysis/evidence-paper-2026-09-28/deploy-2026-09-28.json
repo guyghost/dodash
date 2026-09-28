@@ -1,0 +1,114 @@
+{
+  "fetchedAt": "2026-09-28T07:50:24.441568+00:00",
+  "commit": "89021e3",
+  "workers": {
+    "dodash-paper-mcp-market-data": {
+      "deployment": {
+        "id": "df5e1ccb-e9e6-4e3e-a52a-583b30c0965d",
+        "created_on": "2026-09-28T07:48:37.155515Z",
+        "version_id": "b119c560-a2df-4aee-bcad-9b7f2c2103da"
+      },
+      "bindings": [
+        {
+          "name": "COINBASE_API_BASE_URL",
+          "type": "plain_text"
+        },
+        {
+          "name": "INTERNAL_SERVICE_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "MARKET_CACHE",
+          "type": "kv_namespace"
+        },
+        {
+          "name": "MARKET_CACHE_TTL_SECONDS",
+          "type": "plain_text"
+        }
+      ]
+    },
+    "dodash-paper-agent": {
+      "deployment": {
+        "id": "3a8939c9-1bc4-4684-ac60-9e88ac084290",
+        "created_on": "2026-09-28T07:48:54.074196Z",
+        "version_id": "a1da8135-e577-4d49-901b-f7cdf5c2c55d"
+      },
+      "bindings": [
+        {
+          "name": "CONTROL_API_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "HYPERLIQUID_PERP_TRADING_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "INTERNAL_SERVICE_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "LIVE_TRADING_ENABLED",
+          "type": "plain_text"
+        },
+        {
+          "name": "MARKET_DATA",
+          "service": "dodash-paper-mcp-market-data",
+          "type": "service"
+        },
+        {
+          "name": "TRADING_AGENT",
+          "type": "durable_object_namespace"
+        },
+        {
+          "dataset": "dodash_paper_trading",
+          "name": "TRADING_TELEMETRY",
+          "type": "analytics_engine"
+        }
+      ]
+    },
+    "dodash-paper-dashboard-api": {
+      "deployment": {
+        "id": "e080ac85-5f16-411b-a086-baedaafc26f2",
+        "created_on": "2026-09-28T07:49:09.48958Z",
+        "version_id": "153bc79e-8308-45fa-b6eb-caf992cab5e0"
+      },
+      "bindings": [
+        {
+          "name": "AGENT_SERVICE",
+          "service": "dodash-paper-agent",
+          "type": "service"
+        },
+        {
+          "name": "CONTROL_API_TOKEN",
+          "type": "secret_text"
+        },
+        {
+          "name": "DASHBOARD_ACCESS_TOKEN",
+          "type": "secret_text"
+        }
+      ]
+    },
+    "dodash-paper-dashboard": {
+      "deployment": {
+        "id": "d59b9fc4-3d9b-4786-a6d0-581ead64260a",
+        "created_on": "2026-09-28T07:49:26.328408Z",
+        "version_id": "d6c16575-557e-4943-a4bf-281bef884bea"
+      },
+      "bindings": [
+        {
+          "name": "ASSETS",
+          "type": "assets"
+        },
+        {
+          "name": "AUTH_RATE_LIMITER",
+          "type": "ratelimit"
+        },
+        {
+          "name": "DASHBOARD_API",
+          "service": "dodash-paper-dashboard-api",
+          "type": "service"
+        }
+      ]
+    }
+  }
+}
