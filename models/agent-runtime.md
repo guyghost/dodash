@@ -131,3 +131,27 @@ les statuts intermédiaires restent retryables. Pour le kill, un nouvel
 identifiant de liquidation n'est permis après recovery qu'après annulation
 confirmée des ordres précédents et un nouveau snapshot de compte prouvant le
 résiduel.
+
+## Amendement 2026-09-28 — retries planifiés, équité paper, grille et décision manquée
+
+Source : `docs/analysis/analyse-paper-session-2026-09-28.md` ;
+modèles `market-retry-schedule.md`, `daily-risk.md`, `cycle-schedule.md`.
+
+1. **Retries marché.** La règle « les phases `retrying*` ne déclenchent aucun
+   effet immédiatement » est désormais outillée : en `retryingMarketData`,
+   l'interpréteur consulte `artifacts.marketRetry` et `planMarketRetry`,
+   persiste l'échéance (checkpoint) avant de programmer une alarme ponctuelle
+   `retryTick`, et n'émet `RETRY_TIMER_ELAPSED` qu'à `now ≥ nextRetryAt`. Les
+   autres phases `retrying*` gardent leur comportement actuel (réémission au
+   même passage) : hors périmètre de cet amendement.
+2. **Équité paper du risque journalier.** `resolveCycleDailyRiskStart/Completion`
+   paper reçoivent la valorisation `projectPaperValuation` sur le dernier mark
+   accepté et délèguent à `resolvePaperDailyRisk` ; l'interpréteur ne ré-ancre
+   plus la fenêtre paper sur l'équité de réconciliation au coût.
+3. **Planification.** `ensureSchedule` résout `resolveCycleSchedule` : cron
+   aligné quand l'intervalle le permet, sinon intervalle ; l'état de
+   planification persisté porte `kind` et `expression`.
+4. **Décision manquée.** Après chaque cycle terminé, le runtime évalue la règle
+   de `cycle-schedule.md §3` et émet `decision.missed` au plus une fois par
+   bougie ; `lastMissedDecisionCandleClosedAt` est persisté (mono-produit et par
+   produit) et normalisé à `null` à la restauration.

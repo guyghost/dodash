@@ -171,4 +171,23 @@ describe("trading telemetry", () => {
     ).not.toThrow();
     expect(logger.error).toHaveBeenCalledOnce();
   });
+
+  it("projects decision.missed on the same positional layout (amendment 2026-09-28)", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    emitTradingTelemetry(
+      sink,
+      { ...event(), type: "decision.missed", outcome: "DECISION_WINDOW_MISSED", errorCode: "RATE_LIMITED" },
+      logger,
+    );
+    const point = sink.writeDataPoint.mock.calls[0]?.[0] as { blobs: readonly string[] };
+    expect(point.blobs.slice(0, 6)).toEqual([
+      "decision.missed",
+      "GRT-USD",
+      "live",
+      "waiting",
+      "DECISION_WINDOW_MISSED",
+      "RATE_LIMITED",
+    ]);
+  });
 });

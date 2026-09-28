@@ -1,4 +1,4 @@
-import { err, ok, type OrderIntent, type ProductId, type Result } from "@dodash/domain";
+import { err, ok, TIMEFRAME_MILLISECONDS, type OrderIntent, type ProductId, type Result } from "@dodash/domain";
 import { executePaperOrder } from "@dodash/paper-execution";
 import type { RiskDecision } from "@dodash/risk";
 import {
@@ -9,6 +9,9 @@ import {
   acceptPaperValuationMark,
   normalizePaperValuationMark,
   projectPaperValuation,
+  resolveCycleSchedule,
+  resolveDailyRiskWindow,
+  resolveMissedDecision,
   type ControlPermissions,
   type DashboardPnlHistoryResult,
   type DashboardPnlOrderRow,
@@ -97,6 +100,8 @@ import {
   INITIAL_AGENT_STATE,
   machineIsEnabled,
   portfolioIsEnabled,
+  paperValuationFor,
+  scheduleMatches,
   resolveCycleDailyRiskCompletion,
   resolveCycleDailyRiskStart,
   resolveCycleInvocation,
@@ -654,6 +659,34 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   }
 
   /**
+   * Alarme ponctuelle de retry marché (models/market-retry-schedule.md §3) :
+   * reprend uniquement un cycle en attente (`triggerAlarm = false`), jamais
+   * un nouveau cycle. Une alarme orpheline est un no-op.
+   */
+  async retryTick(): Promise<void> {
+    this.ensureTradingPersistenceSchema();
+    if (this.state.portfolioSession !== null) {
+      await this.runPortfolio(false);
+      return;
+    }
+    if (!this.state.enabled) return;
+    await this.runCurrent(false);
+  }
+
+  private async scheduleMarketRetry(
+    at: number,
+    attempt: number,
+    productId: ProductId | null,
+  ): Promise<void> {
+    await this.schedule(
+      new Date(at),
+      "retryTick",
+      { productId, attempt },
+      { idempotent: true },
+    );
+  }
+
+  /**
    * Contrat `/state` (dao #34) : état figé plus hiérarchie portefeuille
    * projetée à la lecture par le même seam pur que `/portfolio` (ST5).
    */
@@ -834,17 +867,19 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       identity.loadCycleId === null
         ? null
         : this.loadArtifacts(identity.loadCycleId);
-    const knownPrice = this.state.lastCycle?.marketPrice ?? null;
-    const startingEquity =
-      this.state.portfolio.cash +
-      this.state.portfolio.positionQuantity *
-        (knownPrice ?? this.state.portfolio.averagePrice);
+    // models/daily-risk.md §3 : équité marquée paper = valorisation datée sur
+    // le dernier mark accepté ; jamais averagePrice.
     const dailyRiskAtStart = resolveCycleDailyRiskStart(
       configuration.executionMode,
       this.state.dailyRiskWindow ?? null,
       this.state.dailyPnl,
       identity.triggeredAt,
-      startingEquity,
+      paperValuationFor(
+        configuration.executionMode,
+        this.state.portfolio,
+        this.state.lastPaperMark,
+        identity.triggeredAt,
+      ),
     );
     const result = await runTradingCycle({
       agentId: this.name,
@@ -862,20 +897,6 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       effects: this.createEffects(configuration),
     });
 
-    const lastPrice = result.artifacts?.market?.candles.at(-1)?.close ?? null;
-    const equity =
-      lastPrice === null
-        ? startingEquity
-        : result.portfolio.cash + result.portfolio.positionQuantity * lastPrice;
-    const dailyRisk = resolveCycleDailyRiskCompletion(
-      configuration.executionMode,
-      result.dailyRiskWindow,
-      result.dailyPnl,
-      identity.triggeredAt,
-      equity,
-    );
-    const executed = result.artifacts?.execution !== undefined;
-    const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
     const acceptedPaperMark: PaperValuationMark | null =
       configuration.executionMode === "paper"
         ? acceptPaperValuationMark(
@@ -883,6 +904,20 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
             this.state.lastPaperMark,
           )
         : null;
+    const dailyRisk = resolveCycleDailyRiskCompletion(
+      configuration.executionMode,
+      result.dailyRiskWindow,
+      result.dailyPnl,
+      identity.triggeredAt,
+      paperValuationFor(
+        configuration.executionMode,
+        result.portfolio,
+        acceptedPaperMark,
+        identity.triggeredAt,
+      ),
+    );
+    const executed = result.artifacts?.execution !== undefined;
+    const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
     this.setState({
       ...this.state,
       machine: result.machine,
@@ -950,6 +985,24 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       };
       emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);
       this.emitOperatorSideEffects("cycle", cycleEvent);
+
+      if (result.machine.context.outcome !== "RUNNING") {
+        const missed = resolveMissedDecision({
+          triggeredAt: identity.triggeredAt,
+          timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
+          maxMarketStalenessMs: configuration.maxMarketStalenessMs,
+          lastDecisionCandleClosedAt: result.machine.context.lastDecisionCandleClosedAt,
+          lastMissedDecisionCandleClosedAt: this.state.lastMissedDecisionCandleClosedAt ?? null,
+        });
+        if (missed.missed) {
+          this.setState({
+            ...this.state,
+            lastMissedDecisionCandleClosedAt: missed.decisionCandleClosedAt,
+            updatedAt: Date.now(),
+          });
+          this.emitMissedDecision(configuration, cycleEvent, missed.decisionCandleClosedAt);
+        }
+      }
     }
 
     if (!machineIsEnabled(result.machine.value)) {
@@ -1272,17 +1325,19 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       identity.loadCycleId === null
         ? null
         : this.loadArtifacts(identity.loadCycleId, productId);
-    const knownPrice = product.lastCycle?.marketPrice ?? null;
-    const startingEquity =
-      product.portfolio.cash +
-      product.portfolio.positionQuantity *
-        (knownPrice ?? product.portfolio.averagePrice);
+    // models/daily-risk.md §3 : équité marquée paper = valorisation datée sur
+    // le dernier mark accepté du produit ; jamais averagePrice.
     const dailyRiskAtStart = resolveCycleDailyRiskStart(
       configuration.executionMode,
       product.dailyRiskWindow ?? null,
       product.dailyPnl,
       identity.triggeredAt,
-      startingEquity,
+      paperValuationFor(
+        configuration.executionMode,
+        product.portfolio,
+        product.lastPaperMark,
+        identity.triggeredAt,
+      ),
     );
     const result = await runTradingCycle({
       agentId: this.name,
@@ -1300,24 +1355,34 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       effects: this.createProductEffects(configuration),
     });
 
-    const lastPrice = result.artifacts?.market?.candles.at(-1)?.close ?? null;
-    const equity =
-      lastPrice === null
-        ? startingEquity
-        : result.portfolio.cash + result.portfolio.positionQuantity * lastPrice;
+    const lastPaperMark = acceptPaperValuationMark(
+      result.artifacts?.market?.valuationMark,
+      product.lastPaperMark,
+    );
     const dailyRisk = resolveCycleDailyRiskCompletion(
       configuration.executionMode,
       result.dailyRiskWindow,
       result.dailyPnl,
       identity.triggeredAt,
-      equity,
+      paperValuationFor(
+        configuration.executionMode,
+        result.portfolio,
+        lastPaperMark,
+        identity.triggeredAt,
+      ),
     );
     const executed = result.artifacts?.execution !== undefined;
     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
-    const lastPaperMark = acceptPaperValuationMark(
-      result.artifacts?.market?.valuationMark,
-      product.lastPaperMark,
-    );
+    const missed =
+      result.artifacts !== null && result.machine.context.outcome !== "RUNNING"
+        ? resolveMissedDecision({
+            triggeredAt: identity.triggeredAt,
+            timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
+            maxMarketStalenessMs: configuration.maxMarketStalenessMs,
+            lastDecisionCandleClosedAt: result.machine.context.lastDecisionCandleClosedAt,
+            lastMissedDecisionCandleClosedAt: product.lastMissedDecisionCandleClosedAt ?? null,
+          })
+        : null;
     const updated: PortfolioProductRuntime = Object.freeze({
       machine: result.machine,
       portfolio: result.portfolio,
@@ -1329,6 +1394,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       lastPaperMark,
       previousIndicators: result.previousIndicators,
       lastCycle: lastCycle ?? product.lastCycle,
+      lastMissedDecisionCandleClosedAt:
+        missed?.missed === true
+          ? missed.decisionCandleClosedAt
+          : product.lastMissedDecisionCandleClosedAt ?? null,
     });
     const currentSession = this.state.portfolioSession;
     if (currentSession !== null) {
@@ -1400,6 +1469,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       };
       emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);
       this.emitOperatorSideEffects("cycle", cycleEvent);
+      if (missed?.missed === true) {
+        this.emitMissedDecision(configuration, cycleEvent, missed.decisionCandleClosedAt);
+      }
     }
   }
 
@@ -1423,6 +1495,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       // produit en cancellation ne la retire jamais (paper : rien à
       // liquider, le drain est porté par le portefeuille).
       removeIntervalSchedule: () => Promise.resolve(),
+      scheduleRetry: (at, attempt) => this.scheduleMarketRetry(at, attempt, productId),
       checkpoint: (artifacts) => this.checkpoint(artifacts, productId),
       persistMachine: async (nextMachine) =>
         this.persistProductMachine(productId, nextMachine),
@@ -1472,6 +1545,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       ensureIntervalSchedule: (intervalSeconds) =>
         this.ensureIntervalSchedule(intervalSeconds),
       removeIntervalSchedule: () => this.removeIntervalSchedule(),
+      scheduleRetry: (at, attempt) => this.scheduleMarketRetry(at, attempt, null),
       checkpoint: (artifacts) => this.checkpoint(artifacts),
       persistMachine: (nextMachine) => this.persistMachine(nextMachine),
       persistOrderIntent: (cycleId, intent) =>
@@ -1501,10 +1575,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         };
       },
       applyKilledAccount: (account) => {
-        const dailyRisk = resolveCycleDailyRiskCompletion(
-          "live",
+        // Live : la fenêtre réconciliée vient du compte réel (inchangé).
+        const dailyRisk = resolveDailyRiskWindow(
           this.state.dailyRiskWindow,
-          this.state.dailyPnl,
           account.observedAt,
           account.accountEquity,
         );
@@ -1519,20 +1592,67 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     });
   }
 
+  /**
+   * Planification des réveils (models/cycle-schedule.md §2) : grille cron
+   * alignée quand l'intervalle le permet, sinon intervalle. Un état legacy
+   * (sans `kind`) ou une résolution différente annule l'ancienne
+   * planification avant d'en créer une nouvelle ; une planification déjà
+   * conforme est réutilisée (jamais deux réveils pour la même instance).
+   */
   private async ensureIntervalSchedule(intervalSeconds: number) {
-    if (
-      this.state.schedule !== null &&
-      this.state.schedule.intervalSeconds !== intervalSeconds
-    ) {
-      await this.cancelSchedule(this.state.schedule.id);
+    const resolution = resolveCycleSchedule(intervalSeconds);
+    const current = this.state.schedule;
+    if (current !== null && scheduleMatches(current, resolution)) {
+      const existing = await this.getScheduleById(current.id);
+      if (existing !== undefined) return existing;
+    } else if (current !== null) {
+      await this.cancelSchedule(current.id);
     }
-    const schedule = await this.scheduleEvery(intervalSeconds, "scheduledTick");
+    const schedule =
+      resolution.kind === "cron"
+        ? await this.schedule(resolution.expression, "scheduledTick")
+        : await this.scheduleEvery(intervalSeconds, "scheduledTick");
     this.setState({
       ...this.state,
-      schedule: { id: schedule.id, intervalSeconds },
+      schedule: {
+        id: schedule.id,
+        intervalSeconds,
+        kind: resolution.kind,
+        ...(resolution.kind === "cron" ? { expression: resolution.expression } : {}),
+      },
       updatedAt: Date.now(),
     });
     return schedule;
+  }
+
+  /**
+   * Bougie de décision manquée (models/cycle-schedule.md §3) : projection
+   * pure après un cycle terminé ; émission télémétrie et notification une
+   * seule fois par bougie. Aucune transition n'en dépend.
+   */
+  private emitMissedDecision(
+    configuration: AgentConfiguration,
+    cycleEvent: TradingTelemetryEvent,
+    candleClosedAt: number,
+  ): void {
+    const event: TradingTelemetryEvent = {
+      ...cycleEvent,
+      type: "decision.missed",
+      timestamp: Date.now(),
+      outcome: "DECISION_WINDOW_MISSED",
+      valuationObservedAt: candleClosedAt,
+    };
+    console.warn(
+      JSON.stringify({
+        event: "decision_window_missed",
+        agentId: this.name,
+        productId: configuration.productId,
+        decisionCandleClosedAt: candleClosedAt,
+        timeframe: configuration.timeframe,
+      }),
+    );
+    emitTradingTelemetry(this.env.TRADING_TELEMETRY, event);
+    this.emitOperatorSideEffects("decision", event);
   }
 
   private async removeIntervalSchedule(): Promise<void> {

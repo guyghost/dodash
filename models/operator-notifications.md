@@ -89,3 +89,12 @@ n'est pas déployable.
 4. Aucun secret ni solde ne quitte le process dans le payload.
 5. Les seuils sont figés dans ce fichier avant implémentation ; le code ne
    contient aucune constante de seuil divergente.
+
+## Amendement 2026-09-28 — classe `DECISION_WINDOW_MISSED`
+
+| Classe | Source | Condition |
+| --- | --- | --- |
+| `DECISION_WINDOW_MISSED` | `decision.missed` | toujours (l'événement n'est émis qu'une fois par bougie manquée) |
+
+Payload identique (`class`, `outcome = DECISION_WINDOW_MISSED`, `errorCode` de la
+dernière erreur). Déduplication 60 s inchangée. Aucun seuil existant ne change.

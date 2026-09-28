@@ -160,6 +160,18 @@ describe("classifyOperatorNotifications", () => {
 		]);
 	});
 
+	it("decision.missed produit DECISION_WINDOW_MISSED (amendement 2026-09-28)", () => {
+		expect(
+			classifyOperatorNotifications({
+				kind: "decision",
+				outcome: "DECISION_WINDOW_MISSED",
+				errorCode: "RATE_LIMITED",
+				dailyPnl: 0,
+				otherExposureNotional: null,
+			}),
+		).toEqual(["DECISION_WINDOW_MISSED"]);
+	});
+
 	it("control FAILED produit uniquement CONTROL_FAILED", () => {
 		expect(
 			classifyOperatorNotifications({

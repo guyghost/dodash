@@ -60,3 +60,12 @@ alors que le contrat exige une marque acceptée. Le modèle demande une
 validation, une copie immuable avant persistance, et une nouvelle validation
 du précédent mark avant de le conserver. Cette correction reste une
 normalisation de mesure et ne modifie aucun choix ou événement XState.
+
+## Revue — amendement 2026-09-28
+
+Verdict : **APPROUVÉ**. Les quatre points sont des effets ou des projections ;
+aucune transition, garde ou événement de `tradingCycleMachine` n'est ajouté.
+Le seul champ de contexte machine lu en plus est `attempts.marketData`
+(existant). Les champs persistés ajoutés (`schedule.kind`, `schedule.expression`,
+`lastMissedDecisionCandleClosedAt`, `artifacts.marketRetry`) sont normalisés
+fail-closed à la restauration conformément à la règle « État durable ».

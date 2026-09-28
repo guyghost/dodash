@@ -185,6 +185,8 @@ export interface PortfolioProductRuntime {
   readonly lastPaperMark: PaperValuationMark | null;
   readonly previousIndicators: IndicatorSnapshot | null;
   readonly lastCycle: CycleSummary | null;
+  /** Dernière bougie de décision signalée manquée (models/cycle-schedule.md §3). */
+  readonly lastMissedDecisionCandleClosedAt: number | null;
 }
 
 export interface PortfolioSessionState {
@@ -268,6 +270,7 @@ export const initialProductRuntime = (
     lastPaperMark: null,
     previousIndicators: null,
     lastCycle: null,
+    lastMissedDecisionCandleClosedAt: null,
   });
 
 /** Exposition brute engagée d'un produit (notional), dernière connue. */
@@ -502,6 +505,11 @@ export const resolveRestoredPortfolioSession = (
       previousIndicators: runtime.previousIndicators ?? null,
       lastCycle: runtime.lastCycle ?? null,
       lastPaperMark: normalizePaperValuationMark(runtime.lastPaperMark),
+      lastMissedDecisionCandleClosedAt: isFiniteNumber(
+        (runtime as { lastMissedDecisionCandleClosedAt?: unknown }).lastMissedDecisionCandleClosedAt,
+      )
+        ? runtime.lastMissedDecisionCandleClosedAt
+        : null,
     });
   }
   if (Object.keys(rawProducts).length !== expectedProducts.length) {

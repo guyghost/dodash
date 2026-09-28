@@ -1,0 +1,114 @@
+{
+  "worker": "dodash-paper-agent",
+  "fetchedAt": "2026-09-28T06:29:44.604466+00:00",
+  "health": {
+    "httpStatus": 200,
+    "body": {
+      "status": "ok",
+      "service": "dodash-agent"
+    }
+  },
+  "deployments": {
+    "deployments": [
+      {
+        "id": "9156854c-b663-43d7-b0bb-df591d272077",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "guyghost@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "deployment"
+        },
+        "versions": [
+          {
+            "version_id": "322fe936-b6ca-4336-8047-6ec8f3ebf3f1",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-19T15:53:29.29562Z"
+      },
+      {
+        "id": "13294039-a5c3-431a-8c76-c9c11a244d86",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "guyghost@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "secret"
+        },
+        "versions": [
+          {
+            "version_id": "2c2ba318-00f5-456d-b66e-fcf5b635e134",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-04T16:40:06.786189Z"
+      },
+      {
+        "id": "63c1bb75-898c-4511-a92b-44adf6388a0e",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "guyghost@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "secret"
+        },
+        "versions": [
+          {
+            "version_id": "05b717ef-a154-453f-9b32-4eb9741dddcf",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-04T16:40:04.135393Z"
+      },
+      {
+        "id": "a28e33bc-3402-4b95-a833-9e4aa9bbcfc9",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "guyghost@gmail.com",
+        "annotations": {
+          "workers/message": "Automatic deployment on upload.",
+          "workers/triggered_by": "upload"
+        },
+        "versions": [
+          {
+            "version_id": "961335c9-847e-46a7-80fe-7369231bfda1",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-04T16:39:49.324691Z"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "name": "CONTROL_API_TOKEN",
+      "type": "secret_text"
+    },
+    {
+      "name": "HYPERLIQUID_PERP_TRADING_ENABLED",
+      "type": "plain_text"
+    },
+    {
+      "name": "INTERNAL_SERVICE_TOKEN",
+      "type": "secret_text"
+    },
+    {
+      "name": "LIVE_TRADING_ENABLED",
+      "type": "plain_text"
+    },
+    {
+      "name": "MARKET_DATA",
+      "service": "dodash-paper-mcp-market-data",
+      "type": "service"
+    },
+    {
+      "class_name": "TradingAgent",
+      "name": "TRADING_AGENT",
+      "namespace_id": "89fec95f1bed46eebae2a7975e4e6d6b",
+      "type": "durable_object_namespace"
+    },
+    {
+      "dataset": "dodash_paper_trading",
+      "name": "TRADING_TELEMETRY",
+      "type": "analytics_engine"
+    }
+  ]
+}

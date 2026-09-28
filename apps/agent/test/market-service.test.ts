@@ -144,6 +144,7 @@ describe("fetchMarketSnapshot", () => {
       "x".repeat(32),
       configuration(),
       120_000,
+      120_500,
     );
     expect(result).toEqual({
       ok: false,
@@ -187,6 +188,7 @@ describe("fetchMarketSnapshot", () => {
       "x".repeat(32),
       configuration(),
       120_000,
+      120_500,
     );
     expect(result).toEqual({
       ok: false,
@@ -210,6 +212,7 @@ describe("fetchMarketSnapshot", () => {
       "x".repeat(32),
       configuration(),
       120_000,
+      120_500,
     );
     expect(result).toEqual({
       ok: false,
@@ -219,5 +222,49 @@ describe("fetchMarketSnapshot", () => {
         retryable: true,
       },
     });
+  });
+
+  it("carries the upstream Retry-After as a diagnostic on RATE_LIMITED (effects.md 2026-09-28)", async () => {
+    const fetch = marketFetch(
+      new Response("{}", { status: 429, headers: { "retry-after": "9" } }),
+      tickerResponse(10),
+    );
+    const result = await fetchMarketSnapshot(
+      { fetch },
+      "x".repeat(32),
+      configuration(),
+      120_000,
+      120_500,
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        phase: "market-data",
+        code: "RATE_LIMITED",
+        retryable: true,
+        retryAfterMs: 9_000,
+      },
+    });
+  });
+
+  it("qualifies a retryable error as non retryable when no retry can finish before the decision deadline", async () => {
+    const fetch = marketFetch(
+      new Response("{}", { status: 429 }),
+      tickerResponse(10),
+    );
+    // ONE_MINUTE, fraîcheur 90 s : bougie de décision close à 120 s, échéance 210 s.
+    // now = 200 s ⇒ premier retry (≥ 60 s) après l'échéance.
+    const result = await fetchMarketSnapshot(
+      { fetch },
+      "x".repeat(32),
+      configuration(),
+      120_000,
+      200_000,
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: { phase: "market-data", code: "RATE_LIMITED", retryable: false },
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

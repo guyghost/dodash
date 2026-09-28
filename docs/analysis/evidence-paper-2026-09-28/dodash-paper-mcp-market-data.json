@@ -1,0 +1,67 @@
+{
+  "worker": "dodash-paper-mcp-market-data",
+  "fetchedAt": "2026-09-28T06:29:44.604466+00:00",
+  "health": {
+    "httpStatus": 200,
+    "body": {
+      "status": "ok",
+      "service": "dodash-mcp-market-data"
+    }
+  },
+  "deployments": {
+    "deployments": [
+      {
+        "id": "772003ba-1cfe-45c2-9b1e-671f0b5739fb",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "guyghost@gmail.com",
+        "annotations": {
+          "workers/triggered_by": "secret"
+        },
+        "versions": [
+          {
+            "version_id": "277ae21c-4542-40ba-b7d7-c26882b05435",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-04T16:39:31.814602Z"
+      },
+      {
+        "id": "218279f1-38ba-4d83-8a6c-3adaba4607e8",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "guyghost@gmail.com",
+        "annotations": {
+          "workers/message": "Automatic deployment on upload.",
+          "workers/triggered_by": "upload"
+        },
+        "versions": [
+          {
+            "version_id": "e6cbd77c-5767-4349-afb6-4d9f852f29f9",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-04T16:39:21.687952Z"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "name": "COINBASE_API_BASE_URL",
+      "type": "plain_text"
+    },
+    {
+      "name": "INTERNAL_SERVICE_TOKEN",
+      "type": "secret_text"
+    },
+    {
+      "name": "MARKET_CACHE",
+      "namespace_id": "abddec98934a40a4b4c85f8d00e5f055",
+      "type": "kv_namespace"
+    },
+    {
+      "name": "MARKET_CACHE_TTL_SECONDS",
+      "type": "plain_text"
+    }
+  ]
+}

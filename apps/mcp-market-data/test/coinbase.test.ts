@@ -1,19 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  CLOSED_WINDOW_CACHE_TTL_SECONDS,
   CoinbaseMarketData,
   type MarketCache,
 } from "../src/coinbase.js";
 
 class MemoryCache implements MarketCache {
   readonly values = new Map<string, string>();
+  readonly ttls = new Map<string, number>();
 
   async get(key: string): Promise<string | null> {
     return this.values.get(key) ?? null;
   }
 
-  async put(key: string, value: string): Promise<void> {
+  async put(
+    key: string,
+    value: string,
+    options?: { readonly expirationTtl: number },
+  ): Promise<void> {
     this.values.set(key, value);
+    if (options !== undefined) this.ttls.set(key, options.expirationTtl);
   }
 }
 
@@ -175,5 +182,56 @@ describe("CoinbaseMarketData", () => {
       observedAt: 180,
       cached: false,
     });
+  });
+});
+
+describe("CoinbaseMarketData cache policy (effects.md, amendement 2026-09-28)", () => {
+  it("caches a fully closed candle window for the immutable TTL", async () => {
+    const cache = new MemoryCache();
+    const { client } = createClient(Response.json(candleResponse), cache);
+    // now = 180 s ; end = 60 s ; ONE_MINUTE ⇒ la dernière chandelle clôt à 120 s ≤ now.
+    const result = await client.getCandles({
+      productId: "BTC-USD",
+      timeframe: "ONE_MINUTE",
+      limit: 1,
+      end: 60,
+    });
+    expect(result.ok).toBe(true);
+    expect([...cache.ttls.values()]).toEqual([CLOSED_WINDOW_CACHE_TTL_SECONDS]);
+    expect(CLOSED_WINDOW_CACHE_TTL_SECONDS).toBe(21_600);
+  });
+
+  it("keeps the short TTL when the window contains the open candle", async () => {
+    const cache = new MemoryCache();
+    const { client } = createClient(Response.json(candleResponse), cache);
+    // end = 180 s = now ⇒ la chandelle demandée n'est pas close.
+    await client.getCandles({
+      productId: "BTC-USD",
+      timeframe: "ONE_MINUTE",
+      limit: 2,
+      end: 180,
+    });
+    expect([...cache.ttls.values()]).toEqual([30]);
+  });
+
+  it("logs upstream rate limiting with its Retry-After (no secret, no body)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { client } = createClient(
+        new Response("rate limited", { status: 429, headers: { "retry-after": "12" } }),
+      );
+      await client.getTicker({ productId: "ETH-USD" });
+      const logged = warn.mock.calls
+        .map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
+        .find((entry) => entry.event === "coinbase_rate_limited");
+      expect(logged).toEqual({
+        event: "coinbase_rate_limited",
+        kind: "ticker",
+        productId: "ETH-USD",
+        retryAfterSeconds: 12,
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

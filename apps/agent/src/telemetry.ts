@@ -3,7 +3,9 @@ import type { WorkflowError } from "@dodash/models";
 export type TradingTelemetryEventType =
   | "cycle.completed"
   | "control.completed"
-  | "preflight.completed";
+  | "preflight.completed"
+  /** models/trading-telemetry.md, amendement 2026-09-28 : bougie de décision manquée. */
+  | "decision.missed";
 
 export interface TradingTelemetryEvent {
   readonly schemaVersion: 3;

@@ -66,6 +66,12 @@ export interface WorkflowError {
    * aucune garde, transition ou décision.
    */
   readonly detail?: string;
+  /**
+   * Délai `Retry-After` amont en millisecondes (amendement effects.md
+   * 2026-09-28). Champ de diagnostic consommé par le planificateur pur
+   * `planMarketRetry` ; aucune garde ni transition ne le lit.
+   */
+  readonly retryAfterMs?: number;
 }
 
 export interface ControlPermissions {

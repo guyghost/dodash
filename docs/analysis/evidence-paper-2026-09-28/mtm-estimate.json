@@ -1,0 +1,42 @@
+{
+  "assumptions": {
+    "feeBps": 6,
+    "fillDay": "2026-09-22",
+    "markAtFill": "close daily 2026-09-21 (derni\u00e8re bougie close)",
+    "source": "coinbase-daily-candles.json ticker"
+  },
+  "products": {
+    "BTC-USD": {
+      "quantity": 0.004321438613934857,
+      "estimatedFillPrice": 86612.26,
+      "estimatedNotional": 374.29,
+      "estimatedFee": 0.225,
+      "tickerAt": "2026-09-28T06:31:03.120715201Z",
+      "ticker": 83055.03,
+      "marketValue": 358.92,
+      "unrealizedPnl": -15.6,
+      "unrealizedPct": -4.16,
+      "priceChangeSinceFillPct": -4.11
+    },
+    "ETH-USD": {
+      "quantity": 0.12373277036713244,
+      "estimatedFillPrice": 2776.14,
+      "estimatedNotional": 343.5,
+      "estimatedFee": 0.206,
+      "tickerAt": "2026-09-28T06:31:01.461721727Z",
+      "ticker": 2647.39,
+      "marketValue": 327.57,
+      "unrealizedPnl": -16.14,
+      "unrealizedPct": -4.69,
+      "priceChangeSinceFillPct": -4.64
+    }
+  },
+  "portfolio": {
+    "initialCapital": 20000,
+    "estimatedEquity": 19968.27,
+    "estimatedUnrealizedPnl": -31.73,
+    "estimatedReturnPct": -0.159,
+    "exposureNotional": 686.49,
+    "exposurePctOfCapital": 3.43
+  }
+}

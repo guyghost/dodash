@@ -45,9 +45,21 @@ export interface AccountReconciliation {
   readonly otherExposureNotional: number;
 }
 
+/**
+ * Échéance de retry marché persistée (models/market-retry-schedule.md §3) :
+ * écrite par checkpoint avant la programmation de l'alarme ponctuelle.
+ */
+export interface MarketRetryCheckpoint {
+  readonly attempt: number;
+  readonly nextRetryAt: number;
+  readonly deadlineAt: number;
+  readonly errorCode: string | null;
+}
+
 export interface CycleArtifacts {
   readonly cycleId: string;
   readonly triggeredAt: number;
+  readonly marketRetry?: MarketRetryCheckpoint;
   readonly market?: MarketSnapshot;
   readonly indicators?: IndicatorSnapshot;
   readonly signals?: readonly Signal[];
@@ -136,6 +148,12 @@ export interface TradingCycleEffects {
   ensureSchedule(
     intervalSeconds: number,
   ): Promise<Result<{ readonly nextWakeAt: number }, WorkflowError>>;
+  /**
+   * Alarme ponctuelle de retry marché (models/market-retry-schedule.md §3),
+   * programmée après le checkpoint de l'échéance. Absente en test : le
+   * cycle reste en `retryingMarketData` jusqu'au prochain réveil.
+   */
+  scheduleRetry?(at: number, attempt: number): Promise<void>;
   checkpoint(artifacts: CycleArtifacts): Promise<Result<void, WorkflowError>>;
   persistMachine(machine: PersistedTradingMachine): Promise<void>;
   persistOrderIntent(
@@ -190,6 +208,8 @@ export interface RunTradingCycleInput {
   readonly cycleId: string;
   readonly triggerAlarm: boolean;
   readonly effects: TradingCycleEffects;
+  /** Horloge injectée pour les échéances de retry ; `Date.now` par défaut. */
+  readonly now?: () => number;
 }
 
 export interface RunTradingCycleResult {

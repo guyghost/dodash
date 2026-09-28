@@ -1,0 +1,873 @@
+{
+  "windowStart": "2026-09-19T15:54:47+00:00",
+  "windowEnd": "2026-09-28T06:29:44.604466+00:00",
+  "cycles": 412,
+  "span_days": 8.55,
+  "products": {
+    "BTC-USD": {
+      "cycles": 206,
+      "outcomes": {
+        "FAILED": 70,
+        "NO_ACTION": 132,
+        "ORDER_CONFIRMED": 1,
+        "RISK_REJECTED": 3
+      },
+      "errors_any": {
+        "STALE_MARKET_DATA": 51,
+        "NONE": 96,
+        "RATE_LIMITED": 59
+      },
+      "failed_by_error": {
+        "STALE_MARKET_DATA": 44,
+        "RATE_LIMITED": 26
+      },
+      "recovered_by_error": {
+        "STALE_MARKET_DATA": 7,
+        "RATE_LIMITED": 33
+      },
+      "first": "2026-09-19T16:54:58.495000+00:00",
+      "last": "2026-09-28T06:01:54.319000+00:00",
+      "latency_mean_ms": 846.9,
+      "latency_max_ms": 3007,
+      "max_gap_minutes": 60.27,
+      "equity_unique": [
+        10000
+      ],
+      "schema_v3_rows": 0,
+      "fills": [
+        {
+          "at": "2026-09-22T00:56:39.250000+00:00",
+          "outcome": "ORDER_CONFIRMED",
+          "position_after": 0.004321438613934857,
+          "daily_pnl": -0.2994166797561775
+        }
+      ],
+      "last_position": 0.004321438613934857,
+      "last_daily_pnl": 9.712763198103858
+    },
+    "ETH-USD": {
+      "cycles": 206,
+      "outcomes": {
+        "FAILED": 105,
+        "NO_ACTION": 100,
+        "ORDER_CONFIRMED": 1
+      },
+      "errors_any": {
+        "STALE_MARKET_DATA": 76,
+        "RATE_LIMITED": 59,
+        "NONE": 71
+      },
+      "failed_by_error": {
+        "STALE_MARKET_DATA": 62,
+        "RATE_LIMITED": 43
+      },
+      "recovered_by_error": {
+        "STALE_MARKET_DATA": 14,
+        "RATE_LIMITED": 16
+      },
+      "first": "2026-09-19T16:54:59.123000+00:00",
+      "last": "2026-09-28T06:01:54.874000+00:00",
+      "latency_mean_ms": 605.1,
+      "latency_max_ms": 1193,
+      "max_gap_minutes": 60.27,
+      "equity_unique": [
+        10000
+      ],
+      "schema_v3_rows": 0,
+      "fills": [
+        {
+          "at": "2026-09-22T00:56:40.035000+00:00",
+          "outcome": "ORDER_CONFIRMED",
+          "position_after": 0.12373277036713244,
+          "daily_pnl": -0.2747853738437698
+        }
+      ],
+      "last_position": 0.12373277036713244,
+      "last_daily_pnl": 10.179593641732936
+    }
+  },
+  "delta_since_2026_09_26": {
+    "BTC-USD": {
+      "cycles": 46,
+      "outcomes": {
+        "NO_ACTION": 24,
+        "FAILED": 21,
+        "RISK_REJECTED": 1
+      },
+      "errors_any": {
+        "RATE_LIMITED": 32,
+        "NONE": 9,
+        "STALE_MARKET_DATA": 5
+      },
+      "failed_by_error": {
+        "RATE_LIMITED": 16,
+        "STALE_MARKET_DATA": 5
+      },
+      "recovered_by_error": {
+        "RATE_LIMITED": 16
+      },
+      "first": "2026-09-26T09:00:25.160000+00:00",
+      "last": "2026-09-28T06:01:54.319000+00:00",
+      "latency_mean_ms": 919.5,
+      "latency_max_ms": 1972,
+      "max_gap_minutes": 60.16,
+      "equity_unique": [
+        10000
+      ],
+      "schema_v3_rows": 0,
+      "fills": [],
+      "last_position": 0.004321438613934857,
+      "last_daily_pnl": 9.712763198103858
+    },
+    "ETH-USD": {
+      "cycles": 46,
+      "outcomes": {
+        "FAILED": 33,
+        "NO_ACTION": 13
+      },
+      "errors_any": {
+        "RATE_LIMITED": 30,
+        "NONE": 3,
+        "STALE_MARKET_DATA": 13
+      },
+      "failed_by_error": {
+        "RATE_LIMITED": 28,
+        "STALE_MARKET_DATA": 5
+      },
+      "recovered_by_error": {
+        "RATE_LIMITED": 2,
+        "STALE_MARKET_DATA": 8
+      },
+      "first": "2026-09-26T09:00:25.763000+00:00",
+      "last": "2026-09-28T06:01:54.874000+00:00",
+      "latency_mean_ms": 713.8,
+      "latency_max_ms": 1136,
+      "max_gap_minutes": 60.15,
+      "equity_unique": [
+        10000
+      ],
+      "schema_v3_rows": 0,
+      "fills": [],
+      "last_position": 0.12373277036713244,
+      "last_daily_pnl": 10.179593641732936
+    }
+  },
+  "daily": {
+    "BTC-USD": {
+      "2026-09-19": {
+        "cycles": 8,
+        "failed": 1,
+        "evaluated": true,
+        "last_daily_pnl": 0,
+        "last_daily_pnl_non_failed": 0,
+        "errors": {
+          "STALE_MARKET_DATA": 8
+        }
+      },
+      "2026-09-20": {
+        "cycles": 24,
+        "failed": 6,
+        "evaluated": true,
+        "last_daily_pnl": 0,
+        "last_daily_pnl_non_failed": 0,
+        "errors": {
+          "STALE_MARKET_DATA": 5,
+          "RATE_LIMITED": 3
+        }
+      },
+      "2026-09-21": {
+        "cycles": 24,
+        "failed": 16,
+        "evaluated": true,
+        "last_daily_pnl": 0,
+        "last_daily_pnl_non_failed": 0,
+        "errors": {
+          "RATE_LIMITED": 1,
+          "STALE_MARKET_DATA": 16
+        }
+      },
+      "2026-09-22": {
+        "cycles": 24,
+        "failed": 7,
+        "evaluated": true,
+        "last_daily_pnl": -0.2994166797561775,
+        "last_daily_pnl_non_failed": -0.2994166797561775,
+        "errors": {
+          "RATE_LIMITED": 3,
+          "STALE_MARKET_DATA": 7
+        }
+      },
+      "2026-09-23": {
+        "cycles": 24,
+        "failed": 11,
+        "evaluated": true,
+        "last_daily_pnl": 0.2994166797561775,
+        "last_daily_pnl_non_failed": -1.7151357714847109,
+        "errors": {
+          "STALE_MARKET_DATA": 7,
+          "RATE_LIMITED": 4
+        }
+      },
+      "2026-09-24": {
+        "cycles": 24,
+        "failed": 3,
+        "evaluated": true,
+        "last_daily_pnl": -9.87844715456231,
+        "last_daily_pnl_non_failed": -9.87844715456231,
+        "errors": {
+          "RATE_LIMITED": 3,
+          "STALE_MARKET_DATA": 3
+        }
+      },
+      "2026-09-25": {
+        "cycles": 23,
+        "failed": 0,
+        "evaluated": true,
+        "last_daily_pnl": 0.030898286089723115,
+        "last_daily_pnl_non_failed": 0.030898286089723115,
+        "errors": {
+          "RATE_LIMITED": 4
+        }
+      },
+      "2026-09-26": {
+        "cycles": 24,
+        "failed": 11,
+        "evaluated": true,
+        "last_daily_pnl": 9.847548868472586,
+        "last_daily_pnl_non_failed": -1.2632861500114814,
+        "errors": {
+          "RATE_LIMITED": 22
+        }
+      },
+      "2026-09-27": {
+        "cycles": 24,
+        "failed": 10,
+        "evaluated": true,
+        "last_daily_pnl": -9.712763198103858,
+        "last_daily_pnl_non_failed": -9.712763198103858,
+        "errors": {
+          "RATE_LIMITED": 19
+        }
+      },
+      "2026-09-28": {
+        "cycles": 7,
+        "failed": 5,
+        "evaluated": true,
+        "last_daily_pnl": 9.712763198103858,
+        "last_daily_pnl_non_failed": 0.1965822425481747,
+        "errors": {
+          "STALE_MARKET_DATA": 5
+        }
+      }
+    },
+    "ETH-USD": {
+      "2026-09-19": {
+        "cycles": 8,
+        "failed": 2,
+        "evaluated": true,
+        "last_daily_pnl": 0,
+        "last_daily_pnl_non_failed": 0,
+        "errors": {
+          "STALE_MARKET_DATA": 8
+        }
+      },
+      "2026-09-20": {
+        "cycles": 24,
+        "failed": 13,
+        "evaluated": true,
+        "last_daily_pnl": 0,
+        "last_daily_pnl_non_failed": 0,
+        "errors": {
+          "RATE_LIMITED": 4,
+          "STALE_MARKET_DATA": 11
+        }
+      },
+      "2026-09-21": {
+        "cycles": 24,
+        "failed": 17,
+        "evaluated": true,
+        "last_daily_pnl": 0,
+        "last_daily_pnl_non_failed": 0,
+        "errors": {
+          "STALE_MARKET_DATA": 16,
+          "RATE_LIMITED": 3
+        }
+      },
+      "2026-09-22": {
+        "cycles": 24,
+        "failed": 11,
+        "evaluated": true,
+        "last_daily_pnl": -0.2747853738437698,
+        "last_daily_pnl_non_failed": -0.2747853738437698,
+        "errors": {
+          "RATE_LIMITED": 4,
+          "STALE_MARKET_DATA": 10
+        }
+      },
+      "2026-09-23": {
+        "cycles": 24,
+        "failed": 13,
+        "evaluated": true,
+        "last_daily_pnl": 0.2747853738437698,
+        "last_daily_pnl_non_failed": -2.746867502150053,
+        "errors": {
+          "RATE_LIMITED": 3,
+          "STALE_MARKET_DATA": 11
+        }
+      },
+      "2026-09-24": {
+        "cycles": 24,
+        "failed": 6,
+        "evaluated": true,
+        "last_daily_pnl": -11.621080416509358,
+        "last_daily_pnl_non_failed": -11.621080416509358,
+        "errors": {
+          "STALE_MARKET_DATA": 5,
+          "RATE_LIMITED": 5
+        }
+      },
+      "2026-09-25": {
+        "cycles": 23,
+        "failed": 5,
+        "evaluated": true,
+        "last_daily_pnl": 0.420691419247305,
+        "last_daily_pnl_non_failed": 0.420691419247305,
+        "errors": {
+          "STALE_MARKET_DATA": 2,
+          "RATE_LIMITED": 4
+        }
+      },
+      "2026-09-26": {
+        "cycles": 24,
+        "failed": 17,
+        "evaluated": true,
+        "last_daily_pnl": 11.200388997262053,
+        "last_daily_pnl_non_failed": 0.5097790139134304,
+        "errors": {
+          "RATE_LIMITED": 20
+        }
+      },
+      "2026-09-27": {
+        "cycles": 24,
+        "failed": 16,
+        "evaluated": true,
+        "last_daily_pnl": -10.179593641732936,
+        "last_daily_pnl_non_failed": -10.179593641732936,
+        "errors": {
+          "RATE_LIMITED": 16,
+          "STALE_MARKET_DATA": 8
+        }
+      },
+      "2026-09-28": {
+        "cycles": 7,
+        "failed": 5,
+        "evaluated": true,
+        "last_daily_pnl": 10.179593641732936,
+        "last_daily_pnl_non_failed": -0.9032492236801772,
+        "errors": {
+          "STALE_MARKET_DATA": 5
+        }
+      }
+    }
+  },
+  "delta_total": {
+    "cycles": 92,
+    "outcomes": {
+      "NO_ACTION": 37,
+      "FAILED": 54,
+      "RISK_REJECTED": 1
+    },
+    "errors_any": {
+      "RATE_LIMITED": 62,
+      "NONE": 12,
+      "STALE_MARKET_DATA": 18
+    },
+    "failed_by_error": {
+      "RATE_LIMITED": 44,
+      "STALE_MARKET_DATA": 10
+    },
+    "recovered_by_error": {
+      "RATE_LIMITED": 18,
+      "STALE_MARKET_DATA": 8
+    },
+    "first": "2026-09-26T09:00:25.160000+00:00",
+    "last": "2026-09-28T06:01:54.874000+00:00",
+    "latency_mean_ms": 816.7,
+    "latency_max_ms": 1972,
+    "max_gap_minutes": 60.14,
+    "equity_unique": [
+      10000
+    ],
+    "schema_v3_rows": 0,
+    "fills": [],
+    "last_position": 0.12373277036713244,
+    "last_daily_pnl": 10.179593641732936
+  },
+  "errors_by_utc_hour": {
+    "RATE_LIMITED": {
+      "0": 6,
+      "1": 4,
+      "2": 5,
+      "3": 4,
+      "4": 4,
+      "5": 6,
+      "6": 7,
+      "7": 3,
+      "8": 2,
+      "9": 5,
+      "10": 3,
+      "11": 4,
+      "12": 6,
+      "13": 7,
+      "14": 6,
+      "15": 5,
+      "16": 8,
+      "17": 8,
+      "18": 5,
+      "19": 8,
+      "20": 3,
+      "21": 2,
+      "22": 4,
+      "23": 3
+    },
+    "STALE_MARKET_DATA": {
+      "0": 1,
+      "1": 1,
+      "2": 5,
+      "3": 5,
+      "4": 8,
+      "5": 4,
+      "6": 5,
+      "7": 5,
+      "8": 5,
+      "9": 4,
+      "10": 8,
+      "11": 7,
+      "12": 6,
+      "13": 4,
+      "14": 5,
+      "15": 5,
+      "16": 4,
+      "17": 5,
+      "18": 6,
+      "19": 6,
+      "20": 7,
+      "21": 7,
+      "22": 7,
+      "23": 7
+    }
+  },
+  "daily_decision_coverage": {
+    "BTC-USD": {
+      "2026-09-19": {
+        "full_day": false,
+        "decided_at": null,
+        "decision": "NONE",
+        "slots_00_01": []
+      },
+      "2026-09-20": {
+        "full_day": true,
+        "decided_at": "2026-09-20T00:55:25.838000+00:00",
+        "decision": "NO_ACTION/NONE",
+        "slots_00_01": [
+          [
+            "00:55",
+            "NO_ACTION",
+            "NONE"
+          ],
+          [
+            "01:55",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-21": {
+        "full_day": true,
+        "decided_at": "2026-09-21T00:55:49.796000+00:00",
+        "decision": "NO_ACTION/NONE",
+        "slots_00_01": [
+          [
+            "00:55",
+            "NO_ACTION",
+            "NONE"
+          ],
+          [
+            "01:55",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-22": {
+        "full_day": true,
+        "decided_at": "2026-09-22T00:56:39.250000+00:00",
+        "decision": "ORDER_CONFIRMED/RATE_LIMITED",
+        "slots_00_01": [
+          [
+            "00:56",
+            "ORDER_CONFIRMED",
+            "RATE_LIMITED"
+          ],
+          [
+            "01:56",
+            "FAILED",
+            "STALE_MARKET_DATA"
+          ]
+        ]
+      },
+      "2026-09-23": {
+        "full_day": true,
+        "decided_at": "2026-09-23T00:57:36.889000+00:00",
+        "decision": "RISK_REJECTED/NONE",
+        "slots_00_01": [
+          [
+            "00:57",
+            "RISK_REJECTED",
+            "NONE"
+          ],
+          [
+            "01:57",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-24": {
+        "full_day": true,
+        "decided_at": "2026-09-24T00:58:28.720000+00:00",
+        "decision": "NO_ACTION/NONE",
+        "slots_00_01": [
+          [
+            "00:58",
+            "NO_ACTION",
+            "NONE"
+          ],
+          [
+            "01:58",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-25": {
+        "full_day": true,
+        "decided_at": "2026-09-25T00:59:23.686000+00:00",
+        "decision": "RISK_REJECTED/NONE",
+        "slots_00_01": [
+          [
+            "00:59",
+            "RISK_REJECTED",
+            "NONE"
+          ],
+          [
+            "01:59",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-26": {
+        "full_day": true,
+        "decided_at": "2026-09-26T01:00:14.131000+00:00",
+        "decision": "NO_ACTION/RATE_LIMITED",
+        "slots_00_01": [
+          [
+            "00:00",
+            "FAILED",
+            "RATE_LIMITED"
+          ],
+          [
+            "01:00",
+            "NO_ACTION",
+            "RATE_LIMITED"
+          ]
+        ]
+      },
+      "2026-09-27": {
+        "full_day": true,
+        "decided_at": "2026-09-27T01:00:47.329000+00:00",
+        "decision": "NO_ACTION/RATE_LIMITED",
+        "slots_00_01": [
+          [
+            "00:00",
+            "FAILED",
+            "RATE_LIMITED"
+          ],
+          [
+            "01:00",
+            "NO_ACTION",
+            "RATE_LIMITED"
+          ]
+        ]
+      },
+      "2026-09-28": {
+        "full_day": true,
+        "decided_at": "2026-09-28T00:01:35.896000+00:00",
+        "decision": "RISK_REJECTED/NONE",
+        "slots_00_01": [
+          [
+            "00:01",
+            "RISK_REJECTED",
+            "NONE"
+          ],
+          [
+            "01:01",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      }
+    },
+    "ETH-USD": {
+      "2026-09-19": {
+        "full_day": false,
+        "decided_at": null,
+        "decision": "NONE",
+        "slots_00_01": []
+      },
+      "2026-09-20": {
+        "full_day": true,
+        "decided_at": "2026-09-20T00:55:26.595000+00:00",
+        "decision": "NO_ACTION/RATE_LIMITED",
+        "slots_00_01": [
+          [
+            "00:55",
+            "NO_ACTION",
+            "RATE_LIMITED"
+          ],
+          [
+            "01:55",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-21": {
+        "full_day": true,
+        "decided_at": "2026-09-21T01:55:51.227000+00:00",
+        "decision": "NO_ACTION/NONE",
+        "slots_00_01": [
+          [
+            "00:55",
+            "FAILED",
+            "STALE_MARKET_DATA"
+          ],
+          [
+            "01:55",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-22": {
+        "full_day": true,
+        "decided_at": "2026-09-22T00:56:40.035000+00:00",
+        "decision": "ORDER_CONFIRMED/NONE",
+        "slots_00_01": [
+          [
+            "00:56",
+            "ORDER_CONFIRMED",
+            "NONE"
+          ],
+          [
+            "01:56",
+            "NO_ACTION",
+            "RATE_LIMITED"
+          ]
+        ]
+      },
+      "2026-09-23": {
+        "full_day": true,
+        "decided_at": "2026-09-23T00:57:37.983000+00:00",
+        "decision": "NO_ACTION/RATE_LIMITED",
+        "slots_00_01": [
+          [
+            "00:57",
+            "NO_ACTION",
+            "RATE_LIMITED"
+          ],
+          [
+            "01:57",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-24": {
+        "full_day": true,
+        "decided_at": "2026-09-24T00:58:29.332000+00:00",
+        "decision": "NO_ACTION/NONE",
+        "slots_00_01": [
+          [
+            "00:58",
+            "NO_ACTION",
+            "NONE"
+          ],
+          [
+            "01:58",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-25": {
+        "full_day": true,
+        "decided_at": "2026-09-25T00:59:24.161000+00:00",
+        "decision": "NO_ACTION/NONE",
+        "slots_00_01": [
+          [
+            "00:59",
+            "NO_ACTION",
+            "NONE"
+          ],
+          [
+            "01:59",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-26": {
+        "full_day": true,
+        "decided_at": "2026-09-26T00:00:13.356000+00:00",
+        "decision": "NO_ACTION/NONE",
+        "slots_00_01": [
+          [
+            "00:00",
+            "NO_ACTION",
+            "NONE"
+          ],
+          [
+            "01:00",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      },
+      "2026-09-27": {
+        "full_day": true,
+        "decided_at": null,
+        "decision": "NONE",
+        "slots_00_01": [
+          [
+            "00:00",
+            "FAILED",
+            "RATE_LIMITED"
+          ],
+          [
+            "01:00",
+            "FAILED",
+            "RATE_LIMITED"
+          ]
+        ]
+      },
+      "2026-09-28": {
+        "full_day": true,
+        "decided_at": "2026-09-28T00:01:36.585000+00:00",
+        "decision": "NO_ACTION/NONE",
+        "slots_00_01": [
+          [
+            "00:01",
+            "NO_ACTION",
+            "NONE"
+          ],
+          [
+            "01:01",
+            "NO_ACTION",
+            "NONE"
+          ]
+        ]
+      }
+    }
+  },
+  "daily_decision_coverage_totals": {
+    "full_product_days": 18,
+    "decided_full_product_days": 17,
+    "lost": [
+      [
+        "ETH-USD",
+        "2026-09-27"
+      ]
+    ]
+  },
+  "rate_limited_cycles_by_day": {
+    "2026-09-20": 7,
+    "2026-09-21": 4,
+    "2026-09-22": 7,
+    "2026-09-23": 7,
+    "2026-09-24": 8,
+    "2026-09-25": 8,
+    "2026-09-26": 42,
+    "2026-09-27": 35
+  },
+  "rate_limited_longest_hourly_streaks": [
+    {
+      "from": "2026-09-25T19:00:00+00:00",
+      "to": "2026-09-26T20:00:00+00:00",
+      "hours": 26
+    },
+    {
+      "from": "2026-09-27T09:00:00+00:00",
+      "to": "2026-09-27T19:00:00+00:00",
+      "hours": 11
+    },
+    {
+      "from": "2026-09-26T22:00:00+00:00",
+      "to": "2026-09-27T07:00:00+00:00",
+      "hours": 10
+    }
+  ],
+  "latency_by_outcome_error": {
+    "FAILED/RATE_LIMITED": {
+      "n": 69,
+      "mean_ms": 761,
+      "max_ms": 2415
+    },
+    "FAILED/STALE_MARKET_DATA": {
+      "n": 106,
+      "mean_ms": 799,
+      "max_ms": 2391
+    },
+    "NO_ACTION/NONE": {
+      "n": 163,
+      "mean_ms": 588,
+      "max_ms": 3007
+    },
+    "NO_ACTION/RATE_LIMITED": {
+      "n": 48,
+      "mean_ms": 928,
+      "max_ms": 1764
+    },
+    "NO_ACTION/STALE_MARKET_DATA": {
+      "n": 21,
+      "mean_ms": 874,
+      "max_ms": 2011
+    },
+    "ORDER_CONFIRMED/NONE": {
+      "n": 1,
+      "mean_ms": 785,
+      "max_ms": 785
+    },
+    "ORDER_CONFIRMED/RATE_LIMITED": {
+      "n": 1,
+      "mean_ms": 906,
+      "max_ms": 906
+    },
+    "RISK_REJECTED/NONE": {
+      "n": 3,
+      "mean_ms": 501,
+      "max_ms": 581
+    }
+  },
+  "daily_window_opened_on_cost_basis": [
+    [
+      "BTC-USD",
+      "2026-09-27T00:00:46.135000+00:00"
+    ],
+    [
+      "ETH-USD",
+      "2026-09-27T00:00:46.819000+00:00"
+    ]
+  ]
+}

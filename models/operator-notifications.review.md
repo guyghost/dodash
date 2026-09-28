@@ -36,3 +36,7 @@ Risques résiduels acceptés :
   notifications sur des cycles en échec en boucle) est pire.
 
 Le modèle est prêt pour l'implémentation.
+
+## Revue — amendement 2026-09-28
+
+Approuvé : classe additive, source d'événement dédiée, aucun seuil modifié.
