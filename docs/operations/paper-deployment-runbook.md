@@ -315,3 +315,15 @@ Attendu : `blob1 = cycle.completed`, `blob8 ∈ {fresh, stale}` après le premie
 snapshot accepté, `double4` ≠ 10 000 (équité au mark), réveils à `HH:01`.
 Le segment de campagne #36ter commence au premier cycle `schemaVersion 3`
 observé ; les fenêtres #36 et #36bis restent archivées telles quelles.
+
+Constat au premier cycle aligné (AE, capture 09:04 UTC,
+`evidence-paper-2026-09-28/first-aligned-cycle-2026-09-28.json`) : deux
+cycles `cycle.completed` à **09:01:00 et 09:01:01 UTC** (grille respectée),
+`schemaVersion 3` (blob8–10 renseignés), BTC-USD `FAILED/RATE_LIMITED` en un
+seul appel (échéance de décision passée ⇒ non retryable, 435 ms), ETH-USD
+`FAILED/STALE_MARKET_DATA` (divergence ticker, #56). Aucun snapshot accepté
+⇒ `blob8 = unavailable`, `double4 = 0` avec `double10 = 0` (équité absente,
+pas 10 000 au coût), `dailyPnl` porté inchangé (9,71 / 10,18 hérités du
+segment précédent) jusqu'au premier mark accepté. Attendu au premier fetch
+réussi : `blob8 ∈ {fresh, stale}`, `double4` ≠ 10 000. À revérifier à 10:01 UTC.
+
