@@ -326,4 +326,13 @@ seul appel (échéance de décision passée ⇒ non retryable, 435 ms), ETH-USD
 pas 10 000 au coût), `dailyPnl` porté inchangé (9,71 / 10,18 hérités du
 segment précédent) jusqu'au premier mark accepté. Attendu au premier fetch
 réussi : `blob8 ∈ {fresh, stale}`, `double4` ≠ 10 000. À revérifier à 10:01 UTC.
+Second constat (10:04 UTC, `aligned-cycles-2026-09-28.json`) : cycle de
+**10:01:00/10:01:01 UTC** identique — BTC-USD `RATE_LIMITED` (445 ms, un seul
+appel), ETH-USD `STALE_MARKET_DATA` (ticker à plus de 100 bps du close daily
+84 462 / 2 688 : baisse intrajournalière d'environ 1,6 %). Toujours aucun
+snapshot accepté : `blob8 = unavailable`, équité absente, `dailyPnl` porté.
+Causes externes connues (quota Coinbase, garde #56) ; aucune action Cloudflare.
+Le premier mark accepté est attendu au plus tard au cycle de 00:01 UTC du
+29-09 si le ticker revient sous 100 bps du nouveau close ; à contrôler par la
+requête AE ci-dessus.
 
