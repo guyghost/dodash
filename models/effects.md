@@ -66,3 +66,18 @@ L’Agent conserve un état synchronisé compact. Les cycles, intentions, ordres
 - `scheduleEvery` est idempotent par instance `(paire × stratégie)`.
 - Le kill switch et les permissions passent par des méthodes RPC typées, qui envoient ensuite un événement au modèle.
 - Les clients ne modifient jamais directement l’état synchronisé de la machine.
+
+## Amendement 2026-09-28 — cache immuable, `Retry-After`, retryabilité à l'échéance
+
+- **Cache des chandelles closes.** Quand la fenêtre demandée est entièrement
+  close (`(end + D) ≤ now`), le snapshot est immuable : TTL
+  `CLOSED_WINDOW_CACHE_TTL_SECONDS = 21 600`. La règle « TTL inférieur à la
+  granularité » ne s'applique qu'aux fenêtres contenant la chandelle en cours.
+  La clé contient toujours les bornes : aucun mélange de fenêtres.
+- **`Retry-After`.** Le Worker marché journalise `coinbase_rate_limited`
+  (`kind`, `productId`, `retryAfterSeconds`) et renvoie l'en-tête `Retry-After`
+  sur ses réponses 429 internes quand Coinbase l'a fourni. L'agent le porte
+  dans `WorkflowError.retryAfterMs` (diagnostic optionnel ; aucune garde ne le lit).
+- **Retryabilité à l'échéance.** L'effet marché qualifie `retryable: false`
+  toute erreur retryable dont le premier retry planifié (`market-retry-schedule.md`)
+  ne pourrait aboutir avant `deadlineAt` : classification d'adapter, pas décision.

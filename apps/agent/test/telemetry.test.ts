@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   brokerRejectionCodeOf,
   emitTradingTelemetry,
+  projectMissedDecisionTelemetry,
   type TradingTelemetryEvent,
 } from "../src/telemetry.js";
 
@@ -170,5 +171,52 @@ describe("trading telemetry", () => {
       ),
     ).not.toThrow();
     expect(logger.error).toHaveBeenCalledOnce();
+  });
+
+  it.each(["unavailable", "fresh"] as const)(
+    "preserves %s valuation metadata and AE presence when projecting a missed decision",
+    (quality) => {
+      const cycleEvent: TradingTelemetryEvent = {
+        ...event(),
+        executionMode: "paper",
+        valuationQuality: quality,
+        valuationPriceSource: quality === "fresh" ? "COINBASE_CANDLE_CLOSE" : "NONE",
+        valuationPrice: quality === "fresh" ? 12 : null,
+        valuationObservedAt: quality === "fresh" ? 90 : null,
+        valuationAgeMs: quality === "fresh" ? 10 : null,
+      };
+      const missed = projectMissedDecisionTelemetry(cycleEvent, 200);
+      expect(missed).toEqual({
+        ...cycleEvent,
+        type: "decision.missed",
+        timestamp: 200,
+        outcome: "DECISION_WINDOW_MISSED",
+      });
+      const sink = { writeDataPoint: vi.fn() };
+      const logger = { log: vi.fn(), error: vi.fn() };
+      emitTradingTelemetry(sink, cycleEvent, logger);
+      emitTradingTelemetry(sink, missed, logger);
+      const points = sink.writeDataPoint.mock.calls.map(([point]) => point);
+      expect(points[1].doubles.slice(1)).toEqual(points[0].doubles.slice(1));
+    },
+  );
+
+  it("projects decision.missed on the same positional layout (amendment 2026-09-28)", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    emitTradingTelemetry(
+      sink,
+      { ...event(), type: "decision.missed", outcome: "DECISION_WINDOW_MISSED", errorCode: "RATE_LIMITED" },
+      logger,
+    );
+    const point = sink.writeDataPoint.mock.calls[0]?.[0] as { blobs: readonly string[] };
+    expect(point.blobs.slice(0, 6)).toEqual([
+      "decision.missed",
+      "GRT-USD",
+      "live",
+      "waiting",
+      "DECISION_WINDOW_MISSED",
+      "RATE_LIMITED",
+    ]);
   });
 });

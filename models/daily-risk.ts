@@ -1,3 +1,5 @@
+import type { PaperValuationResult } from "./paper-valuation.js";
+
 const DAY_MS = 86_400_000;
 
 export interface DailyRiskWindow {
@@ -30,4 +32,30 @@ export const resolveDailyRiskWindow = (
     window,
     dailyPnl: markedEquity - window.openingEquity,
   });
+};
+
+export interface PaperDailyRiskState {
+  readonly window: DailyRiskWindow | null;
+  readonly dailyPnl: number;
+}
+
+/**
+ * Paper daily-risk source (models/daily-risk.md §3, 2026-09-28 amendment).
+ *
+ * The marked equity comes from `projectPaperValuation` on the last accepted,
+ * dated mark. A numeric equity (fresh or stale mark, or flat portfolio)
+ * resolves the UTC window through `resolveDailyRiskWindow`. An unavailable
+ * equity (open position without any mark) carries the current window and
+ * dailyPnl unchanged: a window never opens on acquisition cost.
+ */
+export const resolvePaperDailyRisk = (
+  current: DailyRiskWindow | null,
+  currentDailyPnl: number,
+  now: number,
+  valuation: PaperValuationResult,
+): PaperDailyRiskState => {
+  if (!valuation.ok || valuation.value.equity === null) {
+    return Object.freeze({ window: current, dailyPnl: currentDailyPnl });
+  }
+  return resolveDailyRiskWindow(current, now, valuation.value.equity);
 };

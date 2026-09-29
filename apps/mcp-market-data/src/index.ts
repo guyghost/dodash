@@ -14,11 +14,25 @@ interface MarketDataEnv extends Env {
   readonly INTERNAL_SERVICE_TOKEN: string;
 }
 
-const json = (body: unknown, status = 200): Response =>
+const json = (
+  body: unknown,
+  status = 200,
+  extraHeaders: Readonly<Record<string, string>> = {},
+): Response =>
   Response.json(body, {
     status,
-    headers: { "cache-control": "no-store" },
+    headers: { "cache-control": "no-store", ...extraHeaders },
   });
+
+/** Réponse d'erreur interne ; propage `Retry-After` amont sur 429 (effects.md). */
+const marketErrorResponse = (error: MarketDataError): Response =>
+  json(
+    { error },
+    marketErrorStatus(error),
+    error.code === "RATE_LIMITED" && error.retryAfterSeconds !== undefined
+      ? { "retry-after": String(error.retryAfterSeconds) }
+      : {},
+  );
 
 const constantTimeEqual = (left: string, right: string): boolean => {
   const encoder = new TextEncoder();
@@ -94,17 +108,13 @@ const handleInternalRequest = async (
     const parsed = candleRequestSchema.safeParse(body);
     if (!parsed.success) return json({ error: { code: "INVALID_REQUEST" } }, 400);
     const result = await market.getCandles(parsed.data);
-    return result.ok
-      ? json(result.value)
-      : json({ error: result.error }, marketErrorStatus(result.error));
+    return result.ok ? json(result.value) : marketErrorResponse(result.error);
   }
 
   const parsed = tickerRequestSchema.safeParse(body);
   if (!parsed.success) return json({ error: { code: "INVALID_REQUEST" } }, 400);
   const result = await market.getTicker(parsed.data);
-  return result.ok
-    ? json(result.value)
-    : json({ error: result.error }, marketErrorStatus(result.error));
+  return result.ok ? json(result.value) : marketErrorResponse(result.error);
 };
 
 export const handleWorkerRequest = async (

@@ -9,7 +9,7 @@ import {
   type ProductId,
   type Result,
 } from "@dodash/domain";
-import type { WorkflowError } from "@dodash/models";
+import { planMarketRetry, type WorkflowError } from "@dodash/models";
 import { z } from "zod";
 
 import { readBoundedJson } from "./bounded-json.js";
@@ -58,12 +58,55 @@ const error = (
 // models/effects.md : classification fermée des réponses non-OK du binding
 // marché — un refus d'authentification (401/403, secret partagé incorrect)
 // n'est jamais une panne réseau et n'appelle aucun retry.
-const responseError = (status: number): WorkflowError => {
+const parseRetryAfterMs = (response: Response): number | undefined => {
+  const raw = response.headers.get("retry-after");
+  if (raw === null) return undefined;
+  const seconds = Number(raw);
+  return Number.isSafeInteger(seconds) && seconds >= 0 ? seconds * 1_000 : undefined;
+};
+
+const responseError = (response: Response): WorkflowError => {
+  const status = response.status;
   if (status === 401 || status === 403) {
     return error("AUTHENTICATION_FAILURE", false);
   }
-  if (status === 429) return error("RATE_LIMITED", true);
+  if (status === 429) {
+    // effects.md (amendement 2026-09-28) : `Retry-After` amont porté en
+    // diagnostic ; aucune garde ne le lit.
+    const retryAfterMs = parseRetryAfterMs(response);
+    return retryAfterMs === undefined
+      ? error("RATE_LIMITED", true)
+      : { ...error("RATE_LIMITED", true), retryAfterMs };
+  }
   return error("NETWORK_UNAVAILABLE", status >= 500);
+};
+
+/**
+ * Retryabilité à l'échéance (effects.md, amendement 2026-09-28) : une erreur
+ * retryable dont le premier retry planifié ne pourrait aboutir avant la fin de
+ * la fenêtre de fraîcheur de la bougie de décision est qualifiée non
+ * retryable. Classification d'adapter ; la machine décide ensuite.
+ */
+export const qualifyMarketErrorRetryability = (
+  workflowError: WorkflowError,
+  configuration: AgentConfiguration,
+  triggeredAt: number,
+  now: number,
+): WorkflowError => {
+  if (!workflowError.retryable) return workflowError;
+  const plan = planMarketRetry({
+    attempt: 0,
+    retryLimit: 1,
+    retryable: true,
+    retryAfterMs: workflowError.retryAfterMs ?? null,
+    now,
+    triggeredAt,
+    timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
+    maxMarketStalenessMs: configuration.maxMarketStalenessMs,
+  });
+  return plan.kind === "exhausted" && plan.reason === "DEADLINE"
+    ? { ...workflowError, retryable: false }
+    : workflowError;
 };
 
 const fetchTickerPrice = async (
@@ -99,7 +142,7 @@ const fetchTickerPrice = async (
       }),
     );
     await response.body?.cancel().catch(() => undefined);
-    return err(responseError(response.status));
+    return err(responseError(response));
   }
 
   try {
@@ -119,6 +162,24 @@ export interface MarketService {
 }
 
 export const fetchMarketSnapshot = async (
+  service: MarketService,
+  internalToken: string,
+  configuration: AgentConfiguration,
+  triggeredAt: number,
+  now: number = Date.now(),
+): Promise<Result<MarketSnapshot, WorkflowError>> => {
+  const result = await fetchMarketSnapshotUnqualified(
+    service,
+    internalToken,
+    configuration,
+    triggeredAt,
+  );
+  return result.ok
+    ? result
+    : err(qualifyMarketErrorRetryability(result.error, configuration, triggeredAt, now));
+};
+
+const fetchMarketSnapshotUnqualified = async (
   service: MarketService,
   internalToken: string,
   configuration: AgentConfiguration,
@@ -164,7 +225,7 @@ export const fetchMarketSnapshot = async (
       }),
     );
     await response.body?.cancel().catch(() => undefined);
-    return err(responseError(response.status));
+    return err(responseError(response));
   }
 
   try {

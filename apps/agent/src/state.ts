@@ -2,8 +2,9 @@ import type { PaperPortfolio } from "@dodash/paper-execution";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 import {
   projectPaperValuation,
-  resolveDailyRiskWindow,
+  resolvePaperDailyRisk,
   type CycleOutcome,
+  type CycleScheduleResolution,
   type DailyRiskWindow,
   type DashboardPortfolioSummaryResult,
   type PaperValuationMark,
@@ -22,7 +23,19 @@ import {
 export interface AgentScheduleState {
   readonly id: string;
   readonly intervalSeconds: number;
+  /** models/cycle-schedule.md §2 ; absent sur un état legacy ⇒ `interval`. */
+  readonly kind?: "cron" | "interval";
+  readonly expression?: string;
 }
+
+/** Vrai si la planification persistée correspond déjà à la résolution voulue. */
+export const scheduleMatches = (
+  current: AgentScheduleState,
+  resolution: CycleScheduleResolution,
+): boolean =>
+  current.intervalSeconds === resolution.intervalSeconds &&
+  (current.kind ?? "interval") === resolution.kind &&
+  (resolution.kind === "interval" || current.expression === resolution.expression);
 
 export interface CycleSummary {
   readonly cycleId: string;
@@ -51,6 +64,8 @@ export interface TradingAgentState {
   readonly lastTradeAt: number | null;
   readonly previousIndicators: IndicatorSnapshot | null;
   readonly lastCycle: CycleSummary | null;
+  /** Dernière bougie de décision signalée manquée (models/cycle-schedule.md §3). */
+  readonly lastMissedDecisionCandleClosedAt: number | null;
   /**
    * Session portefeuille multi-produits (models/multi-product-portfolio.md
    * §9.1, §9.7) : configuration figée du §7, orchestrateur du §5 et état
@@ -79,6 +94,7 @@ export const INITIAL_AGENT_STATE: TradingAgentState = Object.freeze({
   lastTradeAt: null,
   previousIndicators: null,
   lastCycle: null,
+  lastMissedDecisionCandleClosedAt: null,
   portfolioSession: null,
   portfolioRestoreError: null,
   updatedAt: 0,
@@ -198,34 +214,58 @@ export interface CycleDailyRiskState {
   readonly dailyPnl: number;
 }
 
+/**
+ * Fenêtre de risque journalier au début et à la fin d'un cycle
+ * (models/daily-risk.md §3, amendement 2026-09-28). En paper, l'équité
+ * marquée est la valorisation datée sur le dernier mark accepté ; une
+ * valorisation indisponible porte la fenêtre inchangée. Live et perp gardent
+ * leur fenêtre réconciliée (aucune équité locale n'est utilisée).
+ */
 export const resolveCycleDailyRiskStart = (
   executionMode: AgentConfiguration["executionMode"],
   currentWindow: DailyRiskWindow | null,
   currentDailyPnl: number,
   triggeredAt: number,
-  localMarkedEquity: number,
+  paperValuation: PaperValuationResult | null,
 ): CycleDailyRiskState =>
-  executionMode === "live" || executionMode === "perp"
+  executionMode === "live" || executionMode === "perp" || paperValuation === null
     ? Object.freeze({ window: currentWindow, dailyPnl: currentDailyPnl })
-    : resolveDailyRiskWindow(currentWindow, triggeredAt, localMarkedEquity);
+    : resolvePaperDailyRisk(currentWindow, currentDailyPnl, triggeredAt, paperValuation);
 
 export const resolveCycleDailyRiskCompletion = (
   executionMode: AgentConfiguration["executionMode"],
   reconciledWindow: DailyRiskWindow | null,
   reconciledDailyPnl: number,
   triggeredAt: number,
-  localMarkedEquity: number,
+  paperValuation: PaperValuationResult | null,
 ): CycleDailyRiskState =>
-  executionMode === "live" || executionMode === "perp"
+  executionMode === "live" || executionMode === "perp" || paperValuation === null
     ? Object.freeze({
         window: reconciledWindow,
         dailyPnl: reconciledDailyPnl,
       })
-    : resolveDailyRiskWindow(
+    : resolvePaperDailyRisk(
         reconciledWindow,
+        reconciledDailyPnl,
         triggeredAt,
-        localMarkedEquity,
+        paperValuation,
       );
+
+/** Valorisation paper d'un portefeuille sur un mark accepté, à `asOf`. */
+export const paperValuationFor = (
+  executionMode: AgentConfiguration["executionMode"],
+  portfolio: PaperPortfolio,
+  mark: PaperValuationMark | null,
+  asOf: number,
+): PaperValuationResult | null =>
+  executionMode === "paper"
+    ? projectPaperValuation({
+        cash: portfolio.cash,
+        positionQuantity: portfolio.positionQuantity,
+        mark,
+        asOf,
+      })
+    : null;
 
 export interface CycleInvocationIdentity {
   readonly loadCycleId: string | null;

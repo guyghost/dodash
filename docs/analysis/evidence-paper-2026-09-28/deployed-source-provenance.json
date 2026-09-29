@@ -1,0 +1,7 @@
+{
+  "fetchedAt": "2026-09-28T06:29:44.604466+00:00",
+  "endpoint": "/workers/scripts/dodash-paper-agent/content/v2",
+  "sha256": "805336162452f76aae04b0d72b7f89e0043e0dd33b6db12644af79a51f8a20c1",
+  "bytes": 3260593,
+  "previousSha256_2026_09_26": "27c6ec3e91d38deeead39d05b9c46a00ca30219c3e5747fa0d0dddb41f2182f8"
+}

@@ -42,4 +42,31 @@ describe("market data worker routing", () => {
       error: { code: "UNAUTHORIZED" },
     });
   });
+
+  it("propagates the upstream Retry-After on internal 429 responses", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("rate limited", { status: 429, headers: { "retry-after": "9" } })) as typeof fetch;
+    try {
+      const response = await handleWorkerRequest(
+        new Request("https://market.test/internal/ticker", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${"x".repeat(32)}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ productId: "BTC-USD" }),
+        }),
+        env,
+        context,
+      );
+      expect(response.status).toBe(429);
+      expect(response.headers.get("retry-after")).toBe("9");
+      await expect(response.json()).resolves.toEqual({
+        error: { code: "RATE_LIMITED", retryAfterSeconds: 9 },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -112,6 +112,28 @@ const responseError = (response: Response): MarketDataError => {
 
 const normalizeBaseUrl = (raw: string): string => raw.replace(/\/$/, "");
 
+/**
+ * TTL des fenêtres de chandelles entièrement closes (effects.md, amendement
+ * 2026-09-28) : le snapshot est immuable et sa clé porte ses bornes.
+ */
+export const CLOSED_WINDOW_CACHE_TTL_SECONDS = 21_600;
+
+const logRateLimited = (
+  kind: "candles" | "ticker",
+  productId: string,
+  error: MarketDataError,
+): void => {
+  if (error.code !== "RATE_LIMITED") return;
+  console.warn(
+    JSON.stringify({
+      event: "coinbase_rate_limited",
+      kind,
+      productId,
+      retryAfterSeconds: error.retryAfterSeconds ?? null,
+    }),
+  );
+};
+
 const parseCached = <T>(raw: string | null): T | undefined => {
   if (raw === null || raw.length > MAX_COINBASE_RESPONSE_BYTES) return undefined;
   try {
@@ -213,6 +235,7 @@ export class CoinbaseMarketData {
         }),
       );
       const error = responseError(response);
+      logRateLimited("candles", productResult.value, error);
       await response.body?.cancel().catch(() => undefined);
       return err(error);
     }
@@ -258,10 +281,12 @@ export class CoinbaseMarketData {
       candles: snapshot.candles,
       source: snapshot.source,
     });
-    const expirationTtl = Math.min(
-      this.#cacheTtlSeconds,
-      Math.max(1, duration - 1),
-    );
+    // Fenêtre entièrement close ⇒ immuable ⇒ TTL long ; sinon TTL court
+    // strictement inférieur à la granularité (chandelle en cours).
+    const windowClosed = (end + duration) * 1_000 <= this.#now();
+    const expirationTtl = windowClosed
+      ? CLOSED_WINDOW_CACHE_TTL_SECONDS
+      : Math.min(this.#cacheTtlSeconds, Math.max(1, duration - 1));
     await this.#cache
       .put(cacheKey, cacheValue, { expirationTtl })
       .catch(() => undefined);
@@ -303,6 +328,7 @@ export class CoinbaseMarketData {
     }
     if (!response.ok) {
       const error = responseError(response);
+      logRateLimited("ticker", productResult.value, error);
       await response.body?.cancel().catch(() => undefined);
       return err(error);
     }

@@ -100,3 +100,18 @@ identifiers or exchange-order identifiers are added.
 2. Every live cycle and control command emits at most one terminal event.
 3. Telemetry never decides an order or state transition.
 4. Production is `NO_GO` if the sink, queries or alerts are not verified.
+
+## Amendment 2026-09-28 — `decision.missed` (paper campaign signal)
+
+New event type `decision.missed`, schema version 3, same positional Analytics
+Engine projection (blob1 = `decision.missed`, blob5 = `DECISION_WINDOW_MISSED`,
+blob6 = last workflow error of the closing cycle or `NONE`). It is emitted at
+most once per decision candle when a cycle completes after the freshness window
+without a recorded decision for that candle (`models/cycle-schedule.md §3`).
+All valuation fields are copied unchanged from the originating `cycle.completed`
+event, including nulls and their presence bits. The missed candle close belongs
+to the structured `decision_window_missed` log, never `valuationObservedAt`.
+Frozen live alerts are unchanged; the operator notification class
+`DECISION_WINDOW_MISSED` is documented in `operator-notifications.md`.
+Supervision query (not implemented in the Durable Object): six or more
+consecutive hourly cycles carrying `RATE_LIMITED` on one product.

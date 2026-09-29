@@ -55,6 +55,8 @@ export interface TradingEffectsDependencies {
     intervalSeconds: number,
   ): Promise<{ readonly time: number }>;
   removeIntervalSchedule(): Promise<void>;
+  /** Alarme ponctuelle de retry marché (models/market-retry-schedule.md §3). */
+  scheduleRetry?(at: number, attempt: number): Promise<void>;
   checkpoint(artifacts: CycleArtifacts): Promise<Result<void, WorkflowError>>;
   persistMachine(machine: PersistedTradingMachine): Promise<void>;
   persistOrderIntent(
@@ -209,6 +211,9 @@ export const createTradingCycleEffects = (
         });
       }
     },
+    ...(deps.scheduleRetry === undefined
+      ? {}
+      : { scheduleRetry: (at: number, attempt: number) => deps.scheduleRetry?.(at, attempt) ?? Promise.resolve() }),
     checkpoint: async (artifacts) => deps.checkpoint(artifacts),
     persistMachine: async (nextMachine) => deps.persistMachine(nextMachine),
     persistOrderIntent: async (cycleId, intent) =>

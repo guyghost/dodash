@@ -6,6 +6,7 @@ import {
 import { checkRisk } from "@dodash/risk";
 import { FUNDING_TREND_STRATEGY_ID } from "@dodash/strategies";
 import {
+  planMarketRetry,
   resolveDailyRiskWindow,
   type TradingCycleEvent,
   type WorkflowError,
@@ -114,6 +115,16 @@ export const runTradingCycle = async (
   let accountEquity: number | null = null;
   let otherExposureNotional = 0;
 
+  // models/daily-risk.md §3 : en paper, la fenêtre journalière est résolue par
+  // le runtime sur le mark daté ; les réconciliations paper (équité au coût)
+  // ne la ré-ancrent jamais. Live et perp gardent leur ancrage réel.
+  const anchorReconciledDailyRisk = (observedAt: number, equity: number): void => {
+    if (input.configuration.executionMode === "paper") return;
+    const dailyRisk = resolveDailyRiskWindow(dailyRiskWindow, observedAt, equity);
+    dailyRiskWindow = dailyRisk.window;
+    dailyPnl = dailyRisk.dailyPnl;
+  };
+
   const currentResult = (): RunTradingCycleResult => ({
     machine: session.record,
     artifacts,
@@ -177,8 +188,63 @@ export const runTradingCycle = async (
           break;
         }
 
+        case "retryingMarketData": {
+          // models/market-retry-schedule.md §3 : aucun refetch immédiat. Le
+          // planificateur pur fixe l'échéance ; elle est persistée avant
+          // l'alarme ; RETRY_TIMER_ELAPSED n'est émis qu'à échéance atteinte.
+          const now = (input.now ?? Date.now)();
+          const context = session.context;
+          const checkpointed = artifacts?.marketRetry;
+          if (
+            checkpointed === undefined ||
+            checkpointed.attempt !== context.attempts.marketData
+          ) {
+            // `attempts.marketData` est déjà incrémenté par la machine :
+            // le retry planifié porte l'index 0-based `attempts − 1`.
+            const plan = planMarketRetry({
+              attempt: Math.max(0, context.attempts.marketData - 1),
+              retryLimit: context.retryLimits.marketData,
+              retryable: context.lastError?.retryable ?? true,
+              retryAfterMs: context.lastError?.retryAfterMs ?? null,
+              now,
+              triggeredAt: artifacts?.triggeredAt ?? input.triggeredAt,
+              timeframeMs: timeframeMilliseconds[input.configuration.timeframe],
+              maxMarketStalenessMs: input.configuration.maxMarketStalenessMs,
+            });
+            if (plan.kind === "exhausted") {
+              await send({ type: "RETRY_TIMER_ELAPSED" });
+              break;
+            }
+            const current = artifacts ?? {
+              cycleId: input.cycleId,
+              triggeredAt: input.triggeredAt,
+            };
+            const next = Object.freeze({
+              ...current,
+              marketRetry: {
+                // `attempt` = tentatives déjà consommées, pour rejouer
+                // l'identité `checkpointed.attempt === attempts.marketData`.
+                attempt: context.attempts.marketData,
+                nextRetryAt: plan.nextRetryAt,
+                deadlineAt: plan.deadlineAt,
+                errorCode: context.lastError?.code ?? null,
+              },
+            });
+            // Persistance avant programmation (§3). Un échec de checkpoint
+            // laisse le cycle en attente : le prochain réveil rejouera la
+            // planification ; aucun événement n'est envoyé à la machine.
+            const persisted = await input.effects.checkpoint(next);
+            if (!persisted.ok) return currentResult();
+            artifacts = next;
+            await input.effects.scheduleRetry?.(plan.nextRetryAt, plan.attempt);
+            return currentResult();
+          }
+          if (now < checkpointed.nextRetryAt) return currentResult();
+          await send({ type: "RETRY_TIMER_ELAPSED" });
+          break;
+        }
+
         case "retryingSchedule":
-        case "retryingMarketData":
         case "retryingAuthorization":
         case "retryingExecution":
         case "retryingReconciliation":
@@ -202,13 +268,7 @@ export const runTradingCycle = async (
           portfolio = result.value.portfolio;
           accountEquity = result.value.accountEquity;
           otherExposureNotional = result.value.otherExposureNotional;
-          const dailyRisk = resolveDailyRiskWindow(
-            dailyRiskWindow,
-            result.value.observedAt,
-            result.value.accountEquity,
-          );
-          dailyRiskWindow = dailyRisk.window;
-          dailyPnl = dailyRisk.dailyPnl;
+          anchorReconciledDailyRisk(result.value.observedAt, result.value.accountEquity);
           await send({
             type: "ACCOUNT_RECONCILED",
             snapshotId: result.value.snapshotId,
@@ -511,13 +571,7 @@ export const runTradingCycle = async (
             ) {
               accountEquity = result.accountEquity;
               otherExposureNotional = result.otherExposureNotional;
-              const dailyRisk = resolveDailyRiskWindow(
-                dailyRiskWindow,
-                result.observedAt,
-                result.accountEquity,
-              );
-              dailyRiskWindow = dailyRisk.window;
-              dailyPnl = dailyRisk.dailyPnl;
+              anchorReconciledDailyRisk(result.observedAt, result.accountEquity);
             }
             const next = Object.freeze({
               ...current,
@@ -547,25 +601,13 @@ export const runTradingCycle = async (
             portfolio = result.portfolio;
             accountEquity = result.accountEquity;
             otherExposureNotional = result.otherExposureNotional;
-            const dailyRisk = resolveDailyRiskWindow(
-              dailyRiskWindow,
-              result.observedAt,
-              result.accountEquity,
-            );
-            dailyRiskWindow = dailyRisk.window;
-            dailyPnl = dailyRisk.dailyPnl;
+            anchorReconciledDailyRisk(result.observedAt, result.accountEquity);
             await send({ type: "ORDER_NO_LONGER_NEEDED" });
           } else if (result.status === "PROTECTION_FAILED") {
             portfolio = result.portfolio;
             accountEquity = result.accountEquity;
             otherExposureNotional = result.otherExposureNotional;
-            const dailyRisk = resolveDailyRiskWindow(
-              dailyRiskWindow,
-              result.observedAt,
-              result.accountEquity,
-            );
-            dailyRiskWindow = dailyRisk.window;
-            dailyPnl = dailyRisk.dailyPnl;
+            anchorReconciledDailyRisk(result.observedAt, result.accountEquity);
             artifacts = Object.freeze({
               ...current,
               ...(result.exchangeOrderId === null
@@ -635,13 +677,7 @@ export const runTradingCycle = async (
             ) {
               accountEquity = result.value.accountEquity;
               otherExposureNotional = result.value.otherExposureNotional;
-              const dailyRisk = resolveDailyRiskWindow(
-                dailyRiskWindow,
-                result.value.observedAt,
-                result.value.accountEquity,
-              );
-              dailyRiskWindow = dailyRisk.window;
-              dailyPnl = dailyRisk.dailyPnl;
+              anchorReconciledDailyRisk(result.value.observedAt, result.value.accountEquity);
             }
             const next = Object.freeze({
               ...artifacts,
@@ -671,25 +707,13 @@ export const runTradingCycle = async (
             portfolio = result.value.portfolio;
             accountEquity = result.value.accountEquity;
             otherExposureNotional = result.value.otherExposureNotional;
-            const dailyRisk = resolveDailyRiskWindow(
-              dailyRiskWindow,
-              result.value.observedAt,
-              result.value.accountEquity,
-            );
-            dailyRiskWindow = dailyRisk.window;
-            dailyPnl = dailyRisk.dailyPnl;
+            anchorReconciledDailyRisk(result.value.observedAt, result.value.accountEquity);
             await send({ type: "ORDER_NO_LONGER_NEEDED" });
           } else if (result.value.status === "PROTECTION_FAILED") {
             portfolio = result.value.portfolio;
             accountEquity = result.value.accountEquity;
             otherExposureNotional = result.value.otherExposureNotional;
-            const dailyRisk = resolveDailyRiskWindow(
-              dailyRiskWindow,
-              result.value.observedAt,
-              result.value.accountEquity,
-            );
-            dailyRiskWindow = dailyRisk.window;
-            dailyPnl = dailyRisk.dailyPnl;
+            anchorReconciledDailyRisk(result.value.observedAt, result.value.accountEquity);
             artifacts = Object.freeze({
               ...artifacts,
               ...(result.value.exchangeOrderId === null

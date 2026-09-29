@@ -29,3 +29,10 @@ Avis : la borne inclusive est déterministe pour chaque timeframe, ne dépend
 d'aucun texte libre et ne déplace aucune décision d'état hors de la machine.
 
 Les secrets ne figurent ni dans la configuration versionnée, ni dans les logs. Les bindings sont générés par Wrangler. Aucun adapter ne contient de logique de stratégie, allocation, risque ou transition d’état.
+
+## Revue — amendement 2026-09-28
+
+Verdict : **APPROUVÉ**. Le TTL long ne concerne que des données immuables
+identifiées par leurs bornes ; le ticker garde son TTL court. `Retry-After` est
+un champ diagnostic au même titre que `detail`. La qualification de
+retryabilité reste dans l'adapter et s'appuie sur le planificateur pur.

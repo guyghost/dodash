@@ -48,3 +48,8 @@ positions existantes conservées et nouveaux champs/presence bits couverts par
 les tests de télémétrie de l’agent (suite `agent` 264/264). TypeScript réussi.
 Les champs absents restent distinguables de zéro; aucune donnée telemetry
 n’alimente le modèle de risque ou une transition.
+
+## Review — 2026-09-28 amendment
+
+Approved. Additive event type only; blobs 1–10 and doubles 1–18 keep their
+meaning. No threshold of the frozen live alerts changes.

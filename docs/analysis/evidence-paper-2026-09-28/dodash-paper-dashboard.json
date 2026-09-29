@@ -1,0 +1,48 @@
+{
+  "worker": "dodash-paper-dashboard",
+  "fetchedAt": "2026-09-28T06:29:44.604466+00:00",
+  "health": {
+    "httpStatus": 200,
+    "body": {
+      "status": "ok",
+      "service": "dodash-dashboard"
+    }
+  },
+  "deployments": {
+    "deployments": [
+      {
+        "id": "b5bfc84c-1370-4f13-a66b-5755ec6f79f6",
+        "source": "wrangler",
+        "strategy": "percentage",
+        "author_email": "guyghost@gmail.com",
+        "annotations": {
+          "workers/message": "Automatic deployment on upload.",
+          "workers/triggered_by": "upload"
+        },
+        "versions": [
+          {
+            "version_id": "c1d9227f-e5a8-446c-84e0-bb92ebd0101a",
+            "percentage": 100
+          }
+        ],
+        "created_on": "2026-09-04T16:40:55.021135Z"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "name": "ASSETS",
+      "type": "assets"
+    },
+    {
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "519437",
+      "type": "ratelimit"
+    },
+    {
+      "name": "DASHBOARD_API",
+      "service": "dodash-paper-dashboard-api",
+      "type": "service"
+    }
+  ]
+}

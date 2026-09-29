@@ -20,9 +20,10 @@ export type OperatorNotificationClass =
   | "ORDER_OUTCOME_UNKNOWN"
   | "DAILY_PNL_BREACH"
   | "EXPOSURE_BREACH"
-  | "CONTROL_FAILED";
+  | "CONTROL_FAILED"
+  | "DECISION_WINDOW_MISSED";
 
-export type OperatorNotificationSourceKind = "cycle" | "control";
+export type OperatorNotificationSourceKind = "cycle" | "control" | "decision";
 
 export interface OperatorNotificationSource {
   readonly kind: OperatorNotificationSourceKind;
@@ -115,6 +116,9 @@ export const classifyOperatorNotifications = (
   if (source.kind === "control" && source.outcome === "FAILED") {
     classes.push("CONTROL_FAILED");
   }
+  // models/operator-notifications.md, amendement 2026-09-28 : l'événement
+  // `decision.missed` n'est émis qu'une fois par bougie manquée.
+  if (source.kind === "decision") classes.push("DECISION_WINDOW_MISSED");
   return classes;
 };
 

@@ -353,6 +353,20 @@ describe("resolveRestoredPortfolioSession", () => {
     }
   });
 
+  it("normalise la bougie manquée signalée (models/cycle-schedule.md §3)", () => {
+    const legacy = structuredClone(validSession()) as unknown as {
+      products: Record<string, Record<string, unknown>>;
+    };
+    delete legacy.products["AAA-USD"]?.lastMissedDecisionCandleClosedAt;
+    legacy.products["BBB-USD"]!.lastMissedDecisionCandleClosedAt = 86_400_000;
+    const restored = resolveRestoredPortfolioSession(legacy);
+    expect(restored.ok).toBe(true);
+    if (restored.ok) {
+      expect(restored.session.products["AAA-USD"]?.lastMissedDecisionCandleClosedAt).toBeNull();
+      expect(restored.session.products["BBB-USD"]?.lastMissedDecisionCandleClosedAt).toBe(86_400_000);
+    }
+  });
+
   it("refuse un instantané corrompu (C3)", () => {
     const cases: unknown[] = [];
     const nanExposure = structuredClone(validSession());

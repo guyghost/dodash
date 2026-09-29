@@ -176,11 +176,33 @@ export type {
   BaseWalletSessionEvent,
   BaseWalletSessionInput,
 } from "./base-wallet-session.types.js";
-export { resolveDailyRiskWindow } from "./daily-risk.js";
+export { resolveDailyRiskWindow, resolvePaperDailyRisk } from "./daily-risk.js";
 export type {
   DailyRiskAssessment,
   DailyRiskWindow,
+  PaperDailyRiskState,
 } from "./daily-risk.js";
+export {
+  MARKET_RETRY_DELAYS_MS,
+  MARKET_RETRY_MAX_DELAY_MS,
+  planMarketRetry,
+  resolveMarketRetryDeadline,
+} from "./market-retry-schedule.js";
+export type {
+  MarketRetryExhaustionReason,
+  MarketRetryPlan,
+  MarketRetryPlanInput,
+} from "./market-retry-schedule.js";
+export {
+  resolveCycleSchedule,
+  resolveMissedDecision,
+  SCHEDULE_OFFSET_MINUTES,
+} from "./cycle-schedule.js";
+export type {
+  CycleScheduleResolution,
+  MissedDecisionInput,
+  MissedDecisionResolution,
+} from "./cycle-schedule.js";
 export { acceptPaperValuationMark, isValidPaperValuationMark, normalizePaperValuationMark, projectPaperValuation } from "./paper-valuation.js";
 export type {
   PaperValuation,

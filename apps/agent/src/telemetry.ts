@@ -3,7 +3,9 @@ import type { WorkflowError } from "@dodash/models";
 export type TradingTelemetryEventType =
   | "cycle.completed"
   | "control.completed"
-  | "preflight.completed";
+  | "preflight.completed"
+  /** models/trading-telemetry.md, amendement 2026-09-28 : bougie de décision manquée. */
+  | "decision.missed";
 
 export interface TradingTelemetryEvent {
   readonly schemaVersion: 3;
@@ -36,6 +38,17 @@ export interface TradingTelemetryEvent {
   readonly executionObserved: boolean;
   readonly openOrderCount: number | null;
 }
+
+/** models/trading-telemetry.md: preserve the originating cycle's valuation metadata. */
+export const projectMissedDecisionTelemetry = (
+  cycleEvent: TradingTelemetryEvent,
+  timestamp: number,
+): TradingTelemetryEvent => ({
+  ...cycleEvent,
+  type: "decision.missed",
+  timestamp,
+  outcome: "DECISION_WINDOW_MISSED",
+});
 
 export interface TradingTelemetrySink {
   writeDataPoint(point: {

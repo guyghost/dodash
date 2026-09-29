@@ -256,3 +256,83 @@ curl -s -X POST https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agen
 
    (les cycles antérieurs au redéploiement v2 affichent `NONE` en blob7 ;
    lecture DO réservée aux cas non couverts par le vocabulaire fermé).
+
+## 8. Redéploiement 2026-09-28 — résilience de campagne (segment #36ter)
+
+Source : `docs/analysis/analyse-paper-session-2026-09-28.md` ; conception
+`docs/superpowers/specs/2026-09-28-paper-campaign-resilience-design.md`.
+Modèles : `models/daily-risk.md`, `models/market-retry-schedule.md`,
+`models/cycle-schedule.md`, amendements `agent-runtime.md`, `effects.md`,
+`trading-telemetry.md`, `operator-notifications.md`. Aucune modification de
+politique (`ONE_DAY`, 3 600 s, fraîcheur 2 h, stratégies, sizing) ni des
+secrets ; aucun `/stop`, `/start` ou `/reset` : l'instance `btc-usd-paper` et
+ses positions sont conservées.
+
+Contenu livré (tous Workers paper redéployés depuis le même commit) :
+
+1. valorisation datée DAO #62 (`schemaVersion 3`, blob8–10, double11–18) ;
+2. fenêtre de risque journalier paper sur le mark daté (fin du repli au coût) ;
+3. cache des bougies closes 6 h, `Retry-After` propagé et journal `coinbase_rate_limited` ;
+4. retries marché planifiés (60 s / 300 s / 900 s, échéance = fin de fenêtre
+   de fraîcheur), alarme ponctuelle `retryTick` ;
+5. réveils alignés sur la grille (`1 * * * *` pour 3 600 s) ;
+6. événement `decision.missed` et notification `DECISION_WINDOW_MISSED`.
+
+Effets de migration attendus au premier réveil du Durable Object :
+
+- l'ancienne planification `interval` est annulée et remplacée par le cron
+  `1 * * * *` : **le réveil horaire qui provoque la migration ne lance pas de
+  cycle** (un cycle redondant perdu, hors fenêtre de décision) ; premier cycle
+  aligné à `HH:01` suivant ;
+- `lastPaperMark` absent ⇒ premier cycle avec valorisation `unavailable`
+  (positions ouvertes) et fenêtre journalière portée inchangée, puis mark
+  accepté dès le premier snapshot marché ;
+- `lastMissedDecisionCandleClosedAt` nul ⇒ aucune alerte rétroactive.
+
+Procédure (ordre du §3, secrets inchangés) :
+
+```sh
+pnpm build
+cd apps/mcp-market-data && npx wrangler deploy -c wrangler.paper.jsonc
+cd ../agent             && npx wrangler deploy -c wrangler.paper.jsonc
+cd ../dashboard-api     && npx wrangler deploy -c wrangler.paper.jsonc
+cd ../dashboard         && npx wrangler deploy -c wrangler.paper.jsonc
+for w in mcp-market-data agent dashboard-api dashboard; do
+  curl -s -A "Mozilla/5.0" https://dodash-paper-$w.guyghost.workers.dev/health; echo
+done
+```
+
+Vérification après le premier cycle aligné (AE, `_sample_interval` à contrôler) :
+
+```sql
+SELECT timestamp, blob1, blob2, blob5, blob6, blob8, blob9, double4, double11
+FROM dodash_paper_trading
+WHERE index1 = 'btc-usd-paper' AND double1 >= <ms du déploiement>
+ORDER BY double1 DESC LIMIT 10
+```
+
+Attendu : `blob1 = cycle.completed`, `blob8 ∈ {fresh, stale}` après le premier
+snapshot accepté, `double4` ≠ 10 000 (équité au mark), réveils à `HH:01`.
+Le segment de campagne #36ter commence au premier cycle `schemaVersion 3`
+observé ; les fenêtres #36 et #36bis restent archivées telles quelles.
+
+Constat au premier cycle aligné (AE, capture 09:04 UTC,
+`evidence-paper-2026-09-28/first-aligned-cycle-2026-09-28.json`) : deux
+cycles `cycle.completed` à **09:01:00 et 09:01:01 UTC** (grille respectée),
+`schemaVersion 3` (blob8–10 renseignés), BTC-USD `FAILED/RATE_LIMITED` en un
+seul appel (échéance de décision passée ⇒ non retryable, 435 ms), ETH-USD
+`FAILED/STALE_MARKET_DATA` (divergence ticker, #56). Aucun snapshot accepté
+⇒ `blob8 = unavailable`, `double4 = 0` avec `double10 = 0` (équité absente,
+pas 10 000 au coût), `dailyPnl` porté inchangé (9,71 / 10,18 hérités du
+segment précédent) jusqu'au premier mark accepté. Attendu au premier fetch
+réussi : `blob8 ∈ {fresh, stale}`, `double4` ≠ 10 000. À revérifier à 10:01 UTC.
+Second constat (10:04 UTC, `aligned-cycles-2026-09-28.json`) : cycle de
+**10:01:00/10:01:01 UTC** identique — BTC-USD `RATE_LIMITED` (445 ms, un seul
+appel), ETH-USD `STALE_MARKET_DATA` (ticker à plus de 100 bps du close daily
+84 462 / 2 688 : baisse intrajournalière d'environ 1,6 %). Toujours aucun
+snapshot accepté : `blob8 = unavailable`, équité absente, `dailyPnl` porté.
+Causes externes connues (quota Coinbase, garde #56) ; aucune action Cloudflare.
+Le premier mark accepté est attendu au plus tard au cycle de 00:01 UTC du
+29-09 si le ticker revient sous 100 bps du nouveau close ; à contrôler par la
+requête AE ci-dessus.
+

@@ -1,0 +1,135 @@
+{
+  "fetchedAt": "2026-09-28T06:29:44.604466+00:00",
+  "sql": "SELECT timestamp, _sample_interval AS weight, index1 AS agent, blob1 AS event, blob2 AS product, blob3 AS mode, blob4 AS phase, blob5 AS outcome, blob6 AS error, blob7 AS broker_code, blob8 AS val_quality, blob9 AS val_source, blob10 AS expo_quality, double1 AS ts, double2 AS latency_ms, double3 AS daily_pnl, double4 AS equity, double5 AS position, double6 AS other_exposure, double7 AS execution, double8 AS open_orders, double9 AS has_pnl, double10 AS has_equity, double11 AS val_price, double12 AS val_observed_at, double13 AS val_age_ms, double14 AS consolidated_exposure, double15 AS has_val_price, double16 AS has_val_observed, double17 AS has_val_age, double18 AS has_consolidated FROM dodash_paper_trading WHERE NOT (index1 = 'btc-usd-paper' AND blob1 = 'cycle.completed') AND double1 >= 1789833287000 AND double1 < 1790576984604 ORDER BY ts ASC LIMIT 10000",
+  "result": {
+    "meta": [
+      {
+        "name": "timestamp",
+        "type": "DateTime"
+      },
+      {
+        "name": "weight",
+        "type": "UInt32"
+      },
+      {
+        "name": "agent",
+        "type": "String"
+      },
+      {
+        "name": "event",
+        "type": "String"
+      },
+      {
+        "name": "product",
+        "type": "String"
+      },
+      {
+        "name": "mode",
+        "type": "String"
+      },
+      {
+        "name": "phase",
+        "type": "String"
+      },
+      {
+        "name": "outcome",
+        "type": "String"
+      },
+      {
+        "name": "error",
+        "type": "String"
+      },
+      {
+        "name": "broker_code",
+        "type": "String"
+      },
+      {
+        "name": "val_quality",
+        "type": "String"
+      },
+      {
+        "name": "val_source",
+        "type": "String"
+      },
+      {
+        "name": "expo_quality",
+        "type": "String"
+      },
+      {
+        "name": "ts",
+        "type": "Float64"
+      },
+      {
+        "name": "latency_ms",
+        "type": "Float64"
+      },
+      {
+        "name": "daily_pnl",
+        "type": "Float64"
+      },
+      {
+        "name": "equity",
+        "type": "Float64"
+      },
+      {
+        "name": "position",
+        "type": "Float64"
+      },
+      {
+        "name": "other_exposure",
+        "type": "Float64"
+      },
+      {
+        "name": "execution",
+        "type": "Float64"
+      },
+      {
+        "name": "open_orders",
+        "type": "Float64"
+      },
+      {
+        "name": "has_pnl",
+        "type": "Float64"
+      },
+      {
+        "name": "has_equity",
+        "type": "Float64"
+      },
+      {
+        "name": "val_price",
+        "type": "Float64"
+      },
+      {
+        "name": "val_observed_at",
+        "type": "Float64"
+      },
+      {
+        "name": "val_age_ms",
+        "type": "Float64"
+      },
+      {
+        "name": "consolidated_exposure",
+        "type": "Float64"
+      },
+      {
+        "name": "has_val_price",
+        "type": "Float64"
+      },
+      {
+        "name": "has_val_observed",
+        "type": "Float64"
+      },
+      {
+        "name": "has_val_age",
+        "type": "Float64"
+      },
+      {
+        "name": "has_consolidated",
+        "type": "Float64"
+      }
+    ],
+    "data": [],
+    "rows": 0,
+    "rows_before_limit_at_least": 0
+  }
+}
