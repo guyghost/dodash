@@ -23,7 +23,9 @@ resolveCycleSchedule(intervalSeconds) →
   décalage `SCHEDULE_OFFSET_MINUTES = 1` si `intervalSeconds ≥ 600`, sinon 0
   (laisser Coinbase publier la bougie close ; sous 10 min, le décalage
   minute n'a pas de sens).
-  - 60 → `* * * * *` ; 300 → `*/5 * * * *` ; 3 600 → `1 * * * *` ;
+  - 60 → `* * * * *` ; 300 → `*/5 * * * *` ;
+    600 → `1,11,21,31,41,51 * * * *` ;
+    900 → `1,16,31,46 * * * *` ; 1 800 → `1,31 * * * *` ; 3 600 → `1 * * * *` ;
     21 600 → `1 */6 * * *` ; 86 400 → `1 0 * * *`.
 - `interval` sinon (comportement actuel, `scheduleEvery`).
 
@@ -43,7 +45,10 @@ DECISION_WINDOW_MISSED`, `errorCode` = dernière erreur du cycle) et une
 notification opérateur `DECISION_WINDOW_MISSED`, une seule fois par bougie :
 `lastMissedDecisionCandleClosedAt` est persisté par produit et normalisé à
 `null` à la restauration. L'événement est une projection ; il ne change aucune
-transition.
+transition. Les champs de valorisation restent identiques à ceux du
+cycle terminé, y compris les valeurs nulles et le masque de présence. La
+clôture de la bougie manquée est portée par le log structuré
+`decision_window_missed`, jamais par `valuationObservedAt`.
 
 ## 4. Invariants
 

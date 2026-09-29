@@ -27,7 +27,10 @@ export const resolveCycleSchedule = (intervalSeconds: number): CycleScheduleReso
   const minutes = intervalSeconds / 60;
   let expression: string;
   if (intervalSeconds < HOUR_SECONDS) {
-    expression = `${minutes === 1 ? "*" : `*/${minutes}`} * * * *`;
+    const minuteExpression = offset === 0
+      ? minutes === 1 ? "*" : `*/${minutes}`
+      : Array.from({ length: 60 / minutes }, (_, index) => offset + index * minutes).join(",");
+    expression = `${minuteExpression} * * * *`;
   } else if (intervalSeconds === HOUR_SECONDS) {
     expression = `${offset} * * * *`;
   } else if (intervalSeconds < DAY_SECONDS) {

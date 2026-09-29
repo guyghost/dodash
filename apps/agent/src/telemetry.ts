@@ -39,6 +39,17 @@ export interface TradingTelemetryEvent {
   readonly openOrderCount: number | null;
 }
 
+/** models/trading-telemetry.md: preserve the originating cycle's valuation metadata. */
+export const projectMissedDecisionTelemetry = (
+  cycleEvent: TradingTelemetryEvent,
+  timestamp: number,
+): TradingTelemetryEvent => ({
+  ...cycleEvent,
+  type: "decision.missed",
+  timestamp,
+  outcome: "DECISION_WINDOW_MISSED",
+});
+
 export interface TradingTelemetrySink {
   writeDataPoint(point: {
     readonly blobs: readonly string[];

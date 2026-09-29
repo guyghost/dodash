@@ -108,6 +108,9 @@ Engine projection (blob1 = `decision.missed`, blob5 = `DECISION_WINDOW_MISSED`,
 blob6 = last workflow error of the closing cycle or `NONE`). It is emitted at
 most once per decision candle when a cycle completes after the freshness window
 without a recorded decision for that candle (`models/cycle-schedule.md §3`).
+All valuation fields are copied unchanged from the originating `cycle.completed`
+event, including nulls and their presence bits. The missed candle close belongs
+to the structured `decision_window_missed` log, never `valuationObservedAt`.
 Frozen live alerts are unchanged; the operator notification class
 `DECISION_WINDOW_MISSED` is documented in `operator-notifications.md`.
 Supervision query (not implemented in the Durable Object): six or more

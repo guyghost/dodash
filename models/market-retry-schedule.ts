@@ -13,7 +13,7 @@ export const MARKET_RETRY_DELAYS_MS: readonly number[] = Object.freeze([
 export const MARKET_RETRY_MAX_DELAY_MS = 900_000;
 
 export interface MarketRetryPlanInput {
-  /** Retries already consumed (`context.attempts.marketData`). */
+  /** 0-based retry index (`context.attempts.marketData - 1`). */
   readonly attempt: number;
   /** Retry budget (`context.retryLimits.marketData`). */
   readonly retryLimit: number;

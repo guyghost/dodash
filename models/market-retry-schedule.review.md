@@ -22,3 +22,9 @@ false` par l'adapter est une classification de réponse externe, conforme à
 Le refetch unique après `exhausted` sur voie stale peut encore répéter jusqu'au
 budget par `canRetryStaleMarketData` : accepté, cas rare (bougie jamais décidée
 et déjà hors fenêtre), noté comme limite.
+
+## Revue de la documentation PR #20 (2026-09-30)
+
+Le contrat normatif §2 et les appelants utilisent un index de retry 0-based
+(`context.attempts.marketData - 1`). Le commentaire TypeScript doit décrire
+ce même index ; aucun changement du planificateur ni de ses appelants.

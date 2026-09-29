@@ -115,6 +115,7 @@ import {
 import {
   emitTradingTelemetry,
   brokerRejectionCodeOf,
+  projectMissedDecisionTelemetry,
   type TradingTelemetryEvent,
   type TradingTelemetrySink,
 } from "./telemetry.js";
@@ -1635,13 +1636,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     cycleEvent: TradingTelemetryEvent,
     candleClosedAt: number,
   ): void {
-    const event: TradingTelemetryEvent = {
-      ...cycleEvent,
-      type: "decision.missed",
-      timestamp: Date.now(),
-      outcome: "DECISION_WINDOW_MISSED",
-      valuationObservedAt: candleClosedAt,
-    };
+    const event = projectMissedDecisionTelemetry(cycleEvent, Date.now());
     console.warn(
       JSON.stringify({
         event: "decision_window_missed",
