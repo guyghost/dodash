@@ -7,8 +7,17 @@ overrides:
   "undici@>=7 <8": 7.29.1
   "undici@>=8 <9": 8.10.2
   fast-uri: ^3.1.6
-  # GHSA-rgj7-g3m4-5g8c / GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 — libheif via wrangler>miniflare (pin exact 0.35.2)
-  sharp: 0.35.4
+  # GHSA-rgj7-g3m4-5g8c / GHSA-g89c-p67h-r497 / GHSA-2jg2-4ch7-h545 — libheif via wrangler>miniflare ;
+  # 0.35.5 corrige en plus la vulnérabilité librsvg (audit du 2026-10-07). Épingle exacte.
+  sharp: 0.35.5
+  # Audit du 2026-10-07 (pnpm audit --audit-level=high), transitifs sans changement de majeure :
+  # proxy-addr — usurpation d'IP via IPv4 mappée (agents>@modelcontextprotocol/sdk>express).
+  proxy-addr: ^2.0.8
+  # GHSA-6qxp-vccf-f47h — le client OAuth MCP pouvait envoyer des identifiants à un serveur choisi par le serveur MCP (via agents).
+  "@modelcontextprotocol/sdk": ^1.31.0
+  "@modelcontextprotocol/client": ^2.2.0
+  # source-map-js — déni de service de la boucle d'événements (agents>vite>postcss).
+  source-map-js: ^1.2.2
 allowBuilds:
   core-js-pure: false
   esbuild: true
