@@ -32,6 +32,7 @@ describe("resolveMissedDecision", () => {
     maxMarketStalenessMs: 2 * HOUR,
     lastDecisionCandleClosedAt: last,
     lastMissedDecisionCandleClosedAt: reported,
+    completedAt: triggeredAt,
   });
 
   it("signale la bougie manquée au premier cycle terminé après la fenêtre", () => {
@@ -55,6 +56,19 @@ describe("resolveMissedDecision", () => {
     expect(resolveMissedDecision(input(candle + DAY + 3 * HOUR, null, candle))).toEqual({
       missed: true,
       decisionCandleClosedAt: candle + DAY,
+    });
+  });
+
+  it("évalue la fenêtre à l'instant de fin d'un cycle repris (amendement 2026-10-07)", () => {
+    const resumed = { ...input(candle + 60_000, candle - DAY, null), completedAt: candle + 2 * HOUR + 60_000 };
+    expect(resolveMissedDecision(resumed)).toEqual({ missed: true, decisionCandleClosedAt: candle });
+    expect(resolveMissedDecision({ ...resumed, lastDecisionCandleClosedAt: candle })).toEqual({
+      missed: false,
+      decisionCandleClosedAt: candle,
+    });
+    expect(resolveMissedDecision({ ...resumed, completedAt: candle + HOUR })).toEqual({
+      missed: false,
+      decisionCandleClosedAt: candle,
     });
   });
 });

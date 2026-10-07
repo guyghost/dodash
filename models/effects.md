@@ -78,6 +78,14 @@ L’Agent conserve un état synchronisé compact. Les cycles, intentions, ordres
   (`kind`, `productId`, `retryAfterSeconds`) et renvoie l'en-tête `Retry-After`
   sur ses réponses 429 internes quand Coinbase l'a fourni. L'agent le porte
   dans `WorkflowError.retryAfterMs` (diagnostic optionnel ; aucune garde ne le lit).
+- **Journal par requête marché (amendement 2026-10-07).** Chaque lecture
+  `getCandles`/`getTicker` du Worker marché émet un log structuré
+  `coinbase_market_request` : `kind`, `productId`, `cached` (succès servi par
+  le cache), `status` (statut HTTP amont, `null` si cache ou erreur réseau),
+  `outcome` (`OK` ou code `MarketDataError`), `retryAfterRaw` (en-tête brut,
+  tronqué à 64 caractères, `null` si absent) et `latencyMs`. Diagnostic
+  uniquement : aucune garde, aucun cache ni retry ne le lit ; aucune donnée
+  sensible (API publique, sans clé).
 - **Retryabilité à l'échéance.** L'effet marché qualifie `retryable: false`
   toute erreur retryable dont le premier retry planifié (`market-retry-schedule.md`)
   ne pourrait aboutir avant `deadlineAt` : classification d'adapter, pas décision.

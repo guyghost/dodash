@@ -25,3 +25,18 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
   Toutes les métadonnées de valorisation et leur présence AE restent celles
   du cycle source ; tester une valorisation absente et une valorisation datée.
 - Aucun nouvel événement de machine, transition ou effet de trading.
+
+## Revue de l'amendement du 2026-10-07
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
+
+- Évaluation de la fenêtre à `completedAt` : aucune double émission
+  (`lastMissedDecisionCandleClosedAt` monotone), aucune émission prématurée
+  (`N ≤ T + S` ⇒ fenêtre ouverte). `completedAt` est obligatoire pour qu'aucun
+  appelant ne retombe sur `T`.
+- Décalage inter-produits : section dédiée (§4), réveils de grille seulement ;
+  les retries restent non décalés (limite acceptée côté `market-retry-schedule`).
+- Aucun nouvel événement de machine, transition ou effet de trading.
+- Revue d'implémentation (2026-10-07) : décalage limité à `scheduledTick`
+  (pas de réponse HTTP `runNow` retenue), produits désactivés sans attente,
+  état relu après l'attente.

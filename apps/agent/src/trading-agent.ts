@@ -12,7 +12,10 @@ import {
   resolveCycleSchedule,
   resolveDailyRiskWindow,
   resolveMissedDecision,
+  resolveRetryWake,
+  PORTFOLIO_PRODUCT_STAGGER_MS,
   type ControlPermissions,
+  type MarketRetryWakePayload,
   type DashboardPnlHistoryResult,
   type DashboardPnlOrderRow,
   type DashboardPortfolioSummaryResult,
@@ -651,7 +654,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   async scheduledTick(): Promise<void> {
     this.ensureTradingPersistenceSchema();
     if (this.state.portfolioSession !== null) {
-      await this.runPortfolio(true);
+      await this.runPortfolio(true, null, true);
       return;
     }
     await this.recoverPendingPerpOrders();
@@ -662,16 +665,54 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
   /**
    * Alarme ponctuelle de retry marché (models/market-retry-schedule.md §3) :
    * reprend uniquement un cycle en attente (`triggerAlarm = false`), jamais
-   * un nouveau cycle. Une alarme orpheline est un no-op.
+   * un nouveau cycle, et uniquement pour le produit ciblé. Un réveil antérieur
+   * à l'échéance persistée se réarme (amendement 2026-10-07). Une alarme
+   * orpheline est un no-op.
    */
-  async retryTick(): Promise<void> {
+  async retryTick(payload?: MarketRetryWakePayload): Promise<void> {
     this.ensureTradingPersistenceSchema();
+    const targetProductId = (payload?.productId ?? null) as ProductId | null;
+    const wake = resolveRetryWake({
+      now: Date.now(),
+      persistedNextRetryAt: this.pendingMarketRetryAt(targetProductId),
+      payload,
+    });
+    if (wake.kind === "drop") return;
+    if (wake.kind === "rearm") {
+      await this.schedule(new Date(wake.at), "retryTick", wake.payload, {
+        idempotent: true,
+      });
+      return;
+    }
     if (this.state.portfolioSession !== null) {
-      await this.runPortfolio(false);
+      // Alarme sans produit (instance mono-produit avant passage en
+      // portefeuille) : n'exécute aucun produit (invariant 8).
+      if (wake.productId === null) return;
+      await this.runPortfolio(false, wake.productId as ProductId);
       return;
     }
     if (!this.state.enabled) return;
     await this.runCurrent(false);
+  }
+
+  /** Échéance `artifacts.marketRetry.nextRetryAt` du cycle en attente, sinon nulle. */
+  private pendingMarketRetryAt(productId: ProductId | null): number | null {
+    const session = this.state.portfolioSession;
+    const machine =
+      session === null
+        ? this.state.machine
+        : productId === null
+          ? null
+          : session.products[productId]?.machine ?? null;
+    if (machine === null || machine === undefined) return null;
+    if (machine.value !== "retryingMarketData") return null;
+    const cycleId = machine.context.cycleId;
+    if (cycleId === null) return null;
+    const artifacts =
+      session === null || productId === null
+        ? this.loadArtifacts(cycleId)
+        : this.loadArtifacts(cycleId, productId);
+    return artifacts?.marketRetry?.nextRetryAt ?? null;
   }
 
   private async scheduleMarketRetry(
@@ -679,12 +720,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     attempt: number,
     productId: ProductId | null,
   ): Promise<void> {
-    await this.schedule(
-      new Date(at),
-      "retryTick",
-      { productId, attempt },
-      { idempotent: true },
-    );
+    const payload: MarketRetryWakePayload = { productId, attempt, nextRetryAt: at, rearm: 0 };
+    await this.schedule(new Date(at), "retryTick", payload, { idempotent: true });
   }
 
   /**
@@ -990,6 +1027,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       if (result.machine.context.outcome !== "RUNNING") {
         const missed = resolveMissedDecision({
           triggeredAt: identity.triggeredAt,
+          completedAt: Date.now(),
           timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
           maxMarketStalenessMs: configuration.maxMarketStalenessMs,
           lastDecisionCandleClosedAt: result.machine.context.lastDecisionCandleClosedAt,
@@ -1265,7 +1303,17 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
    * produit ne re-planifie jamais les autres (INV-P3). L'alarme partagée
    * n'est retirée qu'à la quiescence du portefeuille entier.
    */
-  private async runPortfolio(triggerAlarm: boolean): Promise<void> {
+  /**
+   * `onlyProductId` restreint un réveil de retry au produit ciblé
+   * (models/market-retry-schedule.md §3). `staggerProducts` (réveil de
+   * grille uniquement) décale les produits exécutés de
+   * PORTFOLIO_PRODUCT_STAGGER_MS (models/cycle-schedule.md §4).
+   */
+  private async runPortfolio(
+    triggerAlarm: boolean,
+    onlyProductId: ProductId | null = null,
+    staggerProducts = false,
+  ): Promise<void> {
     const session = this.state.portfolioSession;
     if (session === null) return;
     if (triggerAlarm) {
@@ -1273,7 +1321,19 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         this.reportProductExposureFromState(productId);
       }
     }
-    for (const productId of portfolioProductIds(session)) {
+    const productIds = portfolioProductIds(session).filter(
+      (productId) => onlyProductId === null || productId === onlyProductId,
+    );
+    let executed = 0;
+    for (const productId of productIds) {
+      const candidate = this.state.portfolioSession?.products[productId];
+      if (candidate === undefined || !machineIsEnabled(candidate.machine.value)) {
+        continue;
+      }
+      if (staggerProducts && executed > 0) {
+        await new Promise((resolve) => setTimeout(resolve, PORTFOLIO_PRODUCT_STAGGER_MS));
+      }
+      // L'attente rend la main : relire l'état avant d'exécuter le produit.
       const current = this.state.portfolioSession;
       if (current === null) return;
       const product = current.products[productId];
@@ -1283,6 +1343,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       ) {
         continue;
       }
+      executed += 1;
       await this.runProductCycle(current, productId, triggerAlarm);
     }
     const current = this.state.portfolioSession;
@@ -1378,6 +1439,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       result.artifacts !== null && result.machine.context.outcome !== "RUNNING"
         ? resolveMissedDecision({
             triggeredAt: identity.triggeredAt,
+            completedAt: Date.now(),
             timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
             maxMarketStalenessMs: configuration.maxMarketStalenessMs,
             lastDecisionCandleClosedAt: result.machine.context.lastDecisionCandleClosedAt,

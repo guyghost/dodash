@@ -134,6 +134,38 @@ const logRateLimited = (
   );
 };
 
+/** Trace d'une requête marché, renseignée par l'appel amont (effects.md, 2026-10-07). */
+interface MarketRequestTrace {
+  status: number | null;
+  retryAfterRaw: string | null;
+}
+
+const traceResponse = (trace: MarketRequestTrace, response: Response): void => {
+  trace.status = response.status;
+  trace.retryAfterRaw = response.headers.get("retry-after")?.slice(0, 64) ?? null;
+};
+
+const logMarketRequest = (
+  kind: "candles" | "ticker",
+  productId: string,
+  trace: MarketRequestTrace,
+  result: Result<{ readonly cached: boolean }, MarketDataError>,
+  latencyMs: number,
+): void => {
+  console.log(
+    JSON.stringify({
+      event: "coinbase_market_request",
+      kind,
+      productId: productId.slice(0, 32),
+      cached: result.ok ? result.value.cached : false,
+      status: trace.status,
+      outcome: result.ok ? "OK" : result.error.code,
+      retryAfterRaw: trace.retryAfterRaw,
+      latencyMs,
+    }),
+  );
+};
+
 const parseCached = <T>(raw: string | null): T | undefined => {
   if (raw === null || raw.length > MAX_COINBASE_RESPONSE_BYTES) return undefined;
   try {
@@ -163,6 +195,17 @@ export class CoinbaseMarketData {
 
   async getCandles(
     request: CandleRequest,
+  ): Promise<Result<CandleSnapshot, MarketDataError>> {
+    const startedAt = this.#now();
+    const trace: MarketRequestTrace = { status: null, retryAfterRaw: null };
+    const result = await this.#getCandles(request, trace);
+    logMarketRequest("candles", request.productId, trace, result, this.#now() - startedAt);
+    return result;
+  }
+
+  async #getCandles(
+    request: CandleRequest,
+    trace: MarketRequestTrace,
   ): Promise<Result<CandleSnapshot, MarketDataError>> {
     const productResult = createProductId(request.productId);
     if (!productResult.ok || request.limit < 1 || request.limit > 350) {
@@ -226,6 +269,7 @@ export class CoinbaseMarketData {
       );
       return err({ code: "NETWORK_UNAVAILABLE" });
     }
+    traceResponse(trace, response);
 
     if (!response.ok) {
       console.warn(
@@ -296,6 +340,17 @@ export class CoinbaseMarketData {
   async getTicker(
     request: TickerRequest,
   ): Promise<Result<TickerSnapshot, MarketDataError>> {
+    const startedAt = this.#now();
+    const trace: MarketRequestTrace = { status: null, retryAfterRaw: null };
+    const result = await this.#getTicker(request, trace);
+    logMarketRequest("ticker", request.productId, trace, result, this.#now() - startedAt);
+    return result;
+  }
+
+  async #getTicker(
+    request: TickerRequest,
+    trace: MarketRequestTrace,
+  ): Promise<Result<TickerSnapshot, MarketDataError>> {
     const productResult = createProductId(request.productId);
     if (!productResult.ok) return err({ code: "INVALID_REQUEST" });
 
@@ -326,6 +381,7 @@ export class CoinbaseMarketData {
     } catch {
       return err({ code: "NETWORK_UNAVAILABLE" });
     }
+    traceResponse(trace, response);
     if (!response.ok) {
       const error = responseError(response);
       logRateLimited("ticker", productResult.value, error);

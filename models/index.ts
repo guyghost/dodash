@@ -183,17 +183,23 @@ export type {
   PaperDailyRiskState,
 } from "./daily-risk.js";
 export {
+  alignRetryInstant,
   MARKET_RETRY_DELAYS_MS,
   MARKET_RETRY_MAX_DELAY_MS,
+  MARKET_RETRY_MAX_REARMS,
   planMarketRetry,
   resolveMarketRetryDeadline,
+  resolveRetryWake,
 } from "./market-retry-schedule.js";
 export type {
   MarketRetryExhaustionReason,
   MarketRetryPlan,
   MarketRetryPlanInput,
+  MarketRetryWake,
+  MarketRetryWakePayload,
 } from "./market-retry-schedule.js";
 export {
+  PORTFOLIO_PRODUCT_STAGGER_MS,
   resolveCycleSchedule,
   resolveMissedDecision,
   SCHEDULE_OFFSET_MINUTES,

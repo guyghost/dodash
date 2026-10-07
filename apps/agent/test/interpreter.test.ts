@@ -536,14 +536,15 @@ describe("runTradingCycle", () => {
       expect(result.machine.context.attempts.marketData).toBe(1);
       expect(result.artifacts?.marketRetry).toEqual({
         attempt: 1,
-        nextRetryAt: 360_500 + 60_000,
+        // Échéance alignée sur la seconde (amendement 2026-10-07).
+        nextRetryAt: 421_000,
         deadlineAt: 360_000 + 90_000,
         errorCode: "RATE_LIMITED",
       });
-      expect(scheduled).toEqual([420_500]);
+      expect(scheduled).toEqual([421_000]);
       expect(fixture.persistedCycles).toBe(0);
       // Le checkpoint de l'échéance précède la programmation de l'alarme.
-      expect(fixture.checkpoints.at(-1)?.marketRetry?.nextRetryAt).toBe(420_500);
+      expect(fixture.checkpoints.at(-1)?.marketRetry?.nextRetryAt).toBe(421_000);
     });
 
     it("waits without any effect before the persisted deadline", async () => {
@@ -564,7 +565,7 @@ describe("runTradingCycle", () => {
       });
       expect(resumed.fetchMarketData).not.toHaveBeenCalled();
       expect(resumed.result.machine.value).toBe("retryingMarketData");
-      expect(scheduled).toEqual([420_500]);
+      expect(scheduled).toEqual([421_000]);
     });
 
     it("refetches once the deadline is reached and completes the cycle", async () => {
@@ -579,7 +580,7 @@ describe("runTradingCycle", () => {
       const resumed = await run(fixture, first.result.machine, {
         fetches: ["ok"],
         scheduled,
-        clock: 420_500,
+        clock: 421_000,
         artifacts: first.result.artifacts,
         triggerAlarm: false,
       });
@@ -587,6 +588,30 @@ describe("runTradingCycle", () => {
       expect(resumed.result.machine.value).toBe("waiting");
       expect(resumed.result.machine.context.outcome).toBe("NO_ACTION");
       expect(fixture.persistedCycles).toBe(1);
+    });
+
+    it("refetches when the second-granular alarm fires for an unaligned first attempt (constat AE 2026-10-07)", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()],
+        scheduled,
+        clock: 360_368,
+      });
+      // Alarme ponctuelle du SDK agents : stockée en secondes entières
+      // (floor), déclenchée dès floor(maintenant) ≥ time.
+      const alarmFiresAt = Math.floor((scheduled[0] ?? 0) / 1_000) * 1_000;
+      const resumed = await run(fixture, first.result.machine, {
+        fetches: ["ok"],
+        scheduled,
+        clock: alarmFiresAt,
+        artifacts: first.result.artifacts,
+        triggerAlarm: false,
+      });
+      expect(resumed.fetchMarketData).toHaveBeenCalledTimes(1);
+      expect(resumed.result.machine.value).toBe("waiting");
+      expect(resumed.result.machine.context.outcome).toBe("NO_ACTION");
     });
 
     it("fails in a single refetch when the decision deadline is already past", async () => {

@@ -234,4 +234,45 @@ describe("CoinbaseMarketData cache policy (effects.md, amendement 2026-09-28)", 
       warn.mockRestore();
     }
   });
+
+  it("journalise chaque requête marché : statut amont, Retry-After brut et cache (effects.md, 2026-10-07)", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const requests = () =>
+      log.mock.calls
+        .map((call) => JSON.parse(String(call[0])) as Record<string, unknown>)
+        .filter((entry) => entry.event === "coinbase_market_request");
+    try {
+      const limited = createClient(
+        new Response("rate limited", { status: 429, headers: { "retry-after": "12" } }),
+      );
+      await limited.client.getTicker({ productId: "ETH-USD" });
+      expect(requests()).toEqual([
+        {
+          event: "coinbase_market_request",
+          kind: "ticker",
+          productId: "ETH-USD",
+          cached: false,
+          status: 429,
+          outcome: "RATE_LIMITED",
+          retryAfterRaw: "12",
+          latencyMs: 0,
+        },
+      ]);
+
+      log.mockClear();
+      const cache = new MemoryCache();
+      const fresh = createClient(Response.json(candleResponse), cache);
+      const request = { productId: "BTC-USD", timeframe: "ONE_MINUTE", limit: 2, end: 180 } as const;
+      await fresh.client.getCandles(request);
+      await fresh.client.getCandles(request);
+      expect(requests()).toEqual([
+        expect.objectContaining({ kind: "candles", cached: false, status: 200, outcome: "OK", retryAfterRaw: null }),
+        expect.objectContaining({ kind: "candles", cached: true, status: null, outcome: "OK", retryAfterRaw: null }),
+      ]);
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+    }
+  });
 });
