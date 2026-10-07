@@ -36,3 +36,10 @@ Verdict : **APPROUVÉ**. Le TTL long ne concerne que des données immuables
 identifiées par leurs bornes ; le ticker garde son TTL court. `Retry-After` est
 un champ diagnostic au même titre que `detail`. La qualification de
 retryabilité reste dans l'adapter et s'appuie sur le planificateur pur.
+
+## Revue de l'amendement du 2026-10-07 (journal par requête marché)
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**. Log structuré
+`coinbase_market_request` de diagnostic uniquement (API publique, sans clé ni
+secret) ; aucune garde, aucun cache ni retry ne le lit. `retryAfterRaw` est
+borné à 64 caractères.

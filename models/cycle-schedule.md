@@ -50,19 +50,44 @@ cycle terminé, y compris les valeurs nulles et le masque de présence. La
 clôture de la bougie manquée est portée par le log structuré
 `decision_window_missed`, jamais par `valuationObservedAt`.
 
-## 4. Invariants
+Amendement 2026-10-07 — instant d'évaluation. La fermeture de fenêtre est
+évaluée à l'instant `N` où le cycle se termine (`N ≥ T`), pas à `T` :
+`windowClosed = N − decisionCandleClosedAt > S`. Un réveil horaire qui reprend
+un cycle déclenché plus tôt (retry en attente, `triggerAlarm = true` sur une
+machine hors `waiting`) garde l'identité `T` du cycle repris ; évaluer à `T`
+retardait l'alerte d'un réveil complet (constat AE : `decision.missed` à 03:01
+pour des échecs clos à 02:01). Le cycle repris clos à 02:01 signale donc la
+bougie de 00:00 dès 02:01. `resolveMissedDecision` reçoit `completedAt = N`,
+**obligatoire** : un appelant ne peut pas retomber silencieusement sur `T`.
+
+## 4. Décalage inter-produits (amendement 2026-10-07)
+
+Sur un réveil de grille (`scheduledTick` uniquement : ni `runNow` HTTP, ni
+alarme de retry), les produits actifs d'un portefeuille sont exécutés
+séquentiellement ; avant le produit actif de rang `k ≥ 1`, le runtime attend
+`PORTFOLIO_PRODUCT_STAGGER_MS = 2 000` (un produit désactivé n'ajoute aucune
+attente) puis relit l'état, l'attente rendant la main à d'autres événements. Les appels Coinbase des produits ne
+partent plus dans la même seconde. Aucune transition, aucune politique ni
+intervalle ne change ; `T` de chaque produit est l'instant réel de son
+déclenchement. Les alarmes de retry ne sont pas décalées
+(`market-retry-schedule.md` §3, limite acceptée).
+
+## 5. Invariants
 
 1. L'alignement ne modifie ni l'intervalle configuré ni la politique validée.
 2. Un réveil aligné et un réveil legacy ne coexistent jamais pour la même
    instance.
 3. Une décision manquée est signalée une fois, au plus tard au premier cycle
-   terminé après la fenêtre.
+   terminé après la fenêtre — y compris un cycle repris clos après la fenêtre.
 4. Aucune décision de trading n'est prise à partir de l'alerte.
 
-## 5. Vérification requise
+## 6. Vérification requise
 
 - Table d'expressions ci-dessus ; 90 s et 7 s → `interval`.
 - Ré-armement legacy → cron : ancienne planification annulée, nouvelle persistée.
 - Décision manquée : émise à 03:00 après échecs 00:00 et 01:00 ; non émise si
   une décision existe pour la bougie ; une seule émission par bougie ; aucune
-  émission pendant la fenêtre.
+  émission pendant la fenêtre ; cycle repris (`T` = 00:01) clos à 02:01 →
+  émise à 02:01 avec `completedAt`.
+- Décalage : sur un réveil de grille à deux produits, le second démarre au
+  moins 2 s après la fin du premier ; un réveil de retry n'attend pas.

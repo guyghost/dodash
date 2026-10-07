@@ -47,6 +47,12 @@ export interface MissedDecisionInput {
   readonly maxMarketStalenessMs: number;
   readonly lastDecisionCandleClosedAt: number | null;
   readonly lastMissedDecisionCandleClosedAt: number | null;
+  /**
+   * Instant the cycle completed (§3, amendment 2026-10-07). A resumed cycle
+   * keeps its original `triggeredAt`; the window is judged when it closes.
+   * Required so that no caller silently falls back to `triggeredAt`.
+   */
+  readonly completedAt: number;
 }
 
 export interface MissedDecisionResolution {
@@ -58,11 +64,14 @@ export interface MissedDecisionResolution {
  * A decision candle is missed when a cycle completes after the freshness
  * window without a recorded decision for it, and it has not been reported yet.
  */
+/** Délai avant le produit de rang k ≥ 1 sur un réveil de grille (§4). */
+export const PORTFOLIO_PRODUCT_STAGGER_MS = 2_000;
+
 export const resolveMissedDecision = (input: MissedDecisionInput): MissedDecisionResolution => {
   const decisionCandleClosedAt =
     Math.floor(input.triggeredAt / input.timeframeMs) * input.timeframeMs;
-  const windowClosed =
-    input.triggeredAt - decisionCandleClosedAt > input.maxMarketStalenessMs;
+  const evaluatedAt = Math.max(input.triggeredAt, input.completedAt);
+  const windowClosed = evaluatedAt - decisionCandleClosedAt > input.maxMarketStalenessMs;
   const decided =
     input.lastDecisionCandleClosedAt !== null &&
     input.lastDecisionCandleClosedAt >= decisionCandleClosedAt;
