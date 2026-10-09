@@ -2,7 +2,7 @@
 
 Statut : **EN ATTENTE de données — fenêtre out-of-sample trop courte pour
 un verdict** (protocole et scripts prêts ; itération unique préservée,
-INV-C7).
+INV-C7). Dernière ré-exécution : **2026-10-09**, 38/90 jours (§8).
 Protocole : `models/funding-edge-campaign.md` (v2, pré-enregistré, commit
 `760a52a`, **avant** toute collecte OOS — INV-C1).
 Revue : `models/funding-edge-campaign.review.md` (v2).
@@ -97,7 +97,8 @@ verdict OOS. La discipline reste :
    la grille A1–A4 restent figés tels qu'annexés.
 2. **Ré-exécuter la phase B quand la fenêtre le permet** : dès que
    `[2026-09-01, minuit UTC courante)` atteint 90 bougies (au plus tôt
-   le 2026-11-29), ré-exécuter les deux scripts §8 — collecte (nouvelle
+   le **2026-11-30** après 00:00 UTC — erratum du 2026-10-09 : la date
+   initialement écrite, 2026-11-29, ne donne que 89 bougies), ré-exécuter les deux scripts §8 — collecte (nouvelle
    fixture versionnée + provenance) puis rejeu/verdict mécanique unique.
    Le verdict résultant (VALIDÉ ou ÉCHOUÉ) sera final : en cas d'échec,
    le sujet est clos jusqu'à de nouvelles données **sous un nouveau
@@ -118,3 +119,44 @@ npx tsx packages/backtest/scripts/funding-edge-oos-v2.ts
 
 Vérifications : `pnpm check`, tests des paquets touchés, `pnpm build`,
 `pnpm lint` sans nouveau warning (livrées avec le commit de ce rapport).
+
+## 8. Ré-exécution du 2026-10-09 — toujours EN ATTENTE
+
+Ré-exécution des deux scripts §7 (collecte puis rejeu/verdict), sans
+aucune modification de constante, de script ni de seuil (INV-C7). Les
+fixtures `dao35-*-oos` sont remplacées par la fenêtre élargie ; l'ancienne
+version (3 jours, 2026-09-04) reste dans l'historique git.
+
+| Fixture | Contenu | Provenance |
+| --- | --- | --- |
+| `dao35-funding-btc-oos.json` | 912 échantillons horaires (38 × 24 h), 3 requêtes | `POST api.hyperliquid.xyz/info`, collecté le 2026-10-09T09:41:50.937Z, **SHA-256 `2417fcf50abcd00556b1bd2b9ed77677df70f9dfb5f3f9cb7ace7acc9b0552e6`** |
+| `dao35-price-btc-usd-oos.json` | 38 bougies `ONE_DAY` BTC-USD | Coinbase Advanced public, collecté le 2026-10-09T09:41:50.942Z, **SHA-256 `27b2567aa6deba3fb7170e23dd1f737b4479f524cde3ba552ff5601df44f3c8b`** |
+
+Fenêtre OOS : `[2026-09-01T00:00:00Z, 2026-10-09T00:00:00Z)`, 38 jours,
+couverture journalière 38/38 validée.
+
+| # | Règle | Mesure | Verdict |
+| --- | --- | --- | --- |
+| A0 | ≥ 90 bougies complètes couvertes | **38 / 90** | **NON ATTEINT** |
+| A1–A4 | grille §4.4 | — | non évaluée (itération unique non consommée) |
+
+Sortie du script : `EN_ATTENTE_FENETRE_INSUFFISANTE`. Il manque **52
+jours** ; A0 sera atteint pour une collecte faite **à partir du
+2026-11-30 00:00 UTC**.
+
+**Constat brut hors verdict** (descriptif, aucune valeur de décision,
+aucune retouche déduite) :
+
+- taux de funding journaliers OOS tous positifs (min +1,75e-6, médiane
+  +1,13e-5, max +2,08e-5) ; 63 échantillons horaires négatifs sur 912 ;
+- `fundingAvg72` (moyenne des taux journaliers, préfixe campagne-1) reste
+  dans `[+9,34e-6 ; +1,007e-5]`, donc **sous** le seuil calibré
+  `1,0106e-5` pendant toute la fenêtre, et toujours positif ;
+- conséquence structurelle, déjà consignée en phase A : tant que le
+  funding reste positif, la branche longCarry (`BUY`) ne peut pas
+  s'autoriser, et la branche shortCrowding (`SELL`) ne remplit pas en
+  long-only. Si ce régime persiste jusqu'au 2026-11-30, la grille sera
+  évaluée sur un rejeu à 0 trade et **A2 échouera** mécaniquement : le
+  verdict serait ÉCHOUÉ, sujet clos (INV-C7). Ce constat ne change rien
+  au protocole ; il prévient seulement que le verdict attendu dépend du
+  régime de signe, pas de la hauteur du seuil.
