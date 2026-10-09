@@ -1,0 +1,2274 @@
+{
+  "protocol": "models/daily-edge-long-campaign.md (commit ab4458f)",
+  "datasets": {
+    "BTC-USD": {
+      "sha256": "f760a0bc7c1812a08ed01a078ba442eaf003a35d754968054d9197a1f1071678",
+      "candles": 4090,
+      "filled": 0,
+      "fillRate": 0,
+      "status": "OK"
+    },
+    "ETH-USD": {
+      "sha256": "5704eae410aaed3512e76450435448cc37b0203d345d6d0f6fd93056bef9b1c7",
+      "candles": 3787,
+      "filled": 2,
+      "fillRate": 0.0005281225244256667,
+      "status": "OK"
+    }
+  },
+  "buyAndHold": {
+    "BTC-USD": {
+      "totalReturn": 297.457422488927,
+      "years": {
+        "2015": {
+          "return": 0.5371838834119163,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "return": 1.2618101545253864,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "return": 13.24240525185695,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "return": -0.7336921748551734,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "return": 0.94095117366314,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "return": 3.045661845564717,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "return": 0.5940363048325494,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "return": -0.6422872444020113,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "return": 1.5582071764965657,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "return": 1.2075786876957704,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "return": -0.06273181865801025,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "return": -0.04505020346764743,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "sharpe": 1.100309655415103
+    },
+    "ETH-USD": {
+      "totalReturn": 202.63657056145675,
+      "years": {
+        "2016": {
+          "return": -0.38088012139605465,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "return": 89.84191176470588,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "return": -0.8239103160791614,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "return": -0.015245537424346978,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "return": 4.7388361599502105,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "return": 3.9829869724944764,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "return": -0.6748326894825616,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "return": 0.9084459318134284,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "return": 0.45998149991012993,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "return": -0.10914266496913205,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "return": -0.095357349907646,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "sharpe": 1.00298508680082
+    }
+  },
+  "cells": [
+    {
+      "product": "BTC-USD",
+      "scenario": "rsi-reversion",
+      "arm": "M40",
+      "status": "OK",
+      "trades": 93,
+      "pnl": 129326.47352765666,
+      "totalReturn": 12.932647352765667,
+      "fees": 184.31986791017212,
+      "sharpeDaily": 0.7073710586403031,
+      "maxDrawdown": 0.7667059828725817,
+      "timeInMarket": 0.9929095354523227,
+      "meanExposureWhenIn": 0.7816655107418621,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.0003403011807699141,
+        "alphaAnnual": -0.12420993098101865,
+        "beta": 0.6955603602395947,
+        "seAlphaDaily": 0.00023710985767700786,
+        "z": -1.4352046941611087,
+        "pOneSided": 0.9243856118180451,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.07175547914383394,
+          "beta": 0.051645275159763734,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.023416555640907413,
+          "beta": 0.04338378431844989,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": 0.04364033322287698,
+          "beta": 0.040442350230378836,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": 0.028274452621674603,
+          "beta": 0.6385098613416634,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -1.1080546202801855e-15,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": 6.331740687315346e-16,
+          "beta": 0.9999999999999998,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -1.2663481374630692e-15,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": 4.748805515486509e-16,
+          "beta": 1.0,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": 0.0,
+          "beta": 0.9999999999999996,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -1.1080546202801855e-15,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -2.1765358612646502e-16,
+          "beta": 0.9999999999999999,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -5.936006894358137e-16,
+          "beta": 1.0,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 5,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": 0.009579555551968792
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": 0.014137226310837539
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -2.1765358612646502e-16
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "BTC-USD",
+      "scenario": "rsi-reversion",
+      "arm": "T60",
+      "status": "OK",
+      "trades": 93,
+      "pnl": 127961.07540606911,
+      "totalReturn": 12.796107540606911,
+      "fees": 275.93014023133134,
+      "sharpeDaily": 0.7056810504445793,
+      "maxDrawdown": 0.7667059828725817,
+      "timeInMarket": 0.9929095354523227,
+      "meanExposureWhenIn": 0.7821613367019951,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.0003432154342797168,
+        "alphaAnnual": -0.12527363351209664,
+        "beta": 0.6960140147836008,
+        "seAlphaDaily": 0.00023710760736468106,
+        "z": -1.4475091630098464,
+        "pOneSided": 0.9261228140103221,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.06764410369990312,
+          "beta": 0.05168955821177732,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.02122205105281867,
+          "beta": 0.043477284252878765,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": 0.042439203812478524,
+          "beta": 0.04057833111306439,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": 0.027769957511811036,
+          "beta": 0.6415698643144868,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": 1.5829351718288365e-16,
+          "beta": 1.0000000000000002,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -1.5829351718288365e-15,
+          "beta": 0.9999999999999998,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -4.748805515486509e-16,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -4.748805515486509e-16,
+          "beta": 0.9999999999999999,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": 9.497611030973019e-16,
+          "beta": 1.0000000000000004,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -2.5326962749261384e-15,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -1.1031079478682204e-15,
+          "beta": 0.9999999999999997,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -1.7906954131313713e-15,
+          "beta": 1.0000000000000002,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 5,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": 0.009094464980756245
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": 0.01388497875590528
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -1.1031079478682204e-15
+        }
+      },
+      "monteCarlo": {
+        "strategySharpe": 0.7056810504445793,
+        "p": 0.0,
+        "p50": 0.5952509573852317,
+        "p95": 0.699559986649715,
+        "p99": 0.699559986649715
+      },
+      "criteria": {
+        "c1_alphaHac": false,
+        "c2_monteCarlo": true,
+        "c3_majorityYears": false,
+        "c4_trades": true
+      }
+    },
+    {
+      "product": "BTC-USD",
+      "scenario": "rsi-reversion",
+      "arm": "T120",
+      "status": "OK",
+      "trades": 92,
+      "pnl": 124135.49478443066,
+      "totalReturn": 12.413549478443066,
+      "fees": 548.588381566639,
+      "sharpeDaily": 0.7009338927398875,
+      "maxDrawdown": 0.7667059828725817,
+      "timeInMarket": 0.9929095354523227,
+      "meanExposureWhenIn": 0.7829695586259524,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.00035132073559970335,
+        "alphaAnnual": -0.1282320684938917,
+        "beta": 0.6970078212678802,
+        "seAlphaDaily": 0.00023693246817515208,
+        "z": -1.4827884852826074,
+        "pOneSided": 0.9309346918381045,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.0552669034565393,
+          "beta": 0.05182353359094599,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.014563396768469917,
+          "beta": 0.04376123732975046,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": 0.03877329958389039,
+          "beta": 0.04099350538082571,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": 0.0233696432170786,
+          "beta": 0.648072338197849,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -1.7412286890117201e-15,
+          "beta": 1.0000000000000002,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -3.165870343657673e-16,
+          "beta": 1.0000000000000002,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": 7.914675859144182e-16,
+          "beta": 1.0000000000000002,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": 0.0,
+          "beta": 0.9999999999999999,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": 1.4246416546459528e-15,
+          "beta": 1.0000000000000002,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -1.2663481374630692e-15,
+          "beta": 0.9999999999999998,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -4.946672411965114e-18,
+          "beta": 1.0000000000000002,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -1.2069880685194878e-15,
+          "beta": 1.0000000000000004,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 5,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": 0.007619528050337028
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": 0.0116848216085393
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -4.946672411965114e-18
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "BTC-USD",
+      "scenario": "ema-cross:POWER_THIRD",
+      "arm": "M40",
+      "status": "OK",
+      "trades": 44,
+      "pnl": 57300.18472128625,
+      "totalReturn": 5.7300184721286245,
+      "fees": 20.659549456613682,
+      "sharpeDaily": 0.6583695538608249,
+      "maxDrawdown": 0.6342340211556483,
+      "timeInMarket": 0.9819070904645477,
+      "meanExposureWhenIn": 0.519013593672298,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.00028548402726562565,
+        "alphaAnnual": -0.10420166995195336,
+        "beta": 0.4592898829248937,
+        "seAlphaDaily": 0.0001415388760955832,
+        "z": -2.0170008067100538,
+        "pOneSided": 0.978152285436047,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.00514557859849334,
+          "beta": 0.01009758124321419,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.006861038876819213,
+          "beta": 0.03174153495366377,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.10639438794753457,
+          "beta": 0.24659664223635197,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.056433757342054976,
+          "beta": 0.351202913634616,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.11907488152687228,
+          "beta": 0.34403705867984596,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": 0.09282595777508625,
+          "beta": 0.38489104317039236,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.07506295299516932,
+          "beta": 0.7525572427800107,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.04845867229237166,
+          "beta": 0.6567237891612958,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.028339708915357947,
+          "beta": 0.6569600533521379,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.022889167104016797,
+          "beta": 0.8165757365390699,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.009385604494155859,
+          "beta": 0.8711990082346844,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.016142734037114383,
+          "beta": 0.8343824700827662,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 2,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": -0.036010585976720785
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": -0.052446214817213316
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -0.009385604494155859
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "BTC-USD",
+      "scenario": "ema-cross:POWER_THIRD",
+      "arm": "T60",
+      "status": "OK",
+      "trades": 44,
+      "pnl": 57289.85494655793,
+      "totalReturn": 5.7289854946557925,
+      "fees": 30.989324184920537,
+      "sharpeDaily": 0.6582471663608641,
+      "maxDrawdown": 0.6343504639594584,
+      "timeInMarket": 0.9819070904645477,
+      "meanExposureWhenIn": 0.5191582879527142,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.00028570187949648017,
+        "alphaAnnual": -0.10428118601621526,
+        "beta": 0.45942637581012885,
+        "seAlphaDaily": 0.0001415658451550419,
+        "z": -2.0181554327852282,
+        "pOneSided": 0.9782124619852817,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.005103916489381281,
+          "beta": 0.010097330968182074,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.006756418975058689,
+          "beta": 0.031730271981709995,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.10657937924839499,
+          "beta": 0.24664306061229618,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.05661608013072789,
+          "beta": 0.3513124628201871,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.11925202316357536,
+          "beta": 0.3441964628725946,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": 0.09272849713285568,
+          "beta": 0.3851049920262075,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.07502314578729949,
+          "beta": 0.7527535002357455,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.0484444174748309,
+          "beta": 0.6569578177775248,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.028331958136892214,
+          "beta": 0.657197312235977,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.022874176580378113,
+          "beta": 0.8167339881237904,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.009378232348368636,
+          "beta": 0.8713180203260998,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.016131261250805745,
+          "beta": 0.8345290829877261,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 2,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": -0.03608225240123226
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": -0.0525302488027794
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -0.009378232348368636
+        }
+      },
+      "monteCarlo": {
+        "strategySharpe": 0.6582471663608641,
+        "p": 0.506,
+        "p50": 0.908811144250191,
+        "p95": 0.908811144250191,
+        "p99": 0.908811144250191
+      },
+      "criteria": {
+        "c1_alphaHac": false,
+        "c2_monteCarlo": false,
+        "c3_majorityYears": false,
+        "c4_trades": true
+      }
+    },
+    {
+      "product": "BTC-USD",
+      "scenario": "ema-cross:POWER_THIRD",
+      "arm": "T120",
+      "status": "OK",
+      "trades": 44,
+      "pnl": 57258.86562237302,
+      "totalReturn": 5.725886562237302,
+      "fees": 61.978648369841075,
+      "sharpeDaily": 0.6578801637101502,
+      "maxDrawdown": 0.6347000490534056,
+      "timeInMarket": 0.9819070904645477,
+      "meanExposureWhenIn": 0.5195929692130777,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.0002863560855755324,
+        "alphaAnnual": -0.10451997123506934,
+        "beta": 0.45983644655034017,
+        "seAlphaDaily": 0.00014164688343158032,
+        "z": -2.021619386450186,
+        "pOneSided": 0.9783921561509675,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.004978930184030494,
+          "beta": 0.01009658018581651,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.006442475885944424,
+          "beta": 0.031696475207532104,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.1071347427832708,
+          "beta": 0.24678243374626624,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.05716376506447099,
+          "beta": 0.35164155525767504,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.11978440094656387,
+          "beta": 0.3446755680715965,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": 0.09243533117809836,
+          "beta": 0.38574830167313734,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.0749034096562037,
+          "beta": 0.7533429028741304,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.04840144447943135,
+          "beta": 0.6576609514524627,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.02830858160036281,
+          "beta": 0.6579101374859861,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.022829120920258128,
+          "beta": 0.8172091204914171,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.009356089281815848,
+          "beta": 0.8716752541968068,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.016096788499269744,
+          "beta": 0.8349692334204745,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 2,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": -0.036297492691802366
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": -0.052782604771951167
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -0.009356089281815848
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "BTC-USD",
+      "scenario": "breakout:POWER_THIRD",
+      "arm": "M40",
+      "status": "OK",
+      "trades": 34,
+      "pnl": 1625270.5100569674,
+      "totalReturn": 162.52705100569673,
+      "fees": 33.0953621784717,
+      "sharpeDaily": 1.0354150040414265,
+      "maxDrawdown": 0.8314939863938665,
+      "timeInMarket": 0.9809290953545232,
+      "meanExposureWhenIn": 0.9468300852608452,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -9.027527808980087e-05,
+        "alphaAnnual": -0.03295047650277732,
+        "beta": 0.9433399449452142,
+        "seAlphaDaily": 7.991464899156488e-05,
+        "z": -1.1296461816322259,
+        "pOneSided": 0.8706873284395438,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.03237959296372203,
+          "beta": 0.2740590292294094,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.04667464556914195,
+          "beta": 0.6998736256408631,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.014825892678720747,
+          "beta": 0.9458593937330918,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.005789200912736658,
+          "beta": 0.9786066076822885,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.010683427469267684,
+          "beta": 0.9791641472582964,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": 0.0028414078939626494,
+          "beta": 0.9821325200350729,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.0014595215110698822,
+          "beta": 0.9963828582701141,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.001325273314887372,
+          "beta": 0.9941221511025723,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.0007849381846475453,
+          "beta": 0.9942502295971326,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.00038230650763196143,
+          "beta": 0.9975355868477987,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.00013523256254416503,
+          "beta": 0.9983844910347824,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.0002523706291136368,
+          "beta": 0.9978328489819388,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 2,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": 0.0030542810159666827
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": -0.003557237113812015
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -0.00013523256254416503
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "BTC-USD",
+      "scenario": "breakout:POWER_THIRD",
+      "arm": "T60",
+      "status": "OK",
+      "trades": 34,
+      "pnl": 1625253.9623758781,
+      "totalReturn": 162.5253962375878,
+      "fees": 49.643043267707554,
+      "sharpeDaily": 1.035362202768314,
+      "maxDrawdown": 0.8315295534769757,
+      "timeInMarket": 0.9809290953545232,
+      "meanExposureWhenIn": 0.9469760121292157,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -9.040077440411682e-05,
+        "alphaAnnual": -0.03299628265750264,
+        "beta": 0.9434733453578095,
+        "seAlphaDaily": 7.992441277264896e-05,
+        "z": -1.1310783685238783,
+        "pOneSided": 0.8709889460136461,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.030474164124848543,
+          "beta": 0.27419177154363433,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.04621511722979465,
+          "beta": 0.7005370432216858,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.014755005143536337,
+          "beta": 0.9461320073548356,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.005759072914947986,
+          "beta": 0.9787212654792661,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.010627417410432742,
+          "beta": 0.9792758940658254,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": 0.002825938140522217,
+          "beta": 0.9822287970659379,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.0014515590241280605,
+          "beta": 0.9964026651488297,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.0013180860341172745,
+          "beta": 0.9941542507277541,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.0007806809731995953,
+          "beta": 0.9942816451188683,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.0003802161978187085,
+          "beta": 0.9975490979576614,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.00013449169281678884,
+          "beta": 0.998393356139956,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.0002509894781597535,
+          "beta": 0.9978447347194668,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 2,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": 0.003006596660171632
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": -0.0035385794745326302
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -0.00013449169281678884
+        }
+      },
+      "monteCarlo": {
+        "strategySharpe": 1.035362202768314,
+        "p": 0.5285,
+        "p50": 1.0450632589198114,
+        "p95": 1.0450632589198114,
+        "p99": 1.0450632589198114
+      },
+      "criteria": {
+        "c1_alphaHac": false,
+        "c2_monteCarlo": false,
+        "c3_majorityYears": false,
+        "c4_trades": true
+      }
+    },
+    {
+      "product": "BTC-USD",
+      "scenario": "breakout:POWER_THIRD",
+      "arm": "T120",
+      "status": "OK",
+      "trades": 34,
+      "pnl": 1625204.3193326104,
+      "totalReturn": 162.52043193326102,
+      "fees": 99.28608653541511,
+      "sharpeDaily": 1.0352035340474377,
+      "maxDrawdown": 0.8316362729851927,
+      "timeInMarket": 0.9809290953545232,
+      "meanExposureWhenIn": 0.9474149861341777,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -9.077757305136114e-05,
+        "alphaAnnual": -0.03313381416374682,
+        "beta": 0.9438743317059086,
+        "seAlphaDaily": 7.995500848084408e-05,
+        "z": -1.1353581817593075,
+        "pOneSided": 0.8718873631748166,
+        "n": 4089
+      },
+      "alphaYearly": {
+        "2015": {
+          "alphaAnnual": 0.024748975223878377,
+          "beta": 0.2745912085594193,
+          "regime": "haussier",
+          "complete": false
+        },
+        "2016": {
+          "alphaAnnual": 0.04483154043350048,
+          "beta": 0.7025356236592034,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.014541741020641678,
+          "beta": 0.9469513334088921,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.005668581879162235,
+          "beta": 0.9790654276953684,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.010459214202374886,
+          "beta": 0.9796113135457913,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": 0.002779518690267232,
+          "beta": 0.9825177535518291,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.0014276676241530657,
+          "beta": 0.9964620907166054,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.0012965178227185227,
+          "beta": 0.994250563291869,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.0007679055847119223,
+          "beta": 0.9943759040731059,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.0003739445399202567,
+          "beta": 0.9975896335675657,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.0001322689227063673,
+          "beta": 0.9984199524153939,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.00024684562881093245,
+          "beta": 0.9978803936494403,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 2,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 7,
+          "meanAlphaAnnual": 0.0028629408788522722
+        },
+        "baissier": {
+          "years": 2,
+          "meanAlphaAnnual": -0.0034825498509403786
+        },
+        "latéral": {
+          "years": 1,
+          "meanAlphaAnnual": -0.0001322689227063673
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "rsi-reversion",
+      "arm": "M40",
+      "status": "OK",
+      "trades": 33,
+      "pnl": 2609008.5116612283,
+      "totalReturn": 260.90085116612283,
+      "fees": 66.9675167287785,
+      "sharpeDaily": 1.0451054712242671,
+      "maxDrawdown": 0.940116304238034,
+      "timeInMarket": 0.9886453657248482,
+      "meanExposureWhenIn": 0.9751050482041869,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": 0.0001674589990906506,
+        "alphaAnnual": 0.061122534668087466,
+        "beta": 0.9423802008430073,
+        "seAlphaDaily": 0.0001661120130455086,
+        "z": 1.0081089020622065,
+        "pOneSided": 0.15670109224428647,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.16803627110165234,
+          "beta": 0.26018041217003385,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": 1.2663481374630692e-15,
+          "beta": 0.9999999999999999,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": 4.748805515486509e-16,
+          "beta": 1.0,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": 1.1476279995759064e-15,
+          "beta": 1.0000000000000002,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -1.5829351718288365e-15,
+          "beta": 0.9999999999999999,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -9.497611030973019e-16,
+          "beta": 0.9999999999999998,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": 2.216109240560371e-15,
+          "beta": 1.0000000000000002,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": 1.5829351718288365e-16,
+          "beta": 1.0000000000000002,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": 6.331740687315346e-16,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": 4.946672411965114e-16,
+          "beta": 0.9999999999999998,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -2.958110102355138e-15,
+          "beta": 0.9999999999999998,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 7,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -9.497611030973019e-17
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.05601209036721655
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": 8.211476203862089e-16
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "rsi-reversion",
+      "arm": "T60",
+      "status": "OK",
+      "trades": 33,
+      "pnl": 2599289.881811575,
+      "totalReturn": 259.9289881811575,
+      "fees": 100.25157076892685,
+      "sharpeDaily": 1.0447051078546523,
+      "maxDrawdown": 0.940116304238034,
+      "timeInMarket": 0.9886453657248482,
+      "meanExposureWhenIn": 0.9751326259868619,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": 0.00016646005116315206,
+        "alphaAnnual": 0.0607579186745505,
+        "beta": 0.94239136824876,
+        "seAlphaDaily": 0.00016608853839374416,
+        "z": 1.0022368356841527,
+        "pOneSided": 0.15811461052208803,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.17392091118099848,
+          "beta": 0.2603047185636141,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": 1.2663481374630692e-15,
+          "beta": 0.9999999999999999,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": 4.748805515486509e-16,
+          "beta": 0.9999999999999998,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -1.780802068307441e-15,
+          "beta": 1.0,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -1.8995222061946038e-15,
+          "beta": 1.0000000000000002,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": 0.0,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": 1.7412286890117201e-15,
+          "beta": 1.0,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -9.497611030973019e-16,
+          "beta": 0.9999999999999998,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": 7.914675859144182e-17,
+          "beta": 1.0000000000000002,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": 1.780802068307441e-15,
+          "beta": 1.0,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -1.385068275350232e-16,
+          "beta": 0.9999999999999998,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 5,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -3.0075768264747893e-16
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.05797363706033209
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": 0.0
+        }
+      },
+      "monteCarlo": {
+        "strategySharpe": 1.0447051078546523,
+        "p": 0.0,
+        "p50": 1.0415901238598055,
+        "p95": 1.0415901238598055,
+        "p99": 1.0415901238598055
+      },
+      "criteria": {
+        "c1_alphaHac": false,
+        "c2_monteCarlo": true,
+        "c3_majorityYears": false,
+        "c4_trades": true
+      }
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "rsi-reversion",
+      "arm": "T120",
+      "status": "OK",
+      "trades": 33,
+      "pnl": 2570364.4736029226,
+      "totalReturn": 257.03644736029224,
+      "fees": 199.31438773426953,
+      "sharpeDaily": 1.0435045694030205,
+      "maxDrawdown": 0.940116304238034,
+      "timeInMarket": 0.9886453657248482,
+      "meanExposureWhenIn": 0.9752161337373872,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": 0.00016346503672597882,
+        "alphaAnnual": 0.05966473840498227,
+        "beta": 0.9424253387209568,
+        "seAlphaDaily": 0.00016602069115417533,
+        "z": 0.9846064101382207,
+        "pOneSided": 0.16240871989462793,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.191553934177982,
+          "beta": 0.2606837129643997,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -1.2663481374630692e-15,
+          "beta": 0.9999999999999999,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": 2.0578157233774874e-15,
+          "beta": 1.0000000000000002,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -3.165870343657673e-16,
+          "beta": 1.0000000000000002,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -9.497611030973019e-16,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": 0.0,
+          "beta": 1.0,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": 2.216109240560371e-15,
+          "beta": 1.0,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": 3.165870343657673e-16,
+          "beta": 0.9999999999999998,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": 6.331740687315346e-16,
+          "beta": 0.9999999999999999,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": 2.9680034471790684e-15,
+          "beta": 1.0000000000000002,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -1.474108378765604e-15,
+          "beta": 0.9999999999999998,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 5,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -2.5326962749261384e-16
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.06385131139265925
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": 1.3257082064066505e-15
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "ema-cross:POWER_THIRD",
+      "arm": "M40",
+      "status": "OK",
+      "trades": 28,
+      "pnl": 71005.54415837831,
+      "totalReturn": 7.100554415837831,
+      "fees": 16.361393013417892,
+      "sharpeDaily": 0.6391308799241846,
+      "maxDrawdown": 0.7499541505186138,
+      "timeInMarket": 0.9828360179561658,
+      "meanExposureWhenIn": 0.6407220789845971,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.000357633350712185,
+        "alphaAnnual": -0.13053617300994752,
+        "beta": 0.5287708766563525,
+        "seAlphaDaily": 0.00023480166504604143,
+        "z": -1.5231295342052107,
+        "pOneSided": 0.9361368494263279,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.007019080769843986,
+          "beta": 0.004097639781765404,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.3913567512759212,
+          "beta": 0.2976678383430914,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.042997909813579004,
+          "beta": 0.5235960520623468,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.06696270378275966,
+          "beta": 0.3391695818405244,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -0.008176431444996943,
+          "beta": 0.3903389557054376,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.14133792970087192,
+          "beta": 0.8457008074669317,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.08831781472305159,
+          "beta": 0.8143114994701488,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.023607668904386415,
+          "beta": 0.8241406744120237,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.02341305467228622,
+          "beta": 0.8861474380566435,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.03180668983549597,
+          "beta": 0.8742557772679117,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.02932548252281594,
+          "beta": 0.8475323558360252,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 0,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -0.11757836719969253
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.04611160176882486
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": -0.04938469680912781
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "ema-cross:POWER_THIRD",
+      "arm": "T60",
+      "status": "OK",
+      "trades": 28,
+      "pnl": 70997.36346187159,
+      "totalReturn": 7.099736346187159,
+      "fees": 24.542089520126833,
+      "sharpeDaily": 0.6391037162926356,
+      "maxDrawdown": 0.7500130641615529,
+      "timeInMarket": 0.9828360179561658,
+      "meanExposureWhenIn": 0.6408174912149323,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.00035774955976706027,
+        "alphaAnnual": -0.13057858931497698,
+        "beta": 0.5288534611376144,
+        "seAlphaDaily": 0.0002348184373640506,
+        "z": -1.5235156309826876,
+        "pOneSided": 0.9361851234539948,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.007153565448266177,
+          "beta": 0.004099357667245371,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.3915097493411898,
+          "beta": 0.2976977686171602,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.04307686386491155,
+          "beta": 0.5236651716098398,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.0671610841505455,
+          "beta": 0.33927868296577307,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -0.008284905471642985,
+          "beta": 0.39051050625713024,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.14126329869359422,
+          "beta": 0.8458039651447555,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.0882734586099544,
+          "beta": 0.8144329312175826,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.023595504996977254,
+          "beta": 0.8242588535205265,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.0233982885863644,
+          "beta": 0.886229679775372,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.031787667526497365,
+          "beta": 0.8743445209729703,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.02930880381911882,
+          "beta": 0.8476375981876408,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 0,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -0.11761034941795374
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.04616796264104405
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": -0.049474375838521434
+        }
+      },
+      "monteCarlo": {
+        "strategySharpe": 0.6391037162926356,
+        "p": 0.488,
+        "p50": 0.6388625919165672,
+        "p95": 0.9093237595871452,
+        "p99": 0.9093237595871452
+      },
+      "criteria": {
+        "c1_alphaHac": false,
+        "c2_monteCarlo": false,
+        "c3_majorityYears": false,
+        "c4_trades": false
+      }
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "ema-cross:POWER_THIRD",
+      "arm": "T120",
+      "status": "OK",
+      "trades": 28,
+      "pnl": 70972.82137235146,
+      "totalReturn": 7.097282137235147,
+      "fees": 49.084179040253666,
+      "sharpeDaily": 0.6390222990589003,
+      "maxDrawdown": 0.7501898492520362,
+      "timeInMarket": 0.9828360179561658,
+      "meanExposureWhenIn": 0.6411039699018595,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -0.0003580983468176521,
+        "alphaAnnual": -0.13070589658844303,
+        "beta": 0.5291014409668252,
+        "seAlphaDaily": 0.00023486879858820005,
+        "z": -1.5246739838164405,
+        "pOneSided": 0.9363297830478545,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.007557064157280659,
+          "beta": 0.004104511686776803,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.3919689134789607,
+          "beta": 0.29778760080793165,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.04331393664780093,
+          "beta": 0.523872664169885,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.06775708803115726,
+          "beta": 0.33960643226701237,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -0.008610874616391578,
+          "beta": 0.391026072164334,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.14103912377279199,
+          "beta": 0.8461136154856312,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.08814020035822435,
+          "beta": 0.8147974612172193,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.023558962917401498,
+          "beta": 0.8246135965354291,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.023353954923766324,
+          "beta": 0.8864764984064155,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.03173054685844889,
+          "beta": 0.8746108694983526,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.0292587127525973,
+          "beta": 0.8479534852498762,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 0,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -0.11770636594186241
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.04633706705443532
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": -0.04974381744480308
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "breakout:POWER_THIRD",
+      "arm": "M40",
+      "status": "OK",
+      "trades": 25,
+      "pnl": 843023.4364478362,
+      "totalReturn": 84.30234364478362,
+      "fees": 31.799424620909097,
+      "sharpeDaily": 0.9305752816027495,
+      "maxDrawdown": 0.9300531961962306,
+      "timeInMarket": 0.9923422233958278,
+      "meanExposureWhenIn": 0.9063453997290921,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -5.9383755317176084e-05,
+        "alphaAnnual": -0.02167507069076927,
+        "beta": 0.8605609712212633,
+        "seAlphaDaily": 0.0002028365138643475,
+        "z": -0.2927665940703882,
+        "pOneSided": 0.6151497179777212,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.08609139937850976,
+          "beta": 0.029451263048705836,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.5331539329894088,
+          "beta": 0.8148298496427077,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.02489221124314309,
+          "beta": 0.9505040437379246,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.024081443979205242,
+          "beta": 0.9209080439624443,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -0.01065606853144416,
+          "beta": 0.9345279176529426,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.008263460862050192,
+          "beta": 0.9925293149266201,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.0053155698301103615,
+          "beta": 0.9908641870939132,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.0013855043554011882,
+          "beta": 0.9915923062395529,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.0011714595141265897,
+          "beta": 0.9949202551655939,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.0016683929120092154,
+          "beta": 0.9942554005918149,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.0015961388524763837,
+          "beta": 0.9928940755339597,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 0,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -0.1109260852504862
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.03876639348392107
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": -0.012874918445607229
+        }
+      },
+      "monteCarlo": null
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "breakout:POWER_THIRD",
+      "arm": "T60",
+      "status": "OK",
+      "trades": 25,
+      "pnl": 843007.5367355258,
+      "totalReturn": 84.30075367355258,
+      "fees": 47.69913693136364,
+      "sharpeDaily": 0.9305578264935922,
+      "maxDrawdown": 0.9300865925823876,
+      "timeInMarket": 0.9923422233958278,
+      "meanExposureWhenIn": 0.9064377461456389,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -5.946997069090692e-05,
+        "alphaAnnual": -0.021706539302181027,
+        "beta": 0.860701731982305,
+        "seAlphaDaily": 0.0002028366567886756,
+        "z": -0.2931914360670292,
+        "pOneSided": 0.6153120851774923,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.08723748647804605,
+          "beta": 0.029482696133996508,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.5337609042429596,
+          "beta": 0.8151427897979411,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.024827125778300943,
+          "beta": 0.9506569196219052,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.02401410480838387,
+          "beta": 0.9211509710111411,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -0.010628160093563498,
+          "beta": 0.9347307646738929,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.008236254391822658,
+          "beta": 0.9925541355119387,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.005298087098616418,
+          "beta": 0.9908945236758953,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.0013809400775926356,
+          "beta": 0.9916202695650139,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.0011675699991826318,
+          "beta": 0.9949372065987323,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.0016628668155217676,
+          "beta": 0.9942745480035468,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.0015908607542289563,
+          "beta": 0.992917738990263,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 0,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -0.1110347657610242
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.039120899784987805
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": -0.01283848581195282
+        }
+      },
+      "monteCarlo": {
+        "strategySharpe": 0.9305578264935922,
+        "p": 1.0,
+        "p50": 0.9306350907815313,
+        "p95": 1.0172630177193278,
+        "p99": 1.0172630177193278
+      },
+      "criteria": {
+        "c1_alphaHac": false,
+        "c2_monteCarlo": false,
+        "c3_majorityYears": false,
+        "c4_trades": false
+      }
+    },
+    {
+      "product": "ETH-USD",
+      "scenario": "breakout:POWER_THIRD",
+      "arm": "T120",
+      "status": "OK",
+      "trades": 25,
+      "pnl": 842959.8375985944,
+      "totalReturn": 84.29598375985944,
+      "fees": 95.39827386272728,
+      "sharpeDaily": 0.9305054538158647,
+      "maxDrawdown": 0.9301867961327938,
+      "timeInMarket": 0.9923422233958278,
+      "meanExposureWhenIn": 0.906715127652418,
+      "reconstructionMaxRelError": 0.0,
+      "alpha": {
+        "alphaDaily": -5.9728443621614915e-05,
+        "alphaAnnual": -0.021800881921889444,
+        "beta": 0.8611247612048635,
+        "seAlphaDaily": 0.00020283772291873186,
+        "z": -0.29446417935556035,
+        "pOneSided": 0.615798384310416,
+        "n": 3786
+      },
+      "alphaYearly": {
+        "2016": {
+          "alphaAnnual": -0.09068028937568444,
+          "beta": 0.029576964839329693,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2017": {
+          "alphaAnnual": -0.5355875912225715,
+          "beta": 0.8160841656250123,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2018": {
+          "alphaAnnual": -0.024631247428803595,
+          "beta": 0.9511160252765289,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2019": {
+          "alphaAnnual": -0.02381161545326204,
+          "beta": 0.921880576058724,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2020": {
+          "alphaAnnual": -0.010544166002013156,
+          "beta": 0.9353399260715513,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2021": {
+          "alphaAnnual": -0.008154614589967673,
+          "beta": 0.992628606833347,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2022": {
+          "alphaAnnual": -0.005245625057077546,
+          "beta": 0.9909855457813401,
+          "regime": "baissier",
+          "complete": true
+        },
+        "2023": {
+          "alphaAnnual": -0.0013672439225282155,
+          "beta": 0.991704169157281,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2024": {
+          "alphaAnnual": -0.0011558998462839578,
+          "beta": 0.9949880644530581,
+          "regime": "haussier",
+          "complete": true
+        },
+        "2025": {
+          "alphaAnnual": -0.001646285707627838,
+          "beta": 0.994331995162068,
+          "regime": "latéral",
+          "complete": true
+        },
+        "2026": {
+          "alphaAnnual": -0.0015750234181882334,
+          "beta": 0.9929887363048495,
+          "regime": "latéral",
+          "complete": false
+        }
+      },
+      "positiveAlphaFullYears": 0,
+      "alphaByRegime": {
+        "haussier": {
+          "years": 5,
+          "meanAlphaAnnual": -0.11136190311667289
+        },
+        "baissier": {
+          "years": 3,
+          "meanAlphaAnnual": -0.04018572062052186
+        },
+        "latéral": {
+          "years": 2,
+          "meanAlphaAnnual": -0.01272895058044494
+        }
+      },
+      "monteCarlo": null
+    }
+  ],
+  "verdicts": {
+    "rsi-reversion": {
+      "edge": false,
+      "byProduct": {
+        "BTC-USD": {
+          "c1_alphaHac": false,
+          "c2_monteCarlo": true,
+          "c3_majorityYears": false,
+          "c4_trades": true
+        },
+        "ETH-USD": {
+          "c1_alphaHac": false,
+          "c2_monteCarlo": true,
+          "c3_majorityYears": false,
+          "c4_trades": true
+        }
+      }
+    },
+    "ema-cross:POWER_THIRD": {
+      "edge": false,
+      "byProduct": {
+        "BTC-USD": {
+          "c1_alphaHac": false,
+          "c2_monteCarlo": false,
+          "c3_majorityYears": false,
+          "c4_trades": true
+        },
+        "ETH-USD": {
+          "c1_alphaHac": false,
+          "c2_monteCarlo": false,
+          "c3_majorityYears": false,
+          "c4_trades": false
+        }
+      }
+    },
+    "breakout:POWER_THIRD": {
+      "edge": false,
+      "byProduct": {
+        "BTC-USD": {
+          "c1_alphaHac": false,
+          "c2_monteCarlo": false,
+          "c3_majorityYears": false,
+          "c4_trades": true
+        },
+        "ETH-USD": {
+          "c1_alphaHac": false,
+          "c2_monteCarlo": false,
+          "c3_majorityYears": false,
+          "c4_trades": false
+        }
+      }
+    }
+  },
+  "verdict": "PAS D'EDGE"
+}
