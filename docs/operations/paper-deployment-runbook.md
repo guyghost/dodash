@@ -336,3 +336,30 @@ Le premier mark accepté est attendu au plus tard au cycle de 00:01 UTC du
 29-09 si le ticker revient sous 100 bps du nouveau close ; à contrôler par la
 requête AE ci-dessus.
 
+
+## 9. Bascule vers la politique P7 (exposition cible) — procédure, non exécutée
+
+Modèle : `models/target-exposure.md` (revu) ; preuve :
+`docs/analysis/allocation-policies-2026-10-09.md` ; cohérence runtime ↔
+rapport : `packages/backtest/test/target-exposure-coherence.test.ts`
+(CAGR 50,3 % vs 52,0 %, drawdown max 47,2 % vs 45,6 %, dans la tolérance
+figée). Paper uniquement : la configuration est refusée hors paper.
+
+Préalables : PR fusionnée ; Workers paper redéployés depuis `main` (ordre §3,
+market-data puis agent) ; décision opérateur de clore la campagne daily en
+cours (nouveau segment de campagne).
+
+```sh
+T2=…  # token opérateur
+API=https://dodash-paper-dashboard-api.guyghost.workers.dev/api/agents/btc-usd-paper
+curl -s -X POST "$API/stop"  -H "Authorization: Bearer $T2"
+curl -s -X POST "$API/reset" -H "Authorization: Bearer $T2"   # repart de 10 000 $ par créneau
+curl -s -X POST "$API/start" -H "Authorization: Bearer $T2" -H "Content-Type: application/json" \
+  --data @docs/operations/paper-p7-start.json
+curl -s "$API/state" -H "Authorization: Bearer $T2"
+```
+
+Vérification au premier cycle aligné (`HH:01`) : signal `target-exposure`
+(`TARGET_EXPOSURE_TREND_UP/DOWN` ou `WARMUP`) ; ordre seulement à une ancre
+(lundi, changement de tendance), le 1er du mois ou sur dérive > 10 points ;
+`LIVE_TRADING_ENABLED=false`, `HYPERLIQUID_PERP_TRADING_ENABLED=false`.

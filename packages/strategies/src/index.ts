@@ -17,3 +17,4 @@ export type {
 } from "./strategy.js";
 export { withConfidenceCalibration } from "./confidence-calibration.js";
 export { withTargetSignalNotional } from "./target-notional.js";
+export { createTargetExposureStrategy, TARGET_EXPOSURE_STRATEGY_ID } from "./target-exposure.js";

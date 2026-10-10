@@ -22,3 +22,26 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**, paper uniquement.
 Fidélité : SMA200 incluant la clôture courante, vol échantillon √365 sur 30
 rendements, exécution à la clôture, reconstruction d'ancre sans état
 équivalente à P7 par créneau.
+
+## Revue d'implémentation runtime — APPROVE (2026-10-10)
+
+Revue indépendante du diff runtime (configuration, interpréteur, registre,
+stratégie informative, config paper, runbook). Vérifié : paper uniquement sur
+les chemins mono, multi et projection de créneau ; exclusivité INV-T6 ;
+plafonds ≥ 1e9 y compris consolidé ; branche d'allocation compatible avec
+`AllocationDecision` ; porte de risque limitée aux ventes ; aucun chemin live
+ou perp modifié. Corrections intégrées avant commit :
+
+- test du kill switch remplacé (le précédent annulait le cycle avant toute
+  décision) : `checkRisk` refuse une réduction sous kill switch malgré la
+  porte, l'accepte sans ;
+- tests d'admission portefeuille : une vente l'évite, un achat y est soumis et
+  peut être refusé ;
+- `cooldownMs = 0` exigé par la validation (un cooldown pourrait bloquer une
+  réduction, INV-T7) ;
+- nettoyage (garde redondante, indentation).
+
+Limite consignée : le test de cohérence rejoue les mêmes fonctions pures que
+l'interpréteur (décision, porte, `checkRisk`, exécution paper), pas
+`runTradingCycle` lui-même ; le câblage interpréteur est couvert par les tests
+`apps/agent/test/target-exposure-runtime.test.ts`.

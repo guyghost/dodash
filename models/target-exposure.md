@@ -105,7 +105,8 @@ IN_BAND, BELOW_MIN_ORDER, INSUFFICIENT_HISTORY }`.
     augmenter l'exposition consolidée). Le kill switch, la vente à découvert
     et les plafonds restent appliqués.
   - `maxDecisionNotional` ne s'applique pas (pas d'allocateur) ;
-    `cooldownMs = 0` en paper P7.
+    `cooldownMs = 0` **exigé** par la validation (un cooldown pourrait
+    bloquer une réduction, INV-T7).
 - **Ordres manqués** : la garde « une décision par bougie » s'applique ; un
   achat d'ancre ou de début de mois refusé (perte journalière, échec de
   cycle) n'est pas rejoué sur la même bougie ; il est rattrapé à la bougie

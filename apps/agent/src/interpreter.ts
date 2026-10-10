@@ -1,4 +1,4 @@
-import { allocateSignals } from "@dodash/allocator";
+import { allocateSignals, type AllocationDecision } from "@dodash/allocator";
 import {
   computeIndicators,
   FUNDING_AVG_PERIOD,
@@ -7,13 +7,23 @@ import { checkRisk } from "@dodash/risk";
 import { FUNDING_TREND_STRATEGY_ID } from "@dodash/strategies";
 import {
   planMarketRetry,
+  planTargetExposure,
   resolveDailyRiskWindow,
+  targetExposureRiskGate,
   type TradingCycleEvent,
   type WorkflowError,
   type WorkflowErrorCode,
   type WorkflowPhase,
 } from "@dodash/models";
-import type { Candle, Timeframe } from "@dodash/domain";
+import {
+  createClientOrderId,
+  createOrderIntent,
+  err,
+  ok,
+  type Candle,
+  type Result,
+  type Timeframe,
+} from "@dodash/domain";
 
 import { createTradingMachineSession } from "./machine-session.js";
 import { createConfiguredStrategyRegistry } from "./strategy-registry.js";
@@ -391,16 +401,32 @@ export const runTradingCycle = async (
             break;
           }
           const decisionId = `decision:${artifacts.cycleId}`;
-          const result = allocateSignals({
-            agentId: input.agentId,
-            cycleId: artifacts.cycleId,
-            decisionId,
-            signals: artifacts.signals,
-            marketPrices: { [input.configuration.productId]: last.close },
-            capitalAvailable: Math.max(0, portfolio.cash),
-            maxDecisionNotional: input.configuration.maxDecisionNotional,
-            minNetQuantity: input.configuration.minNetQuantity,
-          });
+          // Politique P7 (models/target-exposure.md §4) : l'ordre vient de la
+          // décision d'exposition cible, pas de l'allocateur — qui plafonne
+          // aussi les ventes par le cash et bloquerait toute réduction.
+          const result =
+            input.configuration.sizingPolicy.type === "TARGET_EXPOSURE"
+              ? targetExposureAllocation({
+                  agentId: input.agentId,
+                  cycleId: artifacts.cycleId,
+                  decisionId,
+                  productId: input.configuration.productId,
+                  candles: artifacts.market?.candles ?? [],
+                  positionQuantity: portfolio.positionQuantity,
+                  cash: portfolio.cash,
+                  feeBps: input.configuration.broker.feeBps,
+                  slippageBps: input.configuration.broker.slippageBps,
+                })
+              : allocateSignals({
+                  agentId: input.agentId,
+                  cycleId: artifacts.cycleId,
+                  decisionId,
+                  signals: artifacts.signals,
+                  marketPrices: { [input.configuration.productId]: last.close },
+                  capitalAvailable: Math.max(0, portfolio.cash),
+                  maxDecisionNotional: input.configuration.maxDecisionNotional,
+                  minNetQuantity: input.configuration.minNetQuantity,
+                });
           if (!result.ok) {
             await send({
               type: "ALLOCATION_FAILED",
@@ -438,13 +464,20 @@ export const runTradingCycle = async (
             await send({ type: "RISK_FAILED", error: missingArtifact("risk") });
             break;
           }
+          // Porte de risque P7 (models/target-exposure.md §4, INV-T7) : une
+          // réduction n'est bloquée ni par la perte journalière ni par
+          // l'admission portefeuille ; un achat passe par les deux.
+          const targetExposureGate =
+            input.configuration.sizingPolicy.type === "TARGET_EXPOSURE"
+              ? targetExposureRiskGate(order.side, dailyPnl)
+              : null;
           const result = checkRisk(
             order,
             {
               marketPrice: price,
               currentPositionQuantity: portfolio.positionQuantity,
               otherExposureNotional,
-              dailyPnl,
+              dailyPnl: targetExposureGate?.dailyPnlForRisk ?? dailyPnl,
               lastTradeAt: input.lastTradeAt,
               now: current.triggeredAt,
               killSwitchActive: session.context.shutdownMode === "kill-switch",
@@ -464,7 +497,8 @@ export const runTradingCycle = async (
           // risque approuvé (C3) et se consolide en RISK_REJECTED produit.
           if (
             result.value.status === "APPROVED" &&
-            input.effects.proposePortfolioRisk !== undefined
+            input.effects.proposePortfolioRisk !== undefined &&
+            targetExposureGate?.portfolioAdmission !== false
           ) {
             const admission = await input.effects.proposePortfolioRisk(
               input.configuration.productId,
@@ -790,4 +824,61 @@ export const runTradingCycle = async (
   } finally {
     session.stop();
   }
+};
+
+/**
+ * Étape d'allocation de la politique P7 (models/target-exposure.md §3–§4) :
+ * décision pure `planTargetExposure` traduite en au plus une intention
+ * MARKET, avec le schéma d'identifiant de l'allocateur.
+ */
+const targetExposureAllocation = (input: {
+  readonly agentId: string;
+  readonly cycleId: string;
+  readonly decisionId: string;
+  readonly productId: Parameters<typeof createOrderIntent>[0]["productId"];
+  readonly candles: readonly Candle[];
+  readonly positionQuantity: number;
+  readonly cash: number;
+  readonly feeBps: number;
+  readonly slippageBps: number;
+}): Result<AllocationDecision, unknown> => {
+  const decision = planTargetExposure({
+    candles: input.candles,
+    positionQuantity: input.positionQuantity,
+    cash: input.cash,
+    feeBps: input.feeBps,
+    slippageBps: input.slippageBps,
+  });
+  const net = decision.side === "BUY" ? decision.quantity : decision.side === "SELL" ? -decision.quantity : 0;
+  if (decision.side === "HOLD") {
+    return ok(
+      Object.freeze({
+        decisionId: input.decisionId,
+        outcome: "NO_ACTION" as const,
+        orders: Object.freeze([]),
+        netQuantities: Object.freeze({ [input.productId]: net }),
+      }),
+    );
+  }
+  const clientOrderId = createClientOrderId(input.agentId, input.cycleId, input.decisionId, 0);
+  if (!clientOrderId.ok) return err(clientOrderId.error);
+  const intent = createOrderIntent({
+    clientOrderId: clientOrderId.value,
+    decisionId: input.decisionId,
+    strategyIds: ["target-exposure"],
+    productId: input.productId,
+    side: decision.side,
+    type: "MARKET",
+    quantity: decision.quantity,
+    limitPrice: null,
+  });
+  if (!intent.ok) return err(intent.error);
+  return ok(
+    Object.freeze({
+      decisionId: input.decisionId,
+      outcome: "ALLOCATED" as const,
+      orders: Object.freeze([intent.value]),
+      netQuantities: Object.freeze({ [input.productId]: net }),
+    }),
+  );
 };
