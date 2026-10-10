@@ -45,3 +45,15 @@ Limite consignée : le test de cohérence rejoue les mêmes fonctions pures que
 l'interpréteur (décision, porte, `checkRisk`, exécution paper), pas
 `runTradingCycle` lui-même ; le câblage interpréteur est couvert par les tests
 `apps/agent/test/target-exposure-runtime.test.ts`.
+
+## Revue des retours PR #24 (2026-10-10)
+
+Remarque Codex P1 : le coupe-circuit d'achat ne voyait jamais la perte du
+jour (fenêtre journalière paper valorisée sur la nouvelle bougie seulement à
+la fin du cycle). Correction relue indépendamment — **APPROVE** sur ce point :
+`decisionCandlePnl` exact (position modifiée seulement aux clôtures, bougies
+closes), porte d'achat sur `min(dailyPnl, pnlBougie)`, coupe-circuit consolidé
+(en retard d'une bougie) neutralisé et consigné comme affaiblissement accepté
+pour le paper ; aucune autre politique touchée ; test runtime rouge avant le
+correctif ; test de cohérence aligné sur le runtime (CAGR 50,4 %, drawdown
+max 47,2 %, pire fenêtre 35,2 %, 80 achats bloqués, 0 vente rejetée).

@@ -1,7 +1,8 @@
 // Cohérence de la politique P7 runtime avec le rapport
 // docs/analysis/allocation-policies-2026-10-09.md (models/target-exposure.md §7).
 // Rejoue la décision pure du runtime (fenêtre glissante de 240 bougies), la
-// porte de risque §4 (checkRisk + coupe-circuit consolidé) et l'exécution paper
+// porte de risque §4 (checkRisk, dailyPnl du runtime nul à la décision, perte
+// de la bougie de décision) et l'exécution paper
 // du runtime, deux créneaux indépendants de 10 000 $.
 // Tolérance figée dans le modèle avant la première exécution.
 import { createHash } from "node:crypto";
@@ -9,7 +10,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { createOrderIntent, createProductId } from "@dodash/domain";
-import { planTargetExposure, TARGET_EXPOSURE_MIN_CANDLES, targetExposureRiskGate } from "@dodash/models";
+import {
+  decisionCandlePnl,
+  planTargetExposure,
+  TARGET_EXPOSURE_MIN_CANDLES,
+  targetExposureRiskGate,
+} from "@dodash/models";
 import { executePaperOrder, type PaperPortfolio } from "@dodash/paper-execution";
 import { checkRisk } from "@dodash/risk";
 import { describe, expect, it } from "vitest";
@@ -49,7 +55,6 @@ const RISK = {
   stopLossBps: 150,
   takeProfitBps: 300,
 };
-const PORTFOLIO_MAX_DAILY_LOSS = 5_000;
 const PRODUCTS = ["BTC-USD", "ETH-USD"] as const;
 
 /** Rejoue les deux créneaux jour par jour : décision, porte de risque §4, exécution paper. */
@@ -62,17 +67,9 @@ const replay = (calendar: readonly number[]) => {
   const sleeves: Record<string, PaperPortfolio> = Object.fromEntries(
     PRODUCTS.map((product) => [product, { cash: SLEEVE_CAPITAL, positionQuantity: 0, averagePrice: 0 }]),
   );
-  const previousEquity: Record<string, number> = { "BTC-USD": SLEEVE_CAPITAL, "ETH-USD": SLEEVE_CAPITAL };
   const totals: number[] = [];
   const counters = { orders: 0, blockedBuys: 0, rejectedSells: 0 };
   for (const day of calendar) {
-    const marks: Record<string, number> = {};
-    for (const product of PRODUCTS) {
-      const candle = candles[product][index[product] ?? 0];
-      const sleeve = sleeves[product] as PaperPortfolio;
-      marks[product] = candle?.start === day ? sleeve.cash + sleeve.positionQuantity * candle.close : sleeve.cash;
-    }
-    const portfolioDailyPnl = PRODUCTS.reduce((sum, product) => sum + (marks[product] ?? 0) - (previousEquity[product] ?? 0), 0);
     for (const product of PRODUCTS) {
       const position = index[product] ?? 0;
       const candle = candles[product][position];
@@ -80,8 +77,9 @@ const replay = (calendar: readonly number[]) => {
       const productId = createProductId(product);
       if (!productId.ok) throw new Error("produit invalide");
       const sleeve = sleeves[product] as PaperPortfolio;
+      const window = candles[product].slice(Math.max(0, position - TARGET_EXPOSURE_MIN_CANDLES + 1), position + 1);
       const decision = planTargetExposure({
-        candles: candles[product].slice(Math.max(0, position - TARGET_EXPOSURE_MIN_CANDLES + 1), position + 1),
+        candles: window,
         positionQuantity: sleeve.positionQuantity,
         cash: sleeve.cash,
         ...BROKER,
@@ -98,7 +96,9 @@ const replay = (calendar: readonly number[]) => {
           limitPrice: null,
         });
         if (!intent.ok) throw new Error("intention invalide");
-        const gate = targetExposureRiskGate(decision.side, (marks[product] ?? 0) - (previousEquity[product] ?? 0));
+        // Runtime paper : dailyPnl vaut 0 à la seule décision du jour (fenêtre
+        // non encore valorisée) ; la porte prend la perte de la bougie.
+        const gate = targetExposureRiskGate(decision.side, 0, decisionCandlePnl(window, sleeve.positionQuantity));
         const risk = checkRisk(
           intent.value,
           {
@@ -113,8 +113,7 @@ const replay = (calendar: readonly number[]) => {
           RISK,
         );
         if (!risk.ok) throw new Error(`risque invalide ${risk.error.code}`);
-        const admitted = !gate.portfolioAdmission || portfolioDailyPnl > -PORTFOLIO_MAX_DAILY_LOSS;
-        if (risk.value.status === "APPROVED" && admitted) {
+        if (risk.value.status === "APPROVED") {
           const execution = executePaperOrder(sleeve, intent.value, candle.close, day, BROKER);
           if (!execution.ok) throw new Error(`exécution refusée ${execution.error.code}`);
           sleeves[product] = execution.value.portfolio;
@@ -135,7 +134,6 @@ const replay = (calendar: readonly number[]) => {
       const candle = candles[product][(index[product] ?? 0) - 1];
       const sleeve = sleeves[product] as PaperPortfolio;
       const equity = candle !== undefined && candle.start === day ? sleeve.cash + sleeve.positionQuantity * candle.close : sleeve.cash;
-      previousEquity[product] = equity;
       total += equity;
     }
     totals.push(total);

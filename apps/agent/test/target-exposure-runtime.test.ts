@@ -216,6 +216,9 @@ describe("configuration TARGET_EXPOSURE (INV-T5, INV-T6, §5)", () => {
     expect(parsed.ok).toBe(true);
     const weak = { ...start, portfolioRisk: { ...(start.portfolioRisk as object), maxGrossExposure: 20_000 } };
     expect(parseMultiProductAgentConfiguration(weak).ok).toBe(false);
+    // Coupe-circuit consolidé en retard d'une bougie : neutralisé sous P7 (§5.3).
+    const lagged = { ...start, portfolioRisk: { ...(start.portfolioRisk as object), maxDailyLoss: 5_000 } };
+    expect(parseMultiProductAgentConfiguration(lagged).ok).toBe(false);
   });
 });
 
@@ -243,6 +246,19 @@ describe("interpréteur TARGET_EXPOSURE (§4, INV-T7)", () => {
     const allowed = await run({ closes, portfolio: { cash: 10_000, positionQuantity: 0, averagePrice: 0 }, dailyPnl: 0 });
     // Jeudi hors ancre : la dérive (0 % vs cible) dépasse 10 points ⇒ achat.
     expect(allowed.submitted.map((intent) => intent.side)).toEqual(["BUY"]);
+  });
+
+  it("bloque un achat quand la bougie de décision a perdu plus que le coupe-circuit, même avec dailyPnl nul (revue PR #24)", async () => {
+    const closes = rising(239);
+    closes.push(140); // chute de ~13 % sur la bougie de décision, tendance conservée (> SMA200)
+    const portfolio = { cash: 20_000, positionQuantity: 150, averagePrice: 100 };
+    // Variation du créneau sur la bougie : 150 × (140 − clôture précédente) < −2 500 $.
+    const blocked = await run({ closes, portfolio, dailyPnl: 0 });
+    expect(blocked.submitted).toEqual([]);
+    expect(blocked.result.machine.context.outcome).toBe("RISK_REJECTED");
+    // Même dérive, perte de bougie sous le seuil : l'achat passe.
+    const small = await run({ closes, portfolio: { ...portfolio, positionQuantity: 50, cash: 40_000 }, dailyPnl: 0 });
+    expect(small.submitted.map((intent) => intent.side)).toEqual(["BUY"]);
   });
 
   it("vend sans passer par l'admission portefeuille, même si elle refuserait", async () => {
@@ -282,7 +298,7 @@ describe("interpréteur TARGET_EXPOSURE (§4, INV-T7)", () => {
       limitPrice: null,
     });
     if (!intent.ok) throw new Error("intention invalide");
-    const gate = targetExposureRiskGate("SELL", -9_000);
+    const gate = targetExposureRiskGate("SELL", -9_000, -9_000);
     const snapshot = {
       marketPrice: 100,
       currentPositionQuantity: 50,

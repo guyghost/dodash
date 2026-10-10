@@ -6,6 +6,7 @@ import {
   simpleMovingAverage,
   TARGET_EXPOSURE_MIN_CANDLES,
   TARGET_EXPOSURE_POLICY,
+  decisionCandlePnl,
   targetExposureRiskGate,
   type TargetExposureCandle,
 } from "./target-exposure.js";
@@ -129,12 +130,23 @@ describe("planTargetExposure", () => {
   });
 });
 
+describe("decisionCandlePnl", () => {
+  it("mesure la variation du créneau sur la bougie de décision", () => {
+    const candles = series([100, 90], MONDAY);
+    expect(decisionCandlePnl(candles, 50)).toBe(-500);
+    expect(decisionCandlePnl(candles.slice(1), 50)).toBeNull();
+    expect(decisionCandlePnl(candles, 0)).toBe(0);
+  });
+});
+
 describe("targetExposureRiskGate (INV-T7)", () => {
   it("neutralise la perte journalière et l'admission pour une réduction", () => {
-    expect(targetExposureRiskGate("SELL", -9_000)).toEqual({ dailyPnlForRisk: 0, portfolioAdmission: false });
+    expect(targetExposureRiskGate("SELL", -9_000, -9_000)).toEqual({ dailyPnlForRisk: 0, portfolioAdmission: false });
   });
 
-  it("laisse un achat soumis aux deux gardes", () => {
-    expect(targetExposureRiskGate("BUY", -9_000)).toEqual({ dailyPnlForRisk: -9_000, portfolioAdmission: true });
+  it("soumet un achat à la pire des pertes : fenêtre du runtime ou bougie de décision", () => {
+    expect(targetExposureRiskGate("BUY", 0, -3_000)).toEqual({ dailyPnlForRisk: -3_000, portfolioAdmission: true });
+    expect(targetExposureRiskGate("BUY", -9_000, 100)).toEqual({ dailyPnlForRisk: -9_000, portfolioAdmission: true });
+    expect(targetExposureRiskGate("BUY", -100, null)).toEqual({ dailyPnlForRisk: -100, portfolioAdmission: true });
   });
 });

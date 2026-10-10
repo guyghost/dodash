@@ -98,7 +98,13 @@ IN_BAND, BELOW_MIN_ORDER, INSUFFICIENT_HISTORY }`.
   `SELL` sinon, confiance = cible, `suggestedSize = 0`. Elle documente les
   entrées de la décision ; elle ne dimensionne rien.
 - **Gardes de risque** (amendement de revue du 2026-10-10) :
-  - **achat** : `checkRisk` complet puis admission portefeuille, inchangés ;
+  - **achat** : `checkRisk` complet puis admission portefeuille. La perte
+    journalière transmise à `checkRisk` est `min(dailyPnl, pnlBougie)`, où
+    `pnlBougie = q × (clôture_t − clôture_{t−1})` est la variation du créneau
+    sur la bougie de décision (amendement de revue PR #24 : en paper, la
+    fenêtre journalière n'est valorisée sur la nouvelle bougie qu'à la fin du
+    cycle, donc `dailyPnl` vaut 0 à la seule décision du jour ; `pnlBougie`
+    est exact car la position ne change qu'aux clôtures) ;
   - **vente (réduction d'exposition)** : `checkRisk` avec une perte
     journalière neutralisée (le garde perte journalière ne bloque **jamais**
     une réduction) ; pas d'admission portefeuille (une réduction ne peut pas
@@ -120,9 +126,16 @@ IN_BAND, BELOW_MIN_ORDER, INSUFFICIENT_HISTORY }`.
 2. Sans levier, long-only : exposition ∈ [0 ; 1] du créneau, jamais de cash
    négatif, jamais de vente au-delà de la position.
 3. **Coupe-circuit** : perte journalière par créneau (`risk.maxDailyLoss`,
-   2 500 $) et consolidée (`portfolioRisk.maxDailyLoss`, 5 000 $). Sous cette
-   politique il **bloque les achats** jusqu'au jour UTC suivant, jamais une
-   réduction (§4). Montants absolus : quand l'équité croît, le coupe-circuit
+   2 500 $), mesurée sur la bougie de décision (§4). Sous cette politique il
+   **bloque les achats** de la bougie, jamais une réduction (§4). Le
+   coupe-circuit **consolidé** (`portfolioRisk.maxDailyLoss`) lit des pertes
+   publiées à la fin du cycle précédent, donc en retard d'une bougie : il est
+   **neutralisé** (validation ≥ 1e9). C'est un **affaiblissement accepté pour
+   le paper** : il ne reste que les coupe-circuits par créneau (2 500 $
+   chacun), qui ne bloquent pas un achat sur un créneau dont la perte est
+   sous son seuil même si la perte totale dépasse 5 000 $ (ex. BTC −2 400 $,
+   ETH −2 700 $). Un coupe-circuit consolidé à jour exigerait de publier la
+   perte de bougie à l'orchestrateur avant l'admission (hors périmètre). Montants absolus : quand l'équité croît, le coupe-circuit
    devient plus conservateur (il bloque les achats sur une perte relative plus
    faible), jamais plus permissif. Le kill switch opérateur reste prioritaire.
 4. Les SL/TP (`stopLossBps`/`takeProfitBps`) ne déclenchent rien en paper
@@ -131,8 +144,9 @@ IN_BAND, BELOW_MIN_ORDER, INSUFFICIENT_HISTORY }`.
    `maxPositionNotional`, `maxGrossExposure` (créneau) et
    `portfolioRisk.maxGrossExposure` rejettent un ordre entier, y compris une
    vente, et ne suivent pas la croissance de l'équité. La validation exige
-   pour cette politique des valeurs **≥ 1 000 000 000 $** : l'exposition est
-   bornée structurellement par INV-T2 (≤ équité du créneau, sans levier).
+   pour cette politique des valeurs **≥ 1 000 000 000 $** (ainsi que pour
+   `portfolioRisk.maxDailyLoss`, cf. 3.) : l'exposition est bornée
+   structurellement par INV-T2 (≤ équité du créneau, sans levier).
 
 ## 6. Configuration paper
 
@@ -140,7 +154,7 @@ IN_BAND, BELOW_MIN_ORDER, INSUFFICIENT_HISTORY }`.
 BTC-USD + ETH-USD, `ONE_DAY`, intervalle 3 600 s, `candleLimit 240`,
 `strategyIds ["target-exposure"]`, `sizingPolicy TARGET_EXPOSURE`, capital
 10 000 $ par créneau, plafonds absolus à 1e12 $, `maxDailyLoss` 2 500 $
-par créneau et 5 000 $ consolidés, `cooldownMs 0`. La bascule depuis la
+par créneau, consolidé neutralisé (1e12), `cooldownMs 0`. La bascule depuis la
 campagne daily (stop, reset, start) est une opération documentée dans le
 runbook, **non exécutée** par ce changement.
 
@@ -149,8 +163,8 @@ runbook, **non exécutée** par ce changement.
 Test `packages/backtest/test/target-exposure-coherence.test.ts` : rejoue la
 décision §3 jour par jour (fenêtre glissante de 240 bougies, comme le
 runtime), la **porte de risque §4** (`checkRisk` avec la configuration paper
-P7, perte journalière approchée par la variation d'équité du créneau sur la
-journée) et l'exécution paper du runtime (`executePaperOrder`, 60 + 2 bps),
+P7, `dailyPnl` du runtime = 0 à la décision et `pnlBougie` calculé comme dans
+l'interpréteur) et l'exécution paper du runtime (`executePaperOrder`, 60 + 2 bps),
 deux créneaux de 10 000 $ (créneau ETH en cash avant 2016-05-19), sur les
 bougies archivées de la campagne daily long (SHA-256 vérifiés). Tolérance
 figée avant exécution :
@@ -192,5 +206,6 @@ il ne justifie jamais un élargissement de la tolérance (nouveau modèle).
   INV-T7).
 - Interpréteur : un créneau entièrement investi peut vendre (cash 0) ; une
   vente passe malgré une perte journalière dépassée ; un achat est bloqué par
-  elle.
+  elle, y compris quand `dailyPnl = 0` mais que la bougie de décision a perdu
+  plus que `maxDailyLoss`.
 - Cohérence §7.

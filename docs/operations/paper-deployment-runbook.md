@@ -342,7 +342,7 @@ requête AE ci-dessus.
 Modèle : `models/target-exposure.md` (revu) ; preuve :
 `docs/analysis/allocation-policies-2026-10-09.md` ; cohérence runtime ↔
 rapport : `packages/backtest/test/target-exposure-coherence.test.ts`
-(CAGR 50,3 % vs 52,0 %, drawdown max 47,2 % vs 45,6 %, dans la tolérance
+(CAGR 50,4 % vs 52,0 %, drawdown max 47,2 % vs 45,6 %, dans la tolérance
 figée). Paper uniquement : la configuration est refusée hors paper.
 
 Préalables : PR fusionnée ; Workers paper redéployés depuis `main` (ordre §3,

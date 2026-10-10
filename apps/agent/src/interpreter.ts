@@ -7,6 +7,7 @@ import { checkRisk } from "@dodash/risk";
 import { FUNDING_TREND_STRATEGY_ID } from "@dodash/strategies";
 import {
   planMarketRetry,
+  decisionCandlePnl,
   planTargetExposure,
   resolveDailyRiskWindow,
   targetExposureRiskGate,
@@ -466,10 +467,16 @@ export const runTradingCycle = async (
           }
           // Porte de risque P7 (models/target-exposure.md §4, INV-T7) : une
           // réduction n'est bloquée ni par la perte journalière ni par
-          // l'admission portefeuille ; un achat passe par les deux.
+          // l'admission portefeuille ; un achat est soumis à la pire perte
+          // entre la fenêtre du runtime (non encore valorisée sur la bougie
+          // de décision en paper) et la variation du créneau sur cette bougie.
           const targetExposureGate =
             input.configuration.sizingPolicy.type === "TARGET_EXPOSURE"
-              ? targetExposureRiskGate(order.side, dailyPnl)
+              ? targetExposureRiskGate(
+                  order.side,
+                  dailyPnl,
+                  decisionCandlePnl(current.market?.candles ?? [], portfolio.positionQuantity),
+                )
               : null;
           const result = checkRisk(
             order,

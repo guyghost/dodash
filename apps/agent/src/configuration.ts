@@ -507,9 +507,11 @@ export const parseMultiProductAgentConfiguration = (
         slot.risk.maxPositionNotional,
         slot.risk.maxGrossExposure,
       ]),
+      // Coupe-circuit consolidé neutralisé (§5.3) : il lit des pertes
+      // publiées avec une bougie de retard.
       ...(parsed.data.portfolioRisk === undefined
         ? []
-        : [parsed.data.portfolioRisk.maxGrossExposure]),
+        : [parsed.data.portfolioRisk.maxGrossExposure, parsed.data.portfolioRisk.maxDailyLoss]),
     ],
     cooldowns: sorted.map((slot) => slot.risk.cooldownMs),
   });

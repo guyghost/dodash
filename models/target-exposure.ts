@@ -186,15 +186,33 @@ export const planTargetExposure = (input: TargetExposureInput): TargetExposureDe
 export const TARGET_EXPOSURE_MIN_ABSOLUTE_CAP = 1_000_000_000;
 
 /**
+ * Variation du créneau sur la bougie de décision (§4) : la position ne change
+ * qu'aux clôtures, donc `q × (clôture_t − clôture_{t−1})` est exacte.
+ * `null` si moins de deux bougies (la porte retombe alors sur `dailyPnl`).
+ */
+export const decisionCandlePnl = (
+  candles: readonly TargetExposureCandle[],
+  positionQuantity: number,
+): number | null => {
+  const last = candles.at(-1);
+  const previous = candles.at(-2);
+  if (last === undefined || previous === undefined) return null;
+  const pnl = Math.max(0, positionQuantity) * (last.close - previous.close);
+  return pnl === 0 ? 0 : pnl; // normalise -0
+};
+
+/**
  * Porte de risque (§4, INV-T7) : une réduction n'est jamais bloquée par la
- * perte journalière ni par l'admission portefeuille ; un achat passe par les
- * deux, inchangés.
+ * perte journalière ni par l'admission portefeuille ; un achat est soumis à
+ * la pire des deux pertes (fenêtre du runtime, bougie de décision) puis à
+ * l'admission.
  */
 export const targetExposureRiskGate = (
   side: "BUY" | "SELL",
   dailyPnl: number,
+  candlePnl: number | null,
 ): { readonly dailyPnlForRisk: number; readonly portfolioAdmission: boolean } =>
   Object.freeze({
-    dailyPnlForRisk: side === "SELL" ? 0 : dailyPnl,
+    dailyPnlForRisk: side === "SELL" ? 0 : Math.min(dailyPnl, candlePnl ?? dailyPnl),
     portfolioAdmission: side === "BUY",
   });

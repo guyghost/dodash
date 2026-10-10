@@ -42,5 +42,5 @@
       }
     }
   ],
-  "portfolioRisk": { "maxGrossExposure": 1000000000000, "maxDailyLoss": 5000 }
+  "portfolioRisk": { "maxGrossExposure": 1000000000000, "maxDailyLoss": 1000000000000 }
 }

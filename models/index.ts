@@ -472,6 +472,7 @@ export {
 } from "./funding-rate-strategy.js";
 export {
   annualizedRealizedVolatility,
+  decisionCandlePnl,
   planTargetExposure,
   simpleMovingAverage,
   TARGET_EXPOSURE_MIN_ABSOLUTE_CAP,
