@@ -89,7 +89,7 @@
         "2016": {
           "return": -0.38088012139605465,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "return": 89.84191176470588,
@@ -244,6 +244,8 @@
         }
       },
       "positiveAlphaFullYears": 5,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -358,6 +360,8 @@
         }
       },
       "positiveAlphaFullYears": 5,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -484,6 +488,8 @@
         }
       },
       "positiveAlphaFullYears": 5,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -598,6 +604,8 @@
         }
       },
       "positiveAlphaFullYears": 2,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -712,6 +720,8 @@
         }
       },
       "positiveAlphaFullYears": 2,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -838,6 +848,8 @@
         }
       },
       "positiveAlphaFullYears": 2,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -952,6 +964,8 @@
         }
       },
       "positiveAlphaFullYears": 2,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -1066,6 +1080,8 @@
         }
       },
       "positiveAlphaFullYears": 2,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -1192,6 +1208,8 @@
         }
       },
       "positiveAlphaFullYears": 2,
+      "completeYears": 10,
+      "majorityRequired": 6,
       "alphaByRegime": {
         "haussier": {
           "years": 7,
@@ -1236,7 +1254,7 @@
           "alphaAnnual": -0.16803627110165234,
           "beta": 0.26018041217003385,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": 1.2663481374630692e-15,
@@ -1300,14 +1318,16 @@
         }
       },
       "positiveAlphaFullYears": 7,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -9.497611030973019e-17
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.05601209036721655
+          "years": 2,
+          "meanAlphaAnnual": 1.345494896054511e-15
         },
         "latéral": {
           "years": 2,
@@ -1344,7 +1364,7 @@
           "alphaAnnual": -0.17392091118099848,
           "beta": 0.2603047185636141,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": 1.2663481374630692e-15,
@@ -1408,14 +1428,16 @@
         }
       },
       "positiveAlphaFullYears": 5,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -3.0075768264747893e-16
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.05797363706033209
+          "years": 2,
+          "meanAlphaAnnual": 1.1080546202801855e-15
         },
         "latéral": {
           "years": 2,
@@ -1432,7 +1454,7 @@
       "criteria": {
         "c1_alphaHac": false,
         "c2_monteCarlo": true,
-        "c3_majorityYears": false,
+        "c3_majorityYears": true,
         "c4_trades": true
       }
     },
@@ -1464,7 +1486,7 @@
           "alphaAnnual": -0.191553934177982,
           "beta": 0.2606837129643997,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": -1.2663481374630692e-15,
@@ -1528,14 +1550,16 @@
         }
       },
       "positiveAlphaFullYears": 5,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -2.5326962749261384e-16
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.06385131139265925
+          "years": 2,
+          "meanAlphaAnnual": 2.1369624819689292e-15
         },
         "latéral": {
           "years": 2,
@@ -1572,7 +1596,7 @@
           "alphaAnnual": -0.007019080769843986,
           "beta": 0.004097639781765404,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": -0.3913567512759212,
@@ -1636,14 +1660,16 @@
         }
       },
       "positiveAlphaFullYears": 0,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -0.11757836719969253
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.04611160176882486
+          "years": 2,
+          "meanAlphaAnnual": -0.0656578622683153
         },
         "latéral": {
           "years": 2,
@@ -1680,7 +1706,7 @@
           "alphaAnnual": -0.007153565448266177,
           "beta": 0.004099357667245371,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": -0.3915097493411898,
@@ -1744,14 +1770,16 @@
         }
       },
       "positiveAlphaFullYears": 0,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -0.11761034941795374
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.04616796264104405
+          "years": 2,
+          "meanAlphaAnnual": -0.06567516123743297
         },
         "latéral": {
           "years": 2,
@@ -1800,7 +1828,7 @@
           "alphaAnnual": -0.007557064157280659,
           "beta": 0.004104511686776803,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": -0.3919689134789607,
@@ -1864,14 +1892,16 @@
         }
       },
       "positiveAlphaFullYears": 0,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -0.11770636594186241
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.04633706705443532
+          "years": 2,
+          "meanAlphaAnnual": -0.06572706850301265
         },
         "latéral": {
           "years": 2,
@@ -1908,7 +1938,7 @@
           "alphaAnnual": -0.08609139937850976,
           "beta": 0.029451263048705836,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": -0.5331539329894088,
@@ -1972,14 +2002,16 @@
         }
       },
       "positiveAlphaFullYears": 0,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -0.1109260852504862
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.03876639348392107
+          "years": 2,
+          "meanAlphaAnnual": -0.015103890536626726
         },
         "latéral": {
           "years": 2,
@@ -2016,7 +2048,7 @@
           "alphaAnnual": -0.08723748647804605,
           "beta": 0.029482696133996508,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": -0.5337609042429596,
@@ -2080,14 +2112,16 @@
         }
       },
       "positiveAlphaFullYears": 0,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -0.1110347657610242
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.039120899784987805
+          "years": 2,
+          "meanAlphaAnnual": -0.01506260643845868
         },
         "latéral": {
           "years": 2,
@@ -2136,7 +2170,7 @@
           "alphaAnnual": -0.09068028937568444,
           "beta": 0.029576964839329693,
           "regime": "baissier",
-          "complete": true
+          "complete": false
         },
         "2017": {
           "alphaAnnual": -0.5355875912225715,
@@ -2200,14 +2234,16 @@
         }
       },
       "positiveAlphaFullYears": 0,
+      "completeYears": 9,
+      "majorityRequired": 5,
       "alphaByRegime": {
         "haussier": {
           "years": 5,
           "meanAlphaAnnual": -0.11136190311667289
         },
         "baissier": {
-          "years": 3,
-          "meanAlphaAnnual": -0.04018572062052186
+          "years": 2,
+          "meanAlphaAnnual": -0.01493843624294057
         },
         "latéral": {
           "years": 2,
@@ -2230,7 +2266,7 @@
         "ETH-USD": {
           "c1_alphaHac": false,
           "c2_monteCarlo": true,
-          "c3_majorityYears": false,
+          "c3_majorityYears": true,
           "c4_trades": true
         }
       }

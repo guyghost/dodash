@@ -36,7 +36,8 @@ config.
     retards, et correction de Bonferroni (seuil 0,05 / 6).
   - Monte Carlo d'exposition aléatoire appariée : 2 000 tirages, graine
     20261009.
-  - α annuel par année civile complète (2016–2025), avec le régime de chaque
+  - α annuel par année civile complète de chaque actif (BTC 2016–2025, ETH
+    2017–2025, cf. erratum), avec le régime de chaque
     année calculé sur le buy-and-hold (> +20 % haussier, < −20 % baissier,
     latéral sinon).
 
@@ -47,9 +48,9 @@ config.
 | BTC | rsi-reversion | 93 | ×13,8 | 0,71 | 77 % | 99 % | 0,70 | **−12,5 %** | 0,93 | 5/10 | 0,000 \* |
 | BTC | ema-cross P3 | 44 | ×6,7 | 0,66 | 63 % | 98 % | 0,46 | **−10,4 %** | 0,98 | 2/10 | 0,51 |
 | BTC | breakout P3 | 34 | ×163,5 | 1,04 | 83 % | 98 % | 0,94 | **−3,3 %** | 0,87 | 2/10 | 0,53 |
-| ETH | rsi-reversion | 33 | ×260,9 | 1,04 | 94 % | 99 % | 0,94 | **+6,1 %** | 0,16 | 5/10 | 0,000 \* |
-| ETH | ema-cross P3 | 28 | ×8,1 | 0,64 | 75 % | 98 % | 0,53 | **−13,1 %** | 0,94 | 0/10 | 0,49 |
-| ETH | breakout P3 | 25 | ×85,3 | 0,93 | 93 % | 99 % | 0,86 | **−2,2 %** | 0,62 | 0/10 | 1,00 |
+| ETH | rsi-reversion | 33 | ×260,9 | 1,04 | 94 % | 99 % | 0,94 | **+6,1 %** | 0,16 | 5/9 | 0,000 \* |
+| ETH | ema-cross P3 | 28 | ×8,1 | 0,64 | 75 % | 98 % | 0,53 | **−13,1 %** | 0,94 | 0/9 | 0,49 |
+| ETH | breakout P3 | 25 | ×85,3 | 0,93 | 93 % | 99 % | 0,86 | **−2,2 %** | 0,62 | 0/9 | 1,00 |
 
 Buy-and-hold sur la même fenêtre : BTC **×298,5** (Sharpe 1,10) et ETH
 **×203,6** (Sharpe 1,00). Le rsi ETH bat le buy-and-hold en total (×260,9),
@@ -69,7 +70,7 @@ L'α HAC est le test qui porte la conclusion.
 | --- | --- | --- | --- |
 | c1 α > 0, p HAC < 0,0083 | ✗ ✗ | ✗ ✗ | ✗ ✗ |
 | c2 p Monte Carlo < 0,0083 | ✓\* ✓\* | ✗ ✗ | ✗ ✗ |
-| c3 α > 0 dans ≥ 6 années sur 10 | ✗ ✗ | ✗ ✗ | ✗ ✗ |
+| c3 α > 0 en majorité stricte des années complètes (BTC ≥ 6/10, ETH ≥ 5/9) | ✗ ✓ | ✗ ✗ | ✗ ✗ |
 | c4 ≥ 30 trades | ✓ ✓ | ✓ ✗ | ✓ ✗ |
 | **Edge** | **non** | **non** | **non** |
 
@@ -80,11 +81,12 @@ L'α HAC est le test qui porte la conclusion.
 | BTC (7 / 2 / 1 ans) | rsi | +0,9 % | +1,4 % | 0,0 % |
 | BTC | ema P3 | −3,6 % | −5,3 % | −0,9 % |
 | BTC | breakout P3 | +0,3 % | −0,4 % | 0,0 % |
-| ETH (5 / 3 / 2 ans) | rsi | 0,0 % | −5,8 % | 0,0 % |
-| ETH | ema P3 | −11,8 % | −4,6 % | −4,9 % |
-| ETH | breakout P3 | −11,1 % | −3,9 % | −1,3 % |
+| ETH (5 / 2 / 2 ans) | rsi | 0,0 % | 0,0 % | 0,0 % |
+| ETH | ema P3 | −11,8 % | −6,6 % | −4,9 % |
+| ETH | breakout P3 | −11,1 % | −1,5 % | −1,3 % |
 
-Aucune stratégie ne protège en régime baissier. Les années 2018 et 2022
+Aucune stratégie ne protège de façon notable en régime baissier : le meilleur
+α moyen y est +1,4 %/an (rsi BTC), négligeable face aux baisses. Les années 2018 et 2022
 (−64 % à −82 %) sont subies avec un bêta de 0,5 à 0,9. Aucune ne crée de
 valeur en latéral non plus. Les α annuels sont estimés sur environ 365 points
 chacun ; ils sont bruités et ne servent qu'à la lecture.
@@ -130,3 +132,15 @@ chacun ; ils sont bruités et ne servent qu'à la lecture.
   `pnpm dlx tsx packages/backtest/scripts/daily-edge-long-2026-10.ts <PRODUIT>`.
 - Analyse (hors réseau, environ 7 s) :
   `python3 docs/analysis/backtest-daily-long-2026-10-09.py`.
+
+## Erratum (revue PR #24, 2026-10-10)
+
+Le script comptait 2016 comme année complète pour ETH (coté le 2016-05-19),
+contrairement au §2.4 du protocole (« seules les années complètes
+comptent ») : les années complètes d'ETH sont 2017–2025 (9), majorité stricte
+≥ 5. Corrigé dans `backtest-daily-long-2026-10-09.py` et `summary.json`
+régénéré : rsi-reversion ETH remplit désormais c3 (5/9) ; la table par régime
+est recalculée (ETH 5/2/2 ans ; α baissier ETH rsi 0,0 %, ema −6,6 %,
+breakout −1,5 %). **Verdict inchangé** : c1 (α HAC significatif) échoue pour
+toutes les cellules. Erratum daté aussi consigné dans le protocole
+(`models/daily-edge-long-campaign.md`).

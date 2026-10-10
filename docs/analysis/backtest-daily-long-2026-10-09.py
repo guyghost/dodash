@@ -19,6 +19,10 @@ MC_DRAWS = 2_000
 MC_SEED = 20261009
 NW_LAGS = 5
 FULL_YEARS = tuple(range(2016, 2026))
+# Erratum de revue (PR #24) : protocole §2.4 — ETH 2016 est partielle (cotation
+# le 2016-05-19) ; seules les années complètes de chaque actif comptent, et la
+# majorité stricte se calcule sur cet ensemble (BTC 10 ans ⇒ ≥ 6, ETH 9 ⇒ ≥ 5).
+COMPLETE_YEARS = {'BTC-USD': tuple(range(2016, 2026)), 'ETH-USD': tuple(range(2017, 2026))}
 MIN_TRADES = 30
 INITIAL_CAPITAL = 10_000
 year_of = lambda ms: datetime.fromtimestamp(ms / 1000, timezone.utc).year
@@ -153,7 +157,7 @@ def main():
             base = closes[prev] if prev >= 0 else job['candles'][idx[0]][1]
             ret = closes[idx[-1]] / base - 1
             regime = 'haussier' if ret > 0.20 else 'baissier' if ret < -0.20 else 'latéral'
-            by_year[y] = {'return': ret, 'regime': regime, 'complete': y in FULL_YEARS}
+            by_year[y] = {'return': ret, 'regime': regime, 'complete': y in COMPLETE_YEARS[p]}
         summary['buyAndHold'][p] = {'totalReturn': closes[-1] / job['candles'][0][1] - 1, 'years': by_year,
                                      'sharpe': sharpe([closes[i] / closes[i - 1] - 1 for i in range(1, len(closes))])}
     for p, job in jobs.items():
@@ -170,8 +174,9 @@ def main():
                 ix = [i for i, yy in enumerate(s['years']) if yy == y]
                 if len(ix) > 30 and any(s['r_m'][i] != 0 for i in ix):
                     r = ols_hac([s['r_s'][i] for i in ix], [s['r_m'][i] for i in ix])
-                    yearly[y] = {'alphaAnnual': r['alphaAnnual'], 'beta': r['beta'], 'regime': regimes[y], 'complete': y in FULL_YEARS}
-            positive_full_years = sum(1 for y in FULL_YEARS if y in yearly and yearly[y]['alphaAnnual'] > 0)
+                    yearly[y] = {'alphaAnnual': r['alphaAnnual'], 'beta': r['beta'], 'regime': regimes[y], 'complete': y in COMPLETE_YEARS[p]}
+            positive_full_years = sum(1 for y in COMPLETE_YEARS[p] if y in yearly and yearly[y]['alphaAnnual'] > 0)
+            majority_required = len(COMPLETE_YEARS[p]) // 2 + 1
             by_regime = {}
             for reg in ('haussier', 'baissier', 'latéral'):
                 vals = [v['alphaAnnual'] for y, v in yearly.items() if v['regime'] == reg and v['complete']]
@@ -184,14 +189,15 @@ def main():
                 'sharpeDaily': sharpe(s['r_s']), 'maxDrawdown': max_drawdown(s['equity']),
                 'timeInMarket': time_in_market, 'meanExposureWhenIn': (sum(e for e in s['exposure'] if e > 0) / max(1, sum(1 for e in s['exposure'] if e > 0))),
                 'reconstructionMaxRelError': s['reconError'],
-                'alpha': full, 'alphaYearly': yearly, 'positiveAlphaFullYears': positive_full_years, 'alphaByRegime': by_regime,
+                'alpha': full, 'alphaYearly': yearly, 'positiveAlphaFullYears': positive_full_years,
+                'completeYears': len(COMPLETE_YEARS[p]), 'majorityRequired': majority_required, 'alphaByRegime': by_regime,
                 'monteCarlo': mc,
             }
             if run['arm'] == DECISION_ARM:
                 cell['criteria'] = {
                     'c1_alphaHac': full['alphaDaily'] > 0 and full['pOneSided'] < ALPHA_LEVEL,
                     'c2_monteCarlo': mc['p'] < ALPHA_LEVEL,
-                    'c3_majorityYears': positive_full_years >= 6,
+                    'c3_majorityYears': positive_full_years >= majority_required,
                     'c4_trades': len(run['trades']) >= MIN_TRADES,
                 }
             summary['cells'].append(cell)
@@ -214,7 +220,7 @@ def main():
         mc = c['monteCarlo']
         print(f"{c['product']} {c['scenario']:<22} {c['arm']:<5} n={c['trades']:<4} ret={c['totalReturn']:+.2f} Sh={c['sharpeDaily']:+.2f} DD={c['maxDrawdown']:.2f} "
               f"inMkt={c['timeInMarket']:.2f} expo={c['meanExposureWhenIn']:.2f} α={a['alphaAnnual']:+.4f} β={a['beta']:.3f} p={a['pOneSided']:.4f} "
-              f"yrs+={c['positiveAlphaFullYears']}/10 recon={c['reconstructionMaxRelError']:.1e}"
+              f"yrs+={c['positiveAlphaFullYears']}/{c['completeYears']} recon={c['reconstructionMaxRelError']:.1e}"
               + ('' if mc is None else f" MC p={mc['p']:.4f} (Sh {mc['strategySharpe']:+.2f} vs p50 {mc['p50']:+.2f} p99 {mc['p99']:+.2f})")
               + ('' if 'criteria' not in c else f" {c['criteria']}"))
 

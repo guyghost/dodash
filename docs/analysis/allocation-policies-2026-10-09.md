@@ -7,11 +7,11 @@ plus grande partie du rendement du marché :
 | | P7 tendance × volatilité | P0 buy-and-hold 50/50 |
 | --- | ---: | ---: |
 | Multiple du capital | ×108,9 | ×289,4 |
-| CAGR | +52,0 % | +66,0 % |
+| CAGR | +52,0 % | +65,9 % |
 | **Drawdown maximal** | **45,6 %** | 89,8 % |
 | Pire drawdown sur une fenêtre | 35 % | 90 % |
-| Sharpe | 1,40 | 1,06 |
-| Calmar | **1,14** | 0,74 |
+| Sharpe | 1,39 | 1,06 |
+| Calmar | **1,14** | 0,73 |
 | Exposition moyenne | 41 % | 100 % |
 
 - **Sur tout l'historique,** P7 rapporte moins que le buy-and-hold, à cause de
@@ -49,14 +49,14 @@ config.
 
 | # | Politique | Multiple | CAGR | Volatilité | Sharpe | **Drawdown max** | Calmar | Expo. moy. | Ordres | Éligible |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| P0 | Buy-and-hold 50/50 | ×289,4 | +66,0 % | 74 % | 1,06 | 89,8 % | 0,74 | 100 % | 3 | non |
-| P1 | Rebalancé 100 % | ×505,3 | +74,5 % | 73 % | 1,13 | 87,9 % | 0,85 | 100 % | 392 | non |
-| P2 | Part fixe 70 % | ×162,9 | +57,7 % | 51 % | 1,15 | 74,4 % | 0,78 | 70 % | 409 | non |
+| P0 | Buy-and-hold 50/50 | ×289,4 | +65,9 % | 74 % | 1,06 | 89,8 % | 0,73 | 100 % | 3 | non |
+| P1 | Rebalancé 100 % | ×505,3 | +74,4 % | 73 % | 1,13 | 87,9 % | 0,85 | 100 % | 392 | non |
+| P2 | Part fixe 70 % | ×162,9 | +57,6 % | 51 % | 1,15 | 74,4 % | 0,77 | 70 % | 409 | non |
 | P3 | Part fixe 50 % | ×56,1 | +43,3 % | 36 % | 1,17 | 59,6 % | 0,73 | 50 % | 390 | non |
 | P4 | Ciblage de volatilité | ×115,5 | +52,8 % | 49 % | 1,12 | 72,9 % | 0,72 | 74 % | 1 353 | non |
 | P5 | Filtre de tendance SMA200 | ×478,7 | +73,5 % | 53 % | 1,31 | 68,6 % | 1,07 | 55 % | 428 | non |
-| P6 | Coupe-circuit −35 % | ×194,8 | +60,2 % | 66 % | 1,05 | 84,7 % | 0,71 | 87 % | 412 | non |
-| **P7** | **Tendance × volatilité** | **×108,9** | **+52,0 %** | **34 %** | **1,40** | **45,6 %** | **1,14** | 41 % | 926 | **oui** |
+| P6 | Coupe-circuit −35 % | ×194,8 | +60,1 % | 66 % | 1,05 | 84,7 % | 0,71 | 87 % | 412 | non |
+| **P7** | **Tendance × volatilité** | **×108,9** | **+52,0 %** | **34 %** | **1,39** | **45,6 %** | **1,14** | 41 % | 926 | **oui** |
 
 **Drawdown maximal par fenêtre** (CAGR de la fenêtre / drawdown) :
 
@@ -151,3 +151,12 @@ manque :
   métriques, fenêtres, années, SHA-256 des datasets et du script.
 - Calcul (hors réseau, moins d'une seconde) :
   `python3 docs/analysis/allocation-policies-2026-10-09.py`.
+
+## Erratum (revue PR #24, 2026-10-10)
+
+Les métriques de période complète partaient de l'équité de fin du premier
+jour, déjà nette des frais du premier ordre, alors que les fenêtres partaient
+bien du capital initial. Corrigé (série préfixée par 10 000 $) et
+`summary.json` régénéré : écarts ≤ 0,1 point (P0 CAGR 65,9 %, Calmar 0,73 ;
+P1 74,4 % ; P2 57,6 % / 0,77 ; P6 60,1 % ; P7 Sharpe 1,39). P7 ne traite pas
+le premier jour : CAGR, drawdown et Calmar inchangés. **Verdict inchangé.**

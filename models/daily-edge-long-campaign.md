@@ -111,3 +111,14 @@ est descriptive et ne modifie pas le verdict.
 2. Aucune valeur substituée ; échec ou non-exécutabilité consigné avec raison.
 3. Aucune stratégie, config runtime, permission ou déploiement modifié.
 4. Aucune conclusion d'edge hors du critère §4 ; aucune activation.
+
+## Erratum du 2026-10-10 (revue PR #24)
+
+Le §2.4 se contredisait : « 2016 à 2025 complètes pour les deux actifs » et
+« ETH 2016 partielle » (cotation le 2016-05-19), et le §4 fixait « 10 ans :
+≥ 6 » pour les deux actifs. La règle retenue est celle de l'intention écrite
+du §2.4 — **seules les années complètes comptent** : BTC 2016–2025 (10 ans,
+majorité stricte ≥ 6), ETH 2017–2025 (9 ans, majorité stricte ≥ 5). Correction
+appliquée après la première exécution, de nature factuelle (calendrier de
+cotation), sans effet sur le verdict : le critère c1 échoue pour toutes les
+cellules. Les seuils c1, c2 et c4 sont inchangés.

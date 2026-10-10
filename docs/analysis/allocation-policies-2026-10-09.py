@@ -197,7 +197,9 @@ def main():
     shadow_p1, _, _ = run('P1', dates, btc, eth, eth_start, vol, trend)
     for policy in ('P0', 'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7'):
         eq, ex, book = run(policy, dates, btc, eth, eth_start, vol, trend, shadow=shadow_p1)
-        r = metrics(dates, eq)
+        # Erratum de revue (PR #24) : la période complète part du capital
+        # initial, avant les frais du premier ordre (comme les fenêtres).
+        r = metrics(dates, [CAPITAL] + eq)
         r.update({'meanExposure': sum(ex) / len(ex), 'orders': book.orders, 'fees': book.fees, 'minCash': min(0.0, book.cash)})
         r['years'] = {}
         for y in sorted({dt(d).year for d in dates}):
