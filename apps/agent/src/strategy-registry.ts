@@ -5,6 +5,7 @@ import {
   createFundingTrendStrategy,
   createRsiReversionStrategy,
   createStrategyRegistry,
+  createTargetExposureStrategy,
   FUNDING_TREND_STRATEGY_ID,
   withConfidenceCalibration,
   withTargetSignalNotional,
@@ -43,10 +44,20 @@ export const createConfiguredStrategyRegistry = (
           baseSize: 0.01,
         });
         break;
+      // Signal informatif P7 (models/target-exposure.md §4) : jamais
+      // dimensionné ni calibré ; l'ordre vient de planTargetExposure.
+      case "target-exposure":
+        strategy = createTargetExposureStrategy({ id });
+        break;
       default:
         throw new Error(`Unsupported strategy id: ${id}`);
     }
-    if (configuration.sizingPolicy.type === "NATIVE") return strategy;
+    if (
+      configuration.sizingPolicy.type === "NATIVE" ||
+      configuration.sizingPolicy.type === "TARGET_EXPOSURE"
+    ) {
+      return strategy;
+    }
     // funding-trend, comme rsi-reversion, garde sa confiance native :
     // la calibration reste réservée à CALIBRATED_STRATEGY_IDS (INV-F6).
     const calibrated =

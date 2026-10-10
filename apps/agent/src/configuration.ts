@@ -12,6 +12,9 @@ import {
   LIVE_TRADING_POLICY,
   type LiveTradingAdmission,
   HYPERLIQUID_PERP_POLICY,
+  TARGET_EXPOSURE_MIN_ABSOLUTE_CAP,
+  TARGET_EXPOSURE_MIN_CANDLES,
+  TARGET_EXPOSURE_POLICY,
 } from "@dodash/models";
 import type { PortfolioRiskLimits, RiskConfig } from "@dodash/risk";
 import { perpProductForSignal } from "./hyperliquid-control.js";
@@ -22,6 +25,9 @@ export const STRATEGY_IDS = [
   "ema-cross",
   "breakout",
   "funding-trend",
+  // Politique d'exposition cible P7 (models/target-exposure.md) : réservée à
+  // la variante de sizing TARGET_EXPOSURE, paper uniquement (INV-T5, INV-T6).
+  "target-exposure",
 ] as const;
 
 export type StrategyId = (typeof STRATEGY_IDS)[number];
@@ -43,6 +49,14 @@ export type AgentSizingPolicy =
       readonly type: "TARGET_SIGNAL_NOTIONAL";
       readonly targetSignalNotional: number;
       readonly confidenceCalibration: "POWER_THIRD";
+    }
+  | {
+      readonly type: "TARGET_EXPOSURE";
+      readonly volTarget: number;
+      readonly trendSmaPeriod: number;
+      readonly volPeriod: number;
+      readonly driftThreshold: number;
+      readonly minOrderNotional: number;
     };
 
 export interface AgentConfiguration {
@@ -212,7 +226,51 @@ const sizingPolicySchema = z.discriminatedUnion("type", [
     targetSignalNotional: z.number().positive(),
     confidenceCalibration: z.literal("POWER_THIRD"),
   }),
+  // Constantes figées à l'égalité (models/target-exposure.md §4).
+  z.object({
+    type: z.literal("TARGET_EXPOSURE"),
+    volTarget: z.literal(TARGET_EXPOSURE_POLICY.volTarget),
+    trendSmaPeriod: z.literal(TARGET_EXPOSURE_POLICY.trendSmaPeriod),
+    volPeriod: z.literal(TARGET_EXPOSURE_POLICY.volPeriod),
+    driftThreshold: z.literal(TARGET_EXPOSURE_POLICY.driftThreshold),
+    minOrderNotional: z.literal(TARGET_EXPOSURE_POLICY.minOrderNotional),
+  }),
 ]);
+
+/**
+ * Admission de la politique P7 (models/target-exposure.md §4–§5, INV-T5,
+ * INV-T6) : paper uniquement, ONE_DAY, stratégie `target-exposure` seule et
+ * réservée à cette politique, historique ≥ 240 bougies, plafonds absolus
+ * neutralisés (≥ 1e9) et cooldown nul pour qu'aucune réduction ne soit
+ * bloquée (INV-T7).
+ */
+const targetExposureAdmission = (input: {
+  readonly executionMode: string;
+  readonly timeframe: string;
+  readonly strategyIds: readonly string[];
+  readonly candleLimit: number;
+  readonly sizingPolicy: AgentSizingPolicy;
+  readonly caps: readonly number[];
+  readonly cooldowns: readonly number[];
+}): AgentConfigurationError | null => {
+  const isPolicy = input.sizingPolicy.type === "TARGET_EXPOSURE";
+  const usesStrategy = input.strategyIds.includes("target-exposure");
+  if (!isPolicy && !usesStrategy) return null;
+  if (isPolicy !== usesStrategy) return { code: "INVALID_CONFIGURATION" };
+  if (
+    input.executionMode !== "paper" ||
+    input.timeframe !== "ONE_DAY" ||
+    new Set(input.strategyIds).size !== 1 ||
+    input.caps.some((cap) => cap < TARGET_EXPOSURE_MIN_ABSOLUTE_CAP) ||
+    input.cooldowns.some((cooldown) => cooldown !== 0)
+  ) {
+    return { code: "INVALID_CONFIGURATION" };
+  }
+  if (input.candleLimit < TARGET_EXPOSURE_MIN_CANDLES) {
+    return { code: "INSUFFICIENT_CANDLE_LIMIT" };
+  }
+  return null;
+};
 
 const inputSchema = z.object({
   productId: z.string(),
@@ -324,6 +382,17 @@ const parseSingleAgentConfiguration = (
   const product = createProductId(parsed.data.productId);
   if (!product.ok) return err({ code: "INVALID_PRODUCT_ID" });
 
+  const targetExposure = targetExposureAdmission({
+    ...parsed.data,
+    caps: [
+      parsed.data.risk.maxOrderNotional,
+      parsed.data.risk.maxPositionNotional,
+      parsed.data.risk.maxGrossExposure,
+    ],
+    cooldowns: [parsed.data.risk.cooldownMs],
+  });
+  if (targetExposure !== null) return err(targetExposure);
+
   const requiredCandles = Math.max(
     requiredIndicatorCandles(parsed.data.indicators),
     parsed.data.strategyIds.includes("breakout") ? 21 : 0,
@@ -429,6 +498,24 @@ export const parseMultiProductAgentConfiguration = (
       return err({ code: "INVALID_CONFIGURATION" });
     }
   }
+
+  const portfolioTargetExposure = targetExposureAdmission({
+    ...parsed.data,
+    caps: [
+      ...sorted.flatMap((slot) => [
+        slot.risk.maxOrderNotional,
+        slot.risk.maxPositionNotional,
+        slot.risk.maxGrossExposure,
+      ]),
+      // Coupe-circuit consolidé neutralisé (§5.3) : il lit des pertes
+      // publiées avec une bougie de retard.
+      ...(parsed.data.portfolioRisk === undefined
+        ? []
+        : [parsed.data.portfolioRisk.maxGrossExposure, parsed.data.portfolioRisk.maxDailyLoss]),
+    ],
+    cooldowns: sorted.map((slot) => slot.risk.cooldownMs),
+  });
+  if (portfolioTargetExposure !== null) return err(portfolioTargetExposure);
 
   const requiredCandles = Math.max(
     requiredIndicatorCandles(parsed.data.indicators),

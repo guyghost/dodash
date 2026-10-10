@@ -5,11 +5,11 @@
   "timeframe": "ONE_DAY",
   "window": {
     "startAt": 1788220800000,
-    "endAt": 1788480000000
+    "endAt": 1791504000000
   },
-  "collectedAt": "2026-09-04T10:07:49.701Z",
-  "candleCount": 3,
-  "loaderDatasetSha256": "1f7e10ece19187b00c4e597875fd0467877ff21b0cb9d38264f65e6aa94e16cd",
+  "collectedAt": "2026-10-09T09:41:50.942Z",
+  "candleCount": 38,
+  "loaderDatasetSha256": "fdedf8131b14248ab2aecdc78aefad8df0c8af9fe7a86f68c6cc0ec4fcb73514",
   "protocol": "models/funding-edge-campaign.md §B (v2, DAO #35)",
-  "sha256": "f71a2301597a650b77131686a349992a438c7c144690a606ad697589c9f3f537"
+  "sha256": "27b2567aa6deba3fb7170e23dd1f737b4479f524cde3ba552ff5601df44f3c8b"
 }

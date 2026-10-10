@@ -1,0 +1,46 @@
+{
+  "timeframe": "ONE_DAY",
+  "strategyIds": ["target-exposure"],
+  "intervalSeconds": 3600,
+  "maxMarketStalenessMs": 7200000,
+  "candleLimit": 240,
+  "executionMode": "paper",
+  "initialCapital": 10000,
+  "maxDecisionNotional": 10000,
+  "sizingPolicy": {
+    "type": "TARGET_EXPOSURE",
+    "volTarget": 0.5,
+    "trendSmaPeriod": 200,
+    "volPeriod": 30,
+    "driftThreshold": 0.1,
+    "minOrderNotional": 10
+  },
+  "broker": { "feeBps": 60, "slippageBps": 2 },
+  "products": [
+    {
+      "productId": "BTC-USD",
+      "risk": {
+        "maxOrderNotional": 1000000000000,
+        "maxPositionNotional": 1000000000000,
+        "maxGrossExposure": 1000000000000,
+        "maxDailyLoss": 2500,
+        "cooldownMs": 0,
+        "stopLossBps": 150,
+        "takeProfitBps": 300
+      }
+    },
+    {
+      "productId": "ETH-USD",
+      "risk": {
+        "maxOrderNotional": 1000000000000,
+        "maxPositionNotional": 1000000000000,
+        "maxGrossExposure": 1000000000000,
+        "maxDailyLoss": 2500,
+        "cooldownMs": 0,
+        "stopLossBps": 150,
+        "takeProfitBps": 300
+      }
+    }
+  ],
+  "portfolioRisk": { "maxGrossExposure": 1000000000000, "maxDailyLoss": 1000000000000 }
+}

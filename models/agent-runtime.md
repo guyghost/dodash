@@ -155,3 +155,14 @@ modèles `market-retry-schedule.md`, `daily-risk.md`, `cycle-schedule.md`.
    de `cycle-schedule.md §3` et émet `decision.missed` au plus une fois par
    bougie ; `lastMissedDecisionCandleClosedAt` est persisté (mono-produit et par
    produit) et normalisé à `null` à la restauration.
+
+## Amendement 2026-10-10 — politique d'exposition cible P7 (paper)
+
+Source normative : `models/target-exposure.md` (revu). Sous la variante de
+sizing `TARGET_EXPOSURE`, la phase `allocating` produit l'ordre à partir de
+`planTargetExposure` (au plus une intention MARKET, identifiant de
+l'allocateur) au lieu d'`allocateSignals` ; la phase `checkingRisk` applique
+`targetExposureRiskGate` (une réduction n'est bloquée ni par la perte
+journalière ni par l'admission portefeuille, INV-T7). Aucune phase, aucun
+événement ni aucune transition de `trading-cycle.machine.ts` ne change ; la
+garde « une décision par bougie » est inchangée.
