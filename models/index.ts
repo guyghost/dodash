@@ -470,3 +470,18 @@ export {
   FUNDING_TREND_ENTER_THRESHOLD,
   FUNDING_TREND_THRESHOLD_PERCENTILE,
 } from "./funding-rate-strategy.js";
+export {
+  annualizedRealizedVolatility,
+  planTargetExposure,
+  simpleMovingAverage,
+  TARGET_EXPOSURE_MIN_ABSOLUTE_CAP,
+  TARGET_EXPOSURE_MIN_CANDLES,
+  TARGET_EXPOSURE_POLICY,
+  targetExposureRiskGate,
+} from "./target-exposure.js";
+export type {
+  TargetExposureCandle,
+  TargetExposureDecision,
+  TargetExposureInput,
+  TargetExposureReason,
+} from "./target-exposure.js";
