@@ -37,6 +37,7 @@ const reachRisk = (actor: ReturnType<typeof createTradingActor>) => {
       type: "MARKET_DATA_READY",
       snapshotId: "market-1",
       candleClosedAt: 9_500,
+      evaluatedAt: 10_000,
     },
     { type: "INDICATORS_COMPUTED", indicatorsId: "indicators-1" },
     { type: "STRATEGIES_EVALUATED", signalsId: "signals-1" },
@@ -148,6 +149,7 @@ describe("tradingCycleMachine", () => {
         type: "MARKET_DATA_READY",
         snapshotId: "market-1",
         candleClosedAt: 9_500,
+        evaluatedAt: 10_000,
       },
       { type: "INDICATORS_COMPUTED", indicatorsId: "indicators-1" },
       { type: "STRATEGIES_EVALUATED", signalsId: "signals-1" },
@@ -177,6 +179,7 @@ describe("tradingCycleMachine", () => {
         type: "MARKET_DATA_READY",
         snapshotId: "market-1",
         candleClosedAt: 9_500,
+        evaluatedAt: 10_000,
       },
       { type: "INDICATORS_COMPUTED", indicatorsId: "indicators-1" },
       { type: "STRATEGIES_EVALUATED", signalsId: "signals-1" },
@@ -193,6 +196,7 @@ describe("tradingCycleMachine", () => {
         type: "MARKET_DATA_READY",
         snapshotId: "market-1-again",
         candleClosedAt: 9_500,
+        evaluatedAt: 20_000,
       },
     );
 
@@ -213,6 +217,7 @@ describe("tradingCycleMachine", () => {
         type: "MARKET_DATA_READY",
         snapshotId: "stale-market",
         candleClosedAt: 1,
+        evaluatedAt: 200_000,
       },
     );
 
@@ -239,6 +244,7 @@ describe("tradingCycleMachine", () => {
           type: "MARKET_DATA_READY",
           snapshotId: `stale-${attempt}`,
           candleClosedAt: 1,
+          evaluatedAt: 200_000,
         },
         { type: "RETRY_TIMER_ELAPSED" },
       );
@@ -247,6 +253,7 @@ describe("tradingCycleMachine", () => {
       type: "MARKET_DATA_READY",
       snapshotId: "stale-final",
       candleClosedAt: 1,
+      evaluatedAt: 200_000,
     });
 
     expect(actor.getSnapshot().value).toBe("persisting");
@@ -259,6 +266,67 @@ describe("tradingCycleMachine", () => {
       { type: "SCHEDULE_SUCCEEDED", nextWakeAt: 300_000 },
     );
     expect(actor.getSnapshot().value).toBe("waiting");
+  });
+
+  describe("fraîcheur à l'évaluation d'un cycle repris", () => {
+    const close = Date.UTC(2026, 8, 30);
+    const triggeredAt = close + 65_000;
+    const deadline = close + 7_200_000;
+    const resumedActor = () => {
+      const actor = createActor(tradingCycleMachine, {
+        input: { agentId: "audit-paper", strategyIds: ["rsi-reversion"], maxMarketStalenessMs: 7_200_000 },
+      }).start();
+      send(actor,
+        { type: "START_REQUESTED", permissions: permission },
+        { type: "SCHEDULE_SUCCEEDED", nextWakeAt: triggeredAt },
+        { type: "ALARM_FIRED", cycleId: "cycle-resumed", triggeredAt },
+        { type: "ACCOUNT_RECONCILED", snapshotId: "account" },
+        { type: "MARKET_DATA_FAILED", error: error("market-data", "RATE_LIMITED", true) },
+        { type: "RETRY_TIMER_ELAPSED" },
+      );
+      return actor;
+    };
+
+    it.each([
+      [deadline - 1, "computingIndicators"],
+      [deadline, "computingIndicators"],
+      [deadline + 1, "retryingMarketData"],
+      [deadline + 61_000, "retryingMarketData"],
+    ])("évaluation à %s : %s", (evaluatedAt, phase) => {
+      const actor = resumedActor();
+      actor.send({ type: "MARKET_DATA_READY", snapshotId: "market", candleClosedAt: close, evaluatedAt });
+      expect(actor.getSnapshot().value).toBe(phase);
+      expect(actor.getSnapshot().context.lastDecisionCandleClosedAt).toBe(
+        phase === "computingIndicators" ? close : null,
+      );
+      actor.stop();
+    });
+
+    it.each([NaN, Infinity, -1, triggeredAt - 1, triggeredAt + 0.5])(
+      "refuse une horloge invalide ou régressive : %s", (evaluatedAt) => {
+        const actor = resumedActor();
+        actor.send({ type: "MARKET_DATA_READY", snapshotId: "market", candleClosedAt: close, evaluatedAt });
+        expect(actor.getSnapshot().value).toBe("retryingMarketData");
+        actor.stop();
+      },
+    );
+
+    it("refuse un événement legacy sans instant d'évaluation", () => {
+      const actor = resumedActor();
+      const event = { type: "MARKET_DATA_READY" as const, snapshotId: "legacy", candleClosedAt: close, evaluatedAt: triggeredAt };
+      Reflect.deleteProperty(event, "evaluatedAt");
+      actor.send(event);
+      expect(actor.getSnapshot().value).toBe("retryingMarketData");
+      actor.stop();
+    });
+
+    it.each([close, close + 86_400_000])("ne transfère pas le cycle vers le lendemain (close %s)", (candleClosedAt) => {
+      const actor = resumedActor();
+      actor.send({ type: "MARKET_DATA_READY", snapshotId: "next-day", candleClosedAt, evaluatedAt: close + 86_460_000 });
+      expect(actor.getSnapshot().value).toBe("retryingMarketData");
+      expect(actor.getSnapshot().context.lastDecisionCandleClosedAt).toBeNull();
+      actor.stop();
+    });
   });
 
   it("persiste l’intention avant d’autoriser la soumission", () => {

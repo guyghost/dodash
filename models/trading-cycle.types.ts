@@ -160,6 +160,8 @@ export type TradingCycleEvent =
       readonly type: "MARKET_DATA_READY";
       readonly snapshotId: string;
       readonly candleClosedAt: number;
+      /** Horloge du shell après fetch et checkpoint, avant admission du snapshot. */
+      readonly evaluatedAt: number;
     }
   | {
       readonly type: "ACCOUNT_RECONCILED";

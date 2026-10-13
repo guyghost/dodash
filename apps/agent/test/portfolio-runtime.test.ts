@@ -271,6 +271,7 @@ const runProductCycle = async (input: {
     dailyPnl: 0,
     lastTradeAt: null,
     triggeredAt: 360_000,
+    now: () => 360_000,
     cycleId: input.cycleId,
     triggerAlarm: true,
     effects: fixture.effects,

@@ -322,6 +322,7 @@ export const runTradingCycle = async (
             snapshotId: `market:${result.value.productId}:${last.start}:${result.value.candles.length}`,
             candleClosedAt:
               last.start + timeframeMilliseconds[result.value.timeframe],
+            evaluatedAt: (input.now ?? Date.now)(),
           });
           break;
         }

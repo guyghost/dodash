@@ -25,6 +25,11 @@ Les phases `retrying*` ne déclenchent aucun effet immédiatement. Un réveil
 ultérieur émet `RETRY_TIMER_ELAPSED`; les compteurs et limites restent dans le
 contexte de la machine.
 
+Amendement du 13 octobre 2026 : `MARKET_DATA_READY.evaluatedAt` est lu via
+l'horloge injectée après le fetch et son checkpoint, juste avant l'événement.
+La garde juge la fraîcheur à cet instant, jamais à l'heure du déclenchement
+original d'un cycle repris. Contrat : `market-data-freshness.md`.
+
 ## État durable
 
 - L’état synchronisé contient uniquement la configuration validée, la phase et

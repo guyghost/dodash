@@ -57,3 +57,8 @@ reprend un cycle encore en `retrying*` le clôt puis rejette sa propre alarme
 juge l'âge de la bougie contre le `triggeredAt` du cycle repris, pas contre
 l'instant du fetch : ETH-USD 30-09 a été décidé à 02:01:01 sur la bougie de
 00:00 (au-delà de 2 h réelles).
+
+Suivi du 13 octobre 2026 : la limite (2) est corrigée pour l'admission des
+snapshots marché par `market-data-freshness.md` (`evaluatedAt` après fetch et
+checkpoint). La limite (1) reste ouverte ; les phases déjà admises avant
+redémarrage ne sont pas réévaluées par cet amendement.

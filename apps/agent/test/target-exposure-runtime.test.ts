@@ -159,6 +159,7 @@ const run = async (input: {
     dailyPnl: input.dailyPnl,
     lastTradeAt: null,
     triggeredAt,
+    now: () => triggeredAt,
     cycleId: "cycle-p7",
     triggerAlarm: true,
     effects,

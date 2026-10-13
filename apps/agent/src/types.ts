@@ -208,7 +208,7 @@ export interface RunTradingCycleInput {
   readonly cycleId: string;
   readonly triggerAlarm: boolean;
   readonly effects: TradingCycleEffects;
-  /** Horloge injectée pour les échéances de retry ; `Date.now` par défaut. */
+  /** Horloge injectée pour les retries et la fraîcheur marché ; `Date.now` par défaut. */
   readonly now?: () => number;
 }
 

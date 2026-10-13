@@ -57,8 +57,14 @@ export const tradingCycleMachine = setup({
     isFreshMarketData: ({ context, event }) =>
       event.type === "MARKET_DATA_READY" &&
       context.triggeredAt !== null &&
+      Number.isSafeInteger(context.triggeredAt) &&
+      context.triggeredAt >= 0 &&
+      Number.isSafeInteger(event.candleClosedAt) &&
+      event.candleClosedAt >= 0 &&
+      Number.isSafeInteger(event.evaluatedAt) &&
+      event.evaluatedAt >= context.triggeredAt &&
       event.candleClosedAt <= context.triggeredAt &&
-      context.triggeredAt - event.candleClosedAt <= context.maxMarketStalenessMs,
+      event.evaluatedAt - event.candleClosedAt <= context.maxMarketStalenessMs,
     hasAllocatedOrders: ({ event }) =>
       event.type === "ALLOCATION_COMPLETED" && event.orderCount > 0,
     hasTradePermission: ({ context }) => context.permissions.canTrade,

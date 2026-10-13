@@ -194,6 +194,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-cancel-failed",
+      now: () => 360_000,
       triggerAlarm: false,
       effects: {
         ...fixture.effects,
@@ -236,6 +237,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-1",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
@@ -274,6 +276,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-protection-failed",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: {
         ...fixture.effects,
@@ -344,6 +347,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-paper-daily-pnl",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
@@ -375,6 +379,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-2",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
@@ -417,6 +422,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 420_000,
       cycleId: "cycle-duplicate-candle",
+      now: () => 420_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
@@ -460,6 +466,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-target-sized",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
@@ -588,6 +595,78 @@ describe("runTradingCycle", () => {
       expect(resumed.result.machine.value).toBe("waiting");
       expect(resumed.result.machine.context.outcome).toBe("NO_ACTION");
       expect(fixture.persistedCycles).toBe(1);
+    });
+
+    it("rejects a successful refetch received after the original decision window", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()], scheduled, clock: 360_500,
+      });
+      const resumed = await run(fixture, first.result.machine, {
+        fetches: ["ok"], scheduled, clock: 450_001,
+        artifacts: first.result.artifacts, triggerAlarm: false,
+      });
+      expect(resumed.result.artifacts?.indicators).toBeUndefined();
+      expect(resumed.result.artifacts?.signals).toBeUndefined();
+      expect(fixture.intents).toEqual([]);
+      expect(resumed.result.machine.context.lastDecisionCandleClosedAt).toBeNull();
+      expect(resumed.result.machine.context.lastError?.code).toBe("STALE_MARKET_DATA");
+      expect(resumed.result.machine.context.outcome).toBe("NO_ACTION");
+      expect(fixture.persistedCycles).toBe(1);
+    });
+
+    it.each(["fetch", "checkpoint"])("reads freshness after a slow %s crosses the deadline", async (slowEffect) => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const submitOrder = vi.fn(fixture.effects.submitOrder);
+      let clock = 360_000;
+      const result = await runTradingCycle({
+        agentId: "agent-1", configuration: config,
+        machine: readyMachine("agent-1", config.strategyIds),
+        artifacts: null, previousIndicators: null,
+        portfolio: fixture.initialPortfolio, dailyPnl: 0, lastTradeAt: null,
+        triggeredAt: 360_000, cycleId: "cycle-slow-market", triggerAlarm: true,
+        now: () => clock,
+        effects: {
+          ...fixture.effects,
+          fetchMarketData: async () => {
+            if (slowEffect === "fetch") clock = 450_001;
+            return ok(market(config));
+          },
+          checkpoint: async (artifacts) => {
+            if (slowEffect === "checkpoint" && artifacts.market !== undefined) clock = 450_001;
+            return fixture.effects.checkpoint(artifacts);
+          },
+          submitOrder,
+        },
+      });
+      expect(result.artifacts?.indicators).toBeUndefined();
+      expect(result.artifacts?.signals).toBeUndefined();
+      expect(result.machine.context.outcome).toBe("NO_ACTION");
+      expect(result.machine.context.lastError?.code).toBe("STALE_MARKET_DATA");
+      expect(submitOrder).not.toHaveBeenCalled();
+    });
+
+    it("keeps stop priority while a market retry is pending", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()], scheduled, clock: 360_500,
+      });
+      const session = createTradingMachineSession({ agentId: "agent-1", strategyIds: config.strategyIds }, first.result.machine);
+      session.send({ type: "STOP_REQUESTED", permissions: { canControl: true, canTrade: true } });
+      const stopped = session.record;
+      session.stop();
+      const resumed = await run(fixture, stopped, {
+        fetches: ["ok"], scheduled, clock: 450_001,
+        artifacts: first.result.artifacts, triggerAlarm: false,
+      });
+      expect(resumed.fetchMarketData).not.toHaveBeenCalled();
+      expect(resumed.result.machine.value).toBe("stopped");
+      expect(fixture.intents).toEqual([]);
     });
 
     it("refetches when the second-granular alarm fires for an unaligned first attempt (constat AE 2026-10-07)", async () => {

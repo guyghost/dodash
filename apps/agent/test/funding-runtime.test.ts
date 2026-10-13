@@ -167,6 +167,7 @@ describe("branchement runtime funding (models/funding-rate-strategy.md §3)", ()
       dailyPnl: 0,
       lastTradeAt: null,
       triggeredAt: 80 * DAY,
+      now: () => 80 * DAY,
       cycleId: "cycle-funding-ok",
       triggerAlarm: true,
       effects,
@@ -182,6 +183,7 @@ describe("branchement runtime funding (models/funding-rate-strategy.md §3)", ()
   it("mode paper : jamais d'appel funding, comportement inchangé (C2)", async () => {
     const paper = parseAgentConfiguration({
       productId: "BTC-USD",
+      timeframe: "ONE_DAY",
       strategyIds: ["funding-trend"],
       candleLimit: 100,
       indicators: {
@@ -217,6 +219,7 @@ describe("branchement runtime funding (models/funding-rate-strategy.md §3)", ()
       dailyPnl: 0,
       lastTradeAt: null,
       triggeredAt: 80 * DAY,
+      now: () => 80 * DAY,
       cycleId: "cycle-funding-paper",
       triggerAlarm: true,
       effects,
@@ -243,6 +246,7 @@ describe("branchement runtime funding (models/funding-rate-strategy.md §3)", ()
       dailyPnl: 0,
       lastTradeAt: null,
       triggeredAt: 80 * DAY,
+      now: () => 80 * DAY,
       cycleId: "cycle-funding-legacy",
       triggerAlarm: true,
       effects,
@@ -273,6 +277,7 @@ describe("branchement runtime funding (models/funding-rate-strategy.md §3)", ()
         dailyPnl: 0,
         lastTradeAt: null,
         triggeredAt: 80 * DAY,
+        now: () => 80 * DAY,
         cycleId: "cycle-funding-null",
         triggerAlarm: true,
         effects,
