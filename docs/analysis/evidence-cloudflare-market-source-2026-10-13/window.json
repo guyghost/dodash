@@ -1,0 +1,8 @@
+{
+  "worker": "dodash-market-source-probe-20261013",
+  "url": "https://dodash-market-source-probe-20261013.guyghost.workers.dev",
+  "startedAt": 1791925486713,
+  "expiresAt": 1792011886713,
+  "cron": "11 * * * *",
+  "tokenArchived": false
+}

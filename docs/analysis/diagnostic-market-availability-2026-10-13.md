@@ -257,3 +257,12 @@ PYTHONDONTWRITEBYTECODE=1 python3 docs/analysis/market-availability-2026-10-13.p
 Les tests de mesure passent ; aucun test de trading réel ni changement du
 runtime n'est revendiqué. Les preuves locales préexistantes des 7–8 octobre
 ont été consultées, jamais modifiées.
+
+## 8. Suivi du lot Cloudflare — 21:09 UTC
+
+Le comparateur shadow isolé a été autorisé et déployé, sans modification du
+bot. Deux lots réseau observent un 429 Advanced puis un 429 Exchange ;
+Hyperliquid et dYdX fournissent 240/240 closes BTC/ETH après correction des
+bornes dYdX. Exchange n'est donc pas une solution garantie aux 429. Les
+crons et la prochaine clôture daily restent à observer ; pas de SLA conclue.
+Rapport et preuves : `docs/analysis/cloudflare-market-source-2026-10-13.md`.

@@ -1,0 +1,5 @@
+
+ ⛅️ wrangler 4.125.0 (update available 4.150.0)
+───────────────────────────────────────────────
+🌀 Creating the secret for the Worker "dodash-market-source-probe-20261013"
+✨ Success! Uploaded secret DIAGNOSTIC_TOKEN

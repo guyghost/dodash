@@ -1,0 +1,401 @@
+{
+  "protocol": "market-source-probe-v1",
+  "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+  "location": "cloudflare-workers",
+  "startedAt": 1791925708100,
+  "completedAt": 1791925711536,
+  "closedAt": 1791849600000,
+  "phase": "completed",
+  "plannedRequests": 15,
+  "observations": [
+    {
+      "request": {
+        "provider": "coinbase-advanced",
+        "kind": "candles",
+        "product": "BTC-USD",
+        "url": "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD/candles?start=1771113600&end=1791763200&granularity=ONE_DAY&limit=240"
+      },
+      "startedAt": 1791925708100,
+      "completedAt": 1791925708173,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "MISS",
+      "bodySha256": "74ec768ecf61b1afc91acefb12a712aea73c9f6f20f342d88f2d5e26cbae6f43",
+      "data": {
+        "kind": "candles",
+        "market": "spot",
+        "received": 240,
+        "closedCount": 240,
+        "missingStarts": [],
+        "duplicateStarts": [],
+        "ready": true,
+        "latestStart": 1791763200000,
+        "latestClose": 81742.5
+      }
+    },
+    {
+      "request": {
+        "provider": "coinbase-exchange",
+        "kind": "candles",
+        "product": "BTC-USD",
+        "url": "https://api.exchange.coinbase.com/products/BTC-USD/candles?start=2026-02-15T00%3A00%3A00.000Z&end=2026-10-12T00%3A00%3A00.000Z&granularity=86400"
+      },
+      "startedAt": 1791925708173,
+      "completedAt": 1791925708200,
+      "status": 400,
+      "outcome": "HTTP_ERROR",
+      "retryAfter": null,
+      "cacheStatus": "BYPASS",
+      "bodySha256": null
+    },
+    {
+      "request": {
+        "provider": "hyperliquid",
+        "kind": "candles",
+        "product": "BTC-USD",
+        "url": "https://api.hyperliquid.xyz/info",
+        "body": {
+          "type": "candleSnapshot",
+          "req": {
+            "coin": "BTC",
+            "interval": "1d",
+            "startTime": 1771113600000,
+            "endTime": 1791849599999
+          }
+        }
+      },
+      "startedAt": 1791925708200,
+      "completedAt": 1791925708512,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "DYNAMIC",
+      "bodySha256": "d188df19feecbcb0a2fc7dd0c5d500817d25c159d397f3f22467f4833edef033",
+      "data": {
+        "kind": "candles",
+        "market": "perp",
+        "received": 240,
+        "closedCount": 240,
+        "missingStarts": [],
+        "duplicateStarts": [],
+        "ready": true,
+        "latestStart": 1791763200000,
+        "latestClose": 81812
+      }
+    },
+    {
+      "request": {
+        "provider": "dydx",
+        "kind": "candles",
+        "product": "BTC-USD",
+        "url": "https://indexer.dydx.trade/v4/candles/perpetualMarkets/BTC-USD?resolution=1DAY&fromISO=2026-02-15T00%3A00%3A00.000Z&toISO=2026-10-12T00%3A00%3A00.000Z&limit=240"
+      },
+      "startedAt": 1791925708512,
+      "completedAt": 1791925709382,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "MISS",
+      "bodySha256": "7850fd4fdd066a6ae0d2705e9ec8c50e56a13934a7e04459e77262fcaffaf2bb",
+      "data": {
+        "kind": "candles",
+        "market": "perp",
+        "received": 239,
+        "closedCount": 239,
+        "missingStarts": [
+          1791763200000
+        ],
+        "duplicateStarts": [],
+        "ready": false,
+        "latestStart": null,
+        "latestClose": null
+      }
+    },
+    {
+      "request": {
+        "provider": "coinbase-advanced",
+        "kind": "quote",
+        "product": "BTC-USD",
+        "url": "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD"
+      },
+      "startedAt": 1791925709382,
+      "completedAt": 1791925709413,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "HIT",
+      "bodySha256": "2f58effeec64f67e9984cdba6ad741bc3d805d4813eae8dbb3344cd2a2286401",
+      "data": {
+        "kind": "quote",
+        "priceKind": "last",
+        "prices": {
+          "BTC-USD": 83329.71
+        },
+        "sourceObservedAt": null
+      }
+    },
+    {
+      "request": {
+        "provider": "coinbase-exchange",
+        "kind": "quote",
+        "product": "BTC-USD",
+        "url": "https://api.exchange.coinbase.com/products/BTC-USD/ticker"
+      },
+      "startedAt": 1791925709413,
+      "completedAt": 1791925709430,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "HIT",
+      "bodySha256": "33d143da706fb2f6aca967c96a2170b55b2a3b4a44feddc06a84949a40ebfd6a",
+      "data": {
+        "kind": "quote",
+        "priceKind": "last",
+        "prices": {
+          "BTC-USD": 83329.71
+        },
+        "sourceObservedAt": 1791925708731
+      }
+    },
+    {
+      "request": {
+        "provider": "dydx",
+        "kind": "quote",
+        "product": "BTC-USD",
+        "url": "https://indexer.dydx.trade/v4/orderbooks/perpetualMarket/BTC-USD"
+      },
+      "startedAt": 1791925709430,
+      "completedAt": 1791925709616,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "EXPIRED",
+      "bodySha256": "9117eb701189d75aeb70f3403d06e4ed7d00560af9cec2dc45b8467e7b1a5cd7",
+      "data": {
+        "kind": "quote",
+        "priceKind": "book-mid",
+        "prices": {
+          "BTC-USD": 83341.5
+        },
+        "sourceObservedAt": null
+      }
+    },
+    {
+      "request": {
+        "provider": "coinbase-advanced",
+        "kind": "candles",
+        "product": "ETH-USD",
+        "url": "https://api.coinbase.com/api/v3/brokerage/market/products/ETH-USD/candles?start=1771113600&end=1791763200&granularity=ONE_DAY&limit=240"
+      },
+      "startedAt": 1791925709616,
+      "completedAt": 1791925709650,
+      "status": 429,
+      "outcome": "HTTP_ERROR",
+      "retryAfter": null,
+      "cacheStatus": "BYPASS",
+      "bodySha256": null
+    },
+    {
+      "request": {
+        "provider": "coinbase-exchange",
+        "kind": "candles",
+        "product": "ETH-USD",
+        "url": "https://api.exchange.coinbase.com/products/ETH-USD/candles?start=2026-02-15T00%3A00%3A00.000Z&end=2026-10-12T00%3A00%3A00.000Z&granularity=86400"
+      },
+      "startedAt": 1791925709650,
+      "completedAt": 1791925709676,
+      "status": 400,
+      "outcome": "HTTP_ERROR",
+      "retryAfter": null,
+      "cacheStatus": "BYPASS",
+      "bodySha256": null
+    },
+    {
+      "request": {
+        "provider": "hyperliquid",
+        "kind": "candles",
+        "product": "ETH-USD",
+        "url": "https://api.hyperliquid.xyz/info",
+        "body": {
+          "type": "candleSnapshot",
+          "req": {
+            "coin": "ETH",
+            "interval": "1d",
+            "startTime": 1771113600000,
+            "endTime": 1791849599999
+          }
+        }
+      },
+      "startedAt": 1791925709676,
+      "completedAt": 1791925709885,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "DYNAMIC",
+      "bodySha256": "5ebc1b9a43cef602459e186b6b76cfdf68fc66be5137aef123f8d8abef4adc72",
+      "data": {
+        "kind": "candles",
+        "market": "perp",
+        "received": 240,
+        "closedCount": 240,
+        "missingStarts": [],
+        "duplicateStarts": [],
+        "ready": true,
+        "latestStart": 1791763200000,
+        "latestClose": 2445.6
+      }
+    },
+    {
+      "request": {
+        "provider": "dydx",
+        "kind": "candles",
+        "product": "ETH-USD",
+        "url": "https://indexer.dydx.trade/v4/candles/perpetualMarkets/ETH-USD?resolution=1DAY&fromISO=2026-02-15T00%3A00%3A00.000Z&toISO=2026-10-12T00%3A00%3A00.000Z&limit=240"
+      },
+      "startedAt": 1791925709885,
+      "completedAt": 1791925710795,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "MISS",
+      "bodySha256": "6bc695ac04ce92c2b781ce96a45b225e87a7151a9a039df22537170280ca4ea1",
+      "data": {
+        "kind": "candles",
+        "market": "perp",
+        "received": 239,
+        "closedCount": 239,
+        "missingStarts": [
+          1791763200000
+        ],
+        "duplicateStarts": [],
+        "ready": false,
+        "latestStart": null,
+        "latestClose": null
+      }
+    },
+    {
+      "request": {
+        "provider": "coinbase-advanced",
+        "kind": "quote",
+        "product": "ETH-USD",
+        "url": "https://api.coinbase.com/api/v3/brokerage/market/products/ETH-USD"
+      },
+      "startedAt": 1791925710795,
+      "completedAt": 1791925710795,
+      "status": null,
+      "outcome": "SKIPPED_RATE_LIMIT",
+      "retryAfter": null,
+      "cacheStatus": null,
+      "bodySha256": null
+    },
+    {
+      "request": {
+        "provider": "coinbase-exchange",
+        "kind": "quote",
+        "product": "ETH-USD",
+        "url": "https://api.exchange.coinbase.com/products/ETH-USD/ticker"
+      },
+      "startedAt": 1791925710795,
+      "completedAt": 1791925710800,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "HIT",
+      "bodySha256": "b9bd4068dc80ad8207d413b0944d3a22bad74b744a0ef40d86b9fecad5741881",
+      "data": {
+        "kind": "quote",
+        "priceKind": "last",
+        "prices": {
+          "ETH-USD": 2507.62
+        },
+        "sourceObservedAt": 1791925708114
+      }
+    },
+    {
+      "request": {
+        "provider": "dydx",
+        "kind": "quote",
+        "product": "ETH-USD",
+        "url": "https://indexer.dydx.trade/v4/orderbooks/perpetualMarket/ETH-USD"
+      },
+      "startedAt": 1791925710800,
+      "completedAt": 1791925711357,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "EXPIRED",
+      "bodySha256": "41f822f146fd135aa31c498e5dc8a05ab8057dadd4a58441b28b513798922ce2",
+      "data": {
+        "kind": "quote",
+        "priceKind": "book-mid",
+        "prices": {
+          "ETH-USD": 2509.4
+        },
+        "sourceObservedAt": null
+      }
+    },
+    {
+      "request": {
+        "provider": "hyperliquid",
+        "kind": "quote",
+        "product": "ALL",
+        "url": "https://api.hyperliquid.xyz/info",
+        "body": {
+          "type": "allMids"
+        }
+      },
+      "startedAt": 1791925711357,
+      "completedAt": 1791925711536,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfter": null,
+      "cacheStatus": "DYNAMIC",
+      "bodySha256": "4a8f214a58e7d4dd703320a9c099f6e8595aa3c023b5591c01b2e7e0ba460c40",
+      "data": {
+        "kind": "quote",
+        "priceKind": "mid-or-last",
+        "prices": {
+          "BTC-USD": 83393.5,
+          "ETH-USD": 2509.5
+        },
+        "sourceObservedAt": null
+      }
+    }
+  ],
+  "comparison": [
+    {
+      "product": "BTC-USD",
+      "referenceStart": 1791763200000,
+      "differences": [
+        {
+          "provider": "coinbase-advanced",
+          "bps": 0
+        },
+        {
+          "provider": "hyperliquid",
+          "bps": 8.502309080342663
+        },
+        {
+          "provider": "dydx",
+          "bps": null
+        }
+      ]
+    },
+    {
+      "product": "ETH-USD",
+      "referenceStart": null,
+      "differences": [
+        {
+          "provider": "hyperliquid",
+          "bps": null
+        },
+        {
+          "provider": "dydx",
+          "bps": null
+        }
+      ]
+    }
+  ],
+  "colo": "BOS"
+}

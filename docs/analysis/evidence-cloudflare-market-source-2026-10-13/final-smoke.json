@@ -1,0 +1,16 @@
+{
+  "/health": {
+    "status": 200,
+    "body": {
+      "service": "market-source-probe",
+      "active": true,
+      "expiresAt": 1792011886713
+    }
+  },
+  "/probe": {
+    "status": 401,
+    "body": {
+      "error": "UNAUTHORIZED"
+    }
+  }
+}
