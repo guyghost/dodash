@@ -1,4 +1,6 @@
 export { RISK_REJECTION_REASON_CODES } from "./backtest-diagnostics.types.js";
+export { normalizeMarketAdmission, projectDecisionAdmission } from "./decision-admission-telemetry.js";
+export type { MarketAdmission } from "./trading-cycle.types.js";
 export { planCycleWake, shouldStartPendingCycle, type CycleWakePlan } from "./cycle-wake.js";
 
 export {

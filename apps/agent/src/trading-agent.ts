@@ -15,6 +15,7 @@ import {
   resolveRetryWake,
   planCycleWake,
   shouldStartPendingCycle,
+  projectDecisionAdmission,
   PORTFOLIO_PRODUCT_STAGGER_MS,
   type ControlPermissions,
   type MarketRetryWakePayload,
@@ -993,7 +994,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         ? paperValuation?.exposureNotional ?? null
         : null;
       const cycleEvent: TradingTelemetryEvent = {
-        schemaVersion: 3,
+        schemaVersion: 4,
+        ...projectDecisionAdmission(result.machine.context),
         type: "cycle.completed",
         timestamp: eventAt,
         agentId: this.name,
@@ -1511,7 +1513,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         ? portfolioSummary.value.consolidated.exposureQuality
         : "unavailable";
       const cycleEvent: TradingTelemetryEvent = {
-        schemaVersion: 3,
+        schemaVersion: 4,
+        ...projectDecisionAdmission(result.machine.context),
         type: "cycle.completed",
         timestamp: eventAt,
         agentId: this.name,
@@ -1710,7 +1713,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     cycleEvent: TradingTelemetryEvent,
     candleClosedAt: number,
   ): void {
-    const event = projectMissedDecisionTelemetry(cycleEvent, Date.now());
+    const event = projectMissedDecisionTelemetry(cycleEvent, Date.now(), candleClosedAt);
     console.warn(
       JSON.stringify({
         event: "decision_window_missed",

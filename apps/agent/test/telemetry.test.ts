@@ -35,6 +35,30 @@ const event = (): TradingTelemetryEvent => ({
 });
 
 describe("trading telemetry", () => {
+  it("appends admission identity and timestamps within the 20-double limit", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    emitTradingTelemetry(sink, {
+      ...event(), schemaVersion: 4, cycleId: "cycle-a", triggeredAt: 100,
+      decisionAdmissionStatus: "ADMITTED", decisionCandleClosedAt: 90, decisionEvaluatedAt: 105,
+    }, logger);
+    const point = sink.writeDataPoint.mock.calls[0]?.[0];
+    expect(point.blobs.slice(10)).toEqual(["cycle-a", "100", "ADMITTED"]);
+    expect(point.doubles.slice(18)).toEqual([90, 105]);
+    expect(point.doubles).toHaveLength(20);
+  });
+
+  it("attributes a missed decision to its original close across midnight", () => {
+    const missed = projectMissedDecisionTelemetry({
+      ...event(), schemaVersion: 4, cycleId: "cycle-old", triggeredAt: 100,
+      decisionAdmissionStatus: "UNOBSERVED", decisionCandleClosedAt: null, decisionEvaluatedAt: null,
+    }, 86_400_100, 0);
+    expect(missed.decisionCandleClosedAt).toBe(0);
+    expect(missed.triggeredAt).toBe(100);
+    expect(missed.decisionEvaluatedAt).toBeNull();
+    expect(missed.decisionAdmissionStatus).toBe("MISSED");
+  });
+
   it("writes one structured log and one fixed Analytics Engine point", () => {
     const sink = { writeDataPoint: vi.fn() };
     const logger = { log: vi.fn(), error: vi.fn() };
@@ -185,7 +209,7 @@ describe("trading telemetry", () => {
         valuationObservedAt: quality === "fresh" ? 90 : null,
         valuationAgeMs: quality === "fresh" ? 10 : null,
       };
-      const missed = projectMissedDecisionTelemetry(cycleEvent, 200);
+      const missed = projectMissedDecisionTelemetry(cycleEvent, 200, 0);
       expect(missed).toEqual({
         ...cycleEvent,
         type: "decision.missed",

@@ -203,6 +203,7 @@ describe("tradingCycleMachine", () => {
     expect(actor.getSnapshot().value).toBe("persisting");
     expect(actor.getSnapshot().context.outcome).toBe("NO_ACTION");
     expect(actor.getSnapshot().context.indicatorsId).toBeNull();
+    expect(actor.getSnapshot().context.marketAdmission).toBeNull();
   });
 
   it("rejette les données périmées avant tout calcul", () => {
@@ -223,6 +224,7 @@ describe("tradingCycleMachine", () => {
 
     expect(actor.getSnapshot().value).toBe("retryingMarketData");
     expect(actor.getSnapshot().context.marketSnapshotId).toBeNull();
+    expect(actor.getSnapshot().context.marketAdmission).toBeNull();
     expect(actor.getSnapshot().context.lastError?.code).toBe(
       "STALE_MARKET_DATA",
     );
@@ -332,6 +334,10 @@ describe("tradingCycleMachine", () => {
   it("persiste l’intention avant d’autoriser la soumission", () => {
     const actor = createTradingActor();
     reachRisk(actor);
+
+    expect(actor.getSnapshot().context.marketAdmission).toEqual({
+      cycleId: "cycle-1", candleClosedAt: 9_500, evaluatedAt: 10_000,
+    });
 
     actor.send({ type: "RISK_APPROVED" });
     expect(actor.getSnapshot().value).toBe("persistingOrderIntent");

@@ -105,6 +105,12 @@ export interface TradingCycleInput {
   readonly retryLimits?: Partial<RetryLimits>;
 }
 
+export interface MarketAdmission {
+  readonly cycleId: string;
+  readonly candleClosedAt: number;
+  readonly evaluatedAt: number;
+}
+
 export interface TradingCycleContext {
   readonly agentId: string;
   readonly strategyIds: readonly string[];
@@ -115,6 +121,7 @@ export interface TradingCycleContext {
   readonly marketSnapshotId: string | null;
   readonly accountSnapshotId: string | null;
   readonly lastDecisionCandleClosedAt: number | null;
+  readonly marketAdmission: MarketAdmission | null;
   readonly indicatorsId: string | null;
   readonly signalsId: string | null;
   readonly decisionId: string | null;

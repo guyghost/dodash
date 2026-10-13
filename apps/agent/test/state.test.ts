@@ -18,6 +18,7 @@ const context = (overrides: Partial<TradingCycleContext> = {}): TradingCycleCont
   marketSnapshotId: null,
   accountSnapshotId: null,
   lastDecisionCandleClosedAt: null,
+  marketAdmission: null,
   indicatorsId: null,
   signalsId: null,
   decisionId: null,

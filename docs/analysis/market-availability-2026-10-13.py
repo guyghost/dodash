@@ -56,6 +56,44 @@ def decode_sequence(text):
     return result
 
 
+def admission_coverage(rows, start, end):
+    """V4 durable observations only: missing/sampled events are never proof of absence."""
+    days = range(((start + DAY - 1) // DAY) * DAY, end, DAY)
+    expected = {(p, d) for d in days if d + 7_200_000 <= end for p in PRODUCTS}
+    admitted, missed = set(), set()
+    observable = any(r.get("mode") == "paper" and r.get("p") in PRODUCTS and
+                     r.get("admission") in ("ADMITTED", "UNOBSERVED", "MISSED") for r in rows)
+    for row in rows:
+        identity = row.get("cid")
+        if row.get("mode") != "paper" or not isinstance(identity, str) or not 1 <= len(identity) <= 128 or identity == "NONE":
+            continue
+        try:
+            close, trigger = float(row["dclose"]), float(row["trigger"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not all(v.is_integer() and 0 <= v <= 2**53 - 1 for v in (close, trigger)):
+            continue
+        key = (row.get("p"), int(close))
+        if key not in expected or trigger < close:
+            continue
+        if row.get("ev") == "decision.missed" and row.get("admission") == "MISSED":
+            if trigger < close + DAY:
+                missed.add(key)
+        elif row.get("ev") == "cycle.completed" and row.get("admission") == "ADMITTED":
+            try:
+                evaluated = float(row["deval"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if evaluated.is_integer() and 0 <= evaluated <= 2**53 - 1 and trigger <= evaluated <= close + 7_200_000:
+                admitted.add(key)
+    return {"status": "observations-only" if observable else "v4-not-observable",
+            "expectedProductWindows": len(expected), "admissionsObserved": len(admitted),
+            "observedLowerBoundRate": len(admitted) / len(expected) if observable and expected else None,
+            "missedObserved": len(missed),
+            "missedWindows": [{"product": p, "closeMs": d} for p, d in sorted(missed)],
+            "notDemonstratedWindows": len(expected - admitted)}
+
+
 def archived_request_summary(text):
     counts = collections.Counter()
     retry_after = collections.Counter()
@@ -165,6 +203,7 @@ def replay(root):
         if len(rows) >= 10000:
             raise ValueError("capture may be truncated")
         summary = coverage(rows, capture_data["windowStartMs"], capture_data["windowEndMs"])
+        summary["admissionEvidenceV4"] = admission_coverage(rows, capture_data["windowStartMs"], capture_data["windowEndMs"])
         summary["cycleOutcomes"] = dict(collections.Counter(f'{r["p"]}:{r["o"]}:{r["e"]}' for r in rows if r["ev"] == "cycle.completed"))
         (root / "coverage.json").write_text(json.dumps(summary, indent=2) + "\n")
     comparison = summarize_probes(capture_data["probes"], capture_data["windowEndMs"] // DAY * DAY)
@@ -216,7 +255,8 @@ def capture(root):
     if token:
         base = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT}"
         columns = ("_sample_interval AS w, blob1 AS ev, blob2 AS p, blob3 AS mode, blob4 AS phase, "
-                   "blob5 AS o, blob6 AS e, blob8 AS vq, double1 AS ts, double2 AS lat, double12 AS vobs")
+                   "blob5 AS o, blob6 AS e, blob8 AS vq, double1 AS ts, double2 AS lat, double12 AS vobs, "
+                   "blob11 AS cid, blob12 AS trigger, blob13 AS admission, double19 AS dclose, double20 AS deval")
         query = (f"SELECT {columns} FROM dodash_paper_trading WHERE index1='btc-usd-paper' "
                  f"AND double1 >= {START} AND double1 < {end} ORDER BY ts ASC LIMIT 10000")
         results["analytics"] = request(base + "/analytics_engine/sql", query, token)
@@ -247,6 +287,7 @@ def capture(root):
     rows = results.get("analytics", {}).get("body", {}).get("data")
     if rows is not None and len(rows) < 10000:
         summary = coverage(rows, START, end)
+        summary["admissionEvidenceV4"] = admission_coverage(rows, START, end)
         summary["cycleOutcomes"] = dict(collections.Counter(f'{r["p"]}:{r["o"]}:{r["e"]}' for r in rows if r["ev"] == "cycle.completed"))
         (root / "coverage.json").write_text(json.dumps(summary, indent=2) + "\n")
     manifest = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in root.glob("*.json")}

@@ -48,6 +48,42 @@ class CoverageTests(unittest.TestCase):
         self.assertEqual(result["providers"]["coinbase-exchange"]["closedCount"], 1)
         self.assertAlmostEqual(result["providers"]["hyperliquid-perp"]["differenceBpsVsAdvanced"], 100)
 
+    def admission(self, **overrides):
+        return self.row(cid="cycle-a", trigger=str(DAY + 1_000), admission="ADMITTED",
+                        dclose=DAY, deval=DAY + 60_000, **overrides)
+
+    def test_exact_admissions_are_deduplicated_even_if_sampled_or_completed_late(self):
+        rows = [self.admission(), self.admission(w=4, ts=2 * DAY)]
+        result = diagnosis.admission_coverage(rows, DAY, DAY + 7_200_000)
+        self.assertEqual(result["admissionsObserved"], 1)
+        self.assertEqual(result["observedLowerBoundRate"], 0.5)
+
+    def test_legacy_rows_cannot_be_reclassified_as_exact_admissions(self):
+        result = diagnosis.admission_coverage([self.row()], DAY, DAY + 7_200_000)
+        self.assertIsNone(result["observedLowerBoundRate"])
+        self.assertEqual(result["status"], "v4-not-observable")
+
+    def test_late_admission_is_not_counted_as_fresh(self):
+        row = self.admission()
+        row["deval"] = DAY + 7_200_001
+        result = diagnosis.admission_coverage([row], DAY, DAY + 7_200_000)
+        self.assertEqual(result["admissionsObserved"], 0)
+
+    def test_missed_close_is_not_the_day_of_emission(self):
+        row = self.admission(ev="decision.missed", ts=2 * DAY)
+        row.update(admission="MISSED", deval=0)
+        result = diagnosis.admission_coverage([row], DAY, 2 * DAY + 7_200_000)
+        self.assertEqual(result["missedObserved"], 1)
+        self.assertEqual(result["missedWindows"][0]["closeMs"], DAY)
+
+    def test_invalid_metadata_never_proves_an_admission(self):
+        rows = []
+        for changes in [{"cid": "NONE"}, {"trigger": "NaN"}, {"deval": float("inf")}, {"trigger": str(DAY - 1)}]:
+            row = self.admission()
+            row.update(changes)
+            rows.append(row)
+        self.assertEqual(diagnosis.admission_coverage(rows, DAY, DAY + 7_200_000)["admissionsObserved"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

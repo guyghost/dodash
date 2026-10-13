@@ -115,3 +115,15 @@ Frozen live alerts are unchanged; the operator notification class
 `DECISION_WINDOW_MISSED` is documented in `operator-notifications.md`.
 Supervision query (not implemented in the Durable Object): six or more
 consecutive hourly cycles carrying `RATE_LIMITED` on one product.
+
+## Amendment 2026-10-13 — durable decision-candle admission
+
+Cycle records and their missed-decision projections advance to schema version
+4; control/preflight version 3 remains supported unchanged. The full contract,
+presence semantics and migration are in `decision-admission-telemetry.md`.
+Blobs 1–10 and doubles 1–18 stay frozen; blob11 is the cycle id, blob12 the
+decimal trigger instant, blob13 the admission status, double19 the admitted
+or missed candle close, and double20 the admission evaluation instant.
+The original close of `decision.missed` is now observable in AE, independently
+of the mark. Repeated facts are deduplicated by agent/product/close; sampling
+and write failures still forbid treating absence as proof of non-admission.

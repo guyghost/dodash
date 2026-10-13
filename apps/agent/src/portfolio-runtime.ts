@@ -1,5 +1,6 @@
 import {
   normalizePaperValuationMark,
+  normalizeMarketAdmission,
   multiProductPortfolioMachine,
   projectDashboardPortfolioSummary,
   tradingCycleMachine,
@@ -497,7 +498,13 @@ export const resolveRestoredPortfolioSession = (
     if (!isProductRuntime(runtime)) return invalid;
     products[productId] = Object.freeze({
       ...runtime,
-      machine: Object.freeze(runtime.machine),
+      machine: Object.freeze({
+        ...runtime.machine,
+        context: {
+          ...runtime.machine.context,
+          marketAdmission: normalizeMarketAdmission(runtime.machine.context.marketAdmission, runtime.machine.context),
+        },
+      }),
       portfolio: Object.freeze(runtime.portfolio),
       dailyRiskWindow: runtime.dailyRiskWindow ?? null,
       dailyPnl: runtime.dailyPnl,

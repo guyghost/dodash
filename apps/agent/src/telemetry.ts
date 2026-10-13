@@ -8,7 +8,7 @@ export type TradingTelemetryEventType =
   | "decision.missed";
 
 export interface TradingTelemetryEvent {
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 3 | 4;
   readonly type: TradingTelemetryEventType;
   readonly timestamp: number;
   readonly agentId: string;
@@ -37,17 +37,28 @@ export interface TradingTelemetryEvent {
   readonly exposureQuality: "fresh" | "stale" | "unavailable" | "not_applicable";
   readonly executionObserved: boolean;
   readonly openOrderCount: number | null;
+  readonly cycleId?: string | null;
+  readonly triggeredAt?: number | null;
+  readonly decisionAdmissionStatus?: "ADMITTED" | "UNOBSERVED" | "MISSED";
+  readonly decisionCandleClosedAt?: number | null;
+  readonly decisionEvaluatedAt?: number | null;
 }
 
 /** models/trading-telemetry.md: preserve the originating cycle's valuation metadata. */
 export const projectMissedDecisionTelemetry = (
   cycleEvent: TradingTelemetryEvent,
   timestamp: number,
+  decisionCandleClosedAt: number,
 ): TradingTelemetryEvent => ({
   ...cycleEvent,
   type: "decision.missed",
   timestamp,
   outcome: "DECISION_WINDOW_MISSED",
+  ...(cycleEvent.schemaVersion === 4 ? {
+    decisionAdmissionStatus: "MISSED" as const,
+    decisionCandleClosedAt,
+    decisionEvaluatedAt: null,
+  } : {}),
 });
 
 export interface TradingTelemetrySink {
@@ -102,6 +113,11 @@ export const emitTradingTelemetry = (
         event.valuationQuality,
         event.valuationPriceSource,
         event.exposureQuality,
+        ...(event.schemaVersion === 4 ? [
+          event.cycleId ?? "NONE",
+          event.triggeredAt === null || event.triggeredAt === undefined ? "NONE" : String(event.triggeredAt),
+          event.decisionAdmissionStatus ?? "UNOBSERVED",
+        ] : []),
       ],
       doubles: [
         event.timestamp,
@@ -122,6 +138,10 @@ export const emitTradingTelemetry = (
         event.valuationObservedAt === null ? 0 : 1,
         event.valuationAgeMs === null ? 0 : 1,
         event.consolidatedExposureNotional === null ? 0 : 1,
+        ...(event.schemaVersion === 4 ? [
+          finiteOrZero(event.decisionCandleClosedAt ?? null),
+          finiteOrZero(event.decisionEvaluatedAt ?? null),
+        ] : []),
       ],
     });
   } catch {

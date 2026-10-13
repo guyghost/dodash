@@ -120,6 +120,7 @@ export const tradingCycleMachine = setup({
       if (event.type !== "START_REQUESTED") return {};
       return {
         permissions: event.permissions,
+        marketAdmission: null,
         shutdownMode: "none" as const,
         killCompleted: false,
         outcome: "IDLE" as const,
@@ -160,6 +161,7 @@ export const tradingCycleMachine = setup({
         ? {
             cycleId: event.cycleId,
             triggeredAt: event.triggeredAt,
+            marketAdmission: null,
             nextWakeAt: null,
             marketSnapshotId: null,
             accountSnapshotId: null,
@@ -189,6 +191,11 @@ export const tradingCycleMachine = setup({
       event.type === "MARKET_DATA_READY"
         ? {
             marketSnapshotId: event.snapshotId,
+            marketAdmission: {
+              cycleId: context.cycleId ?? "",
+              candleClosedAt: event.candleClosedAt,
+              evaluatedAt: event.evaluatedAt,
+            },
             lastDecisionCandleClosedAt: event.candleClosedAt,
             attempts: { ...context.attempts, marketData: 0 },
           }
@@ -373,6 +380,7 @@ export const tradingCycleMachine = setup({
       triggeredAt: null,
       nextWakeAt: null,
       marketSnapshotId: null,
+      marketAdmission: null,
       accountSnapshotId: null,
       indicatorsId: null,
       signalsId: null,
@@ -401,6 +409,7 @@ export const tradingCycleMachine = setup({
     triggeredAt: null,
     nextWakeAt: null,
     marketSnapshotId: null,
+    marketAdmission: null,
     accountSnapshotId: null,
     lastDecisionCandleClosedAt: input.lastDecisionCandleClosedAt ?? null,
     indicatorsId: null,

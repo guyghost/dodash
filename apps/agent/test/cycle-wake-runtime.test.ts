@@ -6,6 +6,7 @@ import { createTradingMachineSession } from "../src/machine-session.js";
 import { INITIAL_AGENT_STATE, type TradingAgentState } from "../src/state.js";
 import { TradingAgent } from "../src/trading-agent.js";
 import type { CycleArtifacts, TradingCycleEffects } from "../src/types.js";
+import type { TradingTelemetrySink } from "../src/telemetry.js";
 
 // Only the Cloudflare SDK boundary is replaced; shell and interpreter are real.
 vi.mock("agents", () => ({ Agent: class {} }));
@@ -87,8 +88,9 @@ describe("TradingAgent grid wake continuation", () => {
           return ok(undefined);
         },
       };
+      const sink = { writeDataPoint: vi.fn<TradingTelemetrySink["writeDataPoint"]>() };
       const agent = Object.assign(Object.create(TradingAgent.prototype), {
-        name: "paper", env: {},
+        name: "paper", env: { TRADING_TELEMETRY: sink },
         state: { ...INITIAL_AGENT_STATE, configuration, machine: pendingCycle(), enabled: true,
           portfolioSession: portfolio ? portfolioSession : null,
         } as TradingAgentState,
@@ -122,6 +124,23 @@ describe("TradingAgent grid wake continuation", () => {
         expect(trace.indexOf("missed")).toBeLessThan(trace.indexOf(`persist:${persisted[1]}`));
       }
       if (portfolio) expect(agent.state.portfolioSession?.products["ETH-USD"]).toBe(untouched);
+      const points = sink.writeDataPoint.mock.calls.map(([point]) => point);
+      const cycles = points.filter((point) => point.blobs[0] === "cycle.completed");
+      expect(cycles).toHaveLength(grid ? 2 : 1);
+      expect(cycles[0]?.blobs[10]).toBe("cycle-old");
+      expect(cycles[0]?.blobs[11]).toBe(String(CLOSE + 1_000));
+      expect(cycles[0]?.blobs[12]).toBe(expired ? "UNOBSERVED" : "ADMITTED");
+      if (!expired) expect(cycles[0]?.doubles.slice(18)).toEqual([CLOSE, now]);
+      if (grid) {
+        expect(cycles[1]?.blobs[10]).toBe(persisted[1]);
+        expect(cycles[1]?.blobs[12]).toBe(sameCandle ? "UNOBSERVED" : "ADMITTED");
+      }
+      if (expired) {
+        const missed = points.find((point) => point.blobs[0] === "decision.missed");
+        expect(missed?.blobs[12]).toBe("MISSED");
+        expect(missed?.doubles.slice(18)).toEqual([CLOSE, 0]);
+      }
+      expect(cycles.every((point) => point.doubles.length === 20)).toBe(true);
       expect(orders).not.toHaveBeenCalled();
     } finally {
       clock.mockRestore();

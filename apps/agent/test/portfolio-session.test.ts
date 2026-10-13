@@ -303,6 +303,20 @@ describe("portfolioIsEnabled (INV-P3)", () => {
 });
 
 describe("resolveRestoredPortfolioSession", () => {
+  it("normalise les admissions legacy/incohérentes sans inventer de décision", () => {
+    const session = structuredClone(validSession());
+    Reflect.deleteProperty(session.products["AAA-USD"]!.machine.context, "marketAdmission");
+    Reflect.set(session.products["BBB-USD"]!.machine.context, "marketAdmission", {
+      cycleId: "wrong-cycle", candleClosedAt: 0, evaluatedAt: 1,
+    });
+    const restored = resolveRestoredPortfolioSession(session);
+    expect(restored.ok).toBe(true);
+    if (restored.ok) {
+      expect(restored.session.products["AAA-USD"]?.machine.context.marketAdmission).toBeNull();
+      expect(restored.session.products["BBB-USD"]?.machine.context.marketAdmission).toBeNull();
+    }
+  });
+
   it("restaure une session valide sans perte d'état (C5)", () => {
     const session = validSession();
     const snapshot = structuredClone(session);

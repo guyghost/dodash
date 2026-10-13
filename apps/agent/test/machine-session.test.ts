@@ -42,6 +42,7 @@ describe("TradingMachineSession", () => {
     delete legacyContext.killRequestId;
     delete legacyContext.killCompleted;
     delete legacyContext.terminalFailure;
+    delete legacyContext.marketAdmission;
 
     const restored = createTradingMachineSession(input, {
       value: persisted.value,
@@ -52,6 +53,43 @@ describe("TradingMachineSession", () => {
     expect(restored.context.killRequestId).toBeNull();
     expect(restored.context.killCompleted).toBe(false);
     expect(restored.context.terminalFailure).toBe(false);
+    expect(restored.context.marketAdmission).toBeNull();
+    restored.stop();
+  });
+
+  it("preserves a durable admission across restart and clears it only for a new cycle", () => {
+    const input = { agentId: "paper", strategyIds: ["rsi-reversion"] };
+    const session = createTradingMachineSession(input);
+    session.send({ type: "START_REQUESTED", permissions: { canControl: true, canTrade: true } });
+    session.send({ type: "SCHEDULE_SUCCEEDED", nextWakeAt: 100 });
+    session.send({ type: "ALARM_FIRED", cycleId: "cycle-a", triggeredAt: 100 });
+    session.send({ type: "ACCOUNT_RECONCILED", snapshotId: "account" });
+    session.send({ type: "MARKET_DATA_READY", snapshotId: "market", candleClosedAt: 90, evaluatedAt: 105 });
+    const record = session.record;
+    session.stop();
+    const restored = createTradingMachineSession(input, record);
+    expect(restored.context.marketAdmission).toEqual({ cycleId: "cycle-a", candleClosedAt: 90, evaluatedAt: 105 });
+    restored.send({ type: "INDICATORS_COMPUTED", indicatorsId: "ind" });
+    restored.send({ type: "STRATEGIES_EVALUATED", signalsId: "signals" });
+    restored.send({ type: "ALLOCATION_COMPLETED", decisionId: "decision", orderCount: 0 });
+    restored.send({ type: "PERSIST_SUCCEEDED" });
+    restored.send({ type: "SCHEDULE_SUCCEEDED", nextWakeAt: 200 });
+    expect(restored.context.marketAdmission?.evaluatedAt).toBe(105);
+    restored.send({ type: "ALARM_FIRED", cycleId: "cycle-b", triggeredAt: 200 });
+    expect(restored.context.marketAdmission).toBeNull();
+    expect(restored.context.lastDecisionCandleClosedAt).toBe(90);
+    restored.stop();
+  });
+
+  it("drops an admission attached to a different cycle on restoration", () => {
+    const input = { agentId: "paper", strategyIds: [] };
+    const session = createTradingMachineSession(input);
+    const record = session.record;
+    session.stop();
+    const restored = createTradingMachineSession(input, {
+      ...record, context: { ...record.context, marketAdmission: { cycleId: "different", candleClosedAt: 0, evaluatedAt: 0 } },
+    });
+    expect(restored.context.marketAdmission).toBeNull();
     restored.stop();
   });
 });

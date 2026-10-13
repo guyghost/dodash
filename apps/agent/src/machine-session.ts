@@ -1,5 +1,6 @@
 import {
   tradingCycleMachine,
+  normalizeMarketAdmission,
   type TradingCycleContext,
   type TradingCycleEvent,
   type TradingCycleInput,
@@ -42,6 +43,7 @@ export const createTradingMachineSession = (
           ...persisted,
           context: {
             ...persisted.context,
+            marketAdmission: normalizeMarketAdmission(persisted.context.marketAdmission, persisted.context),
             accountSnapshotId: persisted.context.accountSnapshotId ?? null,
             lastDecisionCandleClosedAt:
               persisted.context.lastDecisionCandleClosedAt ?? null,
