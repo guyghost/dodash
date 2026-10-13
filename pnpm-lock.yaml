@@ -153,6 +153,31 @@ importers:
         specifier: ^4.125.0
         version: 4.125.0(@cloudflare/workers-types@5.20260823.1)(@types/node@26.2.0)
 
+  apps/market-source-probe:
+    dependencies:
+      '@dodash/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@dodash/models':
+        specifier: workspace:*
+        version: link:../../models
+      xstate:
+        specifier: ^5.32.5
+        version: 5.32.5
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@types/node@26.2.0)(@vitest/coverage-v8@4.1.11)(jsdom@30.0.1)(vite@8.2.2(@types/node@26.2.0)(esbuild@0.28.1)(yaml@2.9.0))
+      wrangler:
+        specifier: ^4.125.0
+        version: 4.125.0(@cloudflare/workers-types@5.20260823.1)(@types/node@26.2.0)
+
   apps/mcp-market-data:
     dependencies:
       '@dodash/domain':

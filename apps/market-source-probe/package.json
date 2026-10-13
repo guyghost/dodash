@@ -1,0 +1,23 @@
+{
+  "name": "@dodash/market-source-probe",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:runtime": "wrangler deploy --dry-run --outdir dist && node --test scripts/runtime-smoke.mjs"
+  },
+  "dependencies": {
+    "@dodash/domain": "workspace:*",
+    "@dodash/models": "workspace:*",
+    "xstate": "^5.32.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.125.0"
+  }
+}

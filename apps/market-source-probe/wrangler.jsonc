@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dodash-market-source-probe-20261013",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-18",
+  "workers_dev": true,
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "triggers": { "crons": ["11 * * * *"] },
+  "vars": {
+    "PROBE_ENABLED": "false",
+    "PROBE_STARTED_AT": "0",
+    "PROBE_EXPIRES_AT": "0"
+  }
+}
