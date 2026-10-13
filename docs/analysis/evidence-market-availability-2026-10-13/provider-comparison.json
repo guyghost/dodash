@@ -1,0 +1,62 @@
+{
+  "BTC-USD": {
+    "commonClosedStarts": [
+      1791590400000,
+      1791676800000,
+      1791763200000
+    ],
+    "latestCommonStart": 1791763200000,
+    "providers": {
+      "coinbase-advanced": {
+        "closedCount": 3,
+        "close": 81742.5,
+        "differenceBpsVsAdvanced": 0.0
+      },
+      "coinbase-exchange": {
+        "closedCount": 3,
+        "close": 81742.5,
+        "differenceBpsVsAdvanced": 0.0
+      },
+      "hyperliquid-perp": {
+        "closedCount": 3,
+        "close": 81812.0,
+        "differenceBpsVsAdvanced": 8.502309080342663
+      },
+      "dydx-perp": {
+        "closedCount": 3,
+        "close": 81813.0,
+        "differenceBpsVsAdvanced": 8.62464446279576
+      }
+    }
+  },
+  "ETH-USD": {
+    "commonClosedStarts": [
+      1791590400000,
+      1791676800000,
+      1791763200000
+    ],
+    "latestCommonStart": 1791763200000,
+    "providers": {
+      "coinbase-advanced": {
+        "closedCount": 3,
+        "close": 2444.3,
+        "differenceBpsVsAdvanced": 0.0
+      },
+      "coinbase-exchange": {
+        "closedCount": 3,
+        "close": 2444.3,
+        "differenceBpsVsAdvanced": 0.0
+      },
+      "hyperliquid-perp": {
+        "closedCount": 3,
+        "close": 2445.6,
+        "differenceBpsVsAdvanced": 5.318496092949765
+      },
+      "dydx-perp": {
+        "closedCount": 3,
+        "close": 2444.8,
+        "differenceBpsVsAdvanced": 2.045575420366319
+      }
+    }
+  }
+}

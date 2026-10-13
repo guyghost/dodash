@@ -1,0 +1,747 @@
+{
+  "windowStartMs": 1791412772517,
+  "windowEndMs": 1791921106876,
+  "protocol": "models/market-availability-diagnosis.md",
+  "analytics": {
+    "url": "https://api.cloudflare.com/client/v4/accounts/bab940ffcf652079ec6172c267afa11e/analytics_engine/sql",
+    "payload": "SELECT _sample_interval AS w, blob1 AS ev, blob2 AS p, blob3 AS mode, blob4 AS phase, blob5 AS o, blob6 AS e, blob8 AS vq, double1 AS ts, double2 AS lat, double12 AS vobs FROM dodash_paper_trading WHERE index1='btc-usd-paper' AND double1 >= 1791412772517 AND double1 < 1791921106876 ORDER BY double1 ASC LIMIT 10000",
+    "executionLocation": "local-macOS",
+    "at": "2026-10-13T19:51:46.878487+00:00",
+    "status": 422,
+    "headers": {
+      "Date": "Tue, 13 Oct 2026 19:51:47 GMT",
+      "Content-Type": "text/plain",
+      "CF-Ray": "a4a0e1879b068fdf-BOS",
+      "Cache-Control": "no-store",
+      "Server": "cloudflare"
+    },
+    "error": "non-json-response",
+    "bodySha256": "8262217cb6ab43e119b39cab84d93582c81b69aac53882674dc87858b898b253",
+    "latencyMs": 576
+  },
+  "deployments": {
+    "agent": {
+      "url": "https://api.cloudflare.com/client/v4/accounts/bab940ffcf652079ec6172c267afa11e/workers/scripts/dodash-paper-agent/deployments",
+      "payload": null,
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:47.454091+00:00",
+      "status": 200,
+      "headers": {
+        "Date": "Tue, 13 Oct 2026 19:51:47 GMT",
+        "Content-Type": "application/json; charset=UTF-8",
+        "CF-Ray": "a4a0e18af834bff7-BOS",
+        "Cache-Control": "no-store",
+        "Server": "cloudflare"
+      },
+      "body": {
+        "result": {
+          "deployments": [
+            {
+              "id": "5f6589e0-a18e-4da1-a7d1-c6a683e7a0f6",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "deployment"
+              },
+              "versions": [
+                {
+                  "version_id": "ba253e7c-3e86-4565-add2-ab8ce6ba9605",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-10-10T17:27:20.278781Z"
+            },
+            {
+              "id": "36711ddd-88c5-49f9-ad9d-8902b34be95b",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "deployment"
+              },
+              "versions": [
+                {
+                  "version_id": "5c23a1bb-5074-4f1f-9d61-0e6bad45d3d8",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-10-07T22:39:32.517798Z"
+            },
+            {
+              "id": "3a8939c9-1bc4-4684-ac60-9e88ac084290",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "deployment"
+              },
+              "versions": [
+                {
+                  "version_id": "a1da8135-e577-4d49-901b-f7cdf5c2c55d",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-09-28T07:48:54.074196Z"
+            },
+            {
+              "id": "9156854c-b663-43d7-b0bb-df591d272077",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "deployment"
+              },
+              "versions": [
+                {
+                  "version_id": "322fe936-b6ca-4336-8047-6ec8f3ebf3f1",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-09-19T15:53:29.29562Z"
+            },
+            {
+              "id": "13294039-a5c3-431a-8c76-c9c11a244d86",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "secret"
+              },
+              "versions": [
+                {
+                  "version_id": "2c2ba318-00f5-456d-b66e-fcf5b635e134",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-09-04T16:40:06.786189Z"
+            },
+            {
+              "id": "63c1bb75-898c-4511-a92b-44adf6388a0e",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "secret"
+              },
+              "versions": [
+                {
+                  "version_id": "05b717ef-a154-453f-9b32-4eb9741dddcf",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-09-04T16:40:04.135393Z"
+            },
+            {
+              "id": "a28e33bc-3402-4b95-a833-9e4aa9bbcfc9",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/message": "Automatic deployment on upload.",
+                "workers/triggered_by": "upload"
+              },
+              "versions": [
+                {
+                  "version_id": "961335c9-847e-46a7-80fe-7369231bfda1",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-09-04T16:39:49.324691Z"
+            }
+          ]
+        },
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result_info": {
+          "page": 1,
+          "per_page": 10,
+          "count": 7,
+          "total_count": 7,
+          "total_pages": 1
+        }
+      },
+      "latencyMs": 459
+    },
+    "mcp-market-data": {
+      "url": "https://api.cloudflare.com/client/v4/accounts/bab940ffcf652079ec6172c267afa11e/workers/scripts/dodash-paper-mcp-market-data/deployments",
+      "payload": null,
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:47.913460+00:00",
+      "status": 200,
+      "headers": {
+        "Date": "Tue, 13 Oct 2026 19:51:48 GMT",
+        "Content-Type": "application/json; charset=UTF-8",
+        "CF-Ray": "a4a0e18df97c4d12-BOS",
+        "Cache-Control": "no-store",
+        "Server": "cloudflare"
+      },
+      "body": {
+        "result": {
+          "deployments": [
+            {
+              "id": "ef68a56a-3ca5-47d1-a136-3b207f93622f",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "deployment"
+              },
+              "versions": [
+                {
+                  "version_id": "f6eb430a-fabe-402d-acc7-2d3e2eb95304",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-10-10T17:27:10.761844Z"
+            },
+            {
+              "id": "293b3c91-ab12-46fc-ae6f-a1dc33a59304",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "deployment"
+              },
+              "versions": [
+                {
+                  "version_id": "9c652792-1eab-4302-8cb2-8d1af1c2cc96",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-10-07T22:39:21.459672Z"
+            },
+            {
+              "id": "df5e1ccb-e9e6-4e3e-a52a-583b30c0965d",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "deployment"
+              },
+              "versions": [
+                {
+                  "version_id": "b119c560-a2df-4aee-bcad-9b7f2c2103da",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-09-28T07:48:37.155515Z"
+            },
+            {
+              "id": "772003ba-1cfe-45c2-9b1e-671f0b5739fb",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/triggered_by": "secret"
+              },
+              "versions": [
+                {
+                  "version_id": "277ae21c-4542-40ba-b7d7-c26882b05435",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-09-04T16:39:31.814602Z"
+            },
+            {
+              "id": "218279f1-38ba-4d83-8a6c-3adaba4607e8",
+              "source": "wrangler",
+              "strategy": "percentage",
+              "author_email": "guyghost@gmail.com",
+              "annotations": {
+                "workers/message": "Automatic deployment on upload.",
+                "workers/triggered_by": "upload"
+              },
+              "versions": [
+                {
+                  "version_id": "e6cbd77c-5767-4349-afb6-4d9f852f29f9",
+                  "percentage": 100
+                }
+              ],
+              "created_on": "2026-09-04T16:39:21.687952Z"
+            }
+          ]
+        },
+        "success": true,
+        "errors": [],
+        "messages": [],
+        "result_info": {
+          "page": 1,
+          "per_page": 10,
+          "count": 5,
+          "total_count": 5,
+          "total_pages": 1
+        }
+      },
+      "latencyMs": 477
+    }
+  },
+  "probes": {
+    "coinbase-advanced-BTC-USD": {
+      "url": "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD/candles?start=1791504000&end=1791763200&granularity=ONE_DAY&limit=3",
+      "payload": null,
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:48.390381+00:00",
+      "status": 200,
+      "headers": {
+        "Date": "Tue, 13 Oct 2026 19:51:48 GMT",
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=14400",
+        "Server": "cloudflare",
+        "CF-RAY": "a4a0e1916fd98d1a-BOS"
+      },
+      "body": {
+        "candles": [
+          {
+            "start": "1791763200",
+            "low": "81634.08",
+            "high": "84261.99",
+            "open": "83678.29",
+            "close": "81742.5",
+            "volume": "4726.89306846"
+          },
+          {
+            "start": "1791676800",
+            "low": "82714.25",
+            "high": "84110.99",
+            "open": "82910.8",
+            "close": "83678.29",
+            "volume": "2130.40222253"
+          },
+          {
+            "start": "1791590400",
+            "low": "82458.02",
+            "high": "83093.39",
+            "open": "82544.71",
+            "close": "82910.8",
+            "volume": "1612.8723611"
+          }
+        ]
+      },
+      "latencyMs": 613
+    },
+    "coinbase-exchange-BTC-USD": {
+      "url": "https://api.exchange.coinbase.com/products/BTC-USD/candles?start=2026-10-10T00%3A00%3A00%2B00%3A00&end=2026-10-13T00%3A00%3A00%2B00%3A00&granularity=86400",
+      "payload": null,
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:49.002945+00:00",
+      "status": 200,
+      "headers": {
+        "Date": "Tue, 13 Oct 2026 19:51:49 GMT",
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=300, must-revalidate",
+        "Server": "cloudflare",
+        "CF-RAY": "a4a0e1956f3c8fb5-BOS"
+      },
+      "body": [
+        [
+          1791849600,
+          80927.48,
+          84070.33,
+          81735.6,
+          83099.35,
+          4222.76958
+        ],
+        [
+          1791763200,
+          81634.08,
+          84261.99,
+          83678.29,
+          81742.5,
+          4726.89306846
+        ],
+        [
+          1791676800,
+          82714.25,
+          84110.99,
+          82910.8,
+          83678.29,
+          2130.40222253
+        ],
+        [
+          1791590400,
+          82458.02,
+          83093.39,
+          82544.71,
+          82910.8,
+          1612.8723611
+        ]
+      ],
+      "latencyMs": 451
+    },
+    "hyperliquid-perp-BTC-USD": {
+      "url": "https://api.hyperliquid.xyz/info",
+      "payload": {
+        "type": "candleSnapshot",
+        "req": {
+          "coin": "BTC",
+          "interval": "1d",
+          "startTime": 1791590400000,
+          "endTime": 1791849599999
+        }
+      },
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:49.453726+00:00",
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "Server": "nginx/1.30.3",
+        "Date": "Tue, 13 Oct 2026 19:51:49 GMT"
+      },
+      "body": [
+        {
+          "t": 1791590400000,
+          "T": 1791676799999,
+          "s": "BTC",
+          "i": "1d",
+          "o": "82580.0",
+          "c": "82946.0",
+          "h": "83153.0",
+          "l": "82494.0",
+          "v": "9653.30142",
+          "n": 103010
+        },
+        {
+          "t": 1791676800000,
+          "T": 1791763199999,
+          "s": "BTC",
+          "i": "1d",
+          "o": "82946.0",
+          "c": "83729.0",
+          "h": "84181.0",
+          "l": "82746.0",
+          "v": "14663.58443",
+          "n": 140950
+        },
+        {
+          "t": 1791763200000,
+          "T": 1791849599999,
+          "s": "BTC",
+          "i": "1d",
+          "o": "83730.0",
+          "c": "81812.0",
+          "h": "84315.0",
+          "l": "81729.0",
+          "v": "29205.38062",
+          "n": 280126
+        }
+      ],
+      "latencyMs": 505
+    },
+    "dydx-perp-BTC-USD": {
+      "url": "https://indexer.dydx.trade/v4/candles/perpetualMarkets/BTC-USD?resolution=1DAY&fromISO=2026-10-10T00%3A00%3A00%2B00%3A00&toISO=2026-10-13T00%3A00%3A00%2B00%3A00&limit=4",
+      "payload": null,
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:49.958758+00:00",
+      "status": 200,
+      "headers": {
+        "Date": "Tue, 13 Oct 2026 19:51:50 GMT",
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=10",
+        "Server": "cloudflare",
+        "CF-RAY": "a4a0e19b3ea6d83f-BOS"
+      },
+      "body": {
+        "candles": [
+          {
+            "startedAt": "2026-10-12T00:00:00.000Z",
+            "ticker": "BTC-USD",
+            "resolution": "1DAY",
+            "low": "80580",
+            "high": "84239",
+            "open": "83671",
+            "close": "81813",
+            "baseTokenVolume": "46.611",
+            "usdVolume": "3863272.125",
+            "trades": 2040,
+            "startingOpenInterest": "191.7867",
+            "orderbookMidPriceOpen": "83662.5",
+            "orderbookMidPriceClose": "81778.5"
+          },
+          {
+            "startedAt": "2026-10-11T00:00:00.000Z",
+            "ticker": "BTC-USD",
+            "resolution": "1DAY",
+            "low": "82710",
+            "high": "84017",
+            "open": "82981",
+            "close": "83666",
+            "baseTokenVolume": "26.1199",
+            "usdVolume": "2177441.3438",
+            "trades": 675,
+            "startingOpenInterest": "207.2347",
+            "orderbookMidPriceOpen": "82906.75",
+            "orderbookMidPriceClose": "83662.5"
+          },
+          {
+            "startedAt": "2026-10-10T00:00:00.000Z",
+            "ticker": "BTC-USD",
+            "resolution": "1DAY",
+            "low": "82471",
+            "high": "83059",
+            "open": "82591",
+            "close": "82925",
+            "baseTokenVolume": "8.3858",
+            "usdVolume": "693973.5133",
+            "trades": 486,
+            "startingOpenInterest": "210.2570",
+            "orderbookMidPriceOpen": "82566.75",
+            "orderbookMidPriceClose": "82906.75"
+          }
+        ]
+      },
+      "latencyMs": 864
+    },
+    "coinbase-advanced-ETH-USD": {
+      "url": "https://api.coinbase.com/api/v3/brokerage/market/products/ETH-USD/candles?start=1791504000&end=1791763200&granularity=ONE_DAY&limit=3",
+      "payload": null,
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:50.822618+00:00",
+      "status": 200,
+      "headers": {
+        "Date": "Tue, 13 Oct 2026 19:51:51 GMT",
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=14400",
+        "Server": "cloudflare",
+        "CF-RAY": "a4a0e1a01fae3762-BOS"
+      },
+      "body": {
+        "candles": [
+          {
+            "start": "1791763200",
+            "low": "2440.12",
+            "high": "2576.89",
+            "open": "2534.47",
+            "close": "2444.3",
+            "volume": "84114.91229831"
+          },
+          {
+            "start": "1791676800",
+            "low": "2495.23",
+            "high": "2552",
+            "open": "2503.87",
+            "close": "2534.22",
+            "volume": "45215.28438909"
+          },
+          {
+            "start": "1791590400",
+            "low": "2483.62",
+            "high": "2517",
+            "open": "2485.39",
+            "close": "2503.86",
+            "volume": "30484.40150167"
+          }
+        ]
+      },
+      "latencyMs": 333
+    },
+    "coinbase-exchange-ETH-USD": {
+      "url": "https://api.exchange.coinbase.com/products/ETH-USD/candles?start=2026-10-10T00%3A00%3A00%2B00%3A00&end=2026-10-13T00%3A00%3A00%2B00%3A00&granularity=86400",
+      "payload": null,
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:51.155685+00:00",
+      "status": 200,
+      "headers": {
+        "Date": "Tue, 13 Oct 2026 19:51:51 GMT",
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=300, must-revalidate",
+        "Server": "cloudflare",
+        "CF-RAY": "a4a0e1a21d9f13e2-BOS"
+      },
+      "body": [
+        [
+          1791849600,
+          2405.96,
+          2535.3,
+          2443.82,
+          2501.79,
+          64989.32270411
+        ],
+        [
+          1791763200,
+          2440.12,
+          2576.89,
+          2534.47,
+          2444.3,
+          84114.91229831
+        ],
+        [
+          1791676800,
+          2495.23,
+          2552,
+          2503.87,
+          2534.22,
+          45215.28438909
+        ],
+        [
+          1791590400,
+          2483.62,
+          2517,
+          2485.39,
+          2503.86,
+          30484.40150167
+        ]
+      ],
+      "latencyMs": 305
+    },
+    "hyperliquid-perp-ETH-USD": {
+      "url": "https://api.hyperliquid.xyz/info",
+      "payload": {
+        "type": "candleSnapshot",
+        "req": {
+          "coin": "ETH",
+          "interval": "1d",
+          "startTime": 1791590400000,
+          "endTime": 1791849599999
+        }
+      },
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:51.460607+00:00",
+      "status": 200,
+      "headers": {
+        "Content-Type": "application/json",
+        "Server": "nginx/1.30.3",
+        "Date": "Tue, 13 Oct 2026 19:51:51 GMT"
+      },
+      "body": [
+        {
+          "t": 1791590400000,
+          "T": 1791676799999,
+          "s": "ETH",
+          "i": "1d",
+          "o": "2487.2",
+          "c": "2505.3",
+          "h": "2518.6",
+          "l": "2485.6",
+          "v": "363749.2216",
+          "n": 85949
+        },
+        {
+          "t": 1791676800000,
+          "T": 1791763199999,
+          "s": "ETH",
+          "i": "1d",
+          "o": "2505.3",
+          "c": "2535.6",
+          "h": "2553.9",
+          "l": "2495.9",
+          "v": "371511.1767",
+          "n": 94871
+        },
+        {
+          "t": 1791763200000,
+          "T": 1791849599999,
+          "s": "ETH",
+          "i": "1d",
+          "o": "2535.8",
+          "c": "2445.6",
+          "h": "2578.1",
+          "l": "2441.5",
+          "v": "423605.2772",
+          "n": 156141
+        }
+      ],
+      "latencyMs": 404
+    },
+    "dydx-perp-ETH-USD": {
+      "url": "https://indexer.dydx.trade/v4/candles/perpetualMarkets/ETH-USD?resolution=1DAY&fromISO=2026-10-10T00%3A00%3A00%2B00%3A00&toISO=2026-10-13T00%3A00%3A00%2B00%3A00&limit=4",
+      "payload": null,
+      "executionLocation": "local-macOS",
+      "at": "2026-10-13T19:51:51.864378+00:00",
+      "status": 200,
+      "headers": {
+        "Date": "Tue, 13 Oct 2026 19:51:52 GMT",
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=10",
+        "Server": "cloudflare",
+        "CF-RAY": "a4a0e1a69e994cc0-BOS"
+      },
+      "body": {
+        "candles": [
+          {
+            "startedAt": "2026-10-12T00:00:00.000Z",
+            "ticker": "ETH-USD",
+            "resolution": "1DAY",
+            "low": "2437.8",
+            "high": "2573.9",
+            "open": "2533",
+            "close": "2444.8",
+            "baseTokenVolume": "16558.87",
+            "usdVolume": "42043726.7458",
+            "trades": 5146,
+            "startingOpenInterest": "6076.303",
+            "orderbookMidPriceOpen": "2533.425",
+            "orderbookMidPriceClose": "2443.55"
+          },
+          {
+            "startedAt": "2026-10-11T00:00:00.000Z",
+            "ticker": "ETH-USD",
+            "resolution": "1DAY",
+            "low": "2494.7",
+            "high": "2552.5",
+            "open": "2502.5",
+            "close": "2533.3",
+            "baseTokenVolume": "4146.302",
+            "usdVolume": "10481679.6549",
+            "trades": 1608,
+            "startingOpenInterest": "4572.091",
+            "orderbookMidPriceOpen": "2503.05",
+            "orderbookMidPriceClose": "2533.425"
+          },
+          {
+            "startedAt": "2026-10-10T00:00:00.000Z",
+            "ticker": "ETH-USD",
+            "resolution": "1DAY",
+            "low": "2484.2",
+            "high": "2517.1",
+            "open": "2484.6",
+            "close": "2504.9",
+            "baseTokenVolume": "4324.502",
+            "usdVolume": "10801163.3074",
+            "trades": 1512,
+            "startingOpenInterest": "4108.386",
+            "orderbookMidPriceOpen": "2485.175",
+            "orderbookMidPriceClose": "2503.05"
+          }
+        ]
+      },
+      "latencyMs": 818
+    }
+  },
+  "archivedMarketRequests": {
+    "requests": [
+      {
+        "kind": "candles",
+        "cached": false,
+        "status": 429,
+        "outcome": "RATE_LIMITED",
+        "count": 4
+      },
+      {
+        "kind": "candles",
+        "cached": false,
+        "status": 200,
+        "outcome": "OK",
+        "count": 2
+      },
+      {
+        "kind": "ticker",
+        "cached": false,
+        "status": 200,
+        "outcome": "OK",
+        "count": 6
+      },
+      {
+        "kind": "candles",
+        "cached": true,
+        "status": null,
+        "outcome": "OK",
+        "count": 4
+      }
+    ],
+    "retryAfter429": {
+      "None": 4
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "startedAt": "2026-10-13T19:56:12.415460+00:00",
+  "endedAt": "2026-10-13T20:01:42.449391+00:00",
+  "seconds": 330,
+  "events": [
+    {
+      "timestamp": 1791921661354,
+      "versionId": "f6eb430a-fabe-402d-acc7-2d3e2eb95304",
+      "event": "coinbase_market_request",
+      "kind": "candles",
+      "productId": "BTC-USD",
+      "cached": true,
+      "status": null,
+      "outcome": "OK",
+      "retryAfterRaw": null,
+      "latencyMs": 126
+    },
+    {
+      "timestamp": 1791921661594,
+      "versionId": "f6eb430a-fabe-402d-acc7-2d3e2eb95304",
+      "event": "coinbase_market_request",
+      "kind": "ticker",
+      "productId": "BTC-USD",
+      "cached": false,
+      "status": 200,
+      "outcome": "OK",
+      "retryAfterRaw": null,
+      "latencyMs": 240
+    },
+    {
+      "timestamp": 1791921663689,
+      "versionId": "f6eb430a-fabe-402d-acc7-2d3e2eb95304",
+      "event": "coinbase_market_request",
+      "kind": "candles",
+      "productId": "ETH-USD",
+      "cached": true,
+      "status": null,
+      "outcome": "OK",
+      "retryAfterRaw": null,
+      "latencyMs": 65
+    },
+    {
+      "timestamp": 1791921663905,
+      "versionId": "f6eb430a-fabe-402d-acc7-2d3e2eb95304",
+      "event": "coinbase_rate_limited",
+      "kind": "ticker",
+      "productId": "ETH-USD",
+      "retryAfterSeconds": null
+    },
+    {
+      "timestamp": 1791921663905,
+      "versionId": "f6eb430a-fabe-402d-acc7-2d3e2eb95304",
+      "event": "coinbase_market_request",
+      "kind": "ticker",
+      "productId": "ETH-USD",
+      "cached": false,
+      "status": 429,
+      "outcome": "RATE_LIMITED",
+      "retryAfterRaw": null,
+      "latencyMs": 216
+    }
+  ],
+  "note": "empty events is not proof of zero requests"
+}

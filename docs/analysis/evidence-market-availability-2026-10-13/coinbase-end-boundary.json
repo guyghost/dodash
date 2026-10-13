@@ -1,0 +1,88 @@
+{
+  "BTC-USD": {
+    "url": "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD/candles?start=1791590400&end=1791849600&granularity=ONE_DAY&limit=3",
+    "payload": null,
+    "executionLocation": "local-macOS",
+    "at": "2026-10-13T19:54:49.866068+00:00",
+    "status": 200,
+    "headers": {
+      "Date": "Tue, 13 Oct 2026 19:54:50 GMT",
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "public, max-age=14400",
+      "Server": "cloudflare",
+      "CF-RAY": "a4a0e5ff4800a115-BOS"
+    },
+    "body": {
+      "candles": [
+        {
+          "start": "1791849600",
+          "low": "80927.48",
+          "high": "84070.33",
+          "open": "81735.6",
+          "close": "83165.94",
+          "volume": "4227.11302393"
+        },
+        {
+          "start": "1791763200",
+          "low": "81634.08",
+          "high": "84261.99",
+          "open": "83678.29",
+          "close": "81742.5",
+          "volume": "4726.89306846"
+        },
+        {
+          "start": "1791676800",
+          "low": "82714.25",
+          "high": "84110.99",
+          "open": "82910.8",
+          "close": "83678.29",
+          "volume": "2130.40222253"
+        }
+      ]
+    },
+    "latencyMs": 361
+  },
+  "ETH-USD": {
+    "url": "https://api.coinbase.com/api/v3/brokerage/market/products/ETH-USD/candles?start=1791590400&end=1791849600&granularity=ONE_DAY&limit=3",
+    "payload": null,
+    "executionLocation": "local-macOS",
+    "at": "2026-10-13T19:54:50.226640+00:00",
+    "status": 200,
+    "headers": {
+      "Date": "Tue, 13 Oct 2026 19:54:50 GMT",
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "public, max-age=14400",
+      "Server": "cloudflare",
+      "CF-RAY": "a4a0e6015ac43e89-BOS"
+    },
+    "body": {
+      "candles": [
+        {
+          "start": "1791849600",
+          "low": "2405.96",
+          "high": "2535.3",
+          "open": "2443.82",
+          "close": "2504.07",
+          "volume": "65008.22223873"
+        },
+        {
+          "start": "1791763200",
+          "low": "2440.12",
+          "high": "2576.89",
+          "open": "2534.47",
+          "close": "2444.3",
+          "volume": "84114.91229831"
+        },
+        {
+          "start": "1791676800",
+          "low": "2495.23",
+          "high": "2552",
+          "open": "2503.87",
+          "close": "2534.22",
+          "volume": "45215.28438909"
+        }
+      ]
+    },
+    "latencyMs": 332
+  }
+}
