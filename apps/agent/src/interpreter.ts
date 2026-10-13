@@ -7,6 +7,7 @@ import { checkRisk } from "@dodash/risk";
 import { FUNDING_TREND_STRATEGY_ID } from "@dodash/strategies";
 import {
   planMarketRetry,
+  planCycleWake,
   decisionCandlePnl,
   planTargetExposure,
   resolveDailyRiskWindow,
@@ -121,6 +122,7 @@ export const runTradingCycle = async (
   let portfolio = input.portfolio;
   let authorization: ExecutionAuthorization | undefined;
   let alarmTriggered = false;
+  const wake = planCycleWake(input.machine.value, input.triggerAlarm);
   let dailyRiskWindow = input.dailyRiskWindow ?? null;
   let dailyPnl = input.dailyPnl;
   let accountEquity: number | null = null;
@@ -172,7 +174,7 @@ export const runTradingCycle = async (
           return currentResult();
 
         case "waiting":
-          if (!input.triggerAlarm || alarmTriggered) {
+          if (!wake.triggerAlarm || alarmTriggered) {
             return currentResult();
           }
           artifacts = Object.freeze({

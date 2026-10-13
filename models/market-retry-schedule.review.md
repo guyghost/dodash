@@ -62,3 +62,8 @@ Suivi du 13 octobre 2026 : la limite (2) est corrigée pour l'admission des
 snapshots marché par `market-data-freshness.md` (`evaluatedAt` après fetch et
 checkpoint). La limite (1) reste ouverte ; les phases déjà admises avant
 redémarrage ne sont pas réévaluées par cet amendement.
+
+Suivi du lot suivant, 13 octobre 2026 : la limite (1) est corrigée par
+`cycle-wake.md`. La reprise est publiée sans rejouer d'alarme ; le shell
+lance ensuite une seule invocation distincte si l'état courant est `waiting`.
+Une demande de grille encore en attente à la fin de l'appel n'est pas durable.

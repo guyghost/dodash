@@ -617,6 +617,23 @@ describe("runTradingCycle", () => {
       expect(fixture.persistedCycles).toBe(1);
     });
 
+    it("closes a resumed cycle without replaying the grid alarm with its old identity", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()], scheduled, clock: 360_500,
+      });
+      const resumed = await run(fixture, first.result.machine, {
+        fetches: ["ok"], scheduled, clock: 421_000,
+        artifacts: first.result.artifacts, triggerAlarm: true,
+      });
+      expect(resumed.result.machine.value).toBe("waiting");
+      expect(resumed.result.machine.context.lastError?.code).not.toBe("DUPLICATE_ALARM");
+      expect(resumed.result.artifacts?.cycleId).toBe("cycle-retry");
+      expect(fixture.persistedCycles).toBe(1);
+    });
+
     it.each(["fetch", "checkpoint"])("reads freshness after a slow %s crosses the deadline", async (slowEffect) => {
       const config = configuration();
       const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });

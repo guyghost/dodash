@@ -13,6 +13,8 @@ import {
   resolveDailyRiskWindow,
   resolveMissedDecision,
   resolveRetryWake,
+  planCycleWake,
+  shouldStartPendingCycle,
   PORTFOLIO_PRODUCT_STAGGER_MS,
   type ControlPermissions,
   type MarketRetryWakePayload,
@@ -894,6 +896,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     const machine = this.state.machine;
     if (configuration === null || machine === null) return;
 
+    const wake = planCycleWake(machine.value, triggerAlarm);
+
     const identity = resolveCycleInvocation(
       machine,
       triggerAlarm,
@@ -931,7 +935,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       lastTradeAt: this.state.lastTradeAt,
       triggeredAt: identity.triggeredAt,
       cycleId: identity.cycleId,
-      triggerAlarm,
+      triggerAlarm: wake.triggerAlarm,
       effects: this.createEffects(configuration),
     });
 
@@ -1046,6 +1050,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
     if (!machineIsEnabled(result.machine.value)) {
       await this.removeIntervalSchedule();
+    }
+    if (shouldStartPendingCycle(wake, this.state.machine?.value ?? null)) {
+      await this.runCurrent(true);
     }
   }
 
@@ -1377,6 +1384,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       return;
     }
     const configuration = projected.value;
+    const wake = planCycleWake(product.machine.value, triggerAlarm);
     const identity = resolveCycleInvocation(
       product.machine,
       triggerAlarm,
@@ -1413,7 +1421,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       lastTradeAt: product.lastTradeAt,
       triggeredAt: identity.triggeredAt,
       cycleId: identity.cycleId,
-      triggerAlarm,
+      triggerAlarm: wake.triggerAlarm,
       effects: this.createProductEffects(configuration),
     });
 
@@ -1535,6 +1543,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
       if (missed?.missed === true) {
         this.emitMissedDecision(configuration, cycleEvent, missed.decisionCandleClosedAt);
       }
+    }
+    const latest = this.state.portfolioSession;
+    if (latest !== null && shouldStartPendingCycle(wake, latest.products[productId]?.machine.value ?? null)) {
+      await this.runProductCycle(latest, productId, true);
     }
   }
 

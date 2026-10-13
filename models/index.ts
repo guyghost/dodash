@@ -1,4 +1,6 @@
 export { RISK_REJECTION_REASON_CODES } from "./backtest-diagnostics.types.js";
+export { planCycleWake, shouldStartPendingCycle, type CycleWakePlan } from "./cycle-wake.js";
+
 export {
   createReleaseEvidence,
   RELEASE_EVIDENCE_GATES,

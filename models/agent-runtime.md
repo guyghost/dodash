@@ -30,6 +30,12 @@ l'horloge injectée après le fetch et son checkpoint, juste avant l'événement
 La garde juge la fraîcheur à cet instant, jamais à l'heure du déclenchement
 original d'un cycle repris. Contrat : `market-data-freshness.md`.
 
+Amendement du 13 octobre 2026 : un réveil de grille pendant un cycle reprend
+d'abord celui-ci sans `ALARM_FIRED`. Le shell publie son issue et ses alertes,
+puis consulte `cycle-wake.md` pour lancer une seule nouvelle invocation si
+l'état courant est `waiting`. Son identité est nouvelle ; une alarme ponctuelle
+de retry ou une commande de contrôle ne lance jamais cette suite.
+
 ## État durable
 
 - L’état synchronisé contient uniquement la configuration validée, la phase et
