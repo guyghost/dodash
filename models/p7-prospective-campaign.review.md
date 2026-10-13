@@ -67,3 +67,13 @@ clock est une donnée de ce scope, pas une assertion du payload amont.
 quantité, le ledger atomique, la machine de campagne, la valorisation, les
 exports et le collector ne sont pas implémentés dans cet incrément. Source
 et date de départ restent indéfinies ; la campagne ne peut pas démarrer.
+
+## Verify — registre local et reprise
+
+Incrément suivant : `models/p7-prospective-ledger.md` et sa revue. Le modèle
+de slot XState et le store SQLite temporaire sont implémentés/testés pour
+des faits `LOCAL_PREPARATION` uniquement. Issue/portefeuille atomiques,
+déduplication, réouverture et perte de réponse quote testées ; aucune migration
+distante. La machine globale de campagne, le pricer VWAP/profondeur, les marks,
+benchmarks, exports/anchors externes et le collector restent à livrer avant
+tout démarrage. La source et T0 ne sont pas choisis par cette implémentation.

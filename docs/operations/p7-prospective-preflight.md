@@ -25,6 +25,27 @@ pnpm --filter @dodash/models test -- p7-prospective-quote.test.ts
 
 ## Avant choix de source et date de départ
 
+### Registre local préparé, sans backend distant
+
+Modèle : `models/p7-prospective-ledger.md`. Adaptateur de test :
+`docs/analysis/p7-prospective-ledger-store.mjs`. Les fichiers SQLite sont
+temporaires et étiquetés `SYNTHETIC_LOCAL_PREPARATION` ; ce sont des tests,
+pas des preuves de campagne. Ne pas réutiliser la base du bot ou une autre
+base existante : le store refuse les fichiers sans son propre schéma.
+
+```sh
+pnpm --filter @dodash/models build
+pnpm --filter @dodash/models test -- p7-prospective-ledger.test.ts
+node --test docs/analysis/p7-prospective-ledger-store.test.mjs
+```
+
+Les tests couvrent rollback, sortie réelle de processus avant/après COMMIT,
+réouverture, déduplication, version de portefeuille et corruption du journal.
+Une quote demandée mais non observée conduit à SUSPEND, sans refetch. Le
+modèle de stockage Cloudflare et les anchors externes restent à approuver.
+
+### Gates de source / T0
+
 - [ ] Diagnostic fournisseurs terminé et interprété ; aucun switch automatique.
 - [ ] Profil **spot BTC/ETH USD** décidé et documenté, pas de série perp.
 - [ ] Carnet : horodatage amont, sequence, bid/ask, profondeur, règles de
