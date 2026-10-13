@@ -1,4 +1,5 @@
 export { RISK_REJECTION_REASON_CODES } from "./backtest-diagnostics.types.js";
+export { assessP7ExecutionRobustness, P7_EXECUTION_SCENARIOS, p7ExecutionRobustnessMachine, type P7RobustnessMetrics, type P7RobustnessAssessment } from "./p7-execution-robustness.js";
 export { marketSourceProbeMachine, isMarketProbeWindowOpen, type MarketProbeInput, type MarketProbeProvider } from "./market-source-probe.machine.js";
 export { normalizeMarketAdmission, projectDecisionAdmission } from "./decision-admission-telemetry.js";
 export type { MarketAdmission } from "./trading-cycle.types.js";
