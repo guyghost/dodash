@@ -14,7 +14,14 @@ du runbook paper pour lancer cette nouvelle observation.
 - [x] Limites du runtime actuel identifiées : prix close, date trigger,
   ticker last daté au fetch, marques daily, AE non exhaustif.
 - [x] Opérateur approuve le protocole et ses critères numériques.
-- [ ] Modèle normatif et revue commités avant toute collecte prospective.
+- [x] Modèle normatif et revue commités avant toute collecte prospective.
+
+Protocole commité avant implémentation locale : `a7b5948`. La garde carnet est
+un premier incrément ; elle n'est pas une validation du collector ou d'un profil.
+
+```sh
+pnpm --filter @dodash/models test -- p7-prospective-quote.test.ts
+```
 
 ## Avant choix de source et date de départ
 

@@ -46,3 +46,24 @@ Lectures des producteurs et modèles existants, cohérence des unités et
 distinction observé/simulé. Aucun test de capture, ledger, modèle exécutable
 ou campagne réelle n'est revendiqué à ce stade. L'implémentation locale suit le gel ; aucun
 résultat prospectif, frais de venue réellement payés ou SLA n'existe ici.
+
+## Verify — premier incrément local
+
+`models/p7-prospective-quote.ts` : garde pure, sans I/O, mutation de portefeuille
+ni transition. Le scope vient du futur manifest/profil validé ; la preuve de
+clock est une donnée de ce scope, pas une assertion du payload amont.
+
+- Tests écrits avant implémentation, puis reproduction RED du contrôle de
+  durée 180 jours/alignement UTC avant correction.
+- 8 tests passent : identité/cache/clock, source null/future/stale, 5 s
+  inclusifs, fetch après intention, deadline 2 h inclusive, fin exclusive,
+  carnet vide/croisé/désordonné, quantités et séquences décimales bornées.
+- Niveaux limités à 5 000 par côté ; BigInt seulement après validation de
+  chaîne décimale ≤64 caractères. Aucun prix/horodatage de repli.
+- Suite globale : 538 tests modèles, 313 agent, 133 backtest passent ;
+  TypeScript, build global dry-run et lint ciblé passent. Aucune modification du runtime du bot.
+
+**Accepté comme contrôle local d'évidence uniquement.** Le VWAP pour la
+quantité, le ledger atomique, la machine de campagne, la valorisation, les
+exports et le collector ne sont pas implémentés dans cet incrément. Source
+et date de départ restent indéfinies ; la campagne ne peut pas démarrer.
