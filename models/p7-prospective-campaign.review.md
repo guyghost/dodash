@@ -1,0 +1,48 @@
+# Revue de préparation — campagne prospective P7
+
+Statut : **GELÉ / NON DÉMARRABLE**. Horizon, critères et contrat approuvés par
+l'opérateur avant collecte, le 14 octobre 2026. Pas d'approbation
+de déploiement, stockage, changement de source ou activation.
+
+## Constats vérifiés dans le code local
+
+- `apps/agent/src/interpreter.ts`, `submittingOrder` : prix provenant du dernier
+  close et horodatage `triggeredAt` transmis au broker.
+- `apps/agent/src/trading-agent.ts`, `submitPaperOrder` : fill simulé au prix
+  reçu et coûts configurés, pas un prix récupéré après l'intention.
+- `apps/mcp-market-data/src/coinbase.ts`, ticker : `observedAt` est l'heure
+  locale de fetch, en secondes. Ce n'est pas un timestamp de carnet amont.
+- `models/decision-admission-telemetry.md` : fait durable v4 par cycle, mais
+  sorties AE échantillonnées ; aucun registre exhaustif multi-jour démontré.
+- `models/paper-valuation.md` : seules les marques de close sont reconnues,
+  et la fraîcheur est celle de décision. Ne pas requalifier en mark intraday.
+
+## Choix de frontière proposé
+
+Observer une trajectoire shadow indépendante ; réutiliser les fonctions pures
+P7/risque/broker, mais ne pas modifier le runtime du bot ni lui attribuer
+les décisions/fills shadow. Nouvelle preuve, jamais relabel des anciens fills.
+Les coûts paper sont des hypothèses ; carnet/spread/latences sont des observations.
+L'absence de timestamp amont fiable reste un blocage, pas un champ à inventer.
+
+## Points de revue avant implémentation / collecte
+
+1. Accord opérateur obtenu sur couverture 99 %, marks horaires, quote 5 s et
+   suspension après >2 h sans mark, ainsi que les verdicts non-live.
+2. Profil spot compatible avec horodatage/sequence/profondeur exigés. Le
+   diagnostic actuel de bougies/tickers ne valide pas ce contrat de carnet.
+3. Tests de taille au budget B&H et VWAP bid liquidable, frais/slippage
+   appliqués une seule fois ; limites de précision du profil explicites.
+4. Manifest/SHA/T0/T1 immuables avant collecte, warmup séparé ; pas de
+   prolongation, changement de seuil ou choix de checkpoint favorable.
+5. Ledger durable exact, atomicité fill/portefeuille, export et reprise ;
+   schéma/migration et stockage restent soumis à décision séparée.
+6. Toute future capture doit préserver refus, manqués et trous. Un problème
+   d'ingénierie ne devient pas un verdict de perte économique de P7.
+
+## Verify de ce lot documentaire
+
+Lectures des producteurs et modèles existants, cohérence des unités et
+distinction observé/simulé. Aucun test de capture, ledger, modèle exécutable
+ou campagne réelle n'est revendiqué à ce stade. L'implémentation locale suit le gel ; aucun
+résultat prospectif, frais de venue réellement payés ou SLA n'existe ici.
