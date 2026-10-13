@@ -21,3 +21,13 @@ de l'opérateur. Aucun changement de stratégie, config paper ou gate live.
 
 Vérification à réaliser : tests synthétiques, référence, six scénarios réels,
 empreintes, invariants cash/position et rapport non extrapolatif.
+
+## Amendement de provenance avant métriques
+
+Le premier lancement s'est arrêté sur la validation de l'archive ETH avant
+le replay : son metadata annonce deux bougies déjà comblées, documentées dans
+le rapport daily-long initial. L'opérateur approuve explicitement leur
+conservation dans l'archive de référence. Contrôle exact BTC=0/ETH=2 et
+publication de cette limite ; pas de nouveau remplissage, retrait de jour,
+changement de scénario ou de seuil. Le contrôle initial trop strict n'est
+pas requalifié comme une mesure économique échouée.

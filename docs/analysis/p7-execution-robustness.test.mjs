@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { replayP7Scenario, validateP7Datasets } from "./p7-execution-robustness-core.mjs";
+import { decodeP7Archive, replayP7Scenario, validateP7Datasets } from "./p7-execution-robustness-core.mjs";
 
 const DAY = 86_400_000;
 const start = Date.UTC(2025, 0, 6) - 239 * DAY;
@@ -10,6 +10,13 @@ const history = (extra = false, open = 110) => ({
   "ETH-USD": [],
 });
 const scenario = { id: "O0", execution: "NEXT_OPEN", feeBps: 60, slippageBps: 2 };
+
+test("retains only the explicitly approved inherited filling metadata", () => {
+  const job = { product: "ETH-USD", timeframe: "ONE_DAY", status: "OK", dataset: { filled: 2, candles: 2 }, candles: [[start, 100, 100], [start + DAY, 100, 100]] };
+  assert.equal(decodeP7Archive(job, "ETH-USD").length, 2);
+  assert.throws(() => decodeP7Archive({ ...job, dataset: { filled: 3, candles: 2 } }, "ETH-USD"));
+  assert.throws(() => decodeP7Archive(job, "BTC-USD"));
+});
 
 test("rejects gaps, duplicates, nonpositive prices and post-listing missing ETH", () => {
   const data = history(); validateP7Datasets(data);

@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { replayP7Scenario, summarizeP7Windows, validateP7Datasets, PRODUCTS } from "./p7-execution-robustness-core.mjs";
+import { decodeP7Archive, replayP7Scenario, summarizeP7Windows, validateP7Datasets, PRODUCTS } from "./p7-execution-robustness-core.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const require = createRequire(resolve(root, "packages/backtest/package.json"));
@@ -28,11 +28,7 @@ try {
     const raw = readFileSync(resolve(root, path)); hashes[path] = sha256(raw);
     if (hashes[path] !== FILES[product]) throw new Error("DATASET_SHA_MISMATCH");
     const job = JSON.parse(raw.toString("utf8"));
-    if (job.product !== product || job.timeframe !== "ONE_DAY" || !Array.isArray(job.candles) || job.dataset?.filled !== 0) throw new Error("INVALID_DATASET_IDENTITY");
-    datasets[product] = job.candles.map((tuple) => {
-      if (!Array.isArray(tuple) || tuple.length !== 3) throw new Error("INVALID_CANDLE_TUPLE");
-      return { start: tuple[0], open: tuple[1], close: tuple[2] };
-    });
+    datasets[product] = decodeP7Archive(job, product);
     if (datasets[product].length !== job.dataset.candles || datasets[product].at(-1)?.start !== Date.UTC(2026, 8, 30) ||
       datasets[product][0]?.start !== (product === "BTC-USD" ? Date.UTC(2015, 6, 21) : Date.UTC(2016, 4, 19))) throw new Error("DATASET_PERIOD_MISMATCH");
   }
@@ -57,6 +53,7 @@ try {
   const summary = { protocol: "models/p7-execution-robustness.md", protocolCommit: "64806af",
     codeCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
     createdAt: new Date().toISOString(), researchOnly: true, observation: "KNOWN_HISTORY_NOT_OOS",
+    inheritedFilledCandles: { "BTC-USD": 0, "ETH-USD": 2 }, inheritedFilledDatesIdentifiable: false, newlyFilledCandles: 0,
     period: { firstStart: datasets["BTC-USD"][0].start, lastStart: datasets["BTC-USD"].at(-1).start, btcCandles: datasets["BTC-USD"].length, ethCandles: datasets["ETH-USD"].length },
     assessment: snapshot.context.assessment, sourceHashes: hashes,
     results: results.map((r) => ({ ...r, deltaCagr: r.cagr - reference.cagr, deltaDrawdown: r.maxDrawdown - reference.maxDrawdown })),

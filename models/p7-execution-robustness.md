@@ -16,7 +16,13 @@ cohérence runtime. Aucun transfert entre créneaux.
 Historique déjà consulté : les deux jobs de la campagne daily-long du 9 octobre,
 avec leurs SHA-256 de fichiers vérifiés avant parsing. Tuples archivés
 `[start, open, close]` ; pas de minute, spread, high/low ni carnet disponible.
-Tous les jours/produits sont conservés ; aucun remplissage de trou.
+Tous les jours/produits sont conservés ; aucun **nouveau** remplissage de trou.
+Amendement de provenance approuvé avant tout résultat économique : l'archive
+ETH contient déjà **2 bougies comblées** (sur 3 787), BTC **0** (sur 4 090).
+Ces comptes exacts sont vérifiés et publiés ; les tuples archivés ne portent
+pas le flag individuel, donc leurs dates ne sont pas prétendues identifiées.
+Les opens de ces deux lignes peuvent être synthétiques : limite explicite de
+tous les scénarios ETH, sans retrait de jour ni reconstruction supplémentaire.
 **Ce n'est pas de l'OOS et aucun verdict n'autorise le live.**
 
 ## Scénarios figés
@@ -40,7 +46,8 @@ On ne prétend pas que l'open suivant est systématiquement défavorable.
 
 1. Vérifier empreintes, grille daily UTC, unicité, continuité, nombres finis
    positifs et période. Échec => pas de résultats économiques ni archive
-   présentée comme valide. Autoriser uniquement la période pré-cotation ETH
+   présentée comme valide. Les comptes de remplissage hérités doivent être
+   exactement BTC=0/ETH=2 ; autre provenance => échec. Autoriser uniquement la période pré-cotation ETH
    absente ; ensuite alignement complet avec BTC requis.
 2. Pour O0–O4, exécuter l'intention du close précédent à l'open courant,
    **avant** la décision du close courant. Pour C0, exécuter immédiatement au

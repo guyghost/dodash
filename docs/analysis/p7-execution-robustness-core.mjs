@@ -16,6 +16,16 @@ export const WINDOWS = [
 const RISK = { maxOrderNotional: 1e12, maxPositionNotional: 1e12, maxGrossExposure: 1e12,
   maxDailyLoss: 2_500, cooldownMs: 0, stopLossBps: 150, takeProfitBps: 300 };
 
+export const decodeP7Archive = (job, product) => {
+  if (!PRODUCTS.includes(product) || job.product !== product || job.timeframe !== "ONE_DAY" || job.status !== "OK" ||
+    !Array.isArray(job.candles) || job.dataset?.filled !== (product === "BTC-USD" ? 0 : 2) ||
+    job.dataset.candles !== job.candles.length || job.dataset.filled > job.candles.length) throw new Error("INVALID_DATASET_IDENTITY");
+  return job.candles.map((tuple) => {
+    if (!Array.isArray(tuple) || tuple.length !== 3) throw new Error("INVALID_CANDLE_TUPLE");
+    return { start: tuple[0], open: tuple[1], close: tuple[2] };
+  });
+};
+
 export const validateP7Datasets = (datasets) => {
   if (!Array.isArray(datasets["BTC-USD"]) || datasets["BTC-USD"].length < 2 || !Array.isArray(datasets["ETH-USD"])) throw new Error("INVALID_DATASET");
   for (const product of PRODUCTS) {
