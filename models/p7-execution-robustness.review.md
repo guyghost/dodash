@@ -31,3 +31,20 @@ conservation dans l'archive de référence. Contrôle exact BTC=0/ETH=2 et
 publication de cette limite ; pas de nouveau remplissage, retrait de jour,
 changement de scénario ou de seuil. Le contrôle initial trop strict n'est
 pas requalifié comme une mesure économique échouée.
+
+## Verify après implémentation
+
+- Core pur : les fonctions réelles de décision/risque/broker sont réutilisées.
+  La décision ne lit pas l'open futur ; les quantités ne sont pas redimensionnées.
+- Shell : hash avant parsing, identité et comptes de remplissage exacts, grille
+  et alignement ETH complets, sortie exclusive dans un répertoire neuf.
+- 4 tests modèle et 6 tests Node passent, ainsi que la suite globale (530
+  modèles, 313 agent, 133 backtest), check, build dry-run, lint ciblé et scan.
+- C0 reproduit le test existant au bruit flottant ; second run déterministe
+  (six trajectoires identiques octet par octet), bilans/frais/unicité vérifiés.
+- Verdict conservé **SENSITIVE_TO_ASSUMPTIONS** : O3/O4 dépassent 50 % global,
+  aucun scénario ou seuil retiré. Rapport :
+  `docs/analysis/p7-execution-robustness-2026-10-13.md`.
+
+**Accepté comme étude de sensibilité historique uniquement.** Aucune
+modification de P7, de la config paper ou de la politique de lancement live.
