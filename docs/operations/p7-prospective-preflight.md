@@ -103,7 +103,26 @@ elle ne déclenche pas toute seule une suspension. Aucun runner/timer livré.
 Suspension et arrêt sont sticky ; diagnostic/marks possibles dans la fenêtre,
 pas de vente ni reprise automatique. DD >50 % est échantillonné, pas un verdict.
 
-Restent bloquants : stockage/garanties distantes, B&H, marks après fill et
+### Benchmarks locaux au budget
+
+Contrat : `models/p7-prospective-benchmarks.md`. `registerBenchmarks` fige la
+précision synthétique avant T0 ; `projectP7LocalBenchmarks` dans
+`docs/analysis/p7-prospective-benchmarks.mjs` calcule cash/B&H depuis l'export
+revalidé. Aucun fill ou mark benchmark rétrospectif n'est écrit dans le ledger.
+
+```sh
+pnpm --filter @dodash/models build
+pnpm --filter @dodash/models test -- p7-prospective-benchmarks.test.ts
+node --test docs/analysis/p7-prospective-benchmarks.test.mjs
+```
+
+Le stream initial du prototype reste celui des quotes d'exécution publiées
+pour T0. HOLD sans quote ou jambe absente => B&H non initialisé, pas un prix
+inventé depuis un mark ultérieur. Le collector doit encore fournir un stream
+benchmark initial indépendant et valider le profil réel (precision/minSize/
+minNotional), sans choisir un meilleur carnet après coup.
+
+Restent bloquants : stockage/garanties distantes, B&H prospectif persisté, marks après fill et
 final, préflight/autorisation réels et orchestrateur, exports/anchors et autorisations
 séparées. Ne pas utiliser les commandes fixtures V1 comme preuves de fills
 prospectifs vérifiés. Aucune observation réelle n'est produite par ces tests.

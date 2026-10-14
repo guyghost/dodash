@@ -121,3 +121,15 @@ Les vieux registres non liés restent des fixtures, pas une campagne autorisée.
 RECOVER_LOCAL reste un événement explicite obligatoire au bootstrap du futur
 runner ; pas de lease/timer/collector ou préflight réel livré ici. L'assesseur,
 B&H, source/T0, exports et autorisations distantes restent bloquants.
+
+## Verify — projection cash/B&H locale
+
+`models/p7-prospective-benchmarks.md` : profil de quantité V6 figé avant T0,
+sizing maximal au budget sur profondeur connue, vrai broker 60/2 bps et marks
+B&H sur les preuves horaires communes. Replay en lecture seule, coverage
+B&H séparée de P7 CASH ; ni fill/mark rétroactif inscrit, ni prix alternatif.
+
+Ce n'est pas encore le stream prospectif B&H : le premier carnet indépendant
+d'une décision P7 HOLD, sa persistance/machine et le profil réel restent à
+implémenter/vérifier. L'absence d'initialisation complète bloque toujours
+l'évaluation économique ; ce replay ne change pas la qualification de campagne.
