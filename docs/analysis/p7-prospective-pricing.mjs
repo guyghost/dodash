@@ -20,7 +20,7 @@ export const planP7JournalTerminal = (journal, productId, candleClosedAt, asOf) 
   if (slot.intent.portfolioVersion !== state.portfolios[productId].version) return { kind: "SUSPEND", reason: "PORTFOLIO_VERSION_CONFLICT" };
   if (!Number.isSafeInteger(asOf) || asOf < state.lastRecordedAt) return { kind: "SUSPEND", reason: "INVALID_CLOCK" };
   const quotes = journal.entries.filter((e) => e.command?.productId === productId &&
-    e.command.candleClosedAt === candleClosedAt && e.command.event.type === "OBSERVE_QUOTE");
+    e.command.candleClosedAt === candleClosedAt && e.command.event?.type === "OBSERVE_QUOTE");
   if (quotes.length !== 1) throw new Error("QUOTE_FACT_CONFLICT");
   // The current sequence includes this same persisted quote; equality is permitted.
   const pricing = planP7Pricing({ productId, sourceProfileId: state.manifest.sourceProfileId,
