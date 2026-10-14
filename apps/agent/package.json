@@ -9,7 +9,8 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev --port 8787",
     "types": "wrangler types",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:runtime": "node scripts/paper-runtime.mjs"
   },
   "dependencies": {
     "@dodash/allocator": "workspace:*",
