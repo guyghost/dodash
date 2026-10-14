@@ -37,8 +37,8 @@ const validPortfolio = (p: P7LedgerState["portfolios"]["BTC-USD"]): boolean =>
 
 /** Deterministic safety projection; never starts a real campaign or decides a verdict. */
 export const evaluateP7LocalCampaignSafety = (state: P7LocalCampaignState, ledger: P7LedgerState, marks: P7MarkState,
-  now: number, recovering = false, benchmarkPending = false): P7LocalCampaignState => {
-  if (!timestamp(now) || now < Math.max(state.lastEvaluatedAt, ledger.lastRecordedAt, marks.lastRecordedAt)) throw new Error("INVALID_CAMPAIGN_CLOCK");
+  now: number, recovering = false, benchmarkPending = false, benchmarkMarks: P7MarkState | null = null): P7LocalCampaignState => {
+  if (!timestamp(now) || now < Math.max(state.lastEvaluatedAt, ledger.lastRecordedAt, marks.lastRecordedAt, benchmarkMarks?.lastRecordedAt ?? 0)) throw new Error("INVALID_CAMPAIGN_CLOCK");
   let next = { ...state, lastEvaluatedAt: now };
   if (state.boundAt === null) return next;
   if (ledger.manifest.purpose !== "LOCAL_PREPARATION" || !Object.values(ledger.portfolios).every(validPortfolio))
@@ -59,12 +59,14 @@ export const evaluateP7LocalCampaignSafety = (state: P7LocalCampaignState, ledge
   if (now >= ledger.manifest.endAt) return transition(next, "END", "PERIOD_ENDED");
   if (state.phase === "suspended") return next;
   if (reportP7MarkCoverage(marks, ledger.manifest, now).proofGapExceeded) return transition(next, "SUSPEND", "MARK_PROOF_GAP_EXCEEDED");
+  if (benchmarkMarks !== null && reportP7MarkCoverage(benchmarkMarks, ledger.manifest, now).proofGapExceeded)
+    return transition(next, "SUSPEND", "BENCHMARK_MARK_PROOF_GAP_EXCEEDED");
   if (recovering && (benchmarkPending || Object.values(marks.slots).some((s) => s.phase === "requested") || Object.values(ledger.slots).some((s) => s.phase === "requested")))
     return transition(next, "SUSPEND", "RESPONSE_UNOBSERVED_AT_RECOVERY");
   return next;
 };
 
-export const applyP7LocalCampaignCommand = (state: P7LocalCampaignState, ledger: P7LedgerState, marks: P7MarkState, input: unknown, now: number, benchmarkPending = false):
+export const applyP7LocalCampaignCommand = (state: P7LocalCampaignState, ledger: P7LedgerState, marks: P7MarkState, input: unknown, now: number, benchmarkPending = false, benchmarkMarks: P7MarkState | null = null):
   { readonly ok: false; readonly error: string } | { readonly ok: true; readonly value: P7LocalCampaignState } => {
   const fail = (error: string): { readonly ok: false; readonly error: string } => ({ ok: false, error });
   if (!record(input) || Object.keys(input).length !== 3 || !Object.keys(input).every((k) => ["campaignId", "commandId", "event"].includes(k)) ||
@@ -80,5 +82,5 @@ export const applyP7LocalCampaignCommand = (state: P7LocalCampaignState, ledger:
     if (state.boundAt === null || !["localObserving", "suspended"].includes(state.phase)) return fail("INVALID_CAMPAIGN_PHASE");
     next = transition(state, "STOP", "LOCAL_OPERATOR_STOP");
   }
-  return { ok: true, value: evaluateP7LocalCampaignSafety(next, ledger, marks, now, type === "RECOVER_LOCAL", benchmarkPending) };
+  return { ok: true, value: evaluateP7LocalCampaignSafety(next, ledger, marks, now, type === "RECOVER_LOCAL", benchmarkPending, benchmarkMarks) };
 };
