@@ -2,26 +2,22 @@ import { DurableObject } from "cloudflare:workers";
 import type { ProductId } from "@dodash/domain";
 import { executePaperOrder } from "@dodash/paper-execution";
 import { checkRisk, type RiskConfig } from "@dodash/risk";
-import { assessP7CampaignSnapshot } from "../../../models/p7-prospective-assessment.js";
-import type { P7BenchmarkProfile } from "../../../models/p7-prospective-benchmarks.js";
-import type {
-	P7LedgerCommand,
-	P7LedgerManifest,
-} from "../../../models/p7-prospective-ledger.js";
-import type { P7MarkEvidence } from "../../../models/p7-prospective-marks.js";
-import {
-	type P7ShadowPhase,
-	transitionP7Shadow,
-} from "../../../models/p7-shadow-lifecycle.js";
 import {
 	applyP7Shadow,
+	assessP7CampaignSnapshot,
+	decisionCandlePnl,
 	hasP7InterruptedAdmission,
 	initializeP7Shadow,
 	P7_HOUR,
 	P7_PRODUCTS,
+	type P7BenchmarkProfile,
+	type P7LedgerCommand,
+	type P7LedgerManifest,
+	type P7MarkEvidence,
 	type P7Product,
 	type P7ShadowCommand,
 	type P7ShadowJob,
+	type P7ShadowPhase,
 	type P7ShadowProjection,
 	p7ShadowCommitSignature,
 	p7ShadowSafety,
@@ -30,12 +26,10 @@ import {
 	planP7ShadowJobs,
 	planP7ShadowPricing,
 	suspendP7ShadowForRequestGap,
-} from "../../../models/p7-shadow-runner.js";
-import {
-	decisionCandlePnl,
 	type TargetExposureCandle,
 	targetExposureRiskGate,
-} from "../../../models/target-exposure.js";
+	transitionP7Shadow,
+} from "@dodash/models";
 export interface Env {
 	CAMPAIGNS: DurableObjectNamespace;
 	ARCHIVE: R2Bucket;

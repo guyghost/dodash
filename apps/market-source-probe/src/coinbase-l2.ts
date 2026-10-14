@@ -1,5 +1,4 @@
-import type { P7QuoteScope } from "@dodash/models";
-import { evaluateP7SourceCandidate } from "../../../models/p7-source-profile.js";
+import { evaluateP7SourceCandidate, type P7QuoteScope } from "@dodash/models";
 export interface CoinbaseL2Input {
 	readonly scope: P7QuoteScope;
 	readonly url: string;

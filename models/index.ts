@@ -504,3 +504,33 @@ export type {
   TargetExposureInput,
   TargetExposureReason,
 } from "./target-exposure.js";
+export { evaluateP7SourceCandidate } from "./p7-source-profile.js";
+export type {
+  P7SourceBook,
+  P7SourceProduct,
+  P7SourceQualification,
+} from "./p7-source-profile.js";
+export { transitionP7Shadow } from "./p7-shadow-lifecycle.js";
+export type { P7ShadowAuthority, P7ShadowPhase } from "./p7-shadow-lifecycle.js";
+export {
+  applyP7Shadow,
+  initializeP7Shadow,
+  P7_DAY,
+  P7_HOUR,
+  P7_PRODUCTS,
+  p7ShadowCommitSignature,
+  hasP7InterruptedAdmission,
+  p7ShadowSafety,
+  planP7ShadowDecision,
+  planP7ShadowDailyRecovery,
+  planP7ShadowJobs,
+  planP7ShadowPricing,
+  suspendP7ShadowForRequestGap,
+} from "./p7-shadow-runner.js";
+export type { P7MarkEvidence } from "./p7-prospective-marks.js";
+export type {
+  P7Product,
+  P7ShadowCommand,
+  P7ShadowJob,
+  P7ShadowProjection,
+} from "./p7-shadow-runner.js";

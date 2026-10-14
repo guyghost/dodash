@@ -1,5 +1,11 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!!docs/analysis/evidence-paper-2026-10-08/market-data-tail-2026-10-07T2240-2308.json"
+    ]
+  },
   "vcs": {
     "enabled": true,
     "clientKind": "git",
