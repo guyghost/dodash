@@ -73,8 +73,8 @@ Marks horaires **locaux** disponibles : `models/p7-prospective-marks.md`.
 depuis le portefeuille relu, sans fill ou changement de balance/version.
 `markCoverage` compte aussi les heures absentes du journal ; UNOBSERVED et
 UNAVAILABLE sont séparés. La fenêtre courante n'entre pas prématurément dans
-la couverture des heures terminées. Le signal de gap >2 h ne suspend pas
-encore une campagne : la machine globale reste à implémenter.
+la couverture des heures terminées. Le signal de gap >2 h alimente désormais
+le harnais de sûreté local décrit ci-dessous, pas un collector actif.
 
 ```sh
 pnpm --filter @dodash/models build
@@ -82,8 +82,29 @@ pnpm --filter @dodash/models test -- p7-prospective-marks.test.ts
 node --test docs/analysis/p7-prospective-marks-store.test.mjs
 ```
 
+### Harnais de sûreté de campagne (synthétique uniquement)
+
+`models/p7-prospective-campaign-safety.md` : `applyCampaign` lie un registre
+local avec BEGIN_LOCAL_SIMULATION ; ce n'est pas START_AUTHORIZED. Le chemin
+`commitCampaignPricing` V5 contrôle safety sous verrou, conserve les refus de
+gate, et bloque en suspension/arrêt/invalidité/T1. Les fills V1 déclarés et
+commitPricing V2 sont désactivés après binding ; V1/V2 non liées restent des
+fixtures, pas une voie autorisée de campagne.
+
+```sh
+pnpm --filter @dodash/models build
+pnpm --filter @dodash/models test -- p7-prospective-campaign-safety.test.ts
+node --test docs/analysis/p7-prospective-campaign-safety-store.test.mjs
+```
+
+Le futur runner doit appeler RECOVER_LOCAL au bootstrap et CHECK_LOCAL_SAFETY
+sur timer. Une réouverture SQLite peut être une seconde connexion en plein I/O :
+elle ne déclenche pas toute seule une suspension. Aucun runner/timer livré.
+Suspension et arrêt sont sticky ; diagnostic/marks possibles dans la fenêtre,
+pas de vente ni reprise automatique. DD >50 % est échantillonné, pas un verdict.
+
 Restent bloquants : stockage/garanties distantes, B&H, marks après fill et
-final, machine globale/suspension effective, exports/anchors et autorisations
+final, préflight/autorisation réels et orchestrateur, exports/anchors et autorisations
 séparées. Ne pas utiliser les commandes fixtures V1 comme preuves de fills
 prospectifs vérifiés. Aucune observation réelle n'est produite par ces tests.
 

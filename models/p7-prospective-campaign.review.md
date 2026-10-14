@@ -107,3 +107,17 @@ Ce rapport ne qualifie pas P7+B&H, ne calcule pas un verdict économique et
 ne suspend pas effectivement les fills : machine globale et benchmarks
 encore absents. Marks après fill/final, reprise/réparation des preuves perdues,
 stockage/export distant et source/T0 restent des prérequis séparés.
+
+## Verify — harnais de campagne et garde transactionnelle
+
+`models/p7-prospective-campaign-safety.md` : XState local, binding synthétique
+explicite, garde V5 avant nouveaux fills, refus de gate durables et replay.
+Gap >2 h / reprise sans réponse => suspended ; DD échantillonné >50 % ou
+arrêt local => stopped ; invariants => invalid ; T1 => aucun nouveau fill.
+États sticky, aucun resume automatique ou événement START_AUTHORIZED exposé.
+
+Après binding, les chemins V1/V2 ne peuvent plus produire de nouveaux fills.
+Les vieux registres non liés restent des fixtures, pas une campagne autorisée.
+RECOVER_LOCAL reste un événement explicite obligatoire au bootstrap du futur
+runner ; pas de lease/timer/collector ou préflight réel livré ici. L'assesseur,
+B&H, source/T0, exports et autorisations distantes restent bloquants.
