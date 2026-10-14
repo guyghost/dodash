@@ -5,12 +5,31 @@ const { sizeP7BenchmarkBuy, planP7Pricing, valueP7Liquidation, consolidateP7Mark
 const { executePaperOrder } = await import(require.resolve("@dodash/paper-execution"));
 const PRODUCTS = ["BTC-USD", "ETH-USD"];
 
+/** Broker agreement check on a model-derived, synthetic initial purchase. */
+export const verifyP7IndependentBenchmarkFill = (leg, productId) => {
+  if (leg.phase !== "initialized") return;
+  const execution = executePaperOrder({ cash: 10_000, positionQuantity: 0, averagePrice: 0 }, {
+    clientOrderId: `synthetic-bh-${productId}`, decisionId: "synthetic-bh", strategyIds: ["BUY_AND_HOLD"], productId,
+    side: "BUY", type: "MARKET", quantity: leg.quantity, limitPrice: null,
+  }, leg.vwap, leg.fill.executedAt, { feeBps: 60, slippageBps: 2 });
+  if (!execution.ok || execution.value.trade.fill.price !== leg.fill.price || execution.value.trade.fill.fee !== leg.fill.fee ||
+    execution.value.portfolio.cash !== leg.portfolio.cash || execution.value.portfolio.positionQuantity !== leg.portfolio.positionQuantity) throw new Error("BENCHMARK_BROKER_MISMATCH");
+};
+
 export const projectP7LocalBenchmarks = (store, asOf) => {
   const journal = store.export(), { state, benchmarkProfile, markState } = journal, manifest = state.manifest;
   if (journal.observation !== "SYNTHETIC_LOCAL_PREPARATION" || !Number.isSafeInteger(asOf) || asOf < Math.max(manifest.startAt, state.lastRecordedAt)) throw new Error("INVALID_BENCHMARK_REPLAY_SCOPE");
   const products = Object.fromEntries(PRODUCTS.map((productId) => {
     const failed = (reason, status = "NOT_INITIALIZED") => [productId, { status, reason }];
     if (benchmarkProfile === null) return failed("PROFILE_NOT_REGISTERED");
+    if (journal.benchmarkEntries.active) {
+      const leg = journal.benchmarkEntries.products[productId];
+      if (leg?.phase === "initialized") return [productId, { status: "INITIALIZED", quantity: leg.quantity,
+        entrySequence: journal.entries.find((e) => e.command?.commandId === leg.quoteCommandId)?.sequence,
+        bodySha256: leg.bodySha256, fill: leg.fill, portfolio: leg.portfolio }];
+      return failed(leg?.reason ?? (leg?.phase === "requested" ? "RESPONSE_UNOBSERVED" : "INITIAL_BOOK_UNOBSERVED"),
+        leg?.phase === "failed" || asOf > manifest.startAt + 7_200_000 ? "NOT_INITIALIZED" : "PENDING");
+    }
     const entry = journal.entries.find((e) => e.command?.productId === productId && e.command.candleClosedAt === manifest.startAt && e.command.event?.type === "OBSERVE_QUOTE");
     if (entry === undefined) return failed("INITIAL_BOOK_UNOBSERVED", asOf <= manifest.startAt + 7_200_000 ? "PENDING" : "NOT_INITIALIZED");
     const slot = state.slots[`${productId}:${manifest.startAt}`];
@@ -61,6 +80,6 @@ export const projectP7LocalBenchmarks = (store, asOf) => {
   }
   return { observation: "SYNTHETIC_LOCAL_PREPARATION", costAssumptions: { simulated: true, feeBps: 60, slippageBps: 2 }, profile: benchmarkProfile,
     cash: { source: "ANALYTIC_CASH_REFERENCE", equity: 20_000, rate: 0 },
-    buyAndHold: { initializationComplete, products, observations },
+    buyAndHold: { entryMode: journal.benchmarkEntries.active ? "INDEPENDENT_DURABLE" : "LEGACY_ARCHIVE_REPLAY", initializationComplete, products, observations },
     coverage: { p7: reportP7MarkCoverage(markState, manifest, asOf), buyAndHold: reportP7MarkCoverage(projected, manifest, asOf) } };
 };

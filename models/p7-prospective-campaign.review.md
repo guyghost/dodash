@@ -133,3 +133,15 @@ Ce n'est pas encore le stream prospectif B&H : le premier carnet indépendant
 d'une décision P7 HOLD, sa persistance/machine et le profil réel restent à
 implémenter/vérifier. L'absence d'initialisation complète bloque toujours
 l'évaluation économique ; ce replay ne change pas la qualification de campagne.
+
+## Verify — stream d'entrée B&H indépendant local
+
+`models/p7-prospective-benchmark-entry.md` : XState par jambe, événements V7
+avant/après I/O, premier carnet éligible figé, quantités au budget et accord
+avec broker vérifiés dans transaction/replay. HOLD P7 n'empêche plus B&H,
+portefeuilles P7 inchangés. Perte de réponse B&H prise en compte à RECOVER_LOCAL.
+
+La projection préfère V7 sans fallback legacy dès l'ouverture du mode ; cette
+ouverture est refusée après observation du marché initial legacy. Le collector
+réel, marks B&H durables, sûreté/qualification conjointe et source/T0 restent
+absents. Aucun démarrage ou réseau autorisé par ce registre synthétique.

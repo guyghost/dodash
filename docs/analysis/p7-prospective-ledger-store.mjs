@@ -4,11 +4,13 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import { planP7JournalTerminal } from "./p7-prospective-pricing.mjs";
+import { verifyP7IndependentBenchmarkFill } from "./p7-prospective-benchmarks.mjs";
 
 const require = createRequire(new URL("../../packages/backtest/package.json", import.meta.url));
 const { initializeP7Ledger, applyP7LedgerCommand, planP7LedgerRecovery, isP7PricingCommitRequest, evaluateP7PricingCommitClock,
   emptyP7MarkState, applyP7MarkCommand, evaluateP7MarkCommitClock, planP7MarkRecovery, reportP7MarkCoverage,
-  initialP7LocalCampaign, applyP7LocalCampaignCommand, evaluateP7LocalCampaignSafety, registerP7BenchmarkProfile } = await import(require.resolve("@dodash/models"));
+  initialP7LocalCampaign, applyP7LocalCampaignCommand, evaluateP7LocalCampaignSafety, registerP7BenchmarkProfile,
+  emptyP7BenchmarkEntries, applyP7BenchmarkEntry, recoverP7BenchmarkEntry } = await import(require.resolve("@dodash/models"));
 const ZERO_HASH = "0".repeat(64);
 const MAX_BYTES = 2 * 1024 * 1024;
 const hash = (body) => createHash("sha256").update(body).digest("hex");
@@ -74,6 +76,19 @@ const checkCampaignPricingClock = (journal, resolved, recordedAt, checkedAt) => 
   if (resolved.receipt.allowed && safety.phase !== "localObserving") throw new Error("CAMPAIGN_BLOCKED_BEFORE_COMMIT");
   if (resolved.resolution !== null) checkCommitClock(journal, resolved.resolution, recordedAt, checkedAt);
 };
+const pendingBenchmark = (entries) => Object.values(entries.products).some((leg) => leg?.phase === "requested");
+const initialMarketPublished = (journal) => journal.entries.some((e) =>
+  (e.command?.event?.type === "OBSERVE_QUOTE" && e.command.candleClosedAt === journal.state.manifest.startAt) ||
+  (e.command?.event?.type === "OBSERVE_MARK" && e.command.scheduledAt === journal.state.manifest.startAt));
+const checkBenchmarkEntryClock = (journal, command, leg, recordedAt, checkedAt) => {
+  if (!Number.isSafeInteger(checkedAt) || checkedAt < recordedAt) throw new Error("COMMIT_CLOCK_INVALID");
+  if (command.event.type === "REQUEST_BENCHMARK" && (checkedAt > journal.state.manifest.startAt + 7_200_000 || checkedAt >= journal.state.manifest.endAt)) throw new Error("BENCHMARK_ENTRY_BLOCKED");
+  if (command.event.type !== "RESOLVE_BENCHMARK" || leg.phase !== "initialized") return;
+  if (evaluateP7LocalCampaignSafety(journal.campaignState, journal.state, journal.markState, checkedAt).phase !== "localObserving") throw new Error("BENCHMARK_BLOCKED_BEFORE_COMMIT");
+  const error = evaluateP7PricingCommitClock({ recordedAt, commitCheckedAt: checkedAt, sourceObservedAt: leg.book?.sourceObservedAt,
+    candleClosedAt: journal.state.manifest.startAt, campaignEndAt: journal.state.manifest.endAt, simulatedFill: true });
+  if (error !== null) throw new Error(error);
+};
 
 export class P7LocalLedgerStore {
   #database;
@@ -120,13 +135,14 @@ export class P7LocalLedgerStore {
     let state, lastHash = ZERO_HASH;
     let campaignState;
     let benchmarkProfile = null;
+    let benchmarkEntries = emptyP7BenchmarkEntries();
     let markState = emptyP7MarkState();
     const entries = [], ids = new Set();
     try {
       for (const row of this.#database.prepare("SELECT sequence, command_id, body, hash FROM p7_ledger ORDER BY sequence").iterate()) {
         if (Buffer.byteLength(row.body) > MAX_BYTES + 65_536 || row.sequence !== entries.length + 1 || hash(row.body) !== row.hash || ids.has(row.command_id)) throw new Error("LEDGER_CORRUPT");
         const entry = JSON.parse(row.body);
-        if (canonical(entry) !== row.body || ![1, 2, 3, 4, 5, 6].includes(entry.schemaVersion) || entry.observation !== "SYNTHETIC_LOCAL_PREPARATION" || entry.sequence !== row.sequence || entry.previousHash !== lastHash) throw new Error("LEDGER_CORRUPT");
+        if (canonical(entry) !== row.body || ![1, 2, 3, 4, 5, 6, 7].includes(entry.schemaVersion) || entry.observation !== "SYNTHETIC_LOCAL_PREPARATION" || entry.sequence !== row.sequence || entry.previousHash !== lastHash) throw new Error("LEDGER_CORRUPT");
         if (row.sequence !== 1 && (entry.manifest !== undefined || row.command_id !== entry.command?.commandId)) throw new Error("LEDGER_CORRUPT");
         if (row.sequence === 1) {
           if (entry.schemaVersion !== 1 || row.command_id !== "__manifest__" || entry.command !== undefined) throw new Error("LEDGER_CORRUPT");
@@ -134,6 +150,15 @@ export class P7LocalLedgerStore {
           if (!initialized.ok) throw new Error("LEDGER_CORRUPT");
           state = initialized.value;
           campaignState = initialP7LocalCampaign(entry.recordedAt);
+        } else if (entry.schemaVersion === 7) {
+          const prior = { state, campaignState, markState };
+          const safety = evaluateP7LocalCampaignSafety(campaignState, state, markState, entry.recordedAt);
+          const result = applyP7BenchmarkEntry(benchmarkEntries, state, benchmarkProfile, safety.phase, entry.command, entry.recordedAt, initialMarketPublished({ state, entries }));
+          if (!result.ok || canonical(result.value.receipt) !== canonical(entry.receipt)) throw new Error("LEDGER_CORRUPT");
+          verifyP7IndependentBenchmarkFill(result.value.receipt, entry.command.productId);
+          checkBenchmarkEntryClock(prior, entry.command, result.value.receipt, entry.recordedAt, entry.entryCheckedAt);
+          benchmarkEntries = result.value.state;
+          state = { ...state, lastRecordedAt: entry.recordedAt };
         } else if (entry.schemaVersion === 6) {
           const result = registerP7BenchmarkProfile(benchmarkProfile, state.manifest, entry.command, entry.recordedAt);
           if (!result.ok || entry.recordedAt < state.lastRecordedAt || canonical(result.value) !== canonical(entry.receipt) ||
@@ -141,7 +166,7 @@ export class P7LocalLedgerStore {
           benchmarkProfile = result.value;
           state = { ...state, lastRecordedAt: entry.recordedAt };
         } else if (entry.schemaVersion === 4) {
-          const result = applyP7LocalCampaignCommand(campaignState, state, markState, entry.command, entry.recordedAt);
+          const result = applyP7LocalCampaignCommand(campaignState, state, markState, entry.command, entry.recordedAt, pendingBenchmark(benchmarkEntries));
           if (!result.ok || canonical(result.value) !== canonical(entry.receipt)) throw new Error("LEDGER_CORRUPT");
           campaignState = result.value;
           state = { ...state, lastRecordedAt: entry.recordedAt };
@@ -176,7 +201,7 @@ export class P7LocalLedgerStore {
         ids.add(row.command_id); entries.push(entry); lastHash = row.hash;
       }
       if (state === undefined) throw new Error("LEDGER_CORRUPT");
-      return { observation: "SYNTHETIC_LOCAL_PREPARATION", entries, lastHash, state, markState, campaignState, benchmarkProfile };
+      return { observation: "SYNTHETIC_LOCAL_PREPARATION", entries, lastHash, state, markState, campaignState, benchmarkProfile, benchmarkEntries };
     } catch { throw new Error("LEDGER_CORRUPT"); }
   }
   apply(command) {
@@ -191,9 +216,11 @@ export class P7LocalLedgerStore {
   applyCampaign(command) { return this.#apply(command, "campaign"); }
   commitCampaignPricing(request) { return this.#apply(request, "guarded"); }
   registerBenchmarks(command) { return this.#apply(command, "benchmark"); }
+  applyBenchmarkEntry(command) { return this.#apply(command, "benchmark-entry"); }
   #apply(input, mode) {
     const priced = mode === "pricing", marked = mode === "mark", guarded = mode === "guarded", campaign = mode === "campaign";
-    const benchmark = mode === "benchmark", schemaVersion = benchmark ? 6 : guarded ? 5 : campaign ? 4 : marked ? 3 : priced ? 2 : 1;
+    const benchmark = mode === "benchmark", benchmarkEntry = mode === "benchmark-entry";
+    const schemaVersion = benchmarkEntry ? 7 : benchmark ? 6 : guarded ? 5 : campaign ? 4 : marked ? 3 : priced ? 2 : 1;
     const body = bounded(input), normalized = JSON.parse(body);
     if (normalized === null || typeof normalized !== "object" || Array.isArray(normalized) || typeof normalized.commandId !== "string") throw new Error("INVALID_COMMAND");
     this.#database.exec("BEGIN IMMEDIATE");
@@ -211,9 +238,13 @@ export class P7LocalLedgerStore {
       assertLegacyCampaign(journal, normalized, mode, recordedAt);
       const resolved = guarded ? resolveCampaignPricing(journal, normalized, recordedAt) : null;
       const command = priced ? derivePricedCommand(journal, normalized, recordedAt) : normalized;
-      const campaignResult = campaign ? applyP7LocalCampaignCommand(journal.campaignState, journal.state, journal.markState, command, recordedAt) : null;
+      const campaignResult = campaign ? applyP7LocalCampaignCommand(journal.campaignState, journal.state, journal.markState, command, recordedAt, pendingBenchmark(journal.benchmarkEntries)) : null;
       let result;
-      if (benchmark) {
+      if (benchmarkEntry) {
+        const safety = evaluateP7LocalCampaignSafety(journal.campaignState, journal.state, journal.markState, recordedAt);
+        result = applyP7BenchmarkEntry(journal.benchmarkEntries, journal.state, journal.benchmarkProfile, safety.phase, command, recordedAt, initialMarketPublished(journal));
+        if (result.ok) verifyP7IndependentBenchmarkFill(result.value.receipt, command.productId);
+      } else if (benchmark) {
         if (recordedAt < journal.state.lastRecordedAt) throw new Error("INVALID_BENCHMARK_PROFILE");
         const registered = registerP7BenchmarkProfile(journal.benchmarkProfile, journal.state.manifest, command, recordedAt);
         result = registered.ok ? { ok: true, value: { receipt: registered.value } } : registered;
@@ -227,7 +258,8 @@ export class P7LocalLedgerStore {
         ...(priced ? { pricingRequest: normalized, pricingCheckedAt: recordedAt } : {}),
         ...(marked ? { markCheckedAt: recordedAt } : {}),
         ...(guarded ? { resolution: resolved.resolution, guardedCheckedAt: recordedAt } : {}),
-        ...(benchmark ? { benchmarkCheckedAt: recordedAt } : {}) };
+        ...(benchmark ? { benchmarkCheckedAt: recordedAt } : {}),
+        ...(benchmarkEntry ? { entryCheckedAt: recordedAt } : {}) };
       // Persist the check immediately before INSERT, then repeat it after INSERT.
       // The later wall-clock value is not logged: no UPDATE on append-only facts.
       if (priced) {
@@ -246,6 +278,10 @@ export class P7LocalLedgerStore {
       if (benchmark) {
         entry.benchmarkCheckedAt = this.#now();
         if (!Number.isSafeInteger(entry.benchmarkCheckedAt) || entry.benchmarkCheckedAt < recordedAt || entry.benchmarkCheckedAt >= journal.state.manifest.startAt) throw new Error("BENCHMARK_REGISTRATION_EXPIRED");
+      }
+      if (benchmarkEntry) {
+        entry.entryCheckedAt = this.#now();
+        checkBenchmarkEntryClock(journal, command, entry.receipt, recordedAt, entry.entryCheckedAt);
       }
       this.#insert(normalized.commandId, entry);
       this.#failpoint?.("beforeCommit");
@@ -270,6 +306,11 @@ export class P7LocalLedgerStore {
         const checkedAt = this.#now();
         if (!Number.isSafeInteger(checkedAt) || checkedAt < entry.benchmarkCheckedAt || checkedAt >= journal.state.manifest.startAt) throw new Error("BENCHMARK_REGISTRATION_EXPIRED");
       }
+      if (benchmarkEntry) {
+        const checkedAt = this.#now();
+        checkBenchmarkEntryClock(journal, command, entry.receipt, recordedAt, checkedAt);
+        if (checkedAt < entry.entryCheckedAt) throw new Error("COMMIT_CLOCK_INVALID");
+      }
       this.#database.exec("COMMIT"); committed = true;
       this.#failpoint?.("afterCommit");
       return result.value.receipt;
@@ -281,6 +322,7 @@ export class P7LocalLedgerStore {
   export() { return this.#read(); }
   recovery(productId, candleClosedAt, now = this.#now()) { return planP7LedgerRecovery(this.#read().state, productId, candleClosedAt, now); }
   markRecovery(scheduledAt) { return planP7MarkRecovery(this.#read().markState, scheduledAt); }
+  benchmarkRecovery(productId) { return recoverP7BenchmarkEntry(this.#read().benchmarkEntries, productId); }
   markCoverage(asOf = this.#now()) {
     const { state, markState } = this.#read();
     return reportP7MarkCoverage(markState, state.manifest, asOf);

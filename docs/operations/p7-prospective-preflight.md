@@ -116,11 +116,23 @@ pnpm --filter @dodash/models test -- p7-prospective-benchmarks.test.ts
 node --test docs/analysis/p7-prospective-benchmarks.test.mjs
 ```
 
-Le stream initial du prototype reste celui des quotes d'exécution publiées
-pour T0. HOLD sans quote ou jambe absente => B&H non initialisé, pas un prix
-inventé depuis un mark ultérieur. Le collector doit encore fournir un stream
-benchmark initial indépendant et valider le profil réel (precision/minSize/
-minNotional), sans choisir un meilleur carnet après coup.
+Le replay legacy utilise encore les quotes d'exécution publiées pour T0.
+Le registre indépendant V7 est maintenant disponible localement :
+`models/p7-prospective-benchmark-entry.md`, méthode `applyBenchmarkEntry`.
+EXPECT avant toute publication initiale legacy, REQUEST durable avant I/O,
+OBSERVE, puis RESOLVE price-free sous verrou. Pas de fallback P7 après le
+choix de mode, pas de remplacement du premier carnet éligible.
+
+```sh
+pnpm --filter @dodash/models build
+pnpm --filter @dodash/models test -- p7-prospective-benchmark-entry.test.ts
+node --test docs/analysis/p7-prospective-benchmark-entry.test.mjs
+```
+
+Deux HOLD P7 peuvent désormais coexister avec les deux achats B&H simulés.
+RECOVER_LOCAL suspend aussi sur une requête B&H sans réponse ; aucun refetch
+implicite. Le collector réel doit encore être implémenté/autorisé, et le profil
+réel validé (precision/minSize/minNotional/cache/clock/quota).
 
 Restent bloquants : stockage/garanties distantes, B&H prospectif persisté, marks après fill et
 final, préflight/autorisation réels et orchestrateur, exports/anchors et autorisations
