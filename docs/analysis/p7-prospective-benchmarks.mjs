@@ -53,7 +53,13 @@ export const projectP7LocalBenchmarks = (store, asOf) => {
   const observations = [];
   const projected = emptyP7MarkState();
   const previousSequences = { "BTC-USD": null, "ETH-USD": null };
+  if (journal.jointMode) {
+    projected.slots = journal.benchmarkMarkState.slots;
+    observations.push(...Object.values(projected.slots).filter((s) => s.observation !== null && s.observation.asOf <= asOf)
+      .sort((a, b) => a.scheduledAt - b.scheduledAt).map((s) => ({ scheduledAt: s.scheduledAt, ...s.observation })));
+  }
   for (const entry of journal.entries) {
+    if (journal.jointMode) break;
     if (entry.schemaVersion !== 3) continue;
     const command = entry.command;
     if (command.event.type !== "OBSERVE_MARK") {

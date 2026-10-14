@@ -145,3 +145,16 @@ La projection préfère V7 sans fallback legacy dès l'ouverture du mode ; cette
 ouverture est refusée après observation du marché initial legacy. Le collector
 réel, marks B&H durables, sûreté/qualification conjointe et source/T0 restent
 absents. Aucun démarrage ou réseau autorisé par ce registre synthétique.
+
+## Verify — marks horaires conjoints durables V8
+
+`models/p7-prospective-joint-marks.md` : même machine horaire, checkpoint et
+books, deux portefeuilles relus sous verrou et deux observations atomiques.
+Opt-in V8 durable ; aucun nouveau mark V3 après opt-in, aucun backfill.
+La sûreté évalue les deux gaps historiques indépendants à tous les gates
+existants. DD et critère d'arrêt restent ceux de P7, non ceux de B&H.
+Projection B&H en mode conjoint utilise les reçus durables, pas un repricing.
+
+Restent requis : marks after-fill/final, assesseur et qualification économique,
+profil source réel, timers/leases/runner et autorisations distantes séparées.
+Les stores restent SYNTHETIC_LOCAL_PREPARATION, sans preuve prospective réelle.

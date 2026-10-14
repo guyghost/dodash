@@ -130,6 +130,18 @@ node --test docs/analysis/p7-prospective-benchmark-entry.test.mjs
 ```
 
 Deux HOLD P7 peuvent désormais coexister avec les deux achats B&H simulés.
+Les marks horaires conjoints V8 sont disponibles via `applyJointMark` :
+EXPECT active le mode avant REQUEST/I/O, OBSERVE persiste les deux trajectoires
+atomiquement depuis les mêmes carnets. Après V8, `applyMark` V3 ne peut plus
+publier de nouveau mark. Les anciennes observations ne sont pas backfillées.
+`benchmarkMarkCoverage` conserve les trous B&H indépendamment de P7 cash ;
+un gap historique >2 h sur l'une des deux preuves suspend les nouveaux fills.
+Le seuil DD >50 % reste appliqué à P7 uniquement, pas au benchmark.
+
+```sh
+node --test docs/analysis/p7-prospective-joint-marks.test.mjs
+```
+
 RECOVER_LOCAL suspend aussi sur une requête B&H sans réponse ; aucun refetch
 implicite. Le collector réel doit encore être implémenté/autorisé, et le profil
 réel validé (precision/minSize/minNotional/cache/clock/quota).
