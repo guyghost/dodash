@@ -3,9 +3,10 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { DatabaseSync } from "node:sqlite";
+import { planP7JournalTerminal } from "./p7-prospective-pricing.mjs";
 
 const require = createRequire(new URL("../../packages/backtest/package.json", import.meta.url));
-const { initializeP7Ledger, applyP7LedgerCommand, planP7LedgerRecovery } = await import(require.resolve("@dodash/models"));
+const { initializeP7Ledger, applyP7LedgerCommand, planP7LedgerRecovery, isP7PricingCommitRequest, evaluateP7PricingCommitClock } = await import(require.resolve("@dodash/models"));
 const ZERO_HASH = "0".repeat(64);
 const MAX_BYTES = 2 * 1024 * 1024;
 const hash = (body) => createHash("sha256").update(body).digest("hex");
@@ -34,6 +35,20 @@ const bounded = (value) => {
   const body = canonical(value);
   if (Buffer.byteLength(body) > MAX_BYTES) throw new Error("COMMAND_TOO_LARGE");
   return body;
+};
+
+const derivePricedCommand = (journal, request, recordedAt) => {
+  if (!isP7PricingCommitRequest(request, journal.state.manifest)) throw new Error("INVALID_PRICING_REQUEST");
+  const plan = planP7JournalTerminal(journal, request.productId, request.candleClosedAt, recordedAt);
+  if (plan.kind !== "TERMINAL_PLAN") throw new Error(plan.kind === "DONE" ? "INVALID_PHASE" : plan.reason);
+  return { ...request, event: { type: "TERMINATE", outcome: plan.outcome } };
+};
+const checkCommitClock = (journal, command, recordedAt, commitCheckedAt) => {
+  const quote = journal.entries.find((e) => e.command?.productId === command.productId &&
+    e.command.candleClosedAt === command.candleClosedAt && e.command.event.type === "OBSERVE_QUOTE");
+  const error = evaluateP7PricingCommitClock({ recordedAt, commitCheckedAt, sourceObservedAt: quote?.command.event.book?.sourceObservedAt,
+    candleClosedAt: command.candleClosedAt, campaignEndAt: journal.state.manifest.endAt, simulatedFill: command.event.outcome.kind === "SIMULATED_FILL" });
+  if (error !== null) throw new Error(error);
 };
 
 export class P7LocalLedgerStore {
@@ -84,14 +99,20 @@ export class P7LocalLedgerStore {
       for (const row of this.#database.prepare("SELECT sequence, command_id, body, hash FROM p7_ledger ORDER BY sequence").iterate()) {
         if (Buffer.byteLength(row.body) > MAX_BYTES + 65_536 || row.sequence !== entries.length + 1 || hash(row.body) !== row.hash || ids.has(row.command_id)) throw new Error("LEDGER_CORRUPT");
         const entry = JSON.parse(row.body);
-        if (canonical(entry) !== row.body || entry.schemaVersion !== 1 || entry.observation !== "SYNTHETIC_LOCAL_PREPARATION" || entry.sequence !== row.sequence || entry.previousHash !== lastHash) throw new Error("LEDGER_CORRUPT");
+        if (canonical(entry) !== row.body || ![1, 2].includes(entry.schemaVersion) || entry.observation !== "SYNTHETIC_LOCAL_PREPARATION" || entry.sequence !== row.sequence || entry.previousHash !== lastHash) throw new Error("LEDGER_CORRUPT");
         if (row.sequence === 1) {
-          if (row.command_id !== "__manifest__" || entry.command !== undefined) throw new Error("LEDGER_CORRUPT");
+          if (entry.schemaVersion !== 1 || row.command_id !== "__manifest__" || entry.command !== undefined) throw new Error("LEDGER_CORRUPT");
           const initialized = initializeP7Ledger(entry.manifest, entry.recordedAt);
           if (!initialized.ok) throw new Error("LEDGER_CORRUPT");
           state = initialized.value;
         } else {
           if (entry.manifest !== undefined || row.command_id !== entry.command?.commandId) throw new Error("LEDGER_CORRUPT");
+          if (entry.schemaVersion === 2) {
+            const prior = { observation: "SYNTHETIC_LOCAL_PREPARATION", state, entries };
+            const derived = derivePricedCommand(prior, entry.pricingRequest, entry.recordedAt);
+            if (canonical(derived) !== canonical(entry.command)) throw new Error("LEDGER_CORRUPT");
+            checkCommitClock(prior, derived, entry.recordedAt, entry.pricingCheckedAt);
+          } else if (entry.pricingRequest !== undefined || entry.pricingCheckedAt !== undefined) throw new Error("LEDGER_CORRUPT");
           const result = applyP7LedgerCommand(state, entry.command, entry.recordedAt);
           if (!result.ok || canonical(result.value.receipt) !== canonical(entry.receipt)) throw new Error("LEDGER_CORRUPT");
           state = result.value.state;
@@ -103,24 +124,47 @@ export class P7LocalLedgerStore {
     } catch { throw new Error("LEDGER_CORRUPT"); }
   }
   apply(command) {
-    const body = bounded(command), normalized = JSON.parse(body);
+    return this.#apply(command, false);
+  }
+  commitPricing(request) {
+    return this.#apply(request, true);
+  }
+  #apply(input, priced) {
+    const body = bounded(input), normalized = JSON.parse(body);
     if (normalized === null || typeof normalized !== "object" || Array.isArray(normalized) || typeof normalized.commandId !== "string") throw new Error("INVALID_COMMAND");
     this.#database.exec("BEGIN IMMEDIATE");
     let committed = false;
     try {
       const journal = this.#read();
+      if (priced && !isP7PricingCommitRequest(normalized, journal.state.manifest)) throw new Error("INVALID_PRICING_REQUEST");
       const previous = journal.entries.find((e) => e.command !== undefined && e.command.commandId === normalized.commandId);
       if (previous !== undefined) {
-        if (canonical(previous.command) !== body) throw new Error("COMMAND_ID_CONFLICT");
+        if ((previous.schemaVersion === 2) !== priced || canonical(priced ? previous.pricingRequest : previous.command) !== body) throw new Error("COMMAND_ID_CONFLICT");
         this.#database.exec("COMMIT"); committed = true;
         return previous.receipt;
       }
-      const recordedAt = this.#now(), result = applyP7LedgerCommand(journal.state, normalized, recordedAt);
+      const recordedAt = this.#now();
+      const command = priced ? derivePricedCommand(journal, normalized, recordedAt) : normalized;
+      const result = applyP7LedgerCommand(journal.state, command, recordedAt);
       if (!result.ok) throw new Error(result.error);
-      const entry = { schemaVersion: 1, observation: "SYNTHETIC_LOCAL_PREPARATION", sequence: journal.entries.length + 1,
-        previousHash: journal.lastHash, recordedAt, command: normalized, receipt: result.value.receipt };
+      const entry = { schemaVersion: priced ? 2 : 1, observation: "SYNTHETIC_LOCAL_PREPARATION", sequence: journal.entries.length + 1,
+        previousHash: journal.lastHash, recordedAt, command, receipt: result.value.receipt,
+        ...(priced ? { pricingRequest: normalized, pricingCheckedAt: recordedAt } : {}) };
+      // Persist the check immediately before INSERT, then repeat it after INSERT.
+      // The later wall-clock value is not logged: no UPDATE on append-only facts.
+      if (priced) {
+        entry.pricingCheckedAt = this.#now();
+        checkCommitClock(journal, command, recordedAt, entry.pricingCheckedAt);
+      }
       this.#insert(normalized.commandId, entry);
       this.#failpoint?.("beforeCommit");
+      if (priced) {
+        const checkedAt = this.#now();
+        checkCommitClock(journal, command, recordedAt, checkedAt);
+        // The persisted check time precedes insertion; final check is stricter and
+        // may only confirm it. No clock regression after the persisted check.
+        if (checkedAt < entry.pricingCheckedAt) throw new Error("COMMIT_CLOCK_INVALID");
+      }
       this.#database.exec("COMMIT"); committed = true;
       this.#failpoint?.("afterCommit");
       return result.value.receipt;

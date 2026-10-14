@@ -45,3 +45,11 @@ Tests globaux : 566 modèles, 313 agent, 133 backtest passent ; TypeScript,
 builds dry-run et lint ciblé passent. Les 11 tests du store local restent verts.
 Le lint global reste limité par le fichier JSON concaténé préexistant,
 non modifié dans ce lot. Aucun déploiement ou observation prospective.
+
+## Incrément suivant — commit local
+
+Le blocage du commit **local** est traité par le contrat
+`p7-prospective-pricing-commit.md` : requête price-free, relecture verrouillée,
+pricing/broker recalculés, refus et fill commités atomiquement. Le contrôle
+pré-COMMIT ne garantit pas la fin du flush disque. V1 reste déclaratif ; marks
+persistés, backend distant et activation demeurent hors périmètre.

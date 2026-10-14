@@ -56,10 +56,21 @@ pnpm --filter @dodash/models test -- p7-prospective-pricing.test.ts
 node --test docs/analysis/p7-prospective-pricing.test.mjs
 ```
 
-Bloquants inchangés : commit transactionnel avec revalidation du pricing,
-persistance horaire des marks/complétude, B&H, machine globale et autorisations
-distantes. Ne pas utiliser les commandes fixtures V1 comme preuves de fills
-prospectifs vérifiés. L'âge ≤5 s est contrôlé au calcul, pas au futur commit.
+Résolution pricée transactionnelle **locale** disponible via `commitPricing`
+du store : `models/p7-prospective-pricing-commit.md`. Requête sans prix/outcome,
+revalidation après verrou et relecture, contrôle répété après insertion avant
+COMMIT, rollback en cas d'expiration. Le timestamp `pricingCheckedAt` conservé
+est celui avant insertion, pas une preuve de l'heure de COMMIT/flush disque.
+
+```sh
+pnpm --filter @dodash/models build
+pnpm --filter @dodash/models test -- p7-prospective-pricing-commit.test.ts
+node --test docs/analysis/p7-prospective-pricing-commit.test.mjs
+```
+
+Restent bloquants : stockage/garanties distantes, persistance horaire des
+marks/complétude, B&H, machine globale et autorisations séparées. Ne pas
+utiliser les commandes fixtures V1 comme preuves de fills prospectifs vérifiés.
 
 - [ ] Diagnostic fournisseurs terminé et interprété ; aucun switch automatique.
 - [ ] Profil **spot BTC/ETH USD** décidé et documenté, pas de série perp.

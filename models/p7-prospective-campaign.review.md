@@ -85,3 +85,12 @@ marks sans mutation. Core et bridge broker locaux testés ; aucune collecte,
 écriture automatique de fill ou persistance de mark. Pricing validé à l'heure
 injectée, revalidation transactionnelle encore requise. Les fixtures V1 ne
 deviennent pas des preuves prospectives ; les autres gates restent bloquants.
+
+## Verify — commit du pricing local
+
+`models/p7-prospective-pricing-commit.md` : commitPricing recalcule dans la
+transaction SQLite depuis la quote persistée et le portefeuille relu. Requête
+sans prix client, journal V2 revalidé au replay, refus conservés et rollback
+sur expiration juste avant COMMIT. V1 reste une fixture déclarée, pas une
+preuve de pricing. Stockage distant et marks horaires non implémentés ; la
+machine globale, B&H, source/T0 et autorisations restent bloquants.

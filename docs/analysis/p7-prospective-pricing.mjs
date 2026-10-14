@@ -5,7 +5,11 @@ const { planP7Pricing } = await import(require.resolve("@dodash/models"));
 const { executePaperOrder } = await import(require.resolve("@dodash/paper-execution"));
 
 export const planP7LocalTerminal = (store, productId, candleClosedAt, asOf) => {
-  const journal = store.export(); // Store revalidates chain, receipts and transitions.
+  return planP7JournalTerminal(store.export(), productId, candleClosedAt, asOf);
+};
+
+/** Internal pure bridge used on the already-revalidated transaction journal. */
+export const planP7JournalTerminal = (journal, productId, candleClosedAt, asOf) => {
   if (journal.observation !== "SYNTHETIC_LOCAL_PREPARATION") throw new Error("NOT_LOCAL_PREPARATION");
   const { state } = journal, slot = state.slots[`${productId}:${candleClosedAt}`];
   if (slot === undefined) return { kind: "NOT_READY", reason: "SLOT_MISSING" };
