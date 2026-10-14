@@ -46,6 +46,21 @@ modèle de stockage Cloudflare et les anchors externes restent à approuver.
 
 ### Gates de source / T0
 
+Pricing local disponible : `models/p7-prospective-pricing.md`. Le bridge
+`docs/analysis/p7-prospective-pricing.mjs` prépare un résultat depuis la quote
+persistée sans fetch ni écriture. Les marks sont des projections sans vente.
+
+```sh
+pnpm --filter @dodash/models build
+pnpm --filter @dodash/models test -- p7-prospective-pricing.test.ts
+node --test docs/analysis/p7-prospective-pricing.test.mjs
+```
+
+Bloquants inchangés : commit transactionnel avec revalidation du pricing,
+persistance horaire des marks/complétude, B&H, machine globale et autorisations
+distantes. Ne pas utiliser les commandes fixtures V1 comme preuves de fills
+prospectifs vérifiés. L'âge ≤5 s est contrôlé au calcul, pas au futur commit.
+
 - [ ] Diagnostic fournisseurs terminé et interprété ; aucun switch automatique.
 - [ ] Profil **spot BTC/ETH USD** décidé et documenté, pas de série perp.
 - [ ] Carnet : horodatage amont, sequence, bid/ask, profondeur, règles de

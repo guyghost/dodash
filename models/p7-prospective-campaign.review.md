@@ -77,3 +77,11 @@ déduplication, réouverture et perte de réponse quote testées ; aucune migrat
 distante. La machine globale de campagne, le pricer VWAP/profondeur, les marks,
 benchmarks, exports/anchors externes et le collector restent à livrer avant
 tout démarrage. La source et T0 ne sont pas choisis par cette implémentation.
+
+## Verify — pricing et projections liquidables locales
+
+`models/p7-prospective-pricing.md` précise le VWAP sur quantité figée et les
+marks sans mutation. Core et bridge broker locaux testés ; aucune collecte,
+écriture automatique de fill ou persistance de mark. Pricing validé à l'heure
+injectée, revalidation transactionnelle encore requise. Les fixtures V1 ne
+deviennent pas des preuves prospectives ; les autres gates restent bloquants.
