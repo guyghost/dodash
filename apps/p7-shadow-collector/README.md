@@ -81,7 +81,11 @@ Official API references consulted:
 Capture budgets are 1 MiB UTF-8 raw and 256 KiB normalized JSON. Raw evidence is
 content-addressed in bounded SQLite chunks; journal rows contain compact
 references. R2 exports capture chunks before journal references. Oversized
-responses retain only a bounded rejection, byte count and SHA-256. Normalized
+responses stop reading at the byte budget and retain a bounded rejection,
+observed byte count (a lower bound), and explicitly labeled bounded-prefix
+SHA-256. A whole-body hash is recorded only after complete body consumption.
+The shared five-second deadline includes both response headers and streaming
+body consumption. Normalized
 responses are hash-checked before reuse.
 
 An interruption after admission but before a durable decision suspends with

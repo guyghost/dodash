@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -528,6 +529,11 @@ test("600KB valid raw capture is complete in bounded SQLite chunks, oversize Uni
 		const normal = receipts.find((r) => r.id === "bh-BTC-USD");
 		assert.ok(normal.rawBytes > 600000);
 		assert.ok(normal.rawChunks > 1);
+		assert.equal(normal.bodyComplete, true);
+		assert.equal(
+			normal.rawSha256,
+			createHash("sha256").update(rawById.get("bh-BTC-USD")).digest("hex"),
+		);
 		const chunks = await sql.exec(
 			"SELECT body FROM captures WHERE raw_hash=? ORDER BY part",
 			normal.rawSha256,
@@ -540,10 +546,20 @@ test("600KB valid raw capture is complete in bounded SQLite chunks, oversize Uni
 			assert.equal(rejected.rejection, "SOURCE_TOO_LARGE");
 			assert.equal(rejected.rawChunks, 0);
 			assert.ok(rejected.rawBytes > 1048576);
-			assert.match(rejected.rawSha256, /^[a-f0-9]{64}$/);
+			assert.equal(rejected.rawSha256, null);
+			assert.equal(rejected.bodyComplete, false);
+			assert.equal(rejected.rawBytesScope, "OBSERVED_LOWER_BOUND");
+			assert.match(rejected.rawPrefixSha256, /^[a-f0-9]{64}$/);
+			assert.ok(rejected.prefixBytes <= 65536);
 		}
 		const unicode = receipts.find((r) => r.id === `hourly-${T0}-BTC-USD`);
 		assert.equal(unicode.rejection, "NORMALIZED_PAYLOAD_TOO_LARGE");
+		assert.equal(
+			unicode.rawSha256,
+			createHash("sha256")
+				.update(rawById.get(`hourly-${T0}-BTC-USD`))
+				.digest("hex"),
+		);
 		assert.ok(unicode.rawBytes > 600000 && unicode.rawChunks > 1);
 		const unicodeChunks = await sql.exec(
 			"SELECT body FROM captures WHERE raw_hash=? ORDER BY part",
@@ -691,6 +707,50 @@ test("crashed daily REQUEST after deadline completes unknown job and permits dia
 		const report = await ok(mf, "assess", { checkpoint: 30 });
 		assert.ok(report.result.technical.reasons.includes("RESPONSE_UNOBSERVED"));
 		assert.equal(quoteCalls, 1);
+	} finally {
+		await mf.dispose();
+		await rm(path, { recursive: true, force: true });
+	}
+});
+test("5s deadline covers a fast header response with a permanently stalled body stream", async () => {
+	const path = await mkdtemp(join(tmpdir(), "p7-worker-"));
+	const mf = runtime(path, async (request) => {
+		const p = await request.clone().json();
+		if (p.id === `daily-BTC-USD-${T0}-quote`)
+			return new Response(
+				new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode('{"pending":'));
+					},
+				}),
+			);
+		return rising(request);
+	});
+	try {
+		await ok(mf, "register", registration());
+		const started = Date.now();
+		await ok(mf, "wake", { at: T0 });
+		assert.ok(Date.now() - started < 10000);
+		const s = await ok(mf, "status");
+		assert.equal(
+			s.state.ledger.slots[`BTC-USD:${T0}`].outcome.kind,
+			"QUOTE_REJECTED",
+		);
+		const sql = await mf.unsafeGetDurableObjectStorage(
+			"collector",
+			"P7Campaign",
+			{ name: "test" },
+		);
+		const rows = await sql.exec(
+			"SELECT input FROM journal WHERE command_id=?",
+			`capture-daily-BTC-USD-${T0}-quote`,
+		);
+		const capture = JSON.parse(rows[0].input);
+		assert.equal(capture.rejection, "SOURCE_TIMEOUT");
+		assert.equal(capture.bodyComplete, false);
+		assert.equal(capture.rawSha256, null);
+		assert.match(capture.rawPrefixSha256, /^[a-f0-9]{64}$/);
+		assert.equal(capture.rawChunks, 0);
 	} finally {
 		await mf.dispose();
 		await rm(path, { recursive: true, force: true });

@@ -67,10 +67,13 @@ export function canonical(v: unknown): string {
 			.join(",")}}`;
 	throw new Error("INVALID_JSON");
 }
-async function hash(body: string): Promise<string> {
+async function hash(body: string | Uint8Array<ArrayBuffer>): Promise<string> {
 	return [
 		...new Uint8Array(
-			await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body)),
+			await crypto.subtle.digest(
+				"SHA-256",
+				typeof body === "string" ? new TextEncoder().encode(body) : body,
+			),
 		),
 	]
 		.map((v) => v.toString(16).padStart(2, "0"))
@@ -399,11 +402,24 @@ export class P7Campaign extends DurableObject<Env> {
 				);
 			},
 		);
-		let payload: unknown,
+		let payload: unknown = null,
 			raw: string | null = null,
 			rawSha256: string | null = null,
 			rawBytes = 0,
+			bodyComplete = false,
+			rawPrefixSha256: string | null = null,
 			rejection: string | null = null;
+		const prefix = new Uint8Array(65536);
+		let prefixBytes = 0;
+		const controller = new AbortController();
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const deadline = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => {
+				controller.abort();
+				reject(new Error("SOURCE_TIMEOUT"));
+			}, 5000);
+		});
+		let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 		try {
 			const response = await Promise.race([
 				this.env.FIXTURE_SOURCE.fetch("https://fixture.invalid/market", {
@@ -416,27 +432,51 @@ export class P7Campaign extends DurableObject<Env> {
 						candleClosedAt: close ?? null,
 						sourceProfileId: this.required().ledger.manifest.sourceProfileId,
 					}),
-					signal: AbortSignal.timeout(5000),
+					signal: controller.signal,
 				}),
-				new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error("SOURCE_TIMEOUT")), 5000),
-				),
+				deadline,
 			]);
 			if (!response.ok) throw new Error("SOURCE_UNAVAILABLE");
-			const text = await response.text();
-			rawBytes = new TextEncoder().encode(text).byteLength;
-			rawSha256 = await hash(text);
-			if (rawBytes > 1048576) throw new Error("SOURCE_TOO_LARGE");
-			raw = text;
-			payload = JSON.parse(text);
+			if (!response.body) throw new Error("SOURCE_BODY_MISSING");
+			reader = response.body.getReader();
+			const buffer = new Uint8Array(1048576);
+			while (true) {
+				const read = await Promise.race([reader.read(), deadline]);
+				if (read.done) {
+					bodyComplete = true;
+					break;
+				}
+				const value = read.value;
+				rawBytes += value.byteLength;
+				const take = Math.min(value.byteLength, prefix.length - prefixBytes);
+				if (take > 0) {
+					prefix.set(value.subarray(0, take), prefixBytes);
+					prefixBytes += take;
+				}
+				if (rawBytes > 1048576) throw new Error("SOURCE_TOO_LARGE");
+				buffer.set(value, rawBytes - value.byteLength);
+			}
+			const bytes = buffer.slice(0, rawBytes);
+			rawSha256 = await hash(bytes);
+			raw = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+				bytes,
+			);
+			payload = JSON.parse(raw);
 			if (new TextEncoder().encode(canonical(payload)).byteLength > 262144)
 				throw new Error("NORMALIZED_PAYLOAD_TOO_LARGE");
 		} catch (error) {
-			rejection =
-				error instanceof Error
+			rejection = controller.signal.aborted
+				? "SOURCE_TIMEOUT"
+				: error instanceof Error
 					? error.message.slice(0, 80)
 					: "SOURCE_UNAVAILABLE";
 			payload = null;
+			if (!bodyComplete && prefixBytes > 0)
+				rawPrefixSha256 = await hash(prefix.slice(0, prefixBytes));
+		} finally {
+			if (timer !== undefined) clearTimeout(timer);
+			controller.abort();
+			void reader?.cancel().catch(() => undefined);
 		}
 		const encoded = canonical(payload);
 		const chunks: { part: number; body: string; hash: string }[] = [];
@@ -457,6 +497,10 @@ export class P7Campaign extends DurableObject<Env> {
 				id,
 				rawSha256,
 				rawBytes,
+				bodyComplete,
+				rawPrefixSha256,
+				prefixBytes: bodyComplete ? 0 : prefixBytes,
+				rawBytesScope: bodyComplete ? "COMPLETE" : "OBSERVED_LOWER_BOUND",
 				rawChunks: chunks.length,
 				rejection,
 				normalizedBytes: new TextEncoder().encode(encoded).byteLength,

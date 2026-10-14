@@ -91,3 +91,10 @@ phase after its 2h/T1 deadline, or under suspended recovery, is durably marked
 job-complete UNRESOLVED with the ledger phase retained for assessment. No guessed
 fill or successful terminal slot is synthesized. Expected expired slots still
 use existing MISSED guard. No deferral deadline may be <= its recorded time.
+
+Streaming refinement: read into a fixed 1 MiB byte buffer; stop at the first
+chunk exceeding the budget. A single 5-second deadline covers fetch headers
+and every stream read. Rejected incomplete streams record bodyComplete=false,
+rawBytesScope=OBSERVED_LOWER_BOUND and hash of at most64KiB prefix; rawSha256 is
+null. Only a fully consumed response gets a whole-body rawSha256. Accepted
+UTF-8 raw bytes preserve Unicode/surrogate boundaries and optional BOM exactly.

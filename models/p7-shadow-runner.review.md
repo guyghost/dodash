@@ -34,3 +34,6 @@ content-addressed UTF-8-bounded capture/chunk export; explicit suspension for
 crash at admitted decision boundary; terminal scheduler receipts retaining
 unresolved ledger evidence after deadline/recovery, with no past-time deferral.
 Verify through actual workerd crash boundaries and real SQLite row-size tests.
+Root follow-up review required streaming bounds and shared header/body timeout.
+Implemented fixed-size body buffer and explicit incomplete-prefix provenance;
+actual workerd fast-headers/stalled-body fixture verifies five-second completion.
