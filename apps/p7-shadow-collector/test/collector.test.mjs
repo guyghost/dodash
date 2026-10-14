@@ -495,3 +495,204 @@ test("lost FINAL request terminates unavailable at T1 without refetch and allows
 		await rm(path, { recursive: true, force: true });
 	}
 });
+test("600KB valid raw capture is complete in bounded SQLite chunks, oversize Unicode/invalid JSON retain only bounded provenance", async () => {
+	const path = await mkdtemp(join(tmpdir(), "p7-worker-"));
+	const rawById = new Map();
+	const mf = runtime(path, async (request) => {
+		const p = await request.clone().json();
+		let text;
+		if (p.kind === "candles")
+			text =
+				p.productId === "BTC-USD"
+					? JSON.stringify("😀".repeat(300000))
+					: `{${"x".repeat(1200000)}`;
+		else if (p.id.startsWith("hourly-"))
+			text = JSON.stringify("😀".repeat(150000));
+		else text = " ".repeat(600000) + (await (await fixture(request)).text());
+		rawById.set(p.id, text);
+		return new Response(text);
+	});
+	try {
+		await ok(mf, "register", registration());
+		await ok(mf, "wake", { at: T0 });
+		const sql = await mf.unsafeGetDurableObjectStorage(
+			"collector",
+			"P7Campaign",
+			{ name: "test" },
+		);
+		const receipts = (
+			await sql.exec(
+				"SELECT input FROM journal WHERE command_id LIKE 'capture-%'",
+			)
+		).map((r) => JSON.parse(r.input));
+		const normal = receipts.find((r) => r.id === "bh-BTC-USD");
+		assert.ok(normal.rawBytes > 600000);
+		assert.ok(normal.rawChunks > 1);
+		const chunks = await sql.exec(
+			"SELECT body FROM captures WHERE raw_hash=? ORDER BY part",
+			normal.rawSha256,
+		);
+		assert.equal(chunks.map((r) => r.body).join(""), rawById.get("bh-BTC-USD"));
+		for (const product of ["BTC-USD", "ETH-USD"]) {
+			const rejected = receipts.find(
+				(r) => r.id === `daily-${product}-${T0}-candles`,
+			);
+			assert.equal(rejected.rejection, "SOURCE_TOO_LARGE");
+			assert.equal(rejected.rawChunks, 0);
+			assert.ok(rejected.rawBytes > 1048576);
+			assert.match(rejected.rawSha256, /^[a-f0-9]{64}$/);
+		}
+		const unicode = receipts.find((r) => r.id === `hourly-${T0}-BTC-USD`);
+		assert.equal(unicode.rejection, "NORMALIZED_PAYLOAD_TOO_LARGE");
+		assert.ok(unicode.rawBytes > 600000 && unicode.rawChunks > 1);
+		const unicodeChunks = await sql.exec(
+			"SELECT body FROM captures WHERE raw_hash=? ORDER BY part",
+			unicode.rawSha256,
+		);
+		assert.equal(
+			unicodeChunks.map((r) => r.body).join(""),
+			rawById.get(`hourly-${T0}-BTC-USD`),
+		);
+		const max = await sql.exec(
+			"SELECT MAX(length(CAST(input AS BLOB))+length(CAST(body AS BLOB))) AS bytes FROM journal",
+		);
+		assert.ok(max[0].bytes < 100000);
+		assert.equal(
+			(await ok(mf, "status")).state.benchmarks.products["BTC-USD"].phase,
+			"initialized",
+		);
+	} finally {
+		await mf.dispose();
+		await rm(path, { recursive: true, force: true });
+	}
+});
+test("actual crash after durable ADMIT suspends without inventing decision or fetching candles again", async () => {
+	await build({
+		entryPoints: ["test/fault-worker.ts"],
+		outfile: "dist/fault-worker.js",
+		bundle: true,
+		format: "esm",
+		platform: "browser",
+		target: "es2023",
+		external: ["cloudflare:workers"],
+	});
+	const path = await mkdtemp(join(tmpdir(), "p7-worker-"));
+	let reached;
+	const barrier = new Promise((r) => {
+		reached = r;
+	});
+	let candles = 0;
+	const source = async (r) => {
+		if ((await r.clone().json()).kind === "candles") candles++;
+		return rising(r);
+	};
+	const opts = (crash) => ({
+		...convertV4MiniflareOptions({
+			name: "collector",
+			modules: true,
+			scriptPath: "dist/fault-worker.js",
+			compatibilityDate: "2026-08-20",
+			resourcePersistencePath: path,
+			durableObjects: {
+				CAMPAIGNS: { className: "FaultCampaign", useSQLite: true },
+			},
+			r2Buckets: ["ARCHIVE"],
+			bindings: {
+				LOCAL_FIXTURES_ENABLED: "true",
+				CRASH_AFTER_ADMIT: String(crash),
+			},
+			serviceBindings: {
+				FIXTURE_SOURCE: source,
+				BARRIER: async () => {
+					reached();
+					return new Promise(() => {});
+				},
+			},
+		}),
+		unsafeInspectDurableObjects: true,
+	});
+	let mf = new Miniflare(opts(true));
+	try {
+		await ok(mf, "register", registration());
+		const pending = call(mf, "wake", { at: T0 }).catch(() => null);
+		await barrier;
+		await mf.dispose();
+		await pending;
+		mf = new Miniflare(opts(false));
+		const recovered = await ok(mf, "status");
+		const admitted = recovered.state.ledger.slots[`BTC-USD:${T0}`];
+		assert.equal(admitted.phase, "admitted");
+		assert.equal(recovered.state.campaign.phase, "suspended");
+		await ok(mf, "wake", { at: T0 + 1000 });
+		const after = await ok(mf, "status");
+		assert.deepEqual(
+			after.state.ledger.slots[`BTC-USD:${T0}`].admission,
+			admitted.admission,
+		);
+		assert.equal(after.state.ledger.slots[`BTC-USD:${T0}`].outcome, null);
+		assert.ok(
+			after.jobs.some(
+				(j) =>
+					j.id === `daily-BTC-USD-${T0}` &&
+					JSON.parse(j.body).result.unresolved,
+			),
+		);
+		assert.equal(candles, 1);
+	} finally {
+		await mf.dispose();
+		await rm(path, { recursive: true, force: true });
+	}
+});
+test("crashed daily REQUEST after deadline completes unknown job and permits diagnostics and checkpoint", async () => {
+	const path = await mkdtemp(join(tmpdir(), "p7-worker-"));
+	let reached;
+	const barrier = new Promise((r) => {
+		reached = r;
+	});
+	let quoteCalls = 0;
+	const source = async (r) => {
+		const p = await r.clone().json();
+		if (p.id === `daily-BTC-USD-${T0}-quote`) {
+			quoteCalls++;
+			reached();
+			return new Promise(() => {});
+		}
+		return rising(r);
+	};
+	let mf = runtime(path, source);
+	try {
+		await ok(mf, "register", registration());
+		const pending = call(mf, "wake", { at: T0 }).catch(() => null);
+		await barrier;
+		await mf.dispose();
+		await pending;
+		mf = runtime(path, source);
+		await ok(mf, "wake", { at: T0 + 7200001 });
+		const s = await ok(mf, "status");
+		assert.equal(s.state.ledger.slots[`BTC-USD:${T0}`].phase, "requested");
+		assert.ok(
+			s.jobs.some(
+				(j) =>
+					j.id === `daily-BTC-USD-${T0}` &&
+					JSON.parse(j.body).result.unresolved,
+			),
+		);
+		assert.equal(s.state.marks.slots[T0 + 7200000].phase, "observed");
+		const sql = await mf.unsafeGetDurableObjectStorage(
+			"collector",
+			"P7Campaign",
+			{ name: "test" },
+		);
+		const next = await sql.exec(
+			"SELECT body FROM metadata WHERE key='next-wake'",
+		);
+		assert.ok(Number(next[0].body) >= T0 + 10800000);
+		await ok(mf, "wake", { at: T0 + 30 * DAY });
+		const report = await ok(mf, "assess", { checkpoint: 30 });
+		assert.ok(report.result.technical.reasons.includes("RESPONSE_UNOBSERVED"));
+		assert.equal(quoteCalls, 1);
+	} finally {
+		await mf.dispose();
+		await rm(path, { recursive: true, force: true });
+	}
+});

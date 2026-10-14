@@ -28,3 +28,9 @@ economic jobs but retains diagnostic/reconciliation work. J30/J90 snapshots
 freeze journal prefix plus projection; reports do not consume later state.
 Projection/checkpoint rows are chunked. Full-retention workerd economic load is
 explicitly unverified; planner enumeration is not that performance evidence.
+
+Root preapproved remediation of final review P1s preserving existing guards:
+content-addressed UTF-8-bounded capture/chunk export; explicit suspension for
+crash at admitted decision boundary; terminal scheduler receipts retaining
+unresolved ledger evidence after deadline/recovery, with no past-time deferral.
+Verify through actual workerd crash boundaries and real SQLite row-size tests.

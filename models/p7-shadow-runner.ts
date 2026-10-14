@@ -497,13 +497,14 @@ export function planP7ShadowJobs(
 export function suspendP7ShadowForRequestGap(
 	s: P7ShadowProjection,
 	at: number,
+	reason = "RESPONSE_UNOBSERVED_AT_RECOVERY",
 ): P7ShadowProjection {
 	const next = { ...s, lastAt: at, campaign: p7ShadowSafety(s, at, true) };
 	if (next.campaign.phase === "localObserving")
 		next.campaign = {
 			...next.campaign,
 			phase: "suspended",
-			reasons: [...next.campaign.reasons, "RESPONSE_UNOBSERVED_AT_RECOVERY"],
+			reasons: [...next.campaign.reasons, reason],
 		};
 	return next;
 }
@@ -533,3 +534,23 @@ export function p7ShadowCommitSignature(s: P7ShadowProjection): unknown {
 			]),
 	};
 }
+export function planP7ShadowDailyRecovery(
+	s: P7ShadowProjection,
+	product: P7Product,
+	close: number,
+	at: number,
+): "DONE" | "MISSED" | "UNRESOLVED" | "RESUME" {
+	const slot = s.ledger.slots[`${product}:${close}`];
+	if (!slot) return "RESUME";
+	if (slot.phase === "terminal") return "DONE";
+	const expired = at > close + 7200000 || at >= s.ledger.manifest.endAt;
+	if (slot.phase === "expected") return expired ? "MISSED" : "RESUME";
+	if (
+		expired ||
+		["suspended", "stopped", "invalid", "ended"].includes(s.campaign.phase)
+	)
+		return "UNRESOLVED";
+	return "RESUME";
+}
+export const hasP7InterruptedAdmission = (s: P7ShadowProjection): boolean =>
+	Object.values(s.ledger.slots).some((slot) => slot.phase === "admitted");

@@ -15,6 +15,7 @@ import {
 } from "../../../models/p7-shadow-lifecycle.js";
 import {
 	applyP7Shadow,
+	hasP7InterruptedAdmission,
 	initializeP7Shadow,
 	P7_HOUR,
 	P7_PRODUCTS,
@@ -24,6 +25,7 @@ import {
 	type P7ShadowProjection,
 	p7ShadowCommitSignature,
 	p7ShadowSafety,
+	planP7ShadowDailyRecovery,
 	planP7ShadowDecision,
 	planP7ShadowJobs,
 	planP7ShadowPricing,
@@ -83,6 +85,7 @@ export class P7Campaign extends DurableObject<Env> {
       CREATE TRIGGER IF NOT EXISTS immutable_update BEFORE UPDATE ON journal BEGIN SELECT RAISE(ABORT,'append-only'); END;
       CREATE TRIGGER IF NOT EXISTS immutable_delete BEFORE DELETE ON journal BEGIN SELECT RAISE(ABORT,'append-only'); END;
       CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY, object_key TEXT UNIQUE NOT NULL, body TEXT NOT NULL, hash TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS captures (raw_hash TEXT NOT NULL, part INTEGER NOT NULL, body TEXT NOT NULL, hash TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(raw_hash,part));
       CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, requested_at INTEGER NOT NULL, status TEXT NOT NULL, response TEXT);
       CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS checkpoint_parts (checkpoint INTEGER NOT NULL, part INTEGER NOT NULL, body TEXT NOT NULL, PRIMARY KEY(checkpoint,part));
@@ -94,12 +97,19 @@ export class P7Campaign extends DurableObject<Env> {
 					"SELECT id FROM requests WHERE status='REQUESTED'",
 				),
 				state = this.state();
-			if (state && pending.length)
+			if (state && (pending.length || hasP7InterruptedAdmission(state)))
 				await this.commit(
 					`recovery-${this.head().sequence}`,
-					{ pending },
+					{ pending, interruptedAdmission: hasP7InterruptedAdmission(state) },
 					state.lastAt,
-					(s) => suspendP7ShadowForRequestGap(s, s.lastAt),
+					(s) =>
+						suspendP7ShadowForRequestGap(
+							s,
+							s.lastAt,
+							pending.length
+								? "RESPONSE_UNOBSERVED_AT_RECOVERY"
+								: "ADMITTED_DECISION_UNRESOLVED",
+						),
 				);
 		});
 	}
@@ -354,6 +364,16 @@ export class P7Campaign extends DurableObject<Env> {
 		if (prior) {
 			if (prior.status !== "CAPTURED")
 				throw new Error("RESPONSE_UNOBSERVED_AT_RECOVERY");
+			const receipt = this.rows(
+				"SELECT input FROM journal WHERE command_id=?",
+				`capture-${id}`,
+			)[0];
+			if (
+				!receipt ||
+				JSON.parse(String(receipt.input)).bodySha256 !==
+					(await hash(String(prior.response)))
+			)
+				throw new Error("CAPTURE_RESPONSE_CORRUPT");
 			return JSON.parse(String(prior.response));
 		}
 		if (this.env.LOCAL_FIXTURES_ENABLED !== "true" || !this.env.FIXTURE_SOURCE)
@@ -380,7 +400,10 @@ export class P7Campaign extends DurableObject<Env> {
 			},
 		);
 		let payload: unknown,
-			raw: string | null = null;
+			raw: string | null = null,
+			rawSha256: string | null = null,
+			rawBytes = 0,
+			rejection: string | null = null;
 		try {
 			const response = await Promise.race([
 				this.env.FIXTURE_SOURCE.fetch("https://fixture.invalid/market", {
@@ -401,27 +424,55 @@ export class P7Campaign extends DurableObject<Env> {
 			]);
 			if (!response.ok) throw new Error("SOURCE_UNAVAILABLE");
 			const text = await response.text();
+			rawBytes = new TextEncoder().encode(text).byteLength;
+			rawSha256 = await hash(text);
+			if (rawBytes > 1048576) throw new Error("SOURCE_TOO_LARGE");
 			raw = text;
-			if (text.length > 2_000_000) throw new Error("SOURCE_TOO_LARGE");
 			payload = JSON.parse(text);
-		} catch {
+			if (new TextEncoder().encode(canonical(payload)).byteLength > 262144)
+				throw new Error("NORMALIZED_PAYLOAD_TOO_LARGE");
+		} catch (error) {
+			rejection =
+				error instanceof Error
+					? error.message.slice(0, 80)
+					: "SOURCE_UNAVAILABLE";
 			payload = null;
 		}
 		const encoded = canonical(payload);
+		const chunks: { part: number; body: string; hash: string }[] = [];
+		if (raw !== null)
+			for (let offset = 0, part = 0; offset < raw.length; part++) {
+				let end = Math.min(raw.length, offset + 65536);
+				const last = raw.charCodeAt(end - 1);
+				if (end < raw.length && last >= 0xd800 && last <= 0xdbff) end--;
+				const body = raw.slice(offset, end);
+				chunks.push({ part, body, hash: await hash(body) });
+				offset = end;
+			}
 		const capturedAt = this.now();
 		await this.commit(
 			`capture-${id}`,
 			{
 				type: "CAPTURE",
 				id,
-				payload,
-				raw,
-				rawSha256: raw === null ? null : await hash(raw),
+				rawSha256,
+				rawBytes,
+				rawChunks: chunks.length,
+				rejection,
+				normalizedBytes: new TextEncoder().encode(encoded).byteLength,
 				bodySha256: await hash(encoded),
 			},
 			capturedAt,
 			(s) => ({ ...s, lastAt: capturedAt }),
 			() => {
+				for (const chunk of chunks)
+					this.ctx.storage.sql.exec(
+						"INSERT OR IGNORE INTO captures(raw_hash,part,body,hash) VALUES(?,?,?,?)",
+						rawSha256,
+						chunk.part,
+						chunk.body,
+						chunk.hash,
+					);
 				this.ctx.storage.sql.exec(
 					"UPDATE requests SET status='CAPTURED',response=? WHERE id=? AND status='REQUESTED'",
 					encoded,
@@ -465,6 +516,7 @@ export class P7Campaign extends DurableObject<Env> {
 	}
 	private async defer(job: P7ShadowJob, at: number, retryAt: number) {
 		at = this.now();
+		if (retryAt <= at) throw new Error("INVALID_DEFER_DEADLINE");
 		await this.commit(
 			`defer-${job.id}`,
 			{ type: "WAIT_DEADLINE", job, retryAt },
@@ -684,10 +736,37 @@ export class P7Campaign extends DurableObject<Env> {
 		});
 		if (!s.ledger.slots[key]) await this.model(command({ type: "EXPECT" }), at);
 		s = this.required();
-		if (
-			at > candleClosedAt + 7_200_000 &&
-			s.ledger.slots[key]?.phase === "expected"
-		) {
+		at = this.now();
+		const recovery = planP7ShadowDailyRecovery(
+			s,
+			productId,
+			candleClosedAt,
+			at,
+		);
+		if (recovery === "DONE") {
+			await this.done(job, at);
+			return;
+		}
+		if (recovery === "UNRESOLVED") {
+			await this.commit(
+				`unresolved-${job.id}`,
+				{
+					type: "DAILY_UNRESOLVED",
+					slotKey: key,
+					phase: s.ledger.slots[key]?.phase,
+				},
+				at,
+				(state) =>
+					suspendP7ShadowForRequestGap(state, at, "INCOMPLETE_DAILY_PROOF"),
+			);
+			await this.done(job, at, {
+				unresolved: true,
+				phase: s.ledger.slots[key]?.phase,
+				reason: "INCOMPLETE_DAILY_PROOF",
+			});
+			return;
+		}
+		if (recovery === "MISSED") {
 			await this.model(
 				command({ type: "TERMINATE", outcome: { kind: "MISSED" } }),
 				at,
@@ -915,8 +994,31 @@ export class P7Campaign extends DurableObject<Env> {
 		await this.schedule();
 	}
 	private async exportPage() {
+		const chunks = this.rows(
+			"SELECT raw_hash,part,body,hash FROM captures WHERE acknowledged=0 ORDER BY raw_hash,part LIMIT 64",
+		);
+		const campaignId = this.required().ledger.manifest.campaignId;
+		for (const chunk of chunks) {
+			if ((await hash(String(chunk.body))) !== chunk.hash)
+				throw new Error("CAPTURE_HASH_MISMATCH");
+			await this.env.ARCHIVE.put(
+				`p7-shadow/v1/${campaignId}/captures/${chunk.raw_hash}/${chunk.part}-${chunk.hash}.txt`,
+				String(chunk.body),
+			);
+			this.ctx.storage.sql.exec(
+				"UPDATE captures SET acknowledged=1 WHERE raw_hash=? AND part=?",
+				String(chunk.raw_hash),
+				Number(chunk.part),
+			);
+		}
+		if (
+			chunks.length === 64 ||
+			this.rows("SELECT part FROM captures WHERE acknowledged=0 LIMIT 1").length
+		)
+			return chunks.length;
 		const rows = this.rows(
-			"SELECT sequence,object_key,body,hash FROM outbox WHERE acknowledged=0 ORDER BY sequence LIMIT 64",
+			"SELECT sequence,object_key,body,hash FROM outbox WHERE acknowledged=0 ORDER BY sequence LIMIT ?",
+			64 - chunks.length,
 		);
 		for (const r of rows) {
 			if ((await hash(String(r.body))) !== r.hash)
@@ -1059,7 +1161,8 @@ export class P7Campaign extends DurableObject<Env> {
 				if (request.method !== "POST")
 					return new Response("Method not allowed", { status: 405 });
 				const text = await request.text();
-				if (text.length > 2_000_000) throw new Error("COMMAND_TOO_LARGE");
+				if (new TextEncoder().encode(text).byteLength > 262144)
+					throw new Error("COMMAND_TOO_LARGE");
 				const payload = JSON.parse(text);
 				if (url.pathname.endsWith("/register")) {
 					if (payload.manifest?.campaignId !== url.pathname.split("/")[2])

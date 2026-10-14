@@ -77,3 +77,15 @@ Official API references consulted:
 - https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/
 - https://developers.cloudflare.com/durable-objects/api/alarms/
 - https://developers.cloudflare.com/r2/api/workers/workers-api-reference/
+
+Capture budgets are 1 MiB UTF-8 raw and 256 KiB normalized JSON. Raw evidence is
+content-addressed in bounded SQLite chunks; journal rows contain compact
+references. R2 exports capture chunks before journal references. Oversized
+responses retain only a bounded rejection, byte count and SHA-256. Normalized
+responses are hash-checked before reuse.
+
+An interruption after admission but before a durable decision suspends with
+`ADMITTED_DECISION_UNRESOLVED`; it never fabricates HOLD or refetches candles.
+Expired/suspended incomplete daily jobs receive an unresolved scheduler receipt
+while preserving their nonterminal ledger evidence for the assessment. They do
+not retry a past deadline or block subsequent diagnostic jobs/checkpoints.

@@ -1,7 +1,14 @@
 import worker, { type Env, P7Campaign } from "../src/worker.js";
 export default worker;
 export class FaultCampaign extends P7Campaign {
-	constructor(ctx: DurableObjectState, env: Env & { FAIL_EXPORT?: string }) {
+	constructor(
+		ctx: DurableObjectState,
+		env: Env & {
+			FAIL_EXPORT?: string;
+			CRASH_AFTER_ADMIT?: string;
+			BARRIER?: Fetcher;
+		},
+	) {
 		super(ctx, {
 			...env,
 			ARCHIVE: new Proxy(env.ARCHIVE, {
@@ -16,5 +23,19 @@ export class FaultCampaign extends P7Campaign {
 				},
 			}),
 		});
+		if (env.CRASH_AFTER_ADMIT === "true") {
+			const target = this as unknown as {
+				model: (
+					input: { kind: string; command: { event?: { type: string } } },
+					at: number,
+				) => Promise<void>;
+			};
+			const original = target.model.bind(this);
+			target.model = async (input, at) => {
+				await original(input, at);
+				if (input.kind === "ledger" && input.command.event?.type === "ADMIT")
+					await env.BARRIER?.fetch("https://barrier.invalid");
+			};
+		}
 	}
 }

@@ -75,3 +75,19 @@ restart, duplicate alarm/command, interrupted request recovery, failed export
 and idempotent retry. Tests use explicit fake market service only; no fake DO
 storage. Boundary tests cover 5 s, 2 h and T1. Successful local verification is
 not source qualification, prospective collection, deployment or activation.
+
+## Reviewed recovery/capture amendment (2026-10-14)
+
+Raw evidence <=1 MiB UTF-8 is preserved in content-addressed bounded SQL chunks,
+with hash, byte count and compact journal reference bound to CAPTURE atomically.
+Normalized JSON has a separate 256 KiB UTF-8 budget. Oversized or invalid input
+records a bounded rejection/hash/size, never embeds oversized raw in journal.
+Captured chunks export before referencing journal pages and retain retry status.
+
+A reboot at ADMITTED before any durable decision is an explicit unresolved
+local proof gap: suspend, retain admission timestamp and exact captured candles,
+never fabricate HOLD/INTENT or fetch again. Any nonterminal non-expected daily
+phase after its 2h/T1 deadline, or under suspended recovery, is durably marked
+job-complete UNRESOLVED with the ledger phase retained for assessment. No guessed
+fill or successful terminal slot is synthesized. Expected expired slots still
+use existing MISSED guard. No deferral deadline may be <= its recorded time.

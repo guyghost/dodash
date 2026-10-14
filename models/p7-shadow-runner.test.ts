@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { transitionP7Shadow } from "./p7-shadow-lifecycle.js";
 import {
 	applyP7Shadow,
+	hasP7InterruptedAdmission,
 	initializeP7Shadow,
 	P7_DAY,
+	planP7ShadowDailyRecovery,
 	planP7ShadowDecision,
 	planP7ShadowJobs,
 	planP7ShadowPricing,
@@ -318,4 +320,69 @@ it("keeps suspended catchup bounded and does not schedule unknown benchmark requ
 		campaign: { ...s.campaign, phase: "invalid" as const },
 	};
 	expect(planP7ShadowJobs(stopped, T0, new Set())).toEqual([]);
+});
+
+it("explicitly preserves admitted and expired nonterminal recovery evidence", () => {
+	let s = init();
+	const command = (
+		event: import("./p7-prospective-ledger.js").P7LedgerCommand["event"],
+		id: string,
+	) => ({
+		kind: "ledger" as const,
+		command: {
+			campaignId: "test",
+			commandId: id,
+			productId: "BTC-USD" as const,
+			candleClosedAt: T0,
+			event,
+		},
+	});
+	expect(planP7ShadowDailyRecovery(s, "BTC-USD", T0, T0)).toBe("RESUME");
+	s = applyP7Shadow(
+		s,
+		{ kind: "begin", command: { campaignId: "test", commandId: "begin" } },
+		T0,
+		2,
+	);
+	s = applyP7Shadow(s, command({ type: "EXPECT" }, "expect"), T0, 3);
+	expect(planP7ShadowDailyRecovery(s, "BTC-USD", T0, T0 + 7200001)).toBe(
+		"MISSED",
+	);
+	s = applyP7Shadow(
+		s,
+		command(
+			{ type: "ADMIT", evaluatedAt: T0, windowSha256: "a".repeat(64) },
+			"admit",
+		),
+		T0,
+		4,
+	);
+	expect(hasP7InterruptedAdmission(s)).toBe(true);
+	const suspended = suspendP7ShadowForRequestGap(
+		s,
+		T0,
+		"ADMITTED_DECISION_UNRESOLVED",
+	);
+	expect(planP7ShadowDailyRecovery(suspended, "BTC-USD", T0, T0)).toBe(
+		"UNRESOLVED",
+	);
+	for (const phase of ["admitted", "intent", "requested", "quoted"] as const) {
+		const state = {
+			...s,
+			ledger: {
+				...s.ledger,
+				slots: {
+					...s.ledger.slots,
+					[`BTC-USD:${T0}`]: { ...s.ledger.slots[`BTC-USD:${T0}`]!, phase },
+				},
+			},
+		};
+		expect(planP7ShadowDailyRecovery(state, "BTC-USD", T0, T0 + 7200001)).toBe(
+			"UNRESOLVED",
+		);
+	}
+	expect(suspended.ledger.slots[`BTC-USD:${T0}`]?.admission?.evaluatedAt).toBe(
+		T0,
+	);
+	expect(suspended.ledger.slots[`BTC-USD:${T0}`]?.outcome).toBe(null);
 });
