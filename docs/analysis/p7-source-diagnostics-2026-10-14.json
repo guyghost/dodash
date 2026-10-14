@@ -1,0 +1,736 @@
+{
+  "protocol": "p7-source-diagnostics-offline-v1",
+  "completedUniqueRuns": 3,
+  "valid": true,
+  "classification": "DIAGNOSTIC_ONLY",
+  "availabilityDenominatorRuns": 2,
+  "excludedRuns": [
+    {
+      "runId": "58048a42-1244-4cd8-ab41-b28ac8173cc1",
+      "files": [
+        "docs/analysis/evidence-cloudflare-market-source-2026-10-13/pre-fix-runtime-probe.json"
+      ],
+      "reason": "Known pre-fix workerd redirect:error failure before outbound network; not provider availability evidence."
+    }
+  ],
+  "duplicateFiles": 0,
+  "conflictingDuplicates": [],
+  "ignoredReports": [],
+  "cronEvidence": {
+    "status": "UNKNOWN",
+    "completedObservedRuns": 0,
+    "explanation": "Missing archived cron reports do not prove zero scheduled executions."
+  },
+  "runs": [
+    {
+      "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+      "files": [
+        "docs/analysis/evidence-cloudflare-market-source-2026-10-13/first-network-probe.json"
+      ],
+      "startedAt": 1791925708100,
+      "completedAt": 1791925711536,
+      "trigger": null
+    },
+    {
+      "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+      "files": [
+        "docs/analysis/evidence-cloudflare-market-source-2026-10-13/manual-probe.json"
+      ],
+      "startedAt": 1791925790567,
+      "completedAt": 1791925794200,
+      "trigger": null
+    },
+    {
+      "runId": "58048a42-1244-4cd8-ab41-b28ac8173cc1",
+      "files": [
+        "docs/analysis/evidence-cloudflare-market-source-2026-10-13/pre-fix-runtime-probe.json"
+      ],
+      "startedAt": 1791925589809,
+      "completedAt": 1791925589809,
+      "trigger": null
+    }
+  ],
+  "groups": [
+    {
+      "provider": "coinbase-advanced",
+      "product": "BTC-USD",
+      "kind": "candles",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [
+        {
+          "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+          "requestedAt": 1791925708100,
+          "receivedAt": 1791925708173,
+          "request": {
+            "provider": "coinbase-advanced",
+            "kind": "candles",
+            "product": "BTC-USD",
+            "url": "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD/candles?start=1771113600&end=1791763200&granularity=ONE_DAY&limit=240"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        },
+        {
+          "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+          "requestedAt": 1791925790567,
+          "receivedAt": 1791925790644,
+          "request": {
+            "provider": "coinbase-advanced",
+            "kind": "candles",
+            "product": "BTC-USD",
+            "url": "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD/candles?start=1771113600&end=1791763200&granularity=ONE_DAY&limit=240"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        }
+      ],
+      "priceKinds": {},
+      "readyCandles": 2,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "coinbase-exchange",
+      "product": "BTC-USD",
+      "kind": "candles",
+      "observations": 2,
+      "outcomes": {
+        "HTTP_ERROR": 1,
+        "OK": 1
+      },
+      "statuses": {
+        "200": 1,
+        "400": 1
+      },
+      "candleCoverage": [
+        {
+          "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+          "requestedAt": 1791925708173,
+          "receivedAt": 1791925708200,
+          "request": {
+            "provider": "coinbase-exchange",
+            "kind": "candles",
+            "product": "BTC-USD",
+            "url": "https://api.exchange.coinbase.com/products/BTC-USD/candles?start=2026-02-15T00%3A00%3A00.000Z&end=2026-10-12T00%3A00%3A00.000Z&granularity=86400"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": null,
+          "closedCount": null,
+          "missingStarts": null,
+          "duplicateStarts": null,
+          "latestStart": null,
+          "ready": null,
+          "outcome": "HTTP_ERROR",
+          "status": 400
+        },
+        {
+          "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+          "requestedAt": 1791925790644,
+          "receivedAt": 1791925790653,
+          "request": {
+            "provider": "coinbase-exchange",
+            "kind": "candles",
+            "product": "BTC-USD",
+            "url": "https://api.exchange.coinbase.com/products/BTC-USD/candles?start=2026-02-15T00%3A00%3A00.000Z&end=2026-10-12T00%3A00%3A00.000Z&granularity=86400"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        }
+      ],
+      "priceKinds": {},
+      "readyCandles": 1,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "hyperliquid",
+      "product": "BTC-USD",
+      "kind": "candles",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [
+        {
+          "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+          "requestedAt": 1791925708200,
+          "receivedAt": 1791925708512,
+          "request": {
+            "provider": "hyperliquid",
+            "kind": "candles",
+            "product": "BTC-USD",
+            "url": "https://api.hyperliquid.xyz/info",
+            "body": {
+              "type": "candleSnapshot",
+              "req": {
+                "coin": "BTC",
+                "interval": "1d",
+                "startTime": 1771113600000,
+                "endTime": 1791849599999
+              }
+            }
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        },
+        {
+          "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+          "requestedAt": 1791925790653,
+          "receivedAt": 1791925790834,
+          "request": {
+            "provider": "hyperliquid",
+            "kind": "candles",
+            "product": "BTC-USD",
+            "url": "https://api.hyperliquid.xyz/info",
+            "body": {
+              "type": "candleSnapshot",
+              "req": {
+                "coin": "BTC",
+                "interval": "1d",
+                "startTime": 1771113600000,
+                "endTime": 1791849599999
+              }
+            }
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        }
+      ],
+      "priceKinds": {},
+      "readyCandles": 2,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "dydx",
+      "product": "BTC-USD",
+      "kind": "candles",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [
+        {
+          "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+          "requestedAt": 1791925708512,
+          "receivedAt": 1791925709382,
+          "request": {
+            "provider": "dydx",
+            "kind": "candles",
+            "product": "BTC-USD",
+            "url": "https://indexer.dydx.trade/v4/candles/perpetualMarkets/BTC-USD?resolution=1DAY&fromISO=2026-02-15T00%3A00%3A00.000Z&toISO=2026-10-12T00%3A00%3A00.000Z&limit=240"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 239,
+          "closedCount": 239,
+          "missingStarts": [
+            1791763200000
+          ],
+          "duplicateStarts": [],
+          "latestStart": null,
+          "ready": false,
+          "outcome": "OK",
+          "status": 200
+        },
+        {
+          "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+          "requestedAt": 1791925790834,
+          "receivedAt": 1791925791783,
+          "request": {
+            "provider": "dydx",
+            "kind": "candles",
+            "product": "BTC-USD",
+            "url": "https://indexer.dydx.trade/v4/candles/perpetualMarkets/BTC-USD?resolution=1DAY&fromISO=2026-02-15T00%3A00%3A00.000Z&toISO=2026-10-13T00%3A00%3A00.000Z&limit=240"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        }
+      ],
+      "priceKinds": {},
+      "readyCandles": 1,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "coinbase-advanced",
+      "product": "BTC-USD",
+      "kind": "quote",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [],
+      "priceKinds": {
+        "last": 2
+      },
+      "readyCandles": 0,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "coinbase-exchange",
+      "product": "BTC-USD",
+      "kind": "quote",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [],
+      "priceKinds": {
+        "last": 2
+      },
+      "readyCandles": 0,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "dydx",
+      "product": "BTC-USD",
+      "kind": "quote",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [],
+      "priceKinds": {
+        "book-mid": 2
+      },
+      "readyCandles": 0,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "coinbase-advanced",
+      "product": "ETH-USD",
+      "kind": "candles",
+      "observations": 2,
+      "outcomes": {
+        "HTTP_ERROR": 1,
+        "OK": 1
+      },
+      "statuses": {
+        "200": 1,
+        "429": 1
+      },
+      "candleCoverage": [
+        {
+          "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+          "requestedAt": 1791925709616,
+          "receivedAt": 1791925709650,
+          "request": {
+            "provider": "coinbase-advanced",
+            "kind": "candles",
+            "product": "ETH-USD",
+            "url": "https://api.coinbase.com/api/v3/brokerage/market/products/ETH-USD/candles?start=1771113600&end=1791763200&granularity=ONE_DAY&limit=240"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": null,
+          "closedCount": null,
+          "missingStarts": null,
+          "duplicateStarts": null,
+          "latestStart": null,
+          "ready": null,
+          "outcome": "HTTP_ERROR",
+          "status": 429
+        },
+        {
+          "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+          "requestedAt": 1791925792329,
+          "receivedAt": 1791925792395,
+          "request": {
+            "provider": "coinbase-advanced",
+            "kind": "candles",
+            "product": "ETH-USD",
+            "url": "https://api.coinbase.com/api/v3/brokerage/market/products/ETH-USD/candles?start=1771113600&end=1791763200&granularity=ONE_DAY&limit=240"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        }
+      ],
+      "priceKinds": {},
+      "readyCandles": 1,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "coinbase-exchange",
+      "product": "ETH-USD",
+      "kind": "candles",
+      "observations": 2,
+      "outcomes": {
+        "HTTP_ERROR": 2
+      },
+      "statuses": {
+        "400": 1,
+        "429": 1
+      },
+      "candleCoverage": [
+        {
+          "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+          "requestedAt": 1791925709650,
+          "receivedAt": 1791925709676,
+          "request": {
+            "provider": "coinbase-exchange",
+            "kind": "candles",
+            "product": "ETH-USD",
+            "url": "https://api.exchange.coinbase.com/products/ETH-USD/candles?start=2026-02-15T00%3A00%3A00.000Z&end=2026-10-12T00%3A00%3A00.000Z&granularity=86400"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": null,
+          "closedCount": null,
+          "missingStarts": null,
+          "duplicateStarts": null,
+          "latestStart": null,
+          "ready": null,
+          "outcome": "HTTP_ERROR",
+          "status": 400
+        },
+        {
+          "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+          "requestedAt": 1791925792395,
+          "receivedAt": 1791925792426,
+          "request": {
+            "provider": "coinbase-exchange",
+            "kind": "candles",
+            "product": "ETH-USD",
+            "url": "https://api.exchange.coinbase.com/products/ETH-USD/candles?start=2026-02-15T00%3A00%3A00.000Z&end=2026-10-12T00%3A00%3A00.000Z&granularity=86400"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": null,
+          "closedCount": null,
+          "missingStarts": null,
+          "duplicateStarts": null,
+          "latestStart": null,
+          "ready": null,
+          "outcome": "HTTP_ERROR",
+          "status": 429
+        }
+      ],
+      "priceKinds": {},
+      "readyCandles": 0,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "hyperliquid",
+      "product": "ETH-USD",
+      "kind": "candles",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [
+        {
+          "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+          "requestedAt": 1791925709676,
+          "receivedAt": 1791925709885,
+          "request": {
+            "provider": "hyperliquid",
+            "kind": "candles",
+            "product": "ETH-USD",
+            "url": "https://api.hyperliquid.xyz/info",
+            "body": {
+              "type": "candleSnapshot",
+              "req": {
+                "coin": "ETH",
+                "interval": "1d",
+                "startTime": 1771113600000,
+                "endTime": 1791849599999
+              }
+            }
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        },
+        {
+          "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+          "requestedAt": 1791925792426,
+          "receivedAt": 1791925792598,
+          "request": {
+            "provider": "hyperliquid",
+            "kind": "candles",
+            "product": "ETH-USD",
+            "url": "https://api.hyperliquid.xyz/info",
+            "body": {
+              "type": "candleSnapshot",
+              "req": {
+                "coin": "ETH",
+                "interval": "1d",
+                "startTime": 1771113600000,
+                "endTime": 1791849599999
+              }
+            }
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        }
+      ],
+      "priceKinds": {},
+      "readyCandles": 2,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "dydx",
+      "product": "ETH-USD",
+      "kind": "candles",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [
+        {
+          "runId": "b6a3c40f-8853-4207-ad92-7107a9d4141a",
+          "requestedAt": 1791925709885,
+          "receivedAt": 1791925710795,
+          "request": {
+            "provider": "dydx",
+            "kind": "candles",
+            "product": "ETH-USD",
+            "url": "https://indexer.dydx.trade/v4/candles/perpetualMarkets/ETH-USD?resolution=1DAY&fromISO=2026-02-15T00%3A00%3A00.000Z&toISO=2026-10-12T00%3A00%3A00.000Z&limit=240"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 239,
+          "closedCount": 239,
+          "missingStarts": [
+            1791763200000
+          ],
+          "duplicateStarts": [],
+          "latestStart": null,
+          "ready": false,
+          "outcome": "OK",
+          "status": 200
+        },
+        {
+          "runId": "9e22b46f-4914-4c05-899a-290dec13488a",
+          "requestedAt": 1791925792598,
+          "receivedAt": 1791925793474,
+          "request": {
+            "provider": "dydx",
+            "kind": "candles",
+            "product": "ETH-USD",
+            "url": "https://indexer.dydx.trade/v4/candles/perpetualMarkets/ETH-USD?resolution=1DAY&fromISO=2026-02-15T00%3A00%3A00.000Z&toISO=2026-10-13T00%3A00%3A00.000Z&limit=240"
+          },
+          "expectedWindowStart": 1771113600000,
+          "expectedWindowEndExclusive": 1791849600000,
+          "expectedLastStart": 1791763200000,
+          "expectedCount": 240,
+          "receivedCount": 240,
+          "closedCount": 240,
+          "missingStarts": [],
+          "duplicateStarts": [],
+          "latestStart": 1791763200000,
+          "ready": true,
+          "outcome": "OK",
+          "status": 200
+        }
+      ],
+      "priceKinds": {},
+      "readyCandles": 1,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "coinbase-advanced",
+      "product": "ETH-USD",
+      "kind": "quote",
+      "observations": 2,
+      "outcomes": {
+        "SKIPPED_RATE_LIMIT": 1,
+        "OK": 1
+      },
+      "statuses": {
+        "200": 1,
+        "NO_STATUS": 1
+      },
+      "candleCoverage": [],
+      "priceKinds": {
+        "last": 1
+      },
+      "readyCandles": 0,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "coinbase-exchange",
+      "product": "ETH-USD",
+      "kind": "quote",
+      "observations": 2,
+      "outcomes": {
+        "OK": 1,
+        "SKIPPED_RATE_LIMIT": 1
+      },
+      "statuses": {
+        "200": 1,
+        "NO_STATUS": 1
+      },
+      "candleCoverage": [],
+      "priceKinds": {
+        "last": 1
+      },
+      "readyCandles": 0,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "dydx",
+      "product": "ETH-USD",
+      "kind": "quote",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [],
+      "priceKinds": {
+        "book-mid": 2
+      },
+      "readyCandles": 0,
+      "executionBookQualified": false
+    },
+    {
+      "provider": "hyperliquid",
+      "product": "ALL",
+      "kind": "quote",
+      "observations": 2,
+      "outcomes": {
+        "OK": 2
+      },
+      "statuses": {
+        "200": 2
+      },
+      "candleCoverage": [],
+      "priceKinds": {
+        "mid-or-last": 2
+      },
+      "readyCandles": 0,
+      "executionBookQualified": false
+    }
+  ],
+  "executionSourceSelected": false,
+  "limitation": "Completed diagnostics are not L2 evidence. Ticker last prices never qualify execution books."
+}
