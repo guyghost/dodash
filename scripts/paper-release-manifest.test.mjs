@@ -36,6 +36,9 @@ function fixture() {
 			JSON.stringify({
 				name: "dodash-paper-" + app,
 				main: "src/worker.ts",
+				...(app === "dashboard"
+					? { assets: { directory: "./dist/client" } }
+					: {}),
 				vars:
 					app === "agent"
 						? {
@@ -46,6 +49,7 @@ function fixture() {
 			}),
 		);
 	}
+	writeFileSync(join(root, ".gitignore"), "dist/\n");
 	git(["add", "."]);
 	git(["commit", "-qm", "fixture"]);
 	const gitSha = git(["rev-parse", "HEAD"]);
@@ -69,9 +73,25 @@ function fixture() {
 		);
 		outputs.push({ path, sha256: hash(join(bundles, path)) });
 	}
+	const source = join(root, "apps/dashboard/dist/client"),
+		snapshot = join(bundles, "dashboard/assets/client");
+	for (const dir of [source, snapshot]) {
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "index.html"), "<html>snapshot</html>");
+		writeFileSync(join(dir, "app.js"), "console.log(1)");
+	}
+	const assets = {
+		sourceDirectory: "./dist/client",
+		snapshotDirectory: "dashboard/assets/client",
+		configSha256: hash(join(root, "apps/dashboard/wrangler.paper.jsonc")),
+		files: ["app.js", "index.html"].map((path) => ({
+			path,
+			sha256: hash(join(snapshot, path)),
+		})),
+	};
 	writeFileSync(
 		join(bundles, "paper-build-provenance.json"),
-		JSON.stringify({ gitSha, inputSha256, outputs }),
+		JSON.stringify({ gitSha, inputSha256, outputs, assets }),
 	);
 	const run = (bundle = bundles) =>
 		spawnSync(
@@ -156,3 +176,65 @@ check("unrelated untracked analysis evidence is preserved and allowed", (f) => {
 		"original evidence bytes",
 	);
 });
+
+check(
+	"changed snapshot asset rejects",
+	(f) =>
+		appendFileSync(
+			join(f.bundles, "dashboard/assets/client/app.js"),
+			"changed",
+		),
+	"ASSET_SNAPSHOT_MISMATCH",
+);
+check(
+	"added snapshot asset rejects",
+	(f) =>
+		writeFileSync(join(f.bundles, "dashboard/assets/client/extra.css"), "x"),
+	"ASSET_SNAPSHOT_MISMATCH",
+);
+check(
+	"removed snapshot asset rejects",
+	(f) => rmSync(join(f.bundles, "dashboard/assets/client/app.js")),
+	"ASSET_SNAPSHOT_MISMATCH",
+);
+check(
+	"ignored current asset drift rejects",
+	(f) =>
+		appendFileSync(
+			join(f.root, "apps/dashboard/dist/client/app.js"),
+			"changed",
+		),
+	"ASSET_SOURCE_DRIFT",
+);
+check(
+	"missing required client entry rejects",
+	(f) => rmSync(join(f.bundles, "dashboard/assets/client/index.html")),
+	"MISSING_CLIENT_ENTRY",
+);
+test("positive manifest fingerprints snapshot and current assets", () => {
+	const f = fixture();
+	try {
+		const result = f.run();
+		assert.equal(result.status, 0, result.stderr);
+		const manifest = JSON.parse(readFileSync(join(f.bundles, "result.json")));
+		assert.deepEqual(
+			manifest.assets.files.map((v) => v.path),
+			["app.js", "index.html"],
+		);
+		assert.equal(manifest.assets.sourceDirectory, "./dist/client");
+		assert.equal(manifest.assets.snapshotDirectory, "dashboard/assets/client");
+	} finally {
+		f.close();
+	}
+});
+check(
+	"added current ignored asset rejects",
+	(f) =>
+		writeFileSync(join(f.root, "apps/dashboard/dist/client/extra.css"), "x"),
+	"ASSET_SOURCE_DRIFT",
+);
+check(
+	"removed current ignored asset rejects",
+	(f) => rmSync(join(f.root, "apps/dashboard/dist/client/app.js")),
+	"ASSET_SOURCE_DRIFT",
+);

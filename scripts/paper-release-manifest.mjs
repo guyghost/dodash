@@ -5,6 +5,7 @@ import {
 	writeFileSync,
 	mkdirSync,
 	existsSync,
+	cpSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, basename } from "node:path";
@@ -58,6 +59,27 @@ const sourceFiles = execFileSync("git", ["ls-files", "-z"], {
 const inputSha256 = createHash("sha256")
 	.update(sourceFiles.map((p) => p + "\0" + hash(join(root, p))).join("\n"))
 	.digest("hex");
+const dashboardConfigPath = join(root, "apps/dashboard/wrangler.paper.jsonc");
+const dashboardConfig = JSON.parse(
+	readFileSync(dashboardConfigPath, "utf8").replace(/^\s*\/\/.*$/gm, ""),
+);
+const assetSource = resolve(
+	root,
+	"apps/dashboard",
+	dashboardConfig.assets?.directory ?? "dist/client",
+);
+const assetSnapshot = join(bundles, "dashboard/assets/client");
+const assetTree = (dir) => {
+	if (
+		!existsSync(join(dir, "index.html")) ||
+		readFileSync(join(dir, "index.html")).length === 0
+	)
+		throw new Error("MISSING_CLIENT_ENTRY");
+	return files(dir).map((p) => ({
+		path: p.slice(dir.length + 1),
+		sha256: hash(p),
+	}));
+};
 const provenancePath = join(bundles, "paper-build-provenance.json");
 if (process.argv.includes("--prepare")) {
 	if (existsSync(bundles))
@@ -98,6 +120,11 @@ if (process.argv.includes("--prepare")) {
 			],
 			join(root, "apps", app),
 		);
+	cpSync(assetSource, assetSnapshot, {
+		recursive: true,
+		errorOnExist: true,
+		force: false,
+	});
 	writeFileSync(
 		provenancePath,
 		JSON.stringify(
@@ -105,6 +132,12 @@ if (process.argv.includes("--prepare")) {
 				gitSha,
 				inputSha256,
 				command: "paper-release-manifest --prepare",
+				assets: {
+					sourceDirectory: dashboardConfig.assets.directory,
+					snapshotDirectory: "dashboard/assets/client",
+					configSha256: hash(dashboardConfigPath),
+					files: assetTree(assetSnapshot),
+				},
 				outputs: files(bundles)
 					.filter((p) => !p.endsWith("wrangler.log"))
 					.map((p) => ({ path: p.slice(bundles.length + 1), sha256: hash(p) })),
@@ -119,6 +152,23 @@ if (!existsSync(provenancePath)) throw new Error("MISSING_BUILD_PROVENANCE");
 const provenance = JSON.parse(readFileSync(provenancePath, "utf8"));
 if (provenance.gitSha !== gitSha || provenance.inputSha256 !== inputSha256)
 	throw new Error("STALE_BUILD_PROVENANCE");
+if (
+	!provenance.assets ||
+	provenance.assets.configSha256 !== hash(dashboardConfigPath) ||
+	provenance.assets.sourceDirectory !== dashboardConfig.assets?.directory ||
+	provenance.assets.snapshotDirectory !== "dashboard/assets/client"
+)
+	throw new Error("MISSING_ASSET_PROVENANCE");
+if (
+	JSON.stringify(assetTree(assetSnapshot)) !==
+	JSON.stringify(provenance.assets.files)
+)
+	throw new Error("ASSET_SNAPSHOT_MISMATCH");
+if (
+	JSON.stringify(assetTree(assetSource)) !==
+	JSON.stringify(provenance.assets.files)
+)
+	throw new Error("ASSET_SOURCE_DRIFT");
 for (const item of provenance.outputs)
 	if (hash(join(bundles, item.path)) !== item.sha256)
 		throw new Error("BUNDLE_FINGERPRINT_MISMATCH");
@@ -164,6 +214,7 @@ const workers = ["agent", "mcp-market-data", "dashboard-api", "dashboard"].map(
 	},
 );
 const manifest = {
+	assets: provenance.assets,
 	inputSha256,
 	provenanceSha256: hash(provenancePath),
 	gitSha: execFileSync("git", ["rev-parse", "HEAD"], {
