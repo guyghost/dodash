@@ -2,6 +2,7 @@ export { RISK_REJECTION_REASON_CODES } from "./backtest-diagnostics.types.js";
 export { initializeP7Ledger, applyP7LedgerCommand, planP7LedgerRecovery, p7LedgerSlotMachine, type P7LedgerManifest, type P7LedgerCommand, type P7LedgerState, type P7LedgerOutcome, type P7LedgerPortfolio } from "./p7-prospective-ledger.js";
 export { consumeP7Depth, planP7Pricing, valueP7Liquidation, consolidateP7Marks, type P7MarkScope, type P7DepthPrice, type P7LiquidationMark } from "./p7-prospective-pricing.js";
 export { isP7PricingCommitRequest, evaluateP7PricingCommitClock, type P7PricingCommitRequest } from "./p7-prospective-pricing-commit.js";
+export { emptyP7MarkState, applyP7MarkCommand, evaluateP7MarkCommitClock, planP7MarkRecovery, reportP7MarkCoverage, p7HourlyMarkMachine, type P7MarkCommand, type P7MarkState, type P7MarkSlot } from "./p7-prospective-marks.js";
 export { evaluateP7ExecutionBook, type P7QuoteScope, type P7BookEligibility } from "./p7-prospective-quote.js";
 export { assessP7ExecutionRobustness, P7_EXECUTION_SCENARIOS, p7ExecutionRobustnessMachine, type P7RobustnessMetrics, type P7RobustnessAssessment } from "./p7-execution-robustness.js";
 export { marketSourceProbeMachine, isMarketProbeWindowOpen, type MarketProbeInput, type MarketProbeProvider } from "./market-source-probe.machine.js";
