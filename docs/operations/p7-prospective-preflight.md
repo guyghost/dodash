@@ -68,9 +68,24 @@ pnpm --filter @dodash/models test -- p7-prospective-pricing-commit.test.ts
 node --test docs/analysis/p7-prospective-pricing-commit.test.mjs
 ```
 
-Restent bloquants : stockage/garanties distantes, persistance horaire des
-marks/complétude, B&H, machine globale et autorisations séparées. Ne pas
-utiliser les commandes fixtures V1 comme preuves de fills prospectifs vérifiés.
+Marks horaires **locaux** disponibles : `models/p7-prospective-marks.md`.
+`applyMark` inscrit EXPECT/REQUEST/OBSERVE dans le journal V3 et recalcule
+depuis le portefeuille relu, sans fill ou changement de balance/version.
+`markCoverage` compte aussi les heures absentes du journal ; UNOBSERVED et
+UNAVAILABLE sont séparés. La fenêtre courante n'entre pas prématurément dans
+la couverture des heures terminées. Le signal de gap >2 h ne suspend pas
+encore une campagne : la machine globale reste à implémenter.
+
+```sh
+pnpm --filter @dodash/models build
+pnpm --filter @dodash/models test -- p7-prospective-marks.test.ts
+node --test docs/analysis/p7-prospective-marks-store.test.mjs
+```
+
+Restent bloquants : stockage/garanties distantes, B&H, marks après fill et
+final, machine globale/suspension effective, exports/anchors et autorisations
+séparées. Ne pas utiliser les commandes fixtures V1 comme preuves de fills
+prospectifs vérifiés. Aucune observation réelle n'est produite par ces tests.
 
 - [ ] Diagnostic fournisseurs terminé et interprété ; aucun switch automatique.
 - [ ] Profil **spot BTC/ETH USD** décidé et documenté, pas de série perp.

@@ -94,3 +94,16 @@ sans prix client, journal V2 revalidé au replay, refus conservés et rollback
 sur expiration juste avant COMMIT. V1 reste une fixture déclarée, pas une
 preuve de pricing. Stockage distant et marks horaires non implémentés ; la
 machine globale, B&H, source/T0 et autorisations restent bloquants.
+
+## Verify — marks horaires et complétude locaux
+
+Contrat : `models/p7-prospective-marks.md`. Machine XState par slot, journal
+V3 atomique et replay des marks depuis preuves/portefeuilles antérieurs.
+Calendrier de 4 320 heures indépendant des seuls événements reçus ; comptes
+AVAILABLE/UNAVAILABLE/UNOBSERVED, heure courante séparée et gap historique
+>2 h explicite. Cash/positions/versions inchangés ; pas de vente ni fill.
+
+Ce rapport ne qualifie pas P7+B&H, ne calcule pas un verdict économique et
+ne suspend pas effectivement les fills : machine globale et benchmarks
+encore absents. Marks après fill/final, reprise/réparation des preuves perdues,
+stockage/export distant et source/T0 restent des prérequis séparés.
