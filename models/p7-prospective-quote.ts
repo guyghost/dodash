@@ -31,6 +31,11 @@ const validSide = (levels: unknown, side: "bid" | "ask"): levels is readonly Lev
   return true;
 };
 
+/** Structural depth check shared by execution and mark projections. No time gate. */
+export const isP7DepthBook = (book: unknown): book is { readonly bids: readonly Level[]; readonly asks: readonly Level[] } =>
+  record(book) && validSide(book.bids, "bid") && validSide(book.asks, "ask") &&
+  (book.bids[0]?.price ?? Infinity) <= (book.asks[0]?.price ?? 0);
+
 export const evaluateP7ExecutionBook = (scope: P7QuoteScope, book: unknown): P7BookEligibility => {
   const reject = (reason: Extract<P7BookEligibility, { eligible: false }>["reason"]): P7BookEligibility => ({ eligible: false, reason });
   if (!["BTC-USD", "ETH-USD"].includes(scope.productId) || typeof scope.sourceProfileId !== "string" || scope.sourceProfileId.trim().length === 0 ||
@@ -48,7 +53,6 @@ export const evaluateP7ExecutionBook = (scope: P7QuoteScope, book: unknown): P7B
   if (!timestamp(sourceObservedAt) || sourceObservedAt > receivedAt || receivedAt - sourceObservedAt > 5_000) return reject("SOURCE_TIME_INVALID");
   if (!decimalSequence(book.sequence) || (scope.previousSequence !== null &&
     (!decimalSequence(scope.previousSequence) || BigInt(book.sequence) < BigInt(scope.previousSequence)))) return reject("SEQUENCE_INVALID");
-  if (!validSide(book.bids, "bid") || !validSide(book.asks, "ask") ||
-    (book.bids[0]?.price ?? Infinity) > (book.asks[0]?.price ?? 0)) return reject("BOOK_INVALID");
+  if (!isP7DepthBook(book)) return reject("BOOK_INVALID");
   return { eligible: true, reason: "ELIGIBLE_BOOK" };
 };
