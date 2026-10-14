@@ -5,6 +5,7 @@ export { isP7PricingCommitRequest, evaluateP7PricingCommitClock, type P7PricingC
 export { emptyP7MarkState, applyP7MarkCommand, evaluateP7MarkCommitClock, planP7MarkRecovery, reportP7MarkCoverage, p7HourlyMarkMachine, type P7MarkCommand, type P7MarkState, type P7MarkSlot } from "./p7-prospective-marks.js";
 export { initialP7LocalCampaign, applyP7LocalCampaignCommand, evaluateP7LocalCampaignSafety, p7LocalCampaignMachine, type P7LocalCampaignState, type P7LocalCampaignCommand } from "./p7-prospective-campaign-safety.js";
 export { registerP7BenchmarkProfile, sizeP7BenchmarkBuy, type P7BenchmarkProfile } from "./p7-prospective-benchmarks.js";
+export { emptyP7BenchmarkEntries, applyP7BenchmarkEntry, recoverP7BenchmarkEntry, p7BenchmarkEntryMachine, type P7BenchmarkLeg, type P7BenchmarkEntries } from "./p7-prospective-benchmark-entry.js";
 export { evaluateP7ExecutionBook, type P7QuoteScope, type P7BookEligibility } from "./p7-prospective-quote.js";
 export { assessP7ExecutionRobustness, P7_EXECUTION_SCENARIOS, p7ExecutionRobustnessMachine, type P7RobustnessMetrics, type P7RobustnessAssessment } from "./p7-execution-robustness.js";
 export { marketSourceProbeMachine, isMarketProbeWindowOpen, type MarketProbeInput, type MarketProbeProvider } from "./market-source-probe.machine.js";
