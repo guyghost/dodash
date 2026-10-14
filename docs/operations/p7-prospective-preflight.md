@@ -138,16 +138,33 @@ publier de nouveau mark. Les anciennes observations ne sont pas backfillées.
 un gap historique >2 h sur l'une des deux preuves suspend les nouveaux fills.
 Le seuil DD >50 % reste appliqué à P7 uniquement, pas au benchmark.
 
+V9 `applyEventMark` est disponible localement : après V8 EXPECT et avant tout
+fill, REGISTER_EVENT_MARKS ; chaque fill dérive une attente durable `fill-N`.
+Les deux entrées B&H initiales précèdent leurs marks, puis tous les marks
+après fill disponibles sont requis avant pricing P7. REQUEST est le checkpoint
+avant I/O ; OBSERVE est terminal, sans repricing automatique d'un refus.
+FINAL : REQUEST dans la dernière heure avant T1, preuves reçues avant T1,
+OBSERVE à partir de T1 avec asOf=T1 et fraîcheur 5 s à l'usage. Aucun prix
+post-T1 ni nouveau fill, aucune fermeture réelle d'inventaire.
+
+Assesseur readonly : `assessP7LocalCampaign(store, 30|90|180)` depuis
+`docs/analysis/p7-prospective-assessment.mjs`. J30/J90 lisent le préfixe gelé
+à leur échéance. Rapport lié à séquence/hash, hash du rapport stable hors
+heure de génération. Aucun fichier/anchor distant écrit. `prospectiveVerdict`
+est toujours null et `prospectiveQualified` false en préparation locale.
+
 ```sh
 node --test docs/analysis/p7-prospective-joint-marks.test.mjs
+node --test docs/analysis/p7-prospective-event-marks.test.mjs docs/analysis/p7-prospective-assessment.test.mjs
+pnpm --filter @dodash/models test -- p7-prospective-assessment.test.ts
 ```
 
 RECOVER_LOCAL suspend aussi sur une requête B&H sans réponse ; aucun refetch
 implicite. Le collector réel doit encore être implémenté/autorisé, et le profil
 réel validé (precision/minSize/minNotional/cache/clock/quota).
 
-Restent bloquants : stockage/garanties distantes, B&H prospectif persisté, marks après fill et
-final, préflight/autorisation réels et orchestrateur, exports/anchors et autorisations
+Restent bloquants : stockage/garanties distantes et branchement réel des registres
+B&H/marks, préflight/autorisation réels et orchestrateur, exports/anchors et autorisations
 séparées. Ne pas utiliser les commandes fixtures V1 comme preuves de fills
 prospectifs vérifiés. Aucune observation réelle n'est produite par ces tests.
 

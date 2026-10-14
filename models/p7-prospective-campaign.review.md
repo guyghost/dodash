@@ -158,3 +158,31 @@ Projection B&H en mode conjoint utilise les reçus durables, pas un repricing.
 Restent requis : marks after-fill/final, assesseur et qualification économique,
 profil source réel, timers/leases/runner et autorisations distantes séparées.
 Les stores restent SYNTHETIC_LOCAL_PREPARATION, sans preuve prospective réelle.
+
+## Incréments V9 et assesseur readonly
+
+`models/p7-prospective-event-marks.md` : attentes après fill dérivées de la
+séquence du fill, REQUEST avant I/O, snapshots communs figés, refus terminaux,
+clôture asOf=T1 depuis books pré-T1. Pas de mutation de portefeuille ou de
+couverture horaire, pas de backfill. Exception de bootstrap uniquement pour
+les deux achats initiaux B&H ; P7 attend tous leurs marks. Récupération
+explicite tient compte des event requests ; DD P7 inclut ces preuves conservées.
+
+`models/p7-prospective-assessment.md` : échéances fixes J30/J90/J180, journal
+local revalidé avant projection ; J30/J90 utilisent un préfixe historique.
+Calendrier, unknowns, refus, coûts, inventaire et sous-performance conservés.
+Rapports localement hashables en lecture seule ; aucune transition réelle ou
+qualification prospective prétendue. FINAL incomplet n'est jamais remplacé
+par un dernier mark horaire favorable. Invariant invalide prioritaire, DD
+>50 % conservé, arrêt opérateur/proof gap inconclusive.
+
+Restent bloquants : profil spot réel/T0/préflight, exports/anchors distants,
+collector/runner avec timers/leases/repair et checkpoints automatiques,
+autorisations séparées de stockage, déploiement et démarrage. La campagne
+réelle n'est toujours pas démarrable ; ces incréments ne touchent pas le bot.
+
+Verify des deux lots : 24 nouveaux tests passent (11 event-mark SQLite,
+10 assesseur purs et 3 assesseur SQLite). Suites locales : 98 tests Node ;
+global : 613 modèles, 313 agent, 133 backtest. TypeScript, builds dry-run et
+lint ciblé passent. Lint global non revendiqué à cause du JSON concaténé
+préexistant ; fichiers utilisateurs laissés intacts. Aucun push ou déploiement.
