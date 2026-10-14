@@ -9,8 +9,8 @@ import {
 import { execFileSync } from "node:child_process";
 import { join, resolve, basename } from "node:path";
 const root = resolve(import.meta.dirname, "..");
-const bundles = process.argv[2];
-const output = process.argv[3];
+const bundles = process.argv[2] && resolve(process.argv[2]);
+const output = process.argv[3] && resolve(process.argv[3]);
 if (!bundles || !output)
 	throw new Error(
 		"Usage: node scripts/paper-release-manifest.mjs BUNDLE_ROOT OUTPUT",
@@ -29,14 +29,25 @@ const gitSha = execFileSync("git", ["rev-parse", "HEAD"], {
 	cwd: root,
 	encoding: "utf8",
 }).trim();
-if (
-	execFileSync("git", ["status", "--porcelain"], {
-		cwd: root,
-		encoding: "utf8",
-	}).trim()
+const trackedDirty = execFileSync("git", ["diff", "HEAD", "--name-only"], {
+	cwd: root,
+	encoding: "utf8",
+}).trim();
+const untracked = execFileSync(
+	"git",
+	["ls-files", "--others", "--exclude-standard", "-z"],
+	{ cwd: root, encoding: "utf8" },
 )
+	.split("\0")
+	.filter(Boolean);
+const codeInput = (p) =>
+	/^(apps|models|packages|scripts)\//.test(p) ||
+	/^[^/]*(package|lock|config|biome|turbo)[^/]*\.(json|jsonc|yaml|yml|ts|js|mjs)$/.test(
+		p,
+	);
+if (trackedDirty || untracked.some(codeInput))
 	throw new Error(
-		"DIRTY_SOURCE: commit reviewed candidate before preparing manifest",
+		"DIRTY_SOURCE: commit tracked changes and untracked build inputs before preparation",
 	);
 const sourceFiles = execFileSync("git", ["ls-files", "-z"], {
 	cwd: root,
