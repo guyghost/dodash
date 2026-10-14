@@ -7,7 +7,7 @@ import {
 	existsSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { join, resolve, basename } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const bundles = process.argv[2];
 const output = process.argv[3];
@@ -131,7 +131,7 @@ const workers = ["agent", "mcp-market-data", "dashboard-api", "dashboard"].map(
 				"HYPERLIQUID_PERP_TRADING_ENABLED",
 			])
 				if (config.vars[flag] !== "false") throw new Error("live flag enabled");
-		const entry = app === "dashboard" ? "index.js" : "worker.js";
+		const entry = basename(config.main).replace(/\.ts$/, ".js");
 		if (
 			!existsSync(join(bundles, app, entry)) ||
 			readFileSync(join(bundles, app, entry)).length === 0
