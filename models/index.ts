@@ -7,6 +7,9 @@ export { initialP7LocalCampaign, applyP7LocalCampaignCommand, evaluateP7LocalCam
 export { registerP7BenchmarkProfile, sizeP7BenchmarkBuy, type P7BenchmarkProfile } from "./p7-prospective-benchmarks.js";
 export { emptyP7BenchmarkEntries, applyP7BenchmarkEntry, recoverP7BenchmarkEntry, p7BenchmarkEntryMachine, type P7BenchmarkLeg, type P7BenchmarkEntries } from "./p7-prospective-benchmark-entry.js";
 export { applyP7JointMarkCommand, type P7JointMarkSlot } from "./p7-prospective-joint-marks.js";
+export { emptyP7EventMarks, expectP7AfterFill, hasP7AfterFillBlocker, applyP7EventMarkCommand, checkP7EventMarkClock,
+  p7EventMarkMachine, type P7EventMarkState, type P7EventMarkSlot } from "./p7-prospective-event-marks.js";
+export { assessP7CampaignSnapshot, p7AssessmentMachine, type P7AssessmentSnapshot } from "./p7-prospective-assessment.js";
 export { evaluateP7ExecutionBook, type P7QuoteScope, type P7BookEligibility } from "./p7-prospective-quote.js";
 export { assessP7ExecutionRobustness, P7_EXECUTION_SCENARIOS, p7ExecutionRobustnessMachine, type P7RobustnessMetrics, type P7RobustnessAssessment } from "./p7-execution-robustness.js";
 export { marketSourceProbeMachine, isMarketProbeWindowOpen, type MarketProbeInput, type MarketProbeProvider } from "./market-source-probe.machine.js";

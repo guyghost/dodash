@@ -37,13 +37,15 @@ const validPortfolio = (p: P7LedgerState["portfolios"]["BTC-USD"]): boolean =>
 
 /** Deterministic safety projection; never starts a real campaign or decides a verdict. */
 export const evaluateP7LocalCampaignSafety = (state: P7LocalCampaignState, ledger: P7LedgerState, marks: P7MarkState,
-  now: number, recovering = false, benchmarkPending = false, benchmarkMarks: P7MarkState | null = null): P7LocalCampaignState => {
+  now: number, recovering = false, benchmarkPending = false, benchmarkMarks: P7MarkState | null = null,
+  eventObservations: readonly NonNullable<P7MarkState["slots"][string]["observation"]>[] = []): P7LocalCampaignState => {
   if (!timestamp(now) || now < Math.max(state.lastEvaluatedAt, ledger.lastRecordedAt, marks.lastRecordedAt, benchmarkMarks?.lastRecordedAt ?? 0)) throw new Error("INVALID_CAMPAIGN_CLOCK");
   let next = { ...state, lastEvaluatedAt: now };
   if (state.boundAt === null) return next;
   if (ledger.manifest.purpose !== "LOCAL_PREPARATION" || !Object.values(ledger.portfolios).every(validPortfolio))
     return transition(next, "INVALIDATE", "ACCOUNTING_INVARIANT_BREACH");
-  const observations = Object.values(marks.slots).flatMap((s) => s.observation?.consolidated.available && s.observation.asOf <= now ? [s.observation] : []).sort((a, b) => a.asOf - b.asOf);
+  const observations = [...Object.values(marks.slots).flatMap((s) => s.observation?.consolidated.available && s.observation.asOf <= now ? [s.observation] : []),
+    ...eventObservations.filter((o) => o.consolidated.available && o.asOf <= now)].sort((a, b) => a.asOf - b.asOf);
   let peak = 20_000, maxDrawdown = state.maxDrawdown;
   for (const observation of observations) {
     if (!observation.consolidated.available) continue;
@@ -66,7 +68,8 @@ export const evaluateP7LocalCampaignSafety = (state: P7LocalCampaignState, ledge
   return next;
 };
 
-export const applyP7LocalCampaignCommand = (state: P7LocalCampaignState, ledger: P7LedgerState, marks: P7MarkState, input: unknown, now: number, benchmarkPending = false, benchmarkMarks: P7MarkState | null = null):
+export const applyP7LocalCampaignCommand = (state: P7LocalCampaignState, ledger: P7LedgerState, marks: P7MarkState, input: unknown, now: number, benchmarkPending = false, benchmarkMarks: P7MarkState | null = null,
+  eventObservations: readonly NonNullable<P7MarkState["slots"][string]["observation"]>[] = []):
   { readonly ok: false; readonly error: string } | { readonly ok: true; readonly value: P7LocalCampaignState } => {
   const fail = (error: string): { readonly ok: false; readonly error: string } => ({ ok: false, error });
   if (!record(input) || Object.keys(input).length !== 3 || !Object.keys(input).every((k) => ["campaignId", "commandId", "event"].includes(k)) ||
@@ -82,5 +85,5 @@ export const applyP7LocalCampaignCommand = (state: P7LocalCampaignState, ledger:
     if (state.boundAt === null || !["localObserving", "suspended"].includes(state.phase)) return fail("INVALID_CAMPAIGN_PHASE");
     next = transition(state, "STOP", "LOCAL_OPERATOR_STOP");
   }
-  return { ok: true, value: evaluateP7LocalCampaignSafety(next, ledger, marks, now, type === "RECOVER_LOCAL", benchmarkPending, benchmarkMarks) };
+  return { ok: true, value: evaluateP7LocalCampaignSafety(next, ledger, marks, now, type === "RECOVER_LOCAL", benchmarkPending, benchmarkMarks, eventObservations) };
 };

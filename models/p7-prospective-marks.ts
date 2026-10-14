@@ -36,6 +36,8 @@ const evidence = (v: unknown): v is P7MarkEvidence | null => v === null || (reco
   (!record(v.book) || (Object.keys(v.book).every((k) => bookFields.includes(k)) &&
     ![v.book.bids, v.book.asks].some((side) => Array.isArray(side) && side.some((level: unknown) => record(level) && !keys(level, ["price", "quantity"]))))));
 const newest = (a: string | null, b: string | null): string | null => a === null ? b : b === null ? a : BigInt(a) >= BigInt(b) ? a : b;
+export const isP7MarkBooks = (books: unknown): books is Readonly<Record<Product, P7MarkEvidence | null>> =>
+  record(books) && keys(books, PRODUCTS) && PRODUCTS.every((p) => evidence(books[p]));
 
 export const p7HourlyMarkMachine = setup({ types: {
   context: {} as Record<string, never>,
@@ -71,7 +73,7 @@ export const applyP7MarkCommand = (state: P7MarkState, ledger: P7LedgerState, in
     } else {
       if (current.phase !== "requested" || current.requestedAt === null) return fail("INVALID_MARK_PHASE");
       const { books } = command.event;
-      if (!record(books) || !keys(books, PRODUCTS) || !PRODUCTS.every((p) => evidence(books[p]))) return fail("INVALID_MARK_EVIDENCE");
+      if (!isP7MarkBooks(books)) return fail("INVALID_MARK_EVIDENCE");
       const sequences = { ...lastSequences };
       const marks = PRODUCTS.map((productId): P7LiquidationMark => {
         const book = books[productId]?.book;
