@@ -37,3 +37,10 @@ Verify through actual workerd crash boundaries and real SQLite row-size tests.
 Root follow-up review required streaming bounds and shared header/body timeout.
 Implemented fixed-size body buffer and explicit incomplete-prefix provenance;
 actual workerd fast-headers/stalled-body fixture verifies five-second completion.
+
+Review amendment 2026-10-15: target policy constraints match the existing reviewed
+TARGET_EXPOSURE model (neutral absolute caps, zero cooldown). Hourly unknown
+responses must terminate scheduler work while retaining unresolved evidence.
+Idempotent preflight must precede state-dependent validation. Checkpoint review:
+acceptance of late I/O would violate observation cutoff; preserve the prefix and
+verify fixed denominator plus explicit exclusion of post-cutoff captures.

@@ -95,6 +95,18 @@ use existing MISSED guard. No deferral deadline may be <= its recorded time.
 Streaming refinement: read into a fixed 1 MiB byte buffer; stop at the first
 chunk exceeding the budget. A single 5-second deadline covers fetch headers
 and every stream read. Rejected incomplete streams record bodyComplete=false,
-rawBytesScope=OBSERVED_LOWER_BOUND and hash of at most64KiB prefix; rawSha256 is
+rawBytesScope=OBSERVED_LOWER_BOUND and hash of at most 64KiB prefix; rawSha256 is
 null. Only a fully consumed response gets a whole-body rawSha256. Accepted
 UTF-8 raw bytes preserve Unicode/surrogate boundaries and optional BOM exactly.
+
+## Review amendment (2026-10-15)
+
+Registration requires all three target-exposure absolute caps >= $1 billion and
+cooldownMs=0, in addition to structurally valid risk settings. These are experiment
+invariants, not tunable economics. A recovered hourly REQUESTED without CAPTURE
+gets a terminal scheduler receipt RESPONSE_UNOBSERVED_AT_RECOVERY; its requested
+mark stays unresolved, the campaign stays suspended, and no request is repeated.
+A repeated PREFLIGHT returns its persisted command before lifecycle validation.
+J30/J90 freeze the last committed observation at or before their cutoff, never
+late catchup observations; the assessment denominator remains 60/180 slots even
+when expectations were not observed in time. Future wakeup work cannot rewrite it.

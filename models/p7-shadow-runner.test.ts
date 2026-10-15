@@ -4,6 +4,7 @@ import {
 	applyP7Shadow,
 	hasP7InterruptedAdmission,
 	initializeP7Shadow,
+	isP7ShadowRiskPolicy,
 	P7_DAY,
 	planP7ShadowDailyRecovery,
 	planP7ShadowDecision,
@@ -385,4 +386,23 @@ it("explicitly preserves admitted and expired nonterminal recovery evidence", ()
 		T0,
 	);
 	expect(suspended.ledger.slots[`BTC-USD:${T0}`]?.outcome).toBe(null);
+});
+
+it("requires neutral target-exposure caps and zero cooldown", () => {
+	const base = {
+		maxOrderNotional: 1e9,
+		maxPositionNotional: 1e9,
+		maxGrossExposure: 1e9,
+		cooldownMs: 0,
+	};
+	expect(isP7ShadowRiskPolicy(base)).toBe(true);
+	for (const key of [
+		"maxOrderNotional",
+		"maxPositionNotional",
+		"maxGrossExposure",
+	] as const) {
+		expect(isP7ShadowRiskPolicy({ ...base, [key]: 0.5 })).toBe(false);
+		expect(isP7ShadowRiskPolicy({ ...base, [key]: Infinity })).toBe(false);
+	}
+	expect(isP7ShadowRiskPolicy({ ...base, cooldownMs: 1 })).toBe(false);
 });

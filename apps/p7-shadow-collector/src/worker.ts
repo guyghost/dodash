@@ -1,13 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 import type { ProductId } from "@dodash/domain";
-import { executePaperOrder } from "@dodash/paper-execution";
-import { checkRisk, type RiskConfig } from "@dodash/risk";
 import {
 	applyP7Shadow,
 	assessP7CampaignSnapshot,
 	decisionCandlePnl,
 	hasP7InterruptedAdmission,
 	initializeP7Shadow,
+	isP7ShadowRiskPolicy,
 	P7_HOUR,
 	P7_PRODUCTS,
 	type P7BenchmarkProfile,
@@ -30,6 +29,8 @@ import {
 	targetExposureRiskGate,
 	transitionP7Shadow,
 } from "@dodash/models";
+import { executePaperOrder } from "@dodash/paper-execution";
+import { checkRisk, type RiskConfig } from "@dodash/risk";
 export interface Env {
 	CAMPAIGNS: DurableObjectNamespace;
 	ARCHIVE: R2Bucket;
@@ -310,7 +311,8 @@ export class P7Campaign extends DurableObject<Env> {
 			},
 			r.risk,
 		);
-		if (!risk.ok) throw new Error("INVALID_RISK_CONFIG");
+		if (!risk.ok || !isP7ShadowRiskPolicy(r.risk))
+			throw new Error("INVALID_RISK_CONFIG");
 		const projectionHash = await hash(canonical(state));
 		const entry = canonical({
 				observation: "SYNTHETIC_LOCAL_PREPARATION",
@@ -669,6 +671,18 @@ export class P7Campaign extends DurableObject<Env> {
 			return;
 		}
 		if (job.kind === "hourly") {
+			if (
+				this.rows(
+					"SELECT id FROM requests WHERE (id=? OR id=?) AND status='REQUESTED' LIMIT 1",
+					`${job.id}-BTC-USD`,
+					`${job.id}-ETH-USD`,
+				).length
+			) {
+				await this.done(job, at, {
+					unresolved: "RESPONSE_UNOBSERVED_AT_RECOVERY",
+				});
+				return;
+			}
 			const command = (
 				event:
 					| { type: "EXPECT_MARK" | "REQUEST_MARK" }
@@ -1207,6 +1221,15 @@ export class P7Campaign extends DurableObject<Env> {
 						throw new Error("CAMPAIGN_ID_MISMATCH");
 					await this.register(payload as Registration);
 				} else if (url.pathname.endsWith("/preflight")) {
+					const prior = this.rows(
+						"SELECT sequence FROM journal WHERE command_id='preflight'",
+					)[0];
+					if (prior) {
+						return Response.json({
+							ok: true,
+							sequence: Number(prior.sequence),
+						});
+					}
 					const r = this.registration(),
 						phase = JSON.parse(
 							String(

@@ -756,3 +756,151 @@ test("5s deadline covers a fast header response with a permanently stalled body 
 		await rm(path, { recursive: true, force: true });
 	}
 });
+
+test("registration rejects economic risk overrides and duplicate preflight returns original receipt", async () => {
+	const path = await mkdtemp(join(tmpdir(), "p7-worker-"));
+	const mf = runtime(path);
+	try {
+		for (const key of [
+			"maxOrderNotional",
+			"maxPositionNotional",
+			"maxGrossExposure",
+			"cooldownMs",
+		]) {
+			const r = registration();
+			r.risk[key] = key === "cooldownMs" ? 1 : 0.5;
+			assert.equal(
+				(await call(mf, "register", r)).body.error,
+				"INVALID_RISK_CONFIG",
+			);
+		}
+		await ok(mf, "register", registration());
+		const first = await ok(mf, "preflight");
+		assert.deepEqual(await ok(mf, "preflight"), first);
+		await ok(mf, "wake", { at: T0 });
+		assert.deepEqual(await ok(mf, "preflight"), first);
+	} finally {
+		await mf.dispose();
+		await rm(path, { recursive: true, force: true });
+	}
+});
+
+test("crashed current hourly request completes unresolved without refetch and later marks proceed", async () => {
+	const path = await mkdtemp(join(tmpdir(), "p7-worker-"));
+	let reached;
+	const barrier = new Promise((resolve) => {
+		reached = resolve;
+	});
+	let calls = 0;
+	const id = `hourly-${T0}-BTC-USD`;
+	const source = async (r) => {
+		const p = await r.clone().json();
+		if (p.id === id) {
+			calls++;
+			reached();
+			return new Promise(() => {});
+		}
+		return fixture(r);
+	};
+	let mf = runtime(path, source);
+	try {
+		await ok(mf, "register", registration());
+		const pending = call(mf, "wake", { at: T0 }).catch(() => null);
+		await barrier;
+		await mf.dispose();
+		await pending;
+		mf = runtime(path, source);
+		await ok(mf, "wake", { at: T0 + 1000 });
+		let status = await ok(mf, "status");
+		assert.equal(status.state.marks.slots[T0].phase, "requested");
+		assert.equal(
+			JSON.parse(status.jobs.find((j) => j.id === `hourly-${T0}`).body).result
+				.unresolved,
+			"RESPONSE_UNOBSERVED_AT_RECOVERY",
+		);
+		await ok(mf, "wake", { at: T0 + 3600000 });
+		status = await ok(mf, "status");
+		assert.equal(status.state.marks.slots[T0 + 3600000].phase, "observed");
+		assert.equal(calls, 1);
+	} finally {
+		await mf.dispose();
+		await rm(path, { recursive: true, force: true });
+	}
+});
+
+test("J30 cutoff retains pre-cutoff inventory and excludes I/O completed after cutoff", async () => {
+	const path = await mkdtemp(join(tmpdir(), "p7-worker-"));
+	const cutoff = T0 + 30 * DAY;
+	const lastHour = cutoff - 3600000;
+	const source = async (r) => {
+		const p = await r.clone().json();
+		if (p.id === `hourly-${lastHour}-BTC-USD`)
+			await new Promise((resolve) => setTimeout(resolve, 500));
+		return rising(r);
+	};
+	const mf = runtime(path, source);
+	try {
+		await ok(mf, "register", registration());
+		await ok(mf, "wake", { at: T0 });
+		const before = (await ok(mf, "status")).state;
+		assert.ok(before.ledger.portfolios["BTC-USD"].positionQuantity > 0);
+		const sql = await mf.unsafeGetDurableObjectStorage(
+			"collector",
+			"P7Campaign",
+			{ name: "test" },
+		);
+		// Fixture skips old scheduling pages only; no projection/journal/clock rewriting.
+		for (let at = T0; at < cutoff; at += 3600000) {
+			if (at !== lastHour)
+				await sql.exec(
+					"INSERT OR IGNORE INTO jobs VALUES(?,?)",
+					`hourly-${at}`,
+					"{}",
+				);
+		}
+		for (let at = T0; at <= cutoff; at += DAY)
+			for (const product of ["BTC-USD", "ETH-USD"]) {
+				await sql.exec(
+					"INSERT OR IGNORE INTO jobs VALUES(?,?)",
+					`daily-${product}-${at}`,
+					"{}",
+				);
+			}
+		assert.equal(
+			(await call(mf, "wake", { at: cutoff - 100 })).body.error,
+			"MARK_WINDOW_EXPIRED",
+		);
+		const report = await ok(mf, "assess", { checkpoint: 30 });
+		assert.equal(report.result.daily.expected, 60);
+		assert.deepEqual(report.result.openInventory.p7, before.ledger.portfolios);
+		const frozenRows = await sql.exec(
+			"SELECT body FROM checkpoint_parts WHERE checkpoint=30 ORDER BY part",
+		);
+		const frozen = JSON.parse(frozenRows.map((row) => row.body).join(""));
+		assert.equal(frozen.marks.slots[lastHour].phase, "requested");
+		assert.equal(frozen.marks.slots[lastHour].observation, null);
+		const capture = await sql.exec(
+			"SELECT status FROM requests WHERE id=?",
+			`hourly-${lastHour}-BTC-USD`,
+		);
+		assert.equal(capture[0].status, "CAPTURED");
+		const receipt = await sql.exec(
+			"SELECT body FROM journal WHERE command_id=?",
+			`capture-hourly-${lastHour}-BTC-USD`,
+		);
+		assert.ok(JSON.parse(receipt[0].body).recordedAt > cutoff);
+		await ok(mf, "wake", { at: cutoff + DAY });
+		const settled = await sql.exec(
+			"SELECT body FROM jobs WHERE id=?",
+			`hourly-${lastHour}`,
+		);
+		assert.equal(
+			JSON.parse(settled[0].body).result.unavailable,
+			"MISSED_MARK_WINDOW",
+		);
+		assert.deepEqual(await ok(mf, "assess", { checkpoint: 30 }), report);
+	} finally {
+		await mf.dispose();
+		await rm(path, { recursive: true, force: true });
+	}
+});

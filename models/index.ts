@@ -515,6 +515,7 @@ export type { P7ShadowAuthority, P7ShadowPhase } from "./p7-shadow-lifecycle.js"
 export {
   applyP7Shadow,
   initializeP7Shadow,
+  isP7ShadowRiskPolicy,
   P7_DAY,
   P7_HOUR,
   P7_PRODUCTS,

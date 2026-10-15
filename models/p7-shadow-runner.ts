@@ -39,6 +39,7 @@ import { planP7Pricing } from "./p7-prospective-pricing.js";
 import { evaluateP7PricingCommitClock } from "./p7-prospective-pricing-commit.js";
 import {
 	planTargetExposure,
+	TARGET_EXPOSURE_MIN_ABSOLUTE_CAP,
 	type TargetExposureCandle,
 } from "./target-exposure.js";
 export const P7_PRODUCTS = ["BTC-USD", "ETH-USD"] as const;
@@ -554,3 +555,22 @@ export function planP7ShadowDailyRecovery(
 }
 export const hasP7InterruptedAdmission = (s: P7ShadowProjection): boolean =>
 	Object.values(s.ledger.slots).some((slot) => slot.phase === "admitted");
+
+/** Experiment policy: these caps and cooldown must never alter target economics. */
+export function isP7ShadowRiskPolicy(config: {
+	maxOrderNotional: number;
+	maxPositionNotional: number;
+	maxGrossExposure: number;
+	cooldownMs: number;
+}): boolean {
+	return (
+		config.cooldownMs === 0 &&
+		[
+			config.maxOrderNotional,
+			config.maxPositionNotional,
+			config.maxGrossExposure,
+		].every(
+			(cap) => Number.isFinite(cap) && cap >= TARGET_EXPOSURE_MIN_ABSOLUTE_CAP,
+		)
+	);
+}
