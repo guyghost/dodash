@@ -99,7 +99,8 @@ node --test docs/analysis/p7-prospective-campaign-safety-store.test.mjs
 
 Le futur runner doit appeler RECOVER_LOCAL au bootstrap et CHECK_LOCAL_SAFETY
 sur timer. Une réouverture SQLite peut être une seconde connexion en plein I/O :
-elle ne déclenche pas toute seule une suspension. Aucun runner/timer livré.
+elle ne déclenche pas toute seule une suspension. Le runner prospectif autorisé
+n'est pas livré ; un runner Worker de préparation locale est décrit ci-dessous.
 Suspension et arrêt sont sticky ; diagnostic/marks possibles dans la fenêtre,
 pas de vente ni reprise automatique. DD >50 % est échantillonné, pas un verdict.
 
@@ -158,6 +159,26 @@ node --test docs/analysis/p7-prospective-joint-marks.test.mjs
 node --test docs/analysis/p7-prospective-event-marks.test.mjs docs/analysis/p7-prospective-assessment.test.mjs
 pnpm --filter @dodash/models test -- p7-prospective-assessment.test.ts
 ```
+
+### Runner Worker / SQLite / R2 — préparation locale
+
+`apps/p7-shadow-collector/` fournit un Durable Object SQLite par campagne,
+des alarmes locales, des captures durables et une outbox R2. Le contrat est
+`models/p7-shadow-runner.md`. Les tests utilisent le vrai workerd, SQLite et
+R2, avec une source fixture et sans accès fournisseur. Les slots daily, B&H,
+marks horaires/après fill/final et rapports figés sont branchés localement.
+
+Ce runner conserve `LOCAL_PREPARATION` et `SYNTHETIC_LOCAL_PREPARATION`.
+`/start` refuse toujours une activation prospective ; les configurations
+désactivent aussi les fixtures par défaut. Aucun profil réel, T0, ressource
+distante ou campagne n'est créé. Les APIs de fixtures ne constituent pas
+une authentification opérateur distante.
+
+Depuis la racine, `npm test` inclut les tests du collector ; `npm run
+test:runtime` vérifie le probe et le SDK paper. Les tests runtime nécessitent
+des ports loopback locaux. Le calendrier complet de 180 jours est testé,
+mais la charge économique complète sur 180 jours sous workerd reste à mesurer.
+Les hashes/R2 ne constituent pas un anchor indépendant.
 
 RECOVER_LOCAL suspend aussi sur une requête B&H sans réponse ; aucun refetch
 implicite. Le collector réel doit encore être implémenté/autorisé, et le profil

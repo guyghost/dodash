@@ -2,6 +2,8 @@ packages:
   - models
   - packages/*
   - apps/*
+# Keep installs and script runners on the project's existing node_modules/.pnpm layout.
+enableGlobalVirtualStore: false
 overrides:
   # Patch undici advisories without changing either transitive major version.
   "undici@>=7 <8": 7.29.1
