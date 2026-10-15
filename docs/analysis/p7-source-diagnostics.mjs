@@ -1,6 +1,17 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// JSON objects are unordered; array position remains part of the archived value.
+const canonicalJson = (value) => {
+	if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+	if (value !== null && typeof value === "object")
+		return `{${Object.keys(value)
+			.sort()
+			.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+			.join(",")}}`;
+	return JSON.stringify(value);
+};
 export const aggregateSourceDiagnostics = (archives) => {
 	const runs = new Map();
 	const conflicts = [];
@@ -31,7 +42,7 @@ export const aggregateSourceDiagnostics = (archives) => {
 			const previous = runs.get(value.runId);
 			if (previous) {
 				previous.files.push(path);
-				if (JSON.stringify(previous.report) !== JSON.stringify(value))
+				if (canonicalJson(previous.report) !== canonicalJson(value))
 					conflicts.push({ runId: value.runId, file: path });
 			} else
 				runs.set(value.runId, {

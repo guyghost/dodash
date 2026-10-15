@@ -6,7 +6,7 @@ Status: normative offline qualification contract; candidate only, never a frozen
 
 This lot adds a pure qualification projection, not an execution workflow. No network, actor, ledger transition, fill, or LLM is permitted. Existing `evaluateP7ExecutionBook` remains the state-independent execution evidence authority. Important collection workflow remains `marketSourceProbeMachine`.
 
-Input is an archived response envelope: product identity, URL ending `/products/{product}/book?level=2`, HTTP status or explicit timeout, requestedAt, receivedAt, raw body, explicit clock verification, cache verification and product metadata. Raw UTF-8 body SHA-256 is computed and retained, including rejected evidence. Source time is read only from book `time`; receipt time never substitutes for it.
+Input is an archived response envelope: product identity, URL ending `/products/{product}/book?level=2`, HTTP status or explicit timeout, requestedAt, receivedAt, raw body, explicit clock verification, cache verification and product metadata. Raw UTF-8 body SHA-256 is computed and retained, including rejected evidence. Source time is read only from book `time`; receipt time never substitutes for it. The timestamp must be timezone-qualified RFC3339 (Z or an explicit numeric offset), with valid Gregorian calendar date and clock/offset fields. Impossible dates, timezone-less values and alternate Date.parse formats reject rather than normalize. Fractional seconds may retain the source precision; the qualified instant uses epoch milliseconds.
 
 Sequence is captured from the raw JSON decimal token before numeric parsing, with one unique top-level sequence field, 1–64 canonical decimal digits. Unsafe JSON numbers must never round the sequence. String prices and aggregated quantities are retained in original order alongside numeric P7 projections; no sorting, quantity multiplication by num-orders or ticker substitution occurs.
 
@@ -16,7 +16,7 @@ Qualification first rejects transport status (429, timeout, non-200), malformed 
 
 ## Archived diagnostic aggregation
 
-Read existing completed protocol market-source-probe-v1 reports only; deduplicate by runId, distinguish conflicting duplicates, classify observations by provider/product/kind/outcome, retain source file provenance. Candle coverage and diagnostic price kinds are reported separately. Last trade ticker never qualifies as L2 evidence. Report observed manual/cron trigger evidence only if explicit archived trigger exists; absent cron evidence is UNKNOWN, not zero scheduled executions. No new collection is authorized.
+Read existing completed protocol market-source-probe-v1 reports only; deduplicate by runId using recursive JSON-value equality (object key order is irrelevant, array order is significant), distinguish conflicting duplicates, classify observations by provider/product/kind/outcome, retain source file provenance. Candle coverage and diagnostic price kinds are reported separately. Last trade ticker never qualifies as L2 evidence. Report observed manual/cron trigger evidence only if explicit archived trigger exists; absent cron evidence is UNKNOWN, not zero scheduled executions. No new collection is authorized.
 
 ## Official wire sources
 

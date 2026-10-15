@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { qualifyCoinbaseL2 } from "../src/coinbase-l2.js";
+
 const close = Date.UTC(2026, 9, 15);
 const scope = {
 	productId: "BTC-USD" as const,
@@ -59,6 +60,54 @@ describe("offline Coinbase Exchange L2", () => {
 			expect((await qualifyCoinbaseL2({ ...f, ...patch })).qualified).toBe(
 				false,
 			);
+	});
+	it("rejects malformed source timestamps even when envelope matches Date.parse normalization", async () => {
+		for (const time of [
+			"2026-02-30T00:00:00.000Z",
+			"2025-02-29T00:00:00Z",
+			"2026-10-15T00:00:00.050",
+			"2026-10-15 00:00:00.050Z",
+			"2026-10-15T24:00:00Z",
+			"2026-10-15T00:00:00+24:00",
+			"2026-10-15T00:00:00+01:60",
+			"2026-10-15T00:00:00.Z",
+			"2026-10-15T00:00:00.050+0200",
+			"2026-10-15T00:00:60Z",
+		]) {
+			const f = input();
+			const observedAt = Date.parse(time);
+			const instant = Number.isFinite(observedAt) ? observedAt : close + 50;
+			const result = await qualifyCoinbaseL2({
+				...f,
+				scope: {
+					...scope,
+					campaignStartAt: instant - 100,
+					candleClosedAt: instant - 100,
+					intentPersistedAt: instant - 99,
+					campaignEndAt: instant + 86400000,
+				},
+				requestedAt: instant - 1,
+				receivedAt: instant + 1,
+				rawBody: f.rawBody.replace(new Date(close + 50).toISOString(), time),
+			});
+			expect(result.qualified, time).toBe(false);
+			expect(result.sourceObservedAt, time).toBeNull();
+		}
+	});
+	it("accepts valid explicit-offset timestamps and source fractional precision", async () => {
+		for (const time of [
+			"2026-10-15T00:00:00.050Z",
+			"2026-10-15T02:00:00.050+02:00",
+			"2026-10-14T19:00:00.050000-05:00",
+		]) {
+			const f = input();
+			const result = await qualifyCoinbaseL2({
+				...f,
+				rawBody: f.rawBody.replace(new Date(close + 50).toISOString(), time),
+			});
+			expect(result.qualified, time).toBe(true);
+			expect(result.sourceObservedAt).toBe(close + 50);
+		}
 	});
 	it("rejects duplicate keys and nested sequence ambiguity", async () => {
 		for (const body of [

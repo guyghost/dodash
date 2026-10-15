@@ -130,6 +130,46 @@ const side = (v: unknown): Tuple[] => {
 		return [r[0], r[1], r[2]];
 	});
 };
+/** Validate calendar fields before parsing: Date.parse otherwise normalizes invalid dates. */
+const sourceTimestamp = (value: unknown): number | null => {
+	if (typeof value !== "string") return null;
+	const match =
+		/^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|([+-])(\d{2}):(\d{2}))$/.exec(
+			value,
+		);
+	if (!match) return null;
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	const day = Number(match[3]);
+	const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+	const monthDays = [
+		31,
+		leap ? 29 : 28,
+		31,
+		30,
+		31,
+		30,
+		31,
+		31,
+		30,
+		31,
+		30,
+		31,
+	];
+	if (
+		month < 1 ||
+		month > 12 ||
+		day < 1 ||
+		day > monthDays[month - 1]! ||
+		Number(match[4]) > 23 ||
+		Number(match[5]) > 59 ||
+		Number(match[6]) > 59 ||
+		(match[7] !== undefined && (Number(match[8]) > 23 || Number(match[9]) > 59))
+	)
+		return null;
+	const instant = Date.parse(value);
+	return Number.isFinite(instant) ? instant : null;
+};
 /** Pure offline candidate evidence. HTTP Date/client no-store never establish cache or clock proof. */
 export const qualifyCoinbaseL2 = async (
 	input: CoinbaseL2Input,
@@ -174,17 +214,14 @@ export const qualifyCoinbaseL2 = async (
 			min_market_funds: p.min_market_funds as string,
 		};
 		const wire = { bids: side(json.bids), asks: side(json.asks) };
-		const sourceObservedAt =
-			typeof json.time === "string" ? Date.parse(json.time) : NaN;
+		const sourceObservedAt = sourceTimestamp(json.time);
 		const book: Book = {
 			productId: input.scope.productId,
 			sourceProfileId: input.scope.sourceProfileId,
 			cacheStatus: input.cacheStatus,
 			requestedAt: input.requestedAt,
 			receivedAt: input.receivedAt,
-			sourceObservedAt: Number.isFinite(sourceObservedAt)
-				? sourceObservedAt
-				: null,
+			sourceObservedAt,
 			sequence,
 			bids: wire.bids.map(([price, quantity]) => ({
 				price: Number(price),
@@ -204,9 +241,7 @@ export const qualifyCoinbaseL2 = async (
 		});
 		return {
 			...base,
-			sourceObservedAt: Number.isFinite(sourceObservedAt)
-				? sourceObservedAt
-				: null,
+			sourceObservedAt,
 			product,
 			wire,
 			book,

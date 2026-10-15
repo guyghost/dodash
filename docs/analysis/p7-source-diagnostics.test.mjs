@@ -1,6 +1,7 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
+import { test } from "node:test";
 import { aggregateSourceDiagnostics } from "./p7-source-diagnostics.mjs";
+
 const report = {
 	protocol: "market-source-probe-v1",
 	phase: "completed",
@@ -103,4 +104,57 @@ test("explicit scheduled provenance is counted when archive is consistent", () =
 	]);
 	assert.equal(r.cronEvidence.status, "OBSERVED");
 	assert.equal(r.cronEvidence.completedObservedRuns, 1);
+});
+
+const reverseKeys = (value) =>
+	Array.isArray(value)
+		? value.map(reverseKeys)
+		: value !== null && typeof value === "object"
+			? Object.fromEntries(
+					Object.entries(value)
+						.reverse()
+						.map(([key, child]) => [key, reverseKeys(child)]),
+				)
+			: value;
+test("duplicate JSON object key order is irrelevant at every nesting level", () => {
+	const result = aggregateSourceDiagnostics([
+		{ path: "original", value: report },
+		{
+			path: "reordered",
+			value: JSON.parse(JSON.stringify(reverseKeys(report))),
+		},
+	]);
+	assert.equal(result.valid, true);
+	assert.equal(result.duplicateFiles, 1);
+	assert.equal(result.groups[0].observations, 1);
+});
+test("duplicate array order and nested value differences remain conflicts", () => {
+	const twoRows = {
+		...report,
+		observations: [
+			...report.observations,
+			{ ...report.observations[0], outcome: "HTTP_ERROR" },
+		],
+	};
+	for (const changed of [
+		{ ...twoRows, observations: [...twoRows.observations].reverse() },
+		{
+			...twoRows,
+			observations: [
+				{
+					...twoRows.observations[0],
+					request: { ...twoRows.observations[0].request, product: "ETH-USD" },
+				},
+				twoRows.observations[1],
+			],
+		},
+	]) {
+		const result = aggregateSourceDiagnostics([
+			{ path: "original", value: twoRows },
+			{ path: "changed", value: changed },
+		]);
+		assert.equal(result.valid, false);
+		assert.equal(result.conflictingDuplicates.length, 1);
+		assert.equal(result.groups.length, 0);
+	}
 });
