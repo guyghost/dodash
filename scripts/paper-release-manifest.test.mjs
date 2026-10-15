@@ -1,18 +1,19 @@
-import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
-	mkdtempSync,
-	mkdirSync,
-	writeFileSync,
-	readFileSync,
-	copyFileSync,
-	rmSync,
 	appendFileSync,
+	copyFileSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { test } from "node:test";
+
 const hash = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
 const apps = ["agent", "mcp-market-data", "dashboard-api", "dashboard"];
 function fixture() {
@@ -80,6 +81,11 @@ function fixture() {
 		writeFileSync(join(dir, "index.html"), "<html>snapshot</html>");
 		writeFileSync(join(dir, "app.js"), "console.log(1)");
 	}
+	for (const path of ["app.js", "index.html"])
+		outputs.push({
+			path: "dashboard/assets/client/" + path,
+			sha256: hash(join(snapshot, path)),
+		});
 	const assets = {
 		sourceDirectory: "./dist/client",
 		snapshotDirectory: "dashboard/assets/client",
@@ -237,4 +243,56 @@ check(
 	"removed current ignored asset rejects",
 	(f) => rmSync(join(f.root, "apps/dashboard/dist/client/app.js")),
 	"ASSET_SOURCE_DRIFT",
+);
+
+check(
+	"unproven extra worker bundle rejects",
+	(f) => {
+		writeFileSync(join(f.bundles, "agent/extra.js"), "unproven");
+	},
+	"BUNDLE_TREE_MISMATCH",
+);
+check(
+	"missing worker bundle rejects",
+	(f) => {
+		rmSync(join(f.bundles, "agent/worker.js"));
+	},
+	"BUNDLE_TREE_MISMATCH",
+);
+check(
+	"nested log basename remains payload",
+	(f) => {
+		writeFileSync(join(f.bundles, "agent/wrangler.log"), "unproven");
+	},
+	"BUNDLE_TREE_MISMATCH",
+);
+check("root build log is allowed", (f) => {
+	writeFileSync(join(f.bundles, "wrangler.log"), "diagnostics");
+});
+for (const path of [
+	"../outside.js",
+	"/outside.js",
+	"agent/../outside.js",
+	"agent//worker.js",
+]) {
+	check(
+		"unsafe provenance path rejects " + path,
+		(f) => {
+			const p = join(f.bundles, "paper-build-provenance.json");
+			const v = JSON.parse(readFileSync(p));
+			v.outputs.push({ path, sha256: "0".repeat(64) });
+			writeFileSync(p, JSON.stringify(v));
+		},
+		"INVALID_BUNDLE_PROVENANCE",
+	);
+}
+check(
+	"duplicate provenance path rejects",
+	(f) => {
+		const p = join(f.bundles, "paper-build-provenance.json");
+		const v = JSON.parse(readFileSync(p));
+		v.outputs.push(v.outputs[0]);
+		writeFileSync(p, JSON.stringify(v));
+	},
+	"INVALID_BUNDLE_PROVENANCE",
 );

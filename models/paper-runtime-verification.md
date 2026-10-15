@@ -22,3 +22,6 @@ A runtime assertion is evidence only when run under workerd with genuine SDK/SQL
 
 ## Static asset amendment (approved by root)
 Dashboard client HTML/JS/CSS are release payloads alongside Worker bundles. Preparation snapshots the exact nonempty paper-config asset directory (including index.html), fingerprints relative paths and bytes, and binds snapshot/source directory to the paper config hash. Revalidation rejects snapshot mutations, additions or omissions and current generated-source drift, because unchanged paper config still references the current dist/client directory. No deployment is authorized.
+
+## Complete bundle provenance amendment
+Revalidation requires the complete candidate payload tree to match provenance.outputs by canonical relative path and SHA-256. Added, missing, duplicated or altered payload entries reject the candidate. Only the root paper-build-provenance.json metadata and root wrangler.log are outside this payload tree; nested files with those basenames are payloads. Asset snapshots remain both bundle payloads and independently validated asset evidence.

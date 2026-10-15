@@ -1,14 +1,15 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-	readFileSync,
-	readdirSync,
-	writeFileSync,
-	mkdirSync,
-	existsSync,
 	cpSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
 } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { join, resolve, basename } from "node:path";
+import { basename, join, resolve } from "node:path";
+
 const root = resolve(import.meta.dirname, "..");
 const bundles = process.argv[2] && resolve(process.argv[2]);
 const output = process.argv[3] && resolve(process.argv[3]);
@@ -81,6 +82,10 @@ const assetTree = (dir) => {
 	}));
 };
 const provenancePath = join(bundles, "paper-build-provenance.json");
+const payloadTree = () =>
+	files(bundles)
+		.map((p) => p.slice(bundles.length + 1))
+		.filter((p) => p !== "paper-build-provenance.json" && p !== "wrangler.log");
 if (process.argv.includes("--prepare")) {
 	if (existsSync(bundles))
 		throw new Error("BUNDLE_ROOT_EXISTS: refuse stale or unrelated outputs");
@@ -138,9 +143,10 @@ if (process.argv.includes("--prepare")) {
 					configSha256: hash(dashboardConfigPath),
 					files: assetTree(assetSnapshot),
 				},
-				outputs: files(bundles)
-					.filter((p) => !p.endsWith("wrangler.log"))
-					.map((p) => ({ path: p.slice(bundles.length + 1), sha256: hash(p) })),
+				outputs: payloadTree().map((path) => ({
+					path,
+					sha256: hash(join(bundles, path)),
+				})),
 			},
 			null,
 			2,
@@ -169,6 +175,25 @@ if (
 	JSON.stringify(provenance.assets.files)
 )
 	throw new Error("ASSET_SOURCE_DRIFT");
+if (!Array.isArray(provenance.outputs))
+	throw new Error("INVALID_BUNDLE_PROVENANCE");
+const outputPaths = provenance.outputs.map((item) => {
+	if (
+		!item ||
+		typeof item.path !== "string" ||
+		item.path
+			.split("/")
+			.some((part) => !part || part === "." || part === "..") ||
+		item.path.includes("\\") ||
+		!/^[a-f0-9]{64}$/.test(item.sha256)
+	)
+		throw new Error("INVALID_BUNDLE_PROVENANCE");
+	return item.path;
+});
+if (new Set(outputPaths).size !== outputPaths.length)
+	throw new Error("INVALID_BUNDLE_PROVENANCE");
+if (JSON.stringify(payloadTree()) !== JSON.stringify([...outputPaths].sort()))
+	throw new Error("BUNDLE_TREE_MISMATCH");
 for (const item of provenance.outputs)
 	if (hash(join(bundles, item.path)) !== item.sha256)
 		throw new Error("BUNDLE_FINGERPRINT_MISMATCH");
