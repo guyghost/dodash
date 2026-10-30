@@ -56,6 +56,7 @@ import {
 } from "./ai-trend-producer.js";
 import {
 	collectRetrospectiveTrendSignals,
+	collectRetrospectiveTrendSignalsV2,
 	fetchCandlesViaMarketService,
 	parseRetrospectiveCommand,
 	type RetrospectiveCollectReport,
@@ -346,6 +347,51 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		this.ensureAiTrendColumn("collection", "TEXT NOT NULL DEFAULT 'SHADOW'");
 		this.ensureAiTrendColumn("question_version", "TEXT NOT NULL DEFAULT 'v1'");
 		this.ensureAiTrendColumn("threshold_bps", "REAL");
+		// §9 : la PK doit distinguer v1/v2 — reconstruction idempotente.
+		this.migrateAiTrendSignalsPrimaryKey();
+	}
+
+	/**
+	 * Reconstruction idempotente de ai_trend_signals avec la PK
+	 * (product_id, candle_closed_at, question_version) : sans elle, une
+	 * ligne v2 d'une même bougie écraserait (ou serait droppée face à) la
+	 * ligne v1 — l'A/B §9 exigerait des lignes distinctes.
+	 */
+	private migrateAiTrendSignalsPrimaryKey(): void {
+		const pk = this.ctx.storage.sql
+			.exec("PRAGMA table_info(ai_trend_signals)")
+			.toArray() as unknown as readonly { name: string; pk: number }[];
+		const pkColumns = pk
+			.filter((column) => column.pk > 0)
+			.map((column) => column.name)
+			.sort();
+		if (pkColumns.length === 3 && pkColumns.includes("question_version")) {
+			return;
+		}
+		this.ctx.storage.sql.exec(`
+      CREATE TABLE ai_trend_signals_rekeyed (
+        product_id TEXT NOT NULL,
+        candle_closed_at INTEGER NOT NULL,
+        observed_at INTEGER NOT NULL,
+        bias TEXT NOT NULL,
+        probability REAL NOT NULL,
+        provider TEXT NOT NULL,
+        latency_ms INTEGER,
+        input_tokens INTEGER,
+        collection TEXT NOT NULL DEFAULT 'SHADOW',
+        question_version TEXT NOT NULL DEFAULT 'v1',
+        threshold_bps REAL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (product_id, candle_closed_at, question_version)
+      )
+    `);
+		this.ctx.storage.sql.exec(
+			"INSERT OR IGNORE INTO ai_trend_signals_rekeyed SELECT product_id, candle_closed_at, observed_at, bias, probability, provider, latency_ms, input_tokens, collection, question_version, threshold_bps, created_at FROM ai_trend_signals",
+		);
+		this.ctx.storage.sql.exec("DROP TABLE ai_trend_signals");
+		this.ctx.storage.sql.exec(
+			"ALTER TABLE ai_trend_signals_rekeyed RENAME TO ai_trend_signals",
+		);
 	}
 
 	/** Migration additive : colonne de ai_trend_signals (§7.A, §9). */
@@ -1988,7 +2034,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         ${meta.latencyMs}, ${meta.inputTokens ?? null}, ${collection},
         ${questionVersion}, ${thresholdBps}, ${now}
       )
-      ON CONFLICT(product_id, candle_closed_at) DO UPDATE SET
+      ON CONFLICT(product_id, candle_closed_at, question_version) DO UPDATE SET
         observed_at = excluded.observed_at,
         bias = excluded.bias,
         probability = excluded.probability,
@@ -2046,6 +2092,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				const rows = this.sql<{ candle_closed_at: number; collection: string }>`
           SELECT candle_closed_at, collection FROM ai_trend_signals
           WHERE product_id = ${productId} AND candle_closed_at BETWEEN ${from} AND ${to}
+            AND question_version = 'v1'
         `;
 				const map = new Map<number, AiTrendCollection>();
 				for (const row of rows) {
@@ -2060,6 +2107,70 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				console.log(JSON.stringify({ agentId: this.name, ...entry })),
 		});
 		return { ok: true, report };
+	}
+
+	/** Branchement v2 du collecteur rétrospectif (§9) : une seule fenêtre
+	 * marché pour tout le lot, features par bougie de référence. */
+	private async collectRetrospectiveV2(
+		command: {
+			productId: string;
+			timeframe: string;
+			candleLimit: number;
+			force: boolean;
+		},
+		scope: {
+			productId: string;
+			timeframeMs: number;
+			from: number;
+			to: number;
+			gatewayKey: string;
+			loadExisting: (
+				questionVersion: "v1" | "v2",
+			) => Promise<ReadonlyMap<number, AiTrendCollection>>;
+		},
+	): Promise<RetrospectiveCollectReport> {
+		const spanCandles = (scope.to - scope.from) / scope.timeframeMs;
+		const limit = Math.min(
+			300,
+			spanCandles + Math.max(command.candleLimit, 70) + 2,
+		);
+		return collectRetrospectiveTrendSignalsV2({
+			productId: scope.productId,
+			timeframe: command.timeframe,
+			timeframeMs: scope.timeframeMs,
+			candleLimit: command.candleLimit,
+			fromCandleClosedAt: scope.from,
+			toCandleClosedAt: scope.to,
+			force: command.force,
+			fetchWindowCandles: () =>
+				fetchCandlesViaMarketService(
+					this.env.MARKET_DATA,
+					this.env.INTERNAL_SERVICE_TOKEN,
+					{
+						productId: scope.productId,
+						timeframe: command.timeframe,
+						limit,
+						candleClosedAt: scope.to,
+						timeframeMs: scope.timeframeMs,
+					},
+				),
+			decide: (request) =>
+				requestGatewayDecision("jev", request, {
+					gatewayKey: scope.gatewayKey,
+				}),
+			loadExisting: async () => scope.loadExisting("v2"),
+			persist: (signal, meta, collection, questionVersion, thresholdBps) =>
+				this.persistAiTrendSignal(
+					signal,
+					meta,
+					collection,
+					questionVersion,
+					thresholdBps,
+				),
+			nowMs: Date.now,
+			log: (entry) =>
+				console.log(JSON.stringify({ agentId: this.name, ...entry })),
+		});
 	}
 
 	/**

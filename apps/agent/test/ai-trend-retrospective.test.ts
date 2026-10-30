@@ -5,6 +5,7 @@ import { AI_TREND_QUESTION } from "../src/ai-trend-producer.js";
 import {
 	AI_TREND_RETROSPECTIVE_MAX_CANDLES,
 	collectRetrospectiveTrendSignals,
+	collectRetrospectiveTrendSignalsV2,
 	fetchCandlesViaMarketService,
 	parseRetrospectiveCommand,
 	planRetrospectiveCandles,
@@ -78,6 +79,7 @@ describe("ai trend retrospective — command parsing", () => {
 				toCandleClosedAt: 24 * HOUR,
 				candleLimit: 100,
 				force: false,
+				questionVersion: "v1",
 			},
 		});
 	});
@@ -282,5 +284,102 @@ describe("ai trend retrospective — collection", () => {
 			deps({ fromCandleClosedAt: 23 * HOUR + 1 }),
 		);
 		expect(report.planError).toBe("MISALIGNED_WINDOW");
+	});
+});
+
+describe("ai trend retrospective — collecteur v2 (§9)", () => {
+	const HOUR = 3_600_000;
+	const candle = (start: number, close = 100): Candle => ({
+		start,
+		open: close,
+		high: close * 1.001,
+		low: close * 0.999,
+		close,
+		volume: 10,
+	});
+	// 70+ bougies par bougie de référence : une fenêtre partagée suffit.
+	const BASE = 300 * HOUR;
+	const windowCandles = Array.from({ length: 130 }, (_, i) =>
+		candle(BASE - (129 - i) * HOUR, 100 + i * 0.1),
+	);
+
+	it("collecte tout le lot avec une seule fenêtre marché", async () => {
+		const fetchWindow = vi.fn(
+			async () => ({ ok: true, candles: windowCandles }) as const,
+		);
+		const persist = vi.fn();
+		const report = await collectRetrospectiveTrendSignalsV2({
+			productId: "BTC-USD",
+			timeframe: "ONE_HOUR",
+			timeframeMs: HOUR,
+			candleLimit: 100,
+			fromCandleClosedAt: BASE + HOUR,
+			toCandleClosedAt: BASE + 2 * HOUR,
+			force: false,
+			fetchWindowCandles: fetchWindow,
+			decide: async () => ({
+				kind: "ANSWERED",
+				answers: [
+					{ kind: "PREDICATE", id: "up15", probability: 0.7 },
+					{ kind: "PREDICATE", id: "down15", probability: 0.1 },
+				],
+				latencyMs: 80,
+			}),
+			loadExisting: async () => new Map(),
+			persist,
+			nowMs: () => 42,
+			log: () => {},
+		});
+		expect(report.collected).toBe(2);
+		expect(fetchWindow).toHaveBeenCalledTimes(1);
+		const [signal, , collection, questionVersion, thresholdBps] =
+			persist.mock.calls[0] ?? [];
+		expect(signal.bias).toBe("UP");
+		expect(collection).toBe("RETROSPECTIVE");
+		expect(questionVersion).toBe("v2");
+		expect(thresholdBps).toBeGreaterThanOrEqual(1);
+	});
+
+	it("compte EMPTY quand une bougie de référence manque de recul", async () => {
+		const report = await collectRetrospectiveTrendSignalsV2({
+			productId: "BTC-USD",
+			timeframe: "ONE_HOUR",
+			timeframeMs: HOUR,
+			candleLimit: 100,
+			fromCandleClosedAt: 24 * HOUR,
+			toCandleClosedAt: 24 * HOUR,
+			force: false,
+			fetchWindowCandles: async () => ({
+				ok: true,
+				candles: windowCandles.slice(-10),
+			}),
+			decide: async () => ({ kind: "REFUSED", refusedIds: ["up15"] }),
+			loadExisting: async () => new Map(),
+			persist: () => {},
+			nowMs: () => 42,
+			log: () => {},
+		});
+		expect(report.empty).toBe(1);
+		expect(report.collected).toBe(0);
+	});
+
+	it("retombe sur unavailable quand la fenêtre marché échoue", async () => {
+		const report = await collectRetrospectiveTrendSignalsV2({
+			productId: "BTC-USD",
+			timeframe: "ONE_HOUR",
+			timeframeMs: HOUR,
+			candleLimit: 100,
+			fromCandleClosedAt: 24 * HOUR,
+			toCandleClosedAt: 26 * HOUR,
+			force: false,
+			fetchWindowCandles: async () =>
+				({ ok: false, code: "MARKET_FETCH_FAILED" }) as const,
+			decide: async () => ({ kind: "REFUSED", refusedIds: [] }),
+			loadExisting: async () => new Map(),
+			persist: () => {},
+			nowMs: () => 42,
+			log: () => {},
+		});
+		expect(report.unavailable).toBe(3);
 	});
 });

@@ -76,7 +76,7 @@ export const AI_TREND_SIGNALS_SCHEMA = `
     question_version TEXT NOT NULL DEFAULT 'v1',
     threshold_bps REAL,
     created_at INTEGER NOT NULL,
-    PRIMARY KEY (product_id, candle_closed_at)
+    PRIMARY KEY (product_id, candle_closed_at, question_version)
   )
 `;
 

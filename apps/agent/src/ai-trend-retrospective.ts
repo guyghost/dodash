@@ -28,6 +28,7 @@ import {
 	type AiDecisionResult,
 	type AiTrendSignal,
 	buildRetrospectiveTrendState,
+	composeTrendFromBatteryV2,
 	type TrendStateBuild,
 } from "@dodash/models";
 import { z } from "zod";
@@ -35,8 +36,12 @@ import type { AiTrendCollection } from "./ai-trend-producer.js";
 import {
 	AI_TREND_DECISION_TIMEOUT_MS,
 	AI_TREND_QUESTION,
+	buildTrendQuestionsV2,
+	computeTrendFeaturesV2,
+	extractBatteryProbabilities,
 	resolveTrendFromAnswers,
 	runDecisionWithMachine,
+	type TrendPersistFn,
 	type TrendSignalMeta,
 } from "./ai-trend-producer.js";
 
@@ -360,6 +365,7 @@ export const retrospectiveCommandSchema = z.object({
 	toCandleClosedAt: z.number().int().nonnegative(),
 	candleLimit: z.number().int().min(10).max(300).default(100),
 	force: z.boolean().default(false),
+	questionVersion: z.enum(["v1", "v2"]).default("v1"),
 });
 
 export type RetrospectiveCommand = z.infer<typeof retrospectiveCommandSchema>;
@@ -369,4 +375,141 @@ export const parseRetrospectiveCommand = (
 ): RetrospectiveCommandResult => {
 	const parsed = retrospectiveCommandSchema.safeParse(input);
 	return parsed.success ? ok(parsed.data) : err({ code: "INVALID_REQUEST" });
+};
+
+export interface RetrospectiveCollectV2Deps {
+	readonly productId: string;
+	readonly timeframe: string;
+	readonly timeframeMs: number;
+	readonly candleLimit: number;
+	readonly fromCandleClosedAt: number;
+	readonly toCandleClosedAt: number;
+	readonly force: boolean;
+	/** Une seule fenêtre marché par lot : bougies closes ≤ to, reccueillies en amont. */
+	readonly fetchWindowCandles: () => Promise<HistoricalCandleFetch>;
+	readonly decide: (
+		request: AiDecisionRequest,
+		attempt: number,
+	) => Promise<AiDecisionResult>;
+	readonly loadExisting: () => Promise<ReadonlyMap<number, AiTrendCollection>>;
+	readonly persist: TrendPersistFn;
+	readonly nowMs: () => number;
+	readonly log: (entry: Record<string, unknown>) => void;
+}
+
+/**
+ * Collecteur rétrospectif v2 (§9) : une seule fenêtre marché pour tout le
+ * lot (features v2 = fonctions des bougies closes ≤ C, INV 15 — le filtre
+ * par bougie de référence exclut tout lookahead). Même politique de
+ * skip/force que la v1, par question_version.
+ */
+export const collectRetrospectiveTrendSignalsV2 = async (
+	deps: RetrospectiveCollectV2Deps,
+): Promise<RetrospectiveCollectReport> => {
+	const plan = planRetrospectiveCandles(
+		deps.fromCandleClosedAt,
+		deps.toCandleClosedAt,
+		deps.timeframeMs,
+	);
+	const counters = {
+		collected: 0,
+		skippedExisting: 0,
+		unavailable: 0,
+		empty: 0,
+		aborted: null as "LOOKAHEAD" | null,
+		planError: null as RetrospectivePlanError | null,
+	};
+	if (!plan.ok) {
+		deps.log({
+			event: "ai_trend_retrospective_rejected",
+			errorCode: plan.errorCode,
+			version: "v2",
+		});
+		return { ...counters, planError: plan.errorCode };
+	}
+	const existing = await deps.loadExisting();
+	const window = await deps.fetchWindowCandles();
+	if (!window.ok) {
+		deps.log({
+			event: "ai_trend_retrospective_unavailable",
+			code: window.code,
+			version: "v2",
+			batch: true,
+		});
+		return { ...counters, unavailable: plan.candles.length };
+	}
+	for (const candleClosedAt of plan.candles) {
+		const priorCollection = existing.get(candleClosedAt);
+		if (
+			priorCollection === "SHADOW" ||
+			(priorCollection === "RETROSPECTIVE" && !deps.force)
+		) {
+			counters.skippedExisting += 1;
+			continue;
+		}
+		const closed = window.candles.filter(
+			(candle) => candle.start + deps.timeframeMs <= candleClosedAt,
+		);
+		const features = await computeTrendFeaturesV2(deps.productId, closed);
+		if (features === null) {
+			counters.empty += 1;
+			continue;
+		}
+		const request: AiDecisionRequest = {
+			provider: "jev",
+			state: { json: features },
+			questions: buildTrendQuestionsV2(features.thresholdBps),
+			timeoutMs: AI_TREND_DECISION_TIMEOUT_MS,
+		};
+		const result = await runDecisionWithMachine(request, deps.decide);
+		if (result.kind !== "ANSWERED") {
+			counters.unavailable += 1;
+			deps.log({
+				event: "ai_trend_retrospective_unavailable",
+				candleClosedAt,
+				resultKind: result.kind,
+				version: "v2",
+			});
+			continue;
+		}
+		const battery = extractBatteryProbabilities(result.answers);
+		const trend =
+			battery === null
+				? null
+				: composeTrendFromBatteryV2(battery.up, battery.down);
+		if (trend === null) {
+			counters.unavailable += 1;
+			continue;
+		}
+		deps.persist(
+			{
+				kind: "AI_TREND",
+				productId: deps.productId,
+				candleClosedAt,
+				observedAt: deps.nowMs(),
+				bias: trend.bias,
+				probability: trend.probability,
+				provider: "jev",
+			},
+			result.inputTokens === undefined
+				? { latencyMs: result.latencyMs }
+				: { latencyMs: result.latencyMs, inputTokens: result.inputTokens },
+			"RETROSPECTIVE",
+			"v2",
+			features.thresholdBps,
+		);
+		counters.collected += 1;
+	}
+	deps.log({
+		event: "ai_trend_retrospective_batch",
+		productId: deps.productId,
+		collected: counters.collected,
+		skippedExisting: counters.skippedExisting,
+		unavailable: counters.unavailable,
+		empty: counters.empty,
+		aborted: counters.aborted,
+		version: "v2",
+		label: "RETROSPECTIVE_POSSIBLY_CONTAMINATED",
+	});
+	return { ...counters, planError: null };
 };
