@@ -183,6 +183,9 @@ importers:
       '@dodash/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@dodash/models':
+        specifier: workspace:*
+        version: link:../../models
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
