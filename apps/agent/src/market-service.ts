@@ -115,6 +115,8 @@ const fetchTickerPrice = async (
 	service: MarketService,
 	internalToken: string,
 	productId: ProductId,
+	/** Revue PR #27 (INV 1/4) : le ticker est épinglé à la source des bougies. */
+	pinnedSource?: "COINBASE" | "HYPERLIQUID" | "DYDX",
 ): Promise<Result<number, WorkflowError>> => {
 	let response: Response;
 	try {
@@ -124,7 +126,10 @@ const fetchTickerPrice = async (
 				authorization: `Bearer ${internalToken}`,
 				"content-type": "application/json",
 			},
-			body: JSON.stringify({ productId }),
+			body: JSON.stringify({
+				productId,
+				...(pinnedSource === undefined ? {} : { sources: [pinnedSource] }),
+			}),
 		});
 	} catch (caught) {
 		console.warn(
@@ -260,10 +265,19 @@ const fetchMarketSnapshotUnqualified = async (
 		// models/market-data-integrity.md §4.1 : point de branchement live —
 		// avant MARKET_DATA_READY, donc avant computingIndicators. Mapping
 		// des causes vers les codes fermés existants (table §3 du modèle).
+		// Revue PR #27 : le ticker est épinglé à la source des bougies du
+		// snapshot (INV 1/4 — jamais de snapshot multi-sources).
+		const pinnedSource =
+			parsed.data.source === "coinbase"
+				? "COINBASE"
+				: parsed.data.source === "hyperliquid"
+					? "HYPERLIQUID"
+					: "DYDX";
 		const ticker = await fetchTickerPrice(
 			service,
 			internalToken,
 			configuration.productId,
+			pinnedSource,
 		);
 		if (!ticker.ok) return ticker;
 		const integrity = validateMarketDataIntegrity(candles, duration, {
