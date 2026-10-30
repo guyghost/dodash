@@ -79,3 +79,24 @@ explicite de `decision-core.md` INV 5 et note datée `README.md` INV 8-9.
 | INV 10 : donnée postérieure à `C` rejetée (défaut bloquant) | `buildRetrospectiveTrendState ...` |
 | Aucun réseau dans `models/` | `performs no network access from models/` |
 | INV 7 : politique figée valide | `validateTrendPolicy ...` |
+
+## Revue de l'amendement du 2026-10-30 — question v2 (§9)
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE** (opérateur, « on y va »),
+motivé par le rapport ECE v1 (ECE 0.23-0.31, surconfiance ~94 % pour
+50-60 % de précision).
+
+- Composition pure dans `models/` (INV 17) : `composeTrendFromBatteryV2`
+  (argmax de trois événements exclusifs, tie-break UP > DOWN > NEUTRAL) et
+  `resolveVolScaledOutcome` (issue à seuil persisté, INV 16 ; θ = 0
+  retrouve la règle v1, égalité stricte → FLAT — limite attrapée par les
+  tests).
+- Features calculées uniquement sur bougies closes ≤ C (INV 15), via
+  `computeIndicators` du dépôt (zéro duplication d'indicateurs) ;
+  `regime`/`readability` sont télémétrie pure, jamais dans le signal.
+- Versionnement en base (`question_version`, `threshold_bps`, migrations
+  additives) ; A/B v1+v2 sur paper via `AI_TREND_V2` ; rapport ECE
+  stratifié par collection et version.
+- Limites acceptées : la v2 se juge sur les mêmes gates (SHADOW, jamais de
+  consommation) ; le collecteur rétrospectif v2 (features rejouables
+  historiquement) est un travail ultérieur.

@@ -285,3 +285,83 @@ export const buildRetrospectiveTrendState = (
 	}
 	return { ok: true, state: { json: { candles: kept } } };
 };
+
+/** §9 : coefficient du seuil vol-scalé (θ = k × vol15). */
+export const AI_TREND_THRESHOLD_K = 0.5;
+
+/** θ en bps à partir de la vol réalisée 15 min (bps) ; ≥ 1 bps. */
+export const resolveTrendThresholdBps = (volatility15Bps: number): number =>
+	Number.isFinite(volatility15Bps) && volatility15Bps > 0
+		? Math.max(1, AI_TREND_THRESHOLD_K * volatility15Bps)
+		: 1;
+
+export interface TrendBatteryOutcome {
+	readonly bias: AiTrendBias;
+	readonly probability: number;
+}
+
+/**
+ * Composition v2 (§9, INV 17) : trois événements mutuellement exclusifs —
+ * monter de θ, descendre de θ, ni l'un ni l'autre. pNeutral =
+ * clamp(1 − pUp − pDown) ; argmax avec tie-break UP > DOWN > NEUTRAL ;
+ * `probability` = la valeur maximale. Null si entrées hors [0, 1].
+ */
+export const composeTrendFromBatteryV2 = (
+	probabilityUp: number,
+	probabilityDown: number,
+): TrendBatteryOutcome | null => {
+	if (!isUnit(probabilityUp) || !isUnit(probabilityDown)) return null;
+	const pNeutral = Math.min(
+		1,
+		Math.max(0, 1 - probabilityUp - probabilityDown),
+	);
+	let bias: AiTrendBias = "NEUTRAL";
+	let probability = pNeutral;
+	if (probabilityUp >= probability && probabilityUp >= pNeutral) {
+		bias = "UP";
+		probability = probabilityUp;
+	}
+	if (probabilityDown > probability && probabilityDown >= pNeutral) {
+		bias = "DOWN";
+		probability = probabilityDown;
+	}
+	return { bias, probability };
+};
+
+const isUnit = (value: number): boolean =>
+	typeof value === "number" &&
+	Number.isFinite(value) &&
+	value >= 0 &&
+	value <= 1;
+
+/**
+ * Issue vol-scalée (§9, amendement de §8 pour les lignes v2) : le seuil θ
+ * est celui persisté à la production, jamais recalculé (INV 16).
+ * Null si entrées invalides.
+ */
+export const resolveVolScaledOutcome = (
+	referenceClose: number,
+	outcomeClose: number,
+	thresholdBps: number,
+): TrendOutcome | null => {
+	if (
+		!Number.isFinite(referenceClose) ||
+		referenceClose <= 0 ||
+		!Number.isFinite(outcomeClose) ||
+		outcomeClose <= 0 ||
+		!Number.isFinite(thresholdBps) ||
+		thresholdBps < 0
+	) {
+		return null;
+	}
+	const threshold = 1 + thresholdBps / 10_000;
+	if (thresholdBps > 0) {
+		if (outcomeClose >= referenceClose * threshold) return "UP";
+		if (outcomeClose <= referenceClose * (2 - threshold)) return "DOWN";
+		return "FLAT";
+	}
+	// θ = 0 : règle v1 — égalité stricte → FLAT.
+	if (outcomeClose > referenceClose) return "UP";
+	if (outcomeClose < referenceClose) return "DOWN";
+	return "FLAT";
+};

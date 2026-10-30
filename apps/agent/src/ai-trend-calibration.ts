@@ -13,8 +13,12 @@ import {
 	TIMEFRAME_MILLISECONDS,
 	type Timeframe,
 } from "@dodash/domain";
-import type { AiTrendBias, TrendOutcome } from "@dodash/models";
-import type { AiTrendCollection } from "./ai-trend-retrospective.js";
+import {
+	type AiTrendBias,
+	resolveVolScaledOutcome,
+	type TrendOutcome,
+} from "@dodash/models";
+import type { AiTrendCollection } from "./ai-trend-producer.js";
 
 export interface TrendSignalRow {
 	readonly productId: string;
@@ -23,6 +27,8 @@ export interface TrendSignalRow {
 	readonly bias: AiTrendBias;
 	readonly probability: number;
 	readonly collection: AiTrendCollection;
+	readonly questionVersion: string;
+	readonly thresholdBps: number | null;
 }
 
 export interface TrendOutcomeRow extends TrendSignalRow {
@@ -60,9 +66,13 @@ export const resolveTrendOutcomes = (
 		) {
 			return { ...row, outcome: "PENDING" };
 		}
-		if (outcomeClose > referenceClose) return { ...row, outcome: "UP" };
-		if (outcomeClose < referenceClose) return { ...row, outcome: "DOWN" };
-		return { ...row, outcome: "FLAT" };
+		// v1 : θ = 0 (égalité stricte → FLAT) ; v2 : θ persisté à la production (INV 16).
+		const outcome = resolveVolScaledOutcome(
+			referenceClose,
+			outcomeClose,
+			row.thresholdBps ?? 0,
+		);
+		return { ...row, outcome: outcome ?? "PENDING" };
 	});
 
 export type CalibrationCollection = AiTrendCollection | "ALL";

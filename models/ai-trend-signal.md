@@ -229,3 +229,54 @@ cadence de collecte reste celle des réveils du cycle.
     vides signalés ; échantillon vide refusé explicitement.
 - Jointure issue : `UP/DOWN/FLAT` selon les closes ; issue non close →
   `PENDING` ; stratification par `collection` dans le script de rapport.
+
+## 9. Amendement 2026-10-30 — question v2 (batterie d'événements)
+
+Le rapport ECE v1 (grille minute, 24 h, 766 signaux : ECE 0.23-0.31,
+précision ~50-60 % à confiance ~94 %) désigne trois défauts de design :
+question floue jugée par une issue précise, mur de bougies brutes,
+horizon désaligné. La v2 corrige les trois.
+
+### État v2 — vecteur de features
+
+Plus aucune bougie brute : ~15 champs typés calculés par des fonctions
+pures du dépôt (`computeIndicators` d'`indicators-prolog` + arithmétique
+simple) sur la fenêtre dédiée de la grille du signal — rendements
+multi-échelles (r1/r5/r15/r60 en %), vol réalisée (bps, 15/60 min), rsi14,
+distances EMA12/EMA26 (bps), distance aux extrêmes 60 min (bps), ratio de
+volume, session horaire. INV 15 : features calculées uniquement sur des
+bougies closes ≤ C (anti-lookahead d'entrée inchangé, INV 10).
+
+### Batterie v2 (un appel, questions parallèles)
+
+- `up15` / `down15` — PREDICATE : événements « close(C+h·D) ≥ close(C)×(1+θ) »
+  et « ≤ close(C)×(1−θ) », avec h = 15 (grille minute) et θ = k × vol15,
+  k = 0.5 (seuil vol-scalé, libellé et valeur θ portés par l'état et les
+  instructions).
+- `regime` — CHOICE {TREND_UP, TREND_DOWN, RANGE, VOLATILE} : télémétrie
+  seule, jamais dans le signal.
+- `readability` — SCORE 5 niveaux : télémétrie seule.
+
+### Composition pure (models/)
+
+`composeTrendFromBatteryV2(pUp, pDown)` : pNeutral = clamp(1 − pUp − pDown) ;
+`bias` = argmax{pUp, pDown, pNeutral} avec tie-break UP > DOWN > NEUTRAL ;
+`probability` = la valeur maximale. NEUTRAL signifie « aucun événement θ
+n'arrive » — c'est la classe que l'issue vol-scalée juge FLAT. INV 17 :
+la composition vit dans `models/`, jamais dans la coquille.
+
+### Issue v2 (amendement de §8 pour les lignes v2)
+
+Issue = règle symétrique à seuil vol-scalé : UP si close(C+h·D) ≥
+close(C)×(1+θ), DOWN si ≤ ×(1−θ), FLAT sinon — θ **persisté à la
+production** (`threshold_bps`, INV 16 : jamais recalculé à la lecture).
+Les lignes v1 gardent θ = 0 (règle d'origine).
+
+### Versionnement et A/B
+
+Colonne `question_version` ('v1' par défaut, 'v2'). La production
+simultanée v1+v2 sur les mêmes bougies est activée par `AI_TREND_V2`
+(figée par déploiement, défaut absent) : le rapport ECE stratifie par
+`collection` **et** par `question_version` ; la comparaison tranche par
+les données. Aucun changement des gates (§4, INV 6-7) : SHADOW, jamais
+dans la décision.

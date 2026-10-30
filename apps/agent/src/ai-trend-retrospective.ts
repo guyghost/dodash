@@ -31,6 +31,7 @@ import {
 	type TrendStateBuild,
 } from "@dodash/models";
 import { z } from "zod";
+import type { AiTrendCollection } from "./ai-trend-producer.js";
 import {
 	AI_TREND_DECISION_TIMEOUT_MS,
 	AI_TREND_QUESTION,
@@ -38,8 +39,6 @@ import {
 	runDecisionWithMachine,
 	type TrendSignalMeta,
 } from "./ai-trend-producer.js";
-
-export type AiTrendCollection = "SHADOW" | "RETROSPECTIVE";
 
 /** Bounded batch per invocation: one grid candle = one Jev call. */
 export const AI_TREND_RETROSPECTIVE_MAX_CANDLES = 48;

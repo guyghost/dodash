@@ -44,15 +44,17 @@ import {
 	resolveTrendOutcomes,
 	type TrendOutcomeRow,
 } from "./ai-trend-calibration.js";
+import type { AiTrendCollection } from "./ai-trend-producer.js";
 import {
 	AI_TREND_CANDLE_LIMIT,
 	AI_TREND_SIGNALS_SCHEMA,
+	type AiTrendQuestionVersion,
 	collectTrendSignal,
+	collectTrendSignalV2,
 	resolveTrendTimeframe,
 	type TrendSignalMeta,
 } from "./ai-trend-producer.js";
 import {
-	type AiTrendCollection,
 	collectRetrospectiveTrendSignals,
 	fetchCandlesViaMarketService,
 	parseRetrospectiveCommand,
@@ -193,6 +195,8 @@ export interface TradingEnv extends Env {
 	readonly AI_TREND_MODE?: string;
 	/** Grille propre du signal (amendement 2026-10-30) : défaut = timeframe du produit. */
 	readonly AI_TREND_TIMEFRAME?: string;
+	/** Batterie v2 en parallèle de v1 (§9, A/B) : "true" active la double collecte. */
+	readonly AI_TREND_V2?: string;
 	readonly TRADING_TELEMETRY?: TradingTelemetrySink;
 	readonly OPERATOR_NOTIFY_WEBHOOK_URL?: string;
 	readonly OPERATOR_NOTIFY_SECRET?: string;
@@ -337,19 +341,21 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		// Producteur SHADOW (models/ai-trend-signal.md §3-4) : signaux persistés,
 		// jamais consommés — table additive, idempotente.
 		this.ctx.storage.sql.exec(AI_TREND_SIGNALS_SCHEMA);
-		// Migration additive : colonne collection (protocole A, §7.A) pour les
-		// instances créées avant le collecteur rétrospectif.
-		this.ensureAiTrendCollectionColumn();
+		// Migrations additives (§7.A collection, §9 question_version/threshold_bps)
+		// pour les instances créées avant les collecteurs correspondants.
+		this.ensureAiTrendColumn("collection", "TEXT NOT NULL DEFAULT 'SHADOW'");
+		this.ensureAiTrendColumn("question_version", "TEXT NOT NULL DEFAULT 'v1'");
+		this.ensureAiTrendColumn("threshold_bps", "REAL");
 	}
 
-	/** Migration additive : colonne collection de ai_trend_signals (§7.A). */
-	private ensureAiTrendCollectionColumn(): void {
+	/** Migration additive : colonne de ai_trend_signals (§7.A, §9). */
+	private ensureAiTrendColumn(name: string, definition: string): void {
 		const columns = this.ctx.storage.sql
 			.exec("PRAGMA table_info(ai_trend_signals)")
 			.toArray() as unknown as readonly { name: string }[];
-		if (!columns.some((column) => column.name === "collection")) {
+		if (!columns.some((column) => column.name === name)) {
 			this.ctx.storage.sql.exec(
-				"ALTER TABLE ai_trend_signals ADD COLUMN collection TEXT NOT NULL DEFAULT 'SHADOW'",
+				`ALTER TABLE ai_trend_signals ADD COLUMN ${name} ${definition}`,
 			);
 		}
 	}
@@ -1967,16 +1973,20 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		signal: AiTrendSignal,
 		meta: TrendSignalMeta,
 		collection: AiTrendCollection = "SHADOW",
+		questionVersion: AiTrendQuestionVersion = "v1",
+		thresholdBps: number | null = null,
 	): void {
 		const now = Date.now();
 		this.sql`
       INSERT INTO ai_trend_signals (
         product_id, candle_closed_at, observed_at, bias, probability,
-        provider, latency_ms, input_tokens, collection, created_at
+        provider, latency_ms, input_tokens, collection, question_version,
+        threshold_bps, created_at
       ) VALUES (
         ${signal.productId}, ${signal.candleClosedAt}, ${signal.observedAt},
         ${signal.bias}, ${signal.probability}, ${signal.provider},
-        ${meta.latencyMs}, ${meta.inputTokens ?? null}, ${collection}, ${now}
+        ${meta.latencyMs}, ${meta.inputTokens ?? null}, ${collection},
+        ${questionVersion}, ${thresholdBps}, ${now}
       )
       ON CONFLICT(product_id, candle_closed_at) DO UPDATE SET
         observed_at = excluded.observed_at,
@@ -1986,6 +1996,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         latency_ms = excluded.latency_ms,
         input_tokens = excluded.input_tokens,
         collection = excluded.collection,
+        question_version = excluded.question_version,
+        threshold_bps = excluded.threshold_bps,
         created_at = excluded.created_at
       WHERE ai_trend_signals.collection = 'RETROSPECTIVE'
     `;
@@ -2072,8 +2084,11 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			bias: AiTrendBias;
 			probability: number;
 			collection: AiTrendCollection;
+			question_version: string;
+			threshold_bps: number | null;
 		}>`
-      SELECT product_id, candle_closed_at, observed_at, bias, probability, collection
+      SELECT product_id, candle_closed_at, observed_at, bias, probability,
+             collection, question_version, threshold_bps
       FROM ai_trend_signals
       WHERE candle_closed_at BETWEEN ${from} AND ${to}
       ORDER BY product_id, candle_closed_at
@@ -2111,6 +2126,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 						bias: row.bias,
 						probability: row.probability,
 						collection: row.collection,
+						questionVersion: row.question_version,
+						thresholdBps: row.threshold_bps,
 						outcome: "PENDING" as const,
 					});
 				}
@@ -2125,6 +2142,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 						bias: row.bias,
 						probability: row.probability,
 						collection: row.collection,
+						questionVersion: row.question_version,
+						thresholdBps: row.threshold_bps,
 					})),
 					candles.candles,
 					timeframeMs,

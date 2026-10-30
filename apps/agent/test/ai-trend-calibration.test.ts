@@ -24,6 +24,8 @@ const row = (candleClosedAt: number): TrendSignalRow => ({
 	bias: "UP",
 	probability: 0.8,
 	collection: "SHADOW",
+	questionVersion: "v1",
+	thresholdBps: null,
 });
 
 describe("ai trend calibration — outcome join (§8)", () => {
@@ -115,5 +117,34 @@ describe("ai trend calibration — query parsing", () => {
 				timeframe: "ONE_HOUR",
 			}),
 		).toEqual({ ok: false, code: "WINDOW_TOO_LARGE" });
+	});
+});
+
+describe("ai trend calibration — issue vol-scalée (§9)", () => {
+	it("juge une ligne v2 avec son θ persisté (zone morte → FLAT)", () => {
+		const C = 24 * HOUR;
+		const candles = [
+			candle(23 * HOUR, 100),
+			candle(24 * HOUR, 100.1), // +0.1 % : dans la zone morte θ=20 bps
+		];
+		const rows = resolveTrendOutcomes(
+			[
+				{
+					productId: "BTC-USD",
+					candleClosedAt: C,
+					observedAt: C + 5_000,
+					bias: "NEUTRAL",
+					probability: 0.6,
+					collection: "SHADOW",
+					questionVersion: "v2",
+					thresholdBps: 20,
+				},
+			],
+			candles,
+			HOUR,
+			1,
+			C + HOUR,
+		);
+		expect(rows[0]?.outcome).toBe("FLAT");
 	});
 });

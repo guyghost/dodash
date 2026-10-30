@@ -3,11 +3,15 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { AiTrendBias, AiTrendSignal } from "./ai-trend-signal.js";
 import {
+	AI_TREND_THRESHOLD_K,
 	applyTrendModulation,
 	buildRetrospectiveTrendState,
+	composeTrendFromBatteryV2,
 	computeTrendCalibration,
 	dedupeTrendSignals,
 	evaluateTrendSignal,
+	resolveTrendThresholdBps,
+	resolveVolScaledOutcome,
 	type TrendCalibrationSample,
 	type TrendOutcome,
 	type TrendPolicy,
@@ -356,5 +360,52 @@ describe("ai trend signal — calibration (§8)", () => {
 			sample(0.8, "UP", "FLAT"),
 		]);
 		expect(report.ok && report.bins[8]?.accuracy).toBe(0.5);
+	});
+});
+
+describe("ai trend signal — question v2 (§9)", () => {
+	it("scales the threshold with realized volatility, floored at 1 bps", () => {
+		expect(resolveTrendThresholdBps(40)).toBe(20);
+		expect(resolveTrendThresholdBps(1)).toBe(1);
+		expect(resolveTrendThresholdBps(0)).toBe(1);
+		expect(resolveTrendThresholdBps(Number.NaN)).toBe(1);
+	});
+
+	it("composes the argmax of three exclusive events with deterministic tie-break", () => {
+		// pUp 0.6, pDown 0.2 → pNeutral 0.2 → UP/0.6
+		expect(composeTrendFromBatteryV2(0.6, 0.2)).toEqual({
+			bias: "UP",
+			probability: 0.6,
+		});
+		// pDown domine
+		expect(composeTrendFromBatteryV2(0.1, 0.7)).toEqual({
+			bias: "DOWN",
+			probability: 0.7,
+		});
+		// zone morte : pNeutral domine
+		const dead = composeTrendFromBatteryV2(0.2, 0.2);
+		expect(dead?.bias).toBe("NEUTRAL");
+		expect(dead?.probability).toBeCloseTo(0.6, 10);
+		// égalité UP/DOWN → UP (tie-break déclaré)
+		expect(composeTrendFromBatteryV2(0.5, 0.5)).toEqual({
+			bias: "UP",
+			probability: 0.5,
+		});
+	});
+
+	it("rejects out-of-range predicate inputs", () => {
+		expect(composeTrendFromBatteryV2(1.2, 0.1)).toBeNull();
+		expect(composeTrendFromBatteryV2(0.1, -0.1)).toBeNull();
+	});
+
+	it("resolves vol-scaled outcomes with the persisted threshold", () => {
+		// θ = 20 bps : +0.25 % → UP ; −0.25 % → DOWN ; ±0.1 % → FLAT (zone morte)
+		expect(resolveVolScaledOutcome(100, 100.25, 20)).toBe("UP");
+		expect(resolveVolScaledOutcome(100, 99.75, 20)).toBe("DOWN");
+		expect(resolveVolScaledOutcome(100, 100.1, 20)).toBe("FLAT");
+		// θ = 0 : la règle v1 (strictement égal → FLAT)
+		expect(resolveVolScaledOutcome(100, 100.0, 0)).toBe("FLAT");
+		expect(resolveVolScaledOutcome(100, 100.01, 0)).toBe("UP");
+		expect(resolveVolScaledOutcome(100, -5, 20)).toBeNull();
 	});
 });

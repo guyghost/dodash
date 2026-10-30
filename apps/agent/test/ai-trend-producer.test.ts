@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	AI_TREND_QUESTION,
 	collectTrendSignal,
+	collectTrendSignalV2,
+	computeTrendFeaturesV2,
 	mapCandlesToTrendState,
 	resolveTrendFromAnswers,
 	resolveTrendTimeframe,
@@ -276,5 +278,75 @@ describe("ai trend producer — signal grid (amendement 2026-10-30)", () => {
 		expect(resolveTrendTimeframe("ONE_MINUTE", "ONE_DAY")).toBe("ONE_MINUTE");
 		expect(resolveTrendTimeframe(undefined, "ONE_DAY")).toBe("ONE_DAY");
 		expect(resolveTrendTimeframe("TWO_HOUR", "ONE_DAY")).toBe("ONE_DAY");
+	});
+});
+
+describe("ai trend producer — question v2 (§9)", () => {
+	const minute = (i: number, close: number): Candle => ({
+		start: 24 * HOUR + i * 60_000,
+		open: close,
+		high: close * 1.001,
+		low: close * 0.999,
+		close,
+		volume: 10,
+	});
+	const seventy = Array.from({ length: 70 }, (_, i) =>
+		minute(i, 100 + i * 0.1),
+	);
+
+	it("computes features and a vol-scaled threshold from closed candles only", async () => {
+		const features = await computeTrendFeaturesV2("BTC-USD", seventy);
+		expect(features).not.toBeNull();
+		if (features !== null) {
+			expect(features.symbol).toBe("BTC-USD");
+			expect(features.r1).toBeGreaterThan(0);
+			expect(features.rsi14).toBeGreaterThanOrEqual(0);
+			expect(features.thresholdBps).toBeGreaterThanOrEqual(1);
+			expect(features.thresholdBps).toBeCloseTo(
+				Math.max(1, 0.5 * features.vol15Bps),
+				8,
+			);
+		}
+	});
+
+	it("rejects windows shorter than the 70-candle minimum", async () => {
+		expect(
+			await computeTrendFeaturesV2("BTC-USD", seventy.slice(0, 40)),
+		).toBeNull();
+	});
+
+	it("collects a v2 signal with persisted version and threshold", async () => {
+		const persist = vi.fn();
+		const outcome = await collectTrendSignalV2({
+			productId: "BTC-USD",
+			timeframeMs: 60_000,
+			triggeredAt: 24 * HOUR + 70 * 60_000 + 5_000,
+			candles: seventy,
+			nowMs: () => 42,
+			decide: async () => ({
+				kind: "ANSWERED",
+				answers: [
+					{ kind: "PREDICATE", id: "up15", probability: 0.3 },
+					{ kind: "PREDICATE", id: "down15", probability: 0.2 },
+					{
+						kind: "CHOICE",
+						id: "regime",
+						probabilities: { RANGE: 1 },
+					},
+					{ kind: "SCORE", id: "readability", score: 2 },
+				],
+				latencyMs: 90,
+			}),
+			persist,
+			log: () => {},
+		});
+		expect(outcome).toEqual({ kind: "PERSISTED" });
+		const [signal, , collection, questionVersion, thresholdBps] =
+			persist.mock.calls[0] ?? [];
+		expect(signal.bias).toBe("NEUTRAL");
+		expect(signal.probability).toBeCloseTo(0.5, 8);
+		expect(collection).toBe("SHADOW");
+		expect(questionVersion).toBe("v2");
+		expect(thresholdBps).toBeGreaterThanOrEqual(1);
 	});
 });
