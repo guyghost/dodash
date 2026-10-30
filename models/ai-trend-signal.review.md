@@ -46,6 +46,15 @@ explicite de `decision-core.md` INV 5 et note datée `README.md` INV 8-9.
   silencieusement) ; état produit = `{ json: { candles } }` trié.
 - L'adaptateur gateway et le producteur SHADOW vivent dans la coquille
   (`apps/agent`) : hors périmètre de ce module, étape suivante distincte.
+- Protocole A (§7.A, implémentation 2026-10-30) : les lignes portent une
+  colonne `collection` (`SHADOW`/`RETROSPECTIVE`, migration additive) ; une
+  ligne SHADOW n'est jamais réécrite ni réinterrogée — c'est l'échantillon
+  prospectif propre (INV 12) — et une ligne RETROSPECTIVE n'est re-collectée
+  que sur `force`. Le lot est borné à 48 bougies par appel ; un défaut
+  LOOKAHEAD arrête net le lot ; chaque log de lot porte
+  `RETROSPECTIVE_POSSIBLY_CONTAMINATED`. La fenêtre historique passe par le
+  même service marché (`end` en secondes), sans ticker ni gate de fraîcheur
+  live.
 
 ## Vérification requise (§6, §7) → couverture de tests
 

@@ -49,6 +49,7 @@ export const AI_TREND_SIGNALS_SCHEMA = `
     provider TEXT NOT NULL,
     latency_ms INTEGER,
     input_tokens INTEGER,
+    collection TEXT NOT NULL DEFAULT 'SHADOW',
     created_at INTEGER NOT NULL,
     PRIMARY KEY (product_id, candle_closed_at)
   )

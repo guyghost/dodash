@@ -43,6 +43,13 @@ import {
 	type TrendSignalMeta,
 } from "./ai-trend-producer.js";
 import {
+	type AiTrendCollection,
+	collectRetrospectiveTrendSignals,
+	fetchCandlesViaMarketService,
+	parseRetrospectiveCommand,
+	type RetrospectiveCollectReport,
+} from "./ai-trend-retrospective.js";
+import {
 	type CoinbaseProtectedSellCheckpoint,
 	type CoinbaseProtectedSellPersistence,
 	executeCoinbaseKill,
@@ -319,6 +326,21 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		// Producteur SHADOW (models/ai-trend-signal.md §3-4) : signaux persistés,
 		// jamais consommés — table additive, idempotente.
 		this.ctx.storage.sql.exec(AI_TREND_SIGNALS_SCHEMA);
+		// Migration additive : colonne collection (protocole A, §7.A) pour les
+		// instances créées avant le collecteur rétrospectif.
+		this.ensureAiTrendCollectionColumn();
+	}
+
+	/** Migration additive : colonne collection de ai_trend_signals (§7.A). */
+	private ensureAiTrendCollectionColumn(): void {
+		const columns = this.ctx.storage.sql
+			.exec("PRAGMA table_info(ai_trend_signals)")
+			.toArray() as unknown as readonly { name: string }[];
+		if (!columns.some((column) => column.name === "collection")) {
+			this.ctx.storage.sql.exec(
+				"ALTER TABLE ai_trend_signals ADD COLUMN collection TEXT NOT NULL DEFAULT 'SHADOW'",
+			);
+		}
 	}
 
 	private ensureProductIdColumn(table: string): void {
@@ -1894,16 +1916,17 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	private persistAiTrendSignal(
 		signal: AiTrendSignal,
 		meta: TrendSignalMeta,
+		collection: AiTrendCollection = "SHADOW",
 	): void {
 		const now = Date.now();
 		this.sql`
       INSERT INTO ai_trend_signals (
         product_id, candle_closed_at, observed_at, bias, probability,
-        provider, latency_ms, input_tokens, created_at
+        provider, latency_ms, input_tokens, collection, created_at
       ) VALUES (
         ${signal.productId}, ${signal.candleClosedAt}, ${signal.observedAt},
         ${signal.bias}, ${signal.probability}, ${signal.provider},
-        ${meta.latencyMs}, ${meta.inputTokens ?? null}, ${now}
+        ${meta.latencyMs}, ${meta.inputTokens ?? null}, ${collection}, ${now}
       )
       ON CONFLICT(product_id, candle_closed_at) DO UPDATE SET
         observed_at = excluded.observed_at,
@@ -1912,8 +1935,69 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         provider = excluded.provider,
         latency_ms = excluded.latency_ms,
         input_tokens = excluded.input_tokens,
+        collection = excluded.collection,
         created_at = excluded.created_at
+      WHERE ai_trend_signals.collection = 'RETROSPECTIVE'
     `;
+	}
+
+	/**
+	 * Collecteur rétrospectif — protocole A (models/ai-trend-signal.md §7.A).
+	 * Commande admin authentifiée : fenêtre alignée sur la grille, bornée à
+	 * AI_TREND_RETROSPECTIVE_MAX_CANDLES bougies par appel. Les lignes SHADOW
+	 * ne sont jamais réécrites (INV 12) ; tout rapport issu de ce collecteur
+	 * porte RETROSPECTIVE_POSSIBLY_CONTAMINATED.
+	 */
+	async collectAiTrendRetrospective(
+		input: unknown,
+	): Promise<
+		| { ok: true; report: RetrospectiveCollectReport }
+		| { ok: false; code: string }
+	> {
+		const gatewayKey = this.env.AI_GATEWAY_KEY;
+		if (gatewayKey === undefined || this.env.AI_TREND_MODE === "DISABLED") {
+			return { ok: false, code: "AI_TREND_DISABLED" };
+		}
+		const command = parseRetrospectiveCommand(input);
+		if (!command.ok) return { ok: false, code: command.error.code };
+		const timeframeMs = TIMEFRAME_MILLISECONDS[command.value.timeframe];
+		const productId = command.value.productId;
+		const from = command.value.fromCandleClosedAt;
+		const to = command.value.toCandleClosedAt;
+		const report = await collectRetrospectiveTrendSignals({
+			productId,
+			timeframe: command.value.timeframe,
+			timeframeMs,
+			candleLimit: command.value.candleLimit,
+			fromCandleClosedAt: from,
+			toCandleClosedAt: to,
+			force: command.value.force,
+			fetchCandles: (request) =>
+				fetchCandlesViaMarketService(
+					this.env.MARKET_DATA,
+					this.env.INTERNAL_SERVICE_TOKEN,
+					request,
+				),
+			decide: (request) =>
+				requestGatewayDecision("jev", request, { gatewayKey }),
+			loadExisting: async () => {
+				const rows = this.sql<{ candle_closed_at: number; collection: string }>`
+          SELECT candle_closed_at, collection FROM ai_trend_signals
+          WHERE product_id = ${productId} AND candle_closed_at BETWEEN ${from} AND ${to}
+        `;
+				const map = new Map<number, AiTrendCollection>();
+				for (const row of rows) {
+					map.set(row.candle_closed_at, row.collection as AiTrendCollection);
+				}
+				return map;
+			},
+			persist: (signal, meta, collection) =>
+				this.persistAiTrendSignal(signal, meta, collection),
+			nowMs: Date.now,
+			log: (entry) =>
+				console.log(JSON.stringify({ agentId: this.name, ...entry })),
+		});
+		return { ok: true, report };
 	}
 
 	private async removeIntervalSchedule(): Promise<void> {
