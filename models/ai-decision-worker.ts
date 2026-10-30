@@ -316,16 +316,16 @@ export type OpenAiDecisionQuestionSpec =
 
 export interface OpenAiDecisionAnswerSpec {
 	readonly type: "predicate" | "choice" | "score" | "refusal";
-	readonly name?: string;
-	readonly probability?: number;
-	readonly choice?: string;
-	readonly confidence?: number;
-	readonly score?: number;
+	readonly name?: string | undefined;
+	readonly probability?: number | undefined;
+	readonly choice?: string | undefined;
+	readonly confidence?: number | undefined;
+	readonly score?: number | undefined;
 }
 
 export interface OpenAiDecisionResponse {
-	readonly answers?: readonly OpenAiDecisionAnswerSpec[];
-	readonly usage?: { readonly input_tokens?: number };
+	readonly answers?: readonly OpenAiDecisionAnswerSpec[] | undefined;
+	readonly usage?: { readonly input_tokens?: number | undefined } | undefined;
 }
 
 /** Maps port questions to the OpenAI Decisions `questions` array. */
