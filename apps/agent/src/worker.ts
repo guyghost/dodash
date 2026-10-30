@@ -32,6 +32,7 @@ type TradingAgentRpc = Pick<
 	| "getPortfolioSummary"
 	| "getAiTrendCalibration"
 	| "collectAiTrendRetrospective"
+	| "getBuildInfo"
 	| "killAgent"
 	| "listRecentCycles"
 	| "preflightLive"
@@ -84,6 +85,13 @@ const handleApi = async (
 		);
 		const result = await agent.getPnlHistory(rawLimit);
 		return json(result, result.ok ? 200 : 500);
+	}
+	if (request.method === "GET" && action === "build-info") {
+		try {
+			return json(await agent.getBuildInfo());
+		} catch {
+			return json({ error: { code: "STALE_DURABLE_OBJECT" } }, 503);
+		}
 	}
 	if (request.method === "GET" && action === "ai-trend-calibration") {
 		const params = new URL(request.url).searchParams;

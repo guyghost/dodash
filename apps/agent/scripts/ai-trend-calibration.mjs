@@ -1,16 +1,18 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 /**
  * Rapport de calibration du signal de tendance IA
- * (models/ai-trend-signal.md §8).
+ * (models/ai-trend-signal.md §8-§9) — pagination de la limite 288 bougies
+ * par fenêtre, stratification par collection × question_version, ECE via
+ * la fonction pure computeTrendCalibration (@dodash/models).
  *
  * Usage :
  *   CONTROL_API_TOKEN=… AGENT_NAME=… node scripts/ai-trend-calibration.mjs \
- *     [--days 7] [--from ms --to ms] [--collection SHADOW|RETROSPECTIVE|ALL]
- *     [--horizon 1] [--timeframe ONE_HOUR] [--base https://…]
+ *     [--days 7 | --from ms --to ms] [--timeframe ONE_MINUTE] [--horizon 15]
+ *     [--collection SHADOW|RETROSPECTIVE|ALL] [--base https://…]
  *
- * Le calcul ECE vient de la fonction pure `computeTrendCalibration`
- * (@dodash/models) ; ce script assemble et affiche. Tout rapport incluant
- * des lignes RETROSPECTIVE porte RETROSPECTIVE_POSSIBLY_CONTAMINATED.
+ * Tout rapport incluant des lignes RETROSPECTIVE porte
+ * RETROSPECTIVE_POSSIBLY_CONTAMINATED (INV 12).
  */
 import { computeTrendCalibration } from "@dodash/models";
 
@@ -26,20 +28,20 @@ const base =
 	"https://dodash-paper-agent.guyghost.workers.dev";
 const agentName = arg("agent") ?? process.env.AGENT_NAME;
 const token = process.env.CONTROL_API_TOKEN;
-const timeframe = arg("timeframe") ?? "ONE_HOUR";
-const horizon = Number(arg("horizon") ?? 1);
+const timeframe = arg("timeframe") ?? "ONE_MINUTE";
+const horizon = Number(arg("horizon") ?? 15);
 const collection = arg("collection") ?? "ALL";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const D = timeframe === "ONE_DAY" ? DAY : HOUR; // ONE_HOUR par défaut ; ajuster si autre grille
+const D = timeframe === "ONE_DAY" ? DAY : HOUR;
 
 let from = Number(arg("from") ?? 0);
 let to = Number(arg("to") ?? 0);
 if (!from || !to) {
 	const days = Number(arg("days") ?? 7);
 	const now = Date.now();
-	to = Math.floor(now / D) * D - horizon * D; // issues closes au créneau h
+	to = Math.floor(now / D) * D - horizon * D;
 	from = to - days * D;
 }
 
@@ -48,42 +50,50 @@ if (!agentName || !token) {
 	process.exit(1);
 }
 
-const url = `${base}/api/agents/${agentName}/ai-trend-calibration?from=${from}&to=${to}&collection=${collection}&horizon=${horizon}&timeframe=${timeframe}`;
-const response = await fetch(url, {
-	headers: { authorization: `Bearer ${token}` },
-});
-if (!response.ok) {
-	console.error(`HTTP ${response.status}`, await response.text());
-	process.exit(1);
-}
-const payload = await response.json();
-if (!payload.ok) {
-	console.error("Erreur agent :", payload.code);
-	process.exit(1);
+const rows = [];
+for (let f = from; f <= to; f += 288 * D) {
+	const t = Math.min(f + 287 * D, to);
+	const url = `${base}/api/agents/${agentName}/ai-trend-calibration?from=${f}&to=${t}&timeframe=${timeframe}&horizon=${horizon}&collection=${collection}`;
+	const response = await fetch(url, {
+		headers: { authorization: `Bearer ${token}` },
+	});
+	if (!response.ok) {
+		console.error(`HTTP ${response.status} sur ${new Date(f).toISOString()}`);
+		continue;
+	}
+	const payload = await response.json();
+	if (!payload.ok) {
+		console.error("Erreur agent :", payload.code);
+		continue;
+	}
+	rows.push(...payload.rows);
 }
 
-const rows = payload.rows;
-const strata = ["SHADOW", "RETROSPECTIVE"];
+const strata = [
+	["SHADOW", "v1"],
+	["SHADOW", "v2"],
+	["RETROSPECTIVE", "v1"],
+	["RETROSPECTIVE", "v2"],
+];
 const fmt = (n) => (typeof n === "number" ? n.toFixed(3) : "—");
-console.log(
-	`# Calibration tendance IA — ${new Date(payload.generatedAt).toISOString()}`,
-);
+console.log(`# Calibration tendance IA — ${new Date().toISOString()}`);
 console.log(
 	`Fenêtre [${new Date(from).toISOString()} → ${new Date(to).toISOString()}] · ${timeframe} · horizon ${horizon} · ${rows.length} ligne(s)`,
 );
-console.log("");
 let contaminated = false;
-for (const stratum of strata) {
-	const stratumRows = rows.filter((row) => row.collection === stratum);
+for (const [stratum, version] of strata) {
+	const stratumRows = rows.filter(
+		(row) => row.collection === stratum && row.questionVersion === version,
+	);
 	if (stratumRows.length === 0) continue;
 	if (stratum === "RETROSPECTIVE") contaminated = true;
 	const pending = stratumRows.filter((row) => row.outcome === "PENDING").length;
 	const report = computeTrendCalibration(stratumRows);
 	console.log(
-		`## ${stratum} — ${stratumRows.length} ligne(s), ${pending} PENDING exclue(s)`,
+		`\n## ${stratum} · question ${version} — ${stratumRows.length} ligne(s), ${pending} PENDING exclue(s)`,
 	);
 	if (!report.ok) {
-		console.log("- aucune issue close : échantillon vide\n");
+		console.log("- aucune issue close : échantillon vide");
 		continue;
 	}
 	console.log(
@@ -98,8 +108,8 @@ for (const stratum of strata) {
 			`| [${bin.lower.toFixed(1)}, ${bin.upper.toFixed(1)}[ | ${bin.count} | ${fmt(bin.meanProbability)} | ${fmt(bin.accuracy)} |`,
 		);
 	}
-	console.log("");
 }
+console.log("");
 console.log(
 	contaminated
 		? "> ⚠️ RETROSPECTIVE_POSSIBLY_CONTAMINATED — INV 12 : ce rapport ne valide à lui seul aucune activation PAPER."

@@ -135,26 +135,40 @@ export const fetchCandlesViaMarketService = async (
 	internalToken: string,
 	request: RetrospectiveCandleRequest,
 ): Promise<HistoricalCandleFetch> => {
-	let response: Response;
-	try {
-		response = await service.fetch("https://market-data/internal/candles", {
-			method: "POST",
-			headers: {
-				authorization: `Bearer ${internalToken}`,
-				"content-type": "application/json",
-			},
-			body: JSON.stringify({
-				productId: request.productId,
-				timeframe: request.timeframe,
-				limit: request.limit,
-				end: Math.floor((request.candleClosedAt - request.timeframeMs) / 1_000),
-			}),
-		});
-	} catch {
-		return { ok: false, code: "MARKET_FETCH_FAILED" };
-	}
-	if (!response.ok) {
+	const attempt = (): Promise<Response | null> =>
+		service
+			.fetch("https://market-data/internal/candles", {
+				method: "POST",
+				headers: {
+					authorization: `Bearer ${internalToken}`,
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({
+					productId: request.productId,
+					timeframe: request.timeframe,
+					limit: request.limit,
+					end: Math.floor(
+						(request.candleClosedAt - request.timeframeMs) / 1_000,
+					),
+				}),
+			})
+			.catch(() => null);
+	let response = await attempt();
+	if (response !== null && !response.ok) {
 		await response.body?.cancel().catch(() => undefined);
+		response = null;
+	}
+	if (response === null) {
+		// Une seconde tentative après backoff (incident RATE_LIMITED 2026-10-30) :
+		// un 429 ou un réseau instantané ne doit pas vider un lot entier.
+		await new Promise((resolve) => setTimeout(resolve, 750));
+		response = await attempt();
+		if (response !== null && !response.ok) {
+			await response.body?.cancel().catch(() => undefined);
+			response = null;
+		}
+	}
+	if (response === null) {
 		return { ok: false, code: "MARKET_FETCH_FAILED" };
 	}
 	let parsed: z.infer<typeof historicalResponseSchema>;

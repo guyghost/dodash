@@ -96,6 +96,35 @@ export type CalibrationQueryResult =
 /** Fenêtre bornée à 288 bougies + créneau ; horizon 1..24. */
 export const AI_TREND_CALIBRATION_MAX_CANDLES = 288;
 
+/** Limite prudente par fetch marché (le service plafonne à 300). */
+export const AI_TREND_OUTCOME_FETCH_CANDLES = 290;
+
+/**
+ * Découpe la fenêtre d'issues [from, to + h·D] en fetchs ≤ 290 bougies —
+ * la limite 288 + horizon + 2 dépassait 300 et tronquait les issues de
+ * queue en PENDING (constat 2026-10-30).
+ */
+export const planOutcomeFetchWindows = (
+	from: number,
+	to: number,
+	timeframeMs: number,
+	horizon: number,
+): readonly { readonly endMs: number; readonly limit: number }[] => {
+	const lastOutcomeStart = to + (horizon - 1) * timeframeMs;
+	const windows: { endMs: number; limit: number }[] = [];
+	let end = lastOutcomeStart;
+	while (end >= from - timeframeMs) {
+		const span = Math.min(
+			AI_TREND_OUTCOME_FETCH_CANDLES,
+			Math.floor((end - (from - 2 * timeframeMs)) / timeframeMs) + 1,
+		);
+		if (span <= 0) break;
+		windows.push({ endMs: end, limit: span });
+		end -= (span - 1) * timeframeMs;
+	}
+	return Object.freeze(windows.reverse());
+};
+
 export const parseCalibrationQuery = (input: {
 	from?: string | null;
 	to?: string | null;

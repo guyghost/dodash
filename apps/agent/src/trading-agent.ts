@@ -41,8 +41,10 @@ import { Agent } from "agents";
 import { requestGatewayDecision } from "./ai-decision-gateway.js";
 import {
 	parseCalibrationQuery,
+	planOutcomeFetchWindows,
 	resolveTrendOutcomes,
 	type TrendOutcomeRow,
+	type TrendSignalRow,
 } from "./ai-trend-calibration.js";
 import type { AiTrendCollection } from "./ai-trend-producer.js";
 import {
@@ -198,6 +200,8 @@ export interface TradingEnv extends Env {
 	readonly AI_TREND_TIMEFRAME?: string;
 	/** Batterie v2 en parallèle de v1 (§9, A/B) : "true" active la double collecte. */
 	readonly AI_TREND_V2?: string;
+	/** SHA du déploiement (wrangler --var BUILD_SHA:…) : sonde anti-DO-épinglé. */
+	readonly BUILD_SHA?: string;
 	readonly TRADING_TELEMETRY?: TradingTelemetrySink;
 	readonly OPERATOR_NOTIFY_WEBHOOK_URL?: string;
 	readonly OPERATOR_NOTIFY_SECRET?: string;
@@ -349,6 +353,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		this.ensureAiTrendColumn("threshold_bps", "REAL");
 		// §9 : la PK doit distinguer v1/v2 — reconstruction idempotente.
 		this.migrateAiTrendSignalsPrimaryKey();
+		console.log(
+			JSON.stringify({
+				event: "agent_boot",
+				agentId: this.name,
+				buildSha: this.env.BUILD_SHA ?? "unknown",
+			}),
+		);
 	}
 
 	/**
@@ -1939,6 +1950,16 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	}
 
 	/**
+	 * Sonde de version (post-mortem 2026-10-30) : un DO épinglé à une
+	 * ancienne classe ne expose pas cette méthode — l'appel échoue et la
+	 * route répond STALE_DURABLE_OBJECT au lieu de laisser diagnostiquer
+	 * le pinning au comportement. agentVersion monte à chaque capacité.
+	 */
+	getBuildInfo(): { readonly sha: string; readonly agentVersion: number } {
+		return { sha: this.env.BUILD_SHA ?? "unknown", agentVersion: 2 };
+	}
+
+	/**
 	 * Producteur SHADOW (models/ai-trend-signal.md §3-4) : signal IA produit
 	 * et persisté, jamais consommé — fire-and-forget après un fetch marché
 	 * réussi, aucun événement ni transition du cycle n'en dépend.
@@ -2072,40 +2093,51 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		const productId = command.value.productId;
 		const from = command.value.fromCandleClosedAt;
 		const to = command.value.toCandleClosedAt;
-		const report = await collectRetrospectiveTrendSignals({
-			productId,
-			timeframe: command.value.timeframe,
-			timeframeMs,
-			candleLimit: command.value.candleLimit,
-			fromCandleClosedAt: from,
-			toCandleClosedAt: to,
-			force: command.value.force,
-			fetchCandles: (request) =>
-				fetchCandlesViaMarketService(
-					this.env.MARKET_DATA,
-					this.env.INTERNAL_SERVICE_TOKEN,
-					request,
-				),
-			decide: (request) =>
-				requestGatewayDecision("jev", request, { gatewayKey }),
-			loadExisting: async () => {
-				const rows = this.sql<{ candle_closed_at: number; collection: string }>`
+		const loadExisting = async (questionVersion: "v1" | "v2") => {
+			const rows = this.sql<{ candle_closed_at: number; collection: string }>`
           SELECT candle_closed_at, collection FROM ai_trend_signals
           WHERE product_id = ${productId} AND candle_closed_at BETWEEN ${from} AND ${to}
-            AND question_version = 'v1'
+            AND question_version = ${questionVersion}
         `;
-				const map = new Map<number, AiTrendCollection>();
-				for (const row of rows) {
-					map.set(row.candle_closed_at, row.collection as AiTrendCollection);
-				}
-				return map;
-			},
-			persist: (signal, meta, collection) =>
-				this.persistAiTrendSignal(signal, meta, collection),
-			nowMs: Date.now,
-			log: (entry) =>
-				console.log(JSON.stringify({ agentId: this.name, ...entry })),
-		});
+			const map = new Map<number, AiTrendCollection>();
+			for (const row of rows) {
+				map.set(row.candle_closed_at, row.collection as AiTrendCollection);
+			}
+			return map;
+		};
+		const report =
+			command.value.questionVersion === "v2"
+				? await this.collectRetrospectiveV2(command.value, {
+						productId,
+						timeframeMs,
+						from,
+						to,
+						gatewayKey,
+						loadExisting,
+					})
+				: await collectRetrospectiveTrendSignals({
+						productId,
+						timeframe: command.value.timeframe,
+						timeframeMs,
+						candleLimit: command.value.candleLimit,
+						fromCandleClosedAt: from,
+						toCandleClosedAt: to,
+						force: command.value.force,
+						fetchCandles: (request) =>
+							fetchCandlesViaMarketService(
+								this.env.MARKET_DATA,
+								this.env.INTERNAL_SERVICE_TOKEN,
+								request,
+							),
+						decide: (request) =>
+							requestGatewayDecision("jev", request, { gatewayKey }),
+						loadExisting: async () => loadExisting("v1"),
+						persist: (signal, meta, collection) =>
+							this.persistAiTrendSignal(signal, meta, collection),
+						nowMs: Date.now,
+						log: (entry) =>
+							console.log(JSON.stringify({ agentId: this.name, ...entry })),
+					});
 		return { ok: true, report };
 	}
 
@@ -2216,52 +2248,96 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		const now = Date.now();
 		const rows: TrendOutcomeRow[] = [];
 		for (const [productId, productRows] of byProduct) {
-			const candles = await fetchCandlesViaMarketService(
-				this.env.MARKET_DATA,
-				this.env.INTERNAL_SERVICE_TOKEN,
-				{
-					productId,
-					timeframe,
-					limit: (to - from) / timeframeMs + horizon + 2,
-					candleClosedAt: to + horizon * timeframeMs,
-					timeframeMs,
-				},
-			);
-			if (!candles.ok) {
-				// Sans closes, aucune issue n'est jugeable : tout reste PENDING.
-				for (const row of productRows) {
-					rows.push({
-						productId: row.product_id,
-						candleClosedAt: row.candle_closed_at,
-						observedAt: row.observed_at,
-						bias: row.bias,
-						probability: row.probability,
-						collection: row.collection,
-						questionVersion: row.question_version,
-						thresholdBps: row.threshold_bps,
-						outcome: "PENDING" as const,
-					});
+			// Fetch chunké ≤ 290 bougies (la limite 300 du service tronquait
+			// les issues de queue) + comblement ciblé des PENDING.
+			const candlesByStart = new Map<number, Candle>();
+			for (const window of planOutcomeFetchWindows(
+				from,
+				to,
+				timeframeMs,
+				horizon,
+			)) {
+				const fetched = await fetchCandlesViaMarketService(
+					this.env.MARKET_DATA,
+					this.env.INTERNAL_SERVICE_TOKEN,
+					{
+						productId,
+						timeframe,
+						limit: window.limit,
+						candleClosedAt: window.endMs + timeframeMs,
+						timeframeMs,
+					},
+				);
+				if (fetched.ok) {
+					for (const candle of fetched.candles)
+						candlesByStart.set(candle.start, candle);
 				}
-				continue;
 			}
-			rows.push(
-				...resolveTrendOutcomes(
-					productRows.map((row) => ({
-						productId: row.product_id,
-						candleClosedAt: row.candle_closed_at,
-						observedAt: row.observed_at,
-						bias: row.bias,
-						probability: row.probability,
-						collection: row.collection,
-						questionVersion: row.question_version,
-						thresholdBps: row.threshold_bps,
-					})),
-					candles.candles,
+			const resolveRows = (
+				input: readonly TrendSignalRow[],
+			): readonly TrendOutcomeRow[] =>
+				resolveTrendOutcomes(
+					input,
+					[...candlesByStart.values()],
 					timeframeMs,
 					horizon,
 					now,
-				),
+				);
+			let resolved = resolveRows(
+				productRows.map((row) => ({
+					productId: row.product_id,
+					candleClosedAt: row.candle_closed_at,
+					observedAt: row.observed_at,
+					bias: row.bias,
+					probability: row.probability,
+					collection: row.collection,
+					questionVersion: row.question_version,
+					thresholdBps: row.threshold_bps,
+				})),
 			);
+			// Comblement : une fenêtre ciblée sur les bougies d'issue manquantes.
+			const pending = resolved.filter((row) => row.outcome === "PENDING");
+			if (pending.length > 0) {
+				const needed = new Set<number>();
+				for (const row of pending) {
+					needed.add(row.candleClosedAt - timeframeMs);
+					needed.add(row.candleClosedAt + (horizon - 1) * timeframeMs);
+				}
+				const missing = [...needed].filter(
+					(start) => !candlesByStart.has(start),
+				);
+				if (missing.length > 0) {
+					const minStart = Math.min(...missing);
+					const maxStart = Math.max(...missing);
+					const fill = await fetchCandlesViaMarketService(
+						this.env.MARKET_DATA,
+						this.env.INTERNAL_SERVICE_TOKEN,
+						{
+							productId,
+							timeframe,
+							limit: Math.min(
+								300,
+								Math.floor((maxStart - minStart) / timeframeMs) + 2,
+							),
+							candleClosedAt: maxStart + timeframeMs,
+							timeframeMs,
+						},
+					);
+					if (fill.ok) {
+						for (const candle of fill.candles)
+							candlesByStart.set(candle.start, candle);
+						const pendingKeys = new Set(
+							pending.map((row) => row.candleClosedAt),
+						);
+						resolved = resolved.map((row) =>
+							pendingKeys.has(row.candleClosedAt) && row.outcome === "PENDING"
+								? (resolveRows([row])[0] ?? row)
+								: row,
+						);
+					}
+				}
+			}
+			rows.push(...resolved);
 		}
 		return { ok: true, generatedAt: now, rows };
 	}

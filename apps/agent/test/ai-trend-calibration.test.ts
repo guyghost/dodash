@@ -2,6 +2,7 @@ import type { Candle } from "@dodash/domain";
 import { describe, expect, it } from "vitest";
 import {
 	parseCalibrationQuery,
+	planOutcomeFetchWindows,
 	resolveTrendOutcomes,
 	type TrendSignalRow,
 } from "../src/ai-trend-calibration.js";
@@ -146,5 +147,24 @@ describe("ai trend calibration — issue vol-scalée (§9)", () => {
 			C + HOUR,
 		);
 		expect(rows[0]?.outcome).toBe("FLAT");
+	});
+});
+
+describe("ai trend calibration — fenêtres de fetch d'issues (≤ 300)", () => {
+	it("découpe une fenêtre 288 + horizon 15 en fetchs ≤ 290 bougies couvrant tout", () => {
+		const HOUR2 = 3_600_000;
+		const from = 0;
+		const to = 287 * HOUR2;
+		const windows = planOutcomeFetchWindows(from, to, HOUR2, 15);
+		expect(windows.length).toBeGreaterThanOrEqual(2);
+		for (const w of windows) expect(w.limit).toBeLessThanOrEqual(290);
+		// le dernier fetch couvre la bougie d'issue la plus tardive (to + 14·D)
+		expect(windows[windows.length - 1]?.endMs).toBe(to + 14 * HOUR2);
+		// le premier couvre la bougie de référence la plus ancienne (from − D)
+		const first = windows[0];
+		expect(
+			first !== undefined &&
+				first.endMs - (first.limit - 1) * HOUR2 <= from - HOUR2,
+		).toBe(true);
 	});
 });
