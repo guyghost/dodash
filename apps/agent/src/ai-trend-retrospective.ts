@@ -399,6 +399,8 @@ export interface RetrospectiveCollectV2Deps {
 	readonly fromCandleClosedAt: number;
 	readonly toCandleClosedAt: number;
 	readonly force: boolean;
+	/** Pacing inter-bougies (quota/minute gateway) ; injectable, défaut 1,2 s. */
+	readonly paceMs?: number;
 	/** Une seule fenêtre marché par lot : bougies closes ≤ to, reccueillies en amont. */
 	readonly fetchWindowCandles: () => Promise<HistoricalCandleFetch>;
 	readonly decide: (
@@ -489,7 +491,9 @@ export const collectRetrospectiveTrendSignalsV2 = async (
 		}
 		// Pacing : ~1,2 s par bougie — une rafale de 48 appels minute heurte
 		// le quota/minute du gateway (constat 2026-10-30, tous FAILED).
-		await new Promise((resolve) => setTimeout(resolve, 1_200));
+		if ((deps.paceMs ?? 1_200) > 0) {
+			await new Promise((resolve) => setTimeout(resolve, deps.paceMs ?? 1_200));
+		}
 		const battery = extractBatteryProbabilities(result.answers);
 		const trend =
 			battery === null

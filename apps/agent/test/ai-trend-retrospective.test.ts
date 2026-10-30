@@ -316,6 +316,7 @@ describe("ai trend retrospective — collecteur v2 (§9)", () => {
 			fromCandleClosedAt: BASE + HOUR,
 			toCandleClosedAt: BASE + 2 * HOUR,
 			force: false,
+			paceMs: 0,
 			fetchWindowCandles: fetchWindow,
 			decide: async () => ({
 				kind: "ANSWERED",
