@@ -10,14 +10,14 @@
 	},
 	"dependencies": {
 		"@dodash/paper-execution": "workspace:*",
-		"xstate": "5.32.5",
+		"xstate": "5.33.3",
 		"@dodash/risk": "workspace:*",
 		"@dodash/domain": "workspace:*",
 		"@dodash/models": "workspace:*"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "5.20260823.1",
-		"esbuild": "0.28.1",
+		"@cloudflare/workers-types": "5.20261027.1",
+		"esbuild": "0.28.2",
 		"miniflare": "5.20260820.0-alpha",
 		"typescript": "^7.0.2"
 	}
