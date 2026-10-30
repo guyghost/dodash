@@ -1,13 +1,13 @@
 import {
-  createCandle,
-  createProductId,
-  err,
-  ok,
-  validateCandleSeries,
-  type Candle,
-  type ProductId,
-  type Result,
-  type Timeframe,
+	type Candle,
+	createCandle,
+	createProductId,
+	err,
+	ok,
+	type ProductId,
+	type Result,
+	type Timeframe,
+	validateCandleSeries,
 } from "@dodash/domain";
 import { z } from "zod";
 
@@ -17,97 +17,97 @@ import type { CandleRequest, TickerRequest } from "./contracts.js";
 const MAX_COINBASE_RESPONSE_BYTES = 1_000_000;
 
 const timeframeSeconds: Readonly<Record<Timeframe, number>> = Object.freeze({
-  ONE_MINUTE: 60,
-  FIVE_MINUTE: 300,
-  FIFTEEN_MINUTE: 900,
-  ONE_HOUR: 3_600,
-  SIX_HOUR: 21_600,
-  ONE_DAY: 86_400,
+	ONE_MINUTE: 60,
+	FIVE_MINUTE: 300,
+	FIFTEEN_MINUTE: 900,
+	ONE_HOUR: 3_600,
+	SIX_HOUR: 21_600,
+	ONE_DAY: 86_400,
 });
 
 const numberLikeSchema = z
-  .union([z.string(), z.number()])
-  .transform((value, context) => {
-    const parsed = typeof value === "number" ? value : Number(value);
-    if (!Number.isFinite(parsed)) {
-      context.addIssue({ code: "custom", message: "Expected a finite number" });
-      return z.NEVER;
-    }
-    return parsed;
-  });
+	.union([z.string(), z.number()])
+	.transform((value, context) => {
+		const parsed = typeof value === "number" ? value : Number(value);
+		if (!Number.isFinite(parsed)) {
+			context.addIssue({ code: "custom", message: "Expected a finite number" });
+			return z.NEVER;
+		}
+		return parsed;
+	});
 
 const coinbaseCandleSchema = z.object({
-  start: numberLikeSchema,
-  low: numberLikeSchema,
-  high: numberLikeSchema,
-  open: numberLikeSchema,
-  close: numberLikeSchema,
-  volume: numberLikeSchema,
+	start: numberLikeSchema,
+	low: numberLikeSchema,
+	high: numberLikeSchema,
+	open: numberLikeSchema,
+	close: numberLikeSchema,
+	volume: numberLikeSchema,
 });
 
 const coinbaseCandleResponseSchema = z.object({
-  candles: z.array(coinbaseCandleSchema).max(350),
+	candles: z.array(coinbaseCandleSchema).max(350),
 });
 
 const coinbaseTickerResponseSchema = z.object({
-  price: numberLikeSchema,
+	price: numberLikeSchema,
 });
 
 export interface MarketCache {
-  get(key: string): Promise<string | null>;
-  put(
-    key: string,
-    value: string,
-    options: { readonly expirationTtl: number },
-  ): Promise<void>;
+	get(key: string): Promise<string | null>;
+	put(
+		key: string,
+		value: string,
+		options: { readonly expirationTtl: number },
+	): Promise<void>;
 }
 
 export type MarketDataError =
-  | { readonly code: "INVALID_REQUEST" }
-  | { readonly code: "INVALID_RESPONSE" }
-  | { readonly code: "NETWORK_UNAVAILABLE" }
-  | { readonly code: "RATE_LIMITED"; readonly retryAfterSeconds?: number }
-  | { readonly code: "UPSTREAM_UNAVAILABLE"; readonly status: number };
+	| { readonly code: "INVALID_REQUEST" }
+	| { readonly code: "INVALID_RESPONSE" }
+	| { readonly code: "NETWORK_UNAVAILABLE" }
+	| { readonly code: "RATE_LIMITED"; readonly retryAfterSeconds?: number }
+	| { readonly code: "UPSTREAM_UNAVAILABLE"; readonly status: number };
 
 export interface CandleSnapshot {
-  readonly productId: ProductId;
-  readonly timeframe: Timeframe;
-  readonly candles: readonly Candle[];
-  readonly source: "coinbase";
-  readonly cached: boolean;
+	readonly productId: ProductId;
+	readonly timeframe: Timeframe;
+	readonly candles: readonly Candle[];
+	readonly source: "coinbase";
+	readonly cached: boolean;
 }
 
 export interface TickerSnapshot {
-  readonly productId: ProductId;
-  readonly price: number;
-  readonly observedAt: number;
-  readonly source: "coinbase";
-  readonly cached: boolean;
+	readonly productId: ProductId;
+	readonly price: number;
+	readonly observedAt: number;
+	readonly source: "coinbase";
+	readonly cached: boolean;
 }
 
 export interface CoinbaseMarketDataOptions {
-  readonly baseUrl: string;
-  readonly cache: MarketCache;
-  readonly cacheTtlSeconds: number;
-  readonly fetch?: typeof fetch;
-  readonly now?: () => number;
+	readonly baseUrl: string;
+	readonly cache: MarketCache;
+	readonly cacheTtlSeconds: number;
+	readonly fetch?: typeof fetch;
+	readonly now?: () => number;
 }
 
 const parseRetryAfter = (response: Response): number | undefined => {
-  const raw = response.headers.get("retry-after");
-  if (raw === null) return undefined;
-  const seconds = Number(raw);
-  return Number.isSafeInteger(seconds) && seconds >= 0 ? seconds : undefined;
+	const raw = response.headers.get("retry-after");
+	if (raw === null) return undefined;
+	const seconds = Number(raw);
+	return Number.isSafeInteger(seconds) && seconds >= 0 ? seconds : undefined;
 };
 
 const responseError = (response: Response): MarketDataError => {
-  if (response.status === 429) {
-    const retryAfterSeconds = parseRetryAfter(response);
-    return retryAfterSeconds === undefined
-      ? { code: "RATE_LIMITED" }
-      : { code: "RATE_LIMITED", retryAfterSeconds };
-  }
-  return { code: "UPSTREAM_UNAVAILABLE", status: response.status };
+	if (response.status === 429) {
+		const retryAfterSeconds = parseRetryAfter(response);
+		return retryAfterSeconds === undefined
+			? { code: "RATE_LIMITED" }
+			: { code: "RATE_LIMITED", retryAfterSeconds };
+	}
+	return { code: "UPSTREAM_UNAVAILABLE", status: response.status };
 };
 
 const normalizeBaseUrl = (raw: string): string => raw.replace(/\/$/, "");
@@ -119,304 +119,320 @@ const normalizeBaseUrl = (raw: string): string => raw.replace(/\/$/, "");
 export const CLOSED_WINDOW_CACHE_TTL_SECONDS = 21_600;
 
 const logRateLimited = (
-  kind: "candles" | "ticker",
-  productId: string,
-  error: MarketDataError,
+	kind: "candles" | "ticker",
+	productId: string,
+	error: MarketDataError,
 ): void => {
-  if (error.code !== "RATE_LIMITED") return;
-  console.warn(
-    JSON.stringify({
-      event: "coinbase_rate_limited",
-      kind,
-      productId,
-      retryAfterSeconds: error.retryAfterSeconds ?? null,
-    }),
-  );
+	if (error.code !== "RATE_LIMITED") return;
+	console.warn(
+		JSON.stringify({
+			event: "coinbase_rate_limited",
+			kind,
+			productId,
+			retryAfterSeconds: error.retryAfterSeconds ?? null,
+		}),
+	);
 };
 
 /** Trace d'une requête marché, renseignée par l'appel amont (effects.md, 2026-10-07). */
 interface MarketRequestTrace {
-  status: number | null;
-  retryAfterRaw: string | null;
+	status: number | null;
+	retryAfterRaw: string | null;
 }
 
 const traceResponse = (trace: MarketRequestTrace, response: Response): void => {
-  trace.status = response.status;
-  trace.retryAfterRaw = response.headers.get("retry-after")?.slice(0, 64) ?? null;
+	trace.status = response.status;
+	trace.retryAfterRaw =
+		response.headers.get("retry-after")?.slice(0, 64) ?? null;
 };
 
 const logMarketRequest = (
-  kind: "candles" | "ticker",
-  productId: string,
-  trace: MarketRequestTrace,
-  result: Result<{ readonly cached: boolean }, MarketDataError>,
-  latencyMs: number,
+	kind: "candles" | "ticker",
+	productId: string,
+	trace: MarketRequestTrace,
+	result: Result<{ readonly cached: boolean }, MarketDataError>,
+	latencyMs: number,
 ): void => {
-  console.log(
-    JSON.stringify({
-      event: "coinbase_market_request",
-      kind,
-      productId: productId.slice(0, 32),
-      cached: result.ok ? result.value.cached : false,
-      status: trace.status,
-      outcome: result.ok ? "OK" : result.error.code,
-      retryAfterRaw: trace.retryAfterRaw,
-      latencyMs,
-    }),
-  );
+	console.log(
+		JSON.stringify({
+			event: "coinbase_market_request",
+			kind,
+			productId: productId.slice(0, 32),
+			cached: result.ok ? result.value.cached : false,
+			status: trace.status,
+			outcome: result.ok ? "OK" : result.error.code,
+			retryAfterRaw: trace.retryAfterRaw,
+			latencyMs,
+		}),
+	);
 };
 
 const parseCached = <T>(raw: string | null): T | undefined => {
-  if (raw === null || raw.length > MAX_COINBASE_RESPONSE_BYTES) return undefined;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return undefined;
-  }
+	if (raw === null || raw.length > MAX_COINBASE_RESPONSE_BYTES)
+		return undefined;
+	try {
+		return JSON.parse(raw) as T;
+	} catch {
+		return undefined;
+	}
 };
 
 export class CoinbaseMarketData {
-  readonly #baseUrl: string;
-  readonly #cache: MarketCache;
-  readonly #cacheTtlSeconds: number;
-  readonly #fetch: typeof fetch;
-  readonly #now: () => number;
+	readonly #baseUrl: string;
+	readonly #cache: MarketCache;
+	readonly #cacheTtlSeconds: number;
+	readonly #fetch: typeof fetch;
+	readonly #now: () => number;
 
-  constructor(options: CoinbaseMarketDataOptions) {
-    this.#baseUrl = normalizeBaseUrl(options.baseUrl);
-    this.#cache = options.cache;
-    this.#cacheTtlSeconds = Math.max(
-      1,
-      Math.min(3_600, Math.floor(options.cacheTtlSeconds)),
-    );
-    this.#fetch = (options.fetch ?? globalThis.fetch).bind(globalThis);
-    this.#now = options.now ?? Date.now;
-  }
+	constructor(options: CoinbaseMarketDataOptions) {
+		this.#baseUrl = normalizeBaseUrl(options.baseUrl);
+		this.#cache = options.cache;
+		this.#cacheTtlSeconds = Math.max(
+			1,
+			Math.min(3_600, Math.floor(options.cacheTtlSeconds)),
+		);
+		this.#fetch = (options.fetch ?? globalThis.fetch).bind(globalThis);
+		this.#now = options.now ?? Date.now;
+	}
 
-  async getCandles(
-    request: CandleRequest,
-  ): Promise<Result<CandleSnapshot, MarketDataError>> {
-    const startedAt = this.#now();
-    const trace: MarketRequestTrace = { status: null, retryAfterRaw: null };
-    const result = await this.#getCandles(request, trace);
-    logMarketRequest("candles", request.productId, trace, result, this.#now() - startedAt);
-    return result;
-  }
+	async getCandles(
+		request: CandleRequest,
+	): Promise<Result<CandleSnapshot, MarketDataError>> {
+		const startedAt = this.#now();
+		const trace: MarketRequestTrace = { status: null, retryAfterRaw: null };
+		const result = await this.#getCandles(request, trace);
+		logMarketRequest(
+			"candles",
+			request.productId,
+			trace,
+			result,
+			this.#now() - startedAt,
+		);
+		return result;
+	}
 
-  async #getCandles(
-    request: CandleRequest,
-    trace: MarketRequestTrace,
-  ): Promise<Result<CandleSnapshot, MarketDataError>> {
-    const productResult = createProductId(request.productId);
-    if (!productResult.ok || request.limit < 1 || request.limit > 350) {
-      return err({ code: "INVALID_REQUEST" });
-    }
+	async #getCandles(
+		request: CandleRequest,
+		trace: MarketRequestTrace,
+	): Promise<Result<CandleSnapshot, MarketDataError>> {
+		const productResult = createProductId(request.productId);
+		if (!productResult.ok || request.limit < 1 || request.limit > 350) {
+			return err({ code: "INVALID_REQUEST" });
+		}
 
-    const duration = timeframeSeconds[request.timeframe];
-    const end = request.end ?? Math.floor(this.#now() / 1_000);
-    const start = end - duration * request.limit;
-    if (!Number.isSafeInteger(end) || start < 0) {
-      return err({ code: "INVALID_REQUEST" });
-    }
+		const duration = timeframeSeconds[request.timeframe];
+		const end = request.end ?? Math.floor(this.#now() / 1_000);
+		const start = end - duration * request.limit;
+		if (!Number.isSafeInteger(end) || start < 0) {
+			return err({ code: "INVALID_REQUEST" });
+		}
 
-    const cacheKey = [
-      "market",
-      "candles",
-      "v2",
-      productResult.value,
-      request.timeframe,
-      start,
-      end,
-      request.limit,
-    ].join(":");
-    const cached = parseCached<Omit<CandleSnapshot, "cached">>(
-      await this.#cache.get(cacheKey).catch(() => null),
-    );
-    if (cached !== undefined) {
-      const validation = validateCandleSeries(cached.candles);
-      if (
-        validation.ok &&
-        cached.productId === productResult.value &&
-        cached.timeframe === request.timeframe &&
-        cached.source === "coinbase"
-      ) {
-        return ok(Object.freeze({ ...cached, candles: validation.value, cached: true }));
-      }
-    }
+		const cacheKey = [
+			"market",
+			"candles",
+			"v2",
+			productResult.value,
+			request.timeframe,
+			start,
+			end,
+			request.limit,
+		].join(":");
+		const cached = parseCached<Omit<CandleSnapshot, "cached">>(
+			await this.#cache.get(cacheKey).catch(() => null),
+		);
+		if (cached !== undefined) {
+			const validation = validateCandleSeries(cached.candles);
+			if (
+				validation.ok &&
+				cached.productId === productResult.value &&
+				cached.timeframe === request.timeframe &&
+				cached.source === "coinbase"
+			) {
+				return ok(
+					Object.freeze({ ...cached, candles: validation.value, cached: true }),
+				);
+			}
+		}
 
-    const url = new URL(
-      `${this.#baseUrl}/api/v3/brokerage/market/products/${encodeURIComponent(productResult.value)}/candles`,
-    );
-    url.searchParams.set("start", String(start));
-    url.searchParams.set("end", String(end));
-    url.searchParams.set("granularity", request.timeframe);
-    url.searchParams.set("limit", String(request.limit));
+		const url = new URL(
+			`${this.#baseUrl}/api/v3/brokerage/market/products/${encodeURIComponent(productResult.value)}/candles`,
+		);
+		url.searchParams.set("start", String(start));
+		url.searchParams.set("end", String(end));
+		url.searchParams.set("granularity", request.timeframe);
+		url.searchParams.set("limit", String(request.limit));
 
-    let response: Response;
-    try {
-      response = await this.#fetch(url, {
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (caught) {
-      console.warn(
-        JSON.stringify({
-          event: "coinbase_candles_fetch_failed",
-          errorType: caught instanceof Error ? caught.name : "UnknownError",
-          errorMessage:
-            caught instanceof Error ? caught.message.slice(0, 200) : undefined,
-        }),
-      );
-      return err({ code: "NETWORK_UNAVAILABLE" });
-    }
-    traceResponse(trace, response);
+		let response: Response;
+		try {
+			response = await this.#fetch(url, {
+				headers: { accept: "application/json" },
+				signal: AbortSignal.timeout(10_000),
+			});
+		} catch (caught) {
+			console.warn(
+				JSON.stringify({
+					event: "coinbase_candles_fetch_failed",
+					errorType: caught instanceof Error ? caught.name : "UnknownError",
+					errorMessage:
+						caught instanceof Error ? caught.message.slice(0, 200) : undefined,
+				}),
+			);
+			return err({ code: "NETWORK_UNAVAILABLE" });
+		}
+		traceResponse(trace, response);
 
-    if (!response.ok) {
-      console.warn(
-        JSON.stringify({
-          event: "coinbase_candles_response_failed",
-          status: response.status,
-        }),
-      );
-      const error = responseError(response);
-      logRateLimited("candles", productResult.value, error);
-      await response.body?.cancel().catch(() => undefined);
-      return err(error);
-    }
+		if (!response.ok) {
+			console.warn(
+				JSON.stringify({
+					event: "coinbase_candles_response_failed",
+					status: response.status,
+				}),
+			);
+			const error = responseError(response);
+			logRateLimited("candles", productResult.value, error);
+			await response.body?.cancel().catch(() => undefined);
+			return err(error);
+		}
 
-    let parsed: z.infer<typeof coinbaseCandleResponseSchema>;
-    try {
-      const json = await readBoundedJson(response, MAX_COINBASE_RESPONSE_BYTES);
-      const result = coinbaseCandleResponseSchema.safeParse(json);
-      if (!result.success) return err({ code: "INVALID_RESPONSE" });
-      parsed = result.data;
-    } catch {
-      return err({ code: "INVALID_RESPONSE" });
-    }
+		let parsed: z.infer<typeof coinbaseCandleResponseSchema>;
+		try {
+			const json = await readBoundedJson(response, MAX_COINBASE_RESPONSE_BYTES);
+			const result = coinbaseCandleResponseSchema.safeParse(json);
+			if (!result.success) return err({ code: "INVALID_RESPONSE" });
+			parsed = result.data;
+		} catch {
+			return err({ code: "INVALID_RESPONSE" });
+		}
 
-    const candles: Candle[] = [];
-    for (const raw of parsed.candles) {
-      const candleResult = createCandle({
-        start: raw.start * 1_000,
-        open: raw.open,
-        high: raw.high,
-        low: raw.low,
-        close: raw.close,
-        volume: raw.volume,
-      });
-      if (!candleResult.ok) return err({ code: "INVALID_RESPONSE" });
-      candles.push(candleResult.value);
-    }
-    candles.sort((left, right) => left.start - right.start);
+		const candles: Candle[] = [];
+		for (const raw of parsed.candles) {
+			const candleResult = createCandle({
+				start: raw.start * 1_000,
+				open: raw.open,
+				high: raw.high,
+				low: raw.low,
+				close: raw.close,
+				volume: raw.volume,
+			});
+			if (!candleResult.ok) return err({ code: "INVALID_RESPONSE" });
+			candles.push(candleResult.value);
+		}
+		candles.sort((left, right) => left.start - right.start);
 
-    const seriesResult = validateCandleSeries(candles);
-    if (!seriesResult.ok) return err({ code: "INVALID_RESPONSE" });
+		const seriesResult = validateCandleSeries(candles);
+		if (!seriesResult.ok) return err({ code: "INVALID_RESPONSE" });
 
-    const snapshot = Object.freeze({
-      productId: productResult.value,
-      timeframe: request.timeframe,
-      candles: seriesResult.value,
-      source: "coinbase" as const,
-      cached: false,
-    });
-    const cacheValue = JSON.stringify({
-      productId: snapshot.productId,
-      timeframe: snapshot.timeframe,
-      candles: snapshot.candles,
-      source: snapshot.source,
-    });
-    // Fenêtre entièrement close ⇒ immuable ⇒ TTL long ; sinon TTL court
-    // strictement inférieur à la granularité (chandelle en cours).
-    const windowClosed = (end + duration) * 1_000 <= this.#now();
-    const expirationTtl = windowClosed
-      ? CLOSED_WINDOW_CACHE_TTL_SECONDS
-      : Math.min(this.#cacheTtlSeconds, Math.max(1, duration - 1));
-    await this.#cache
-      .put(cacheKey, cacheValue, { expirationTtl })
-      .catch(() => undefined);
-    return ok(snapshot);
-  }
+		const snapshot = Object.freeze({
+			productId: productResult.value,
+			timeframe: request.timeframe,
+			candles: seriesResult.value,
+			source: "coinbase" as const,
+			cached: false,
+		});
+		const cacheValue = JSON.stringify({
+			productId: snapshot.productId,
+			timeframe: snapshot.timeframe,
+			candles: snapshot.candles,
+			source: snapshot.source,
+		});
+		// Fenêtre entièrement close ⇒ immuable ⇒ TTL long ; sinon TTL court
+		// strictement inférieur à la granularité (chandelle en cours).
+		const windowClosed = (end + duration) * 1_000 <= this.#now();
+		const expirationTtl = windowClosed
+			? CLOSED_WINDOW_CACHE_TTL_SECONDS
+			: Math.min(this.#cacheTtlSeconds, Math.max(1, duration - 1));
+		await this.#cache
+			.put(cacheKey, cacheValue, { expirationTtl })
+			.catch(() => undefined);
+		return ok(snapshot);
+	}
 
-  async getTicker(
-    request: TickerRequest,
-  ): Promise<Result<TickerSnapshot, MarketDataError>> {
-    const startedAt = this.#now();
-    const trace: MarketRequestTrace = { status: null, retryAfterRaw: null };
-    const result = await this.#getTicker(request, trace);
-    logMarketRequest("ticker", request.productId, trace, result, this.#now() - startedAt);
-    return result;
-  }
+	async getTicker(
+		request: TickerRequest,
+	): Promise<Result<TickerSnapshot, MarketDataError>> {
+		const startedAt = this.#now();
+		const trace: MarketRequestTrace = { status: null, retryAfterRaw: null };
+		const result = await this.#getTicker(request, trace);
+		logMarketRequest(
+			"ticker",
+			request.productId,
+			trace,
+			result,
+			this.#now() - startedAt,
+		);
+		return result;
+	}
 
-  async #getTicker(
-    request: TickerRequest,
-    trace: MarketRequestTrace,
-  ): Promise<Result<TickerSnapshot, MarketDataError>> {
-    const productResult = createProductId(request.productId);
-    if (!productResult.ok) return err({ code: "INVALID_REQUEST" });
+	async #getTicker(
+		request: TickerRequest,
+		trace: MarketRequestTrace,
+	): Promise<Result<TickerSnapshot, MarketDataError>> {
+		const productResult = createProductId(request.productId);
+		if (!productResult.ok) return err({ code: "INVALID_REQUEST" });
 
-    const cacheKey = `market:ticker:v1:${productResult.value}`;
-    const cached = parseCached<Omit<TickerSnapshot, "cached">>(
-      await this.#cache.get(cacheKey).catch(() => null),
-    );
-    if (
-      cached !== undefined &&
-      cached.productId === productResult.value &&
-      Number.isFinite(cached.price) &&
-      cached.price > 0 &&
-      Number.isSafeInteger(cached.observedAt) &&
-      cached.source === "coinbase"
-    ) {
-      return ok(Object.freeze({ ...cached, cached: true }));
-    }
+		const cacheKey = `market:ticker:v1:${productResult.value}`;
+		const cached = parseCached<Omit<TickerSnapshot, "cached">>(
+			await this.#cache.get(cacheKey).catch(() => null),
+		);
+		if (
+			cached !== undefined &&
+			cached.productId === productResult.value &&
+			Number.isFinite(cached.price) &&
+			cached.price > 0 &&
+			Number.isSafeInteger(cached.observedAt) &&
+			cached.source === "coinbase"
+		) {
+			return ok(Object.freeze({ ...cached, cached: true }));
+		}
 
-    const url = new URL(
-      `${this.#baseUrl}/api/v3/brokerage/market/products/${encodeURIComponent(productResult.value)}`,
-    );
-    let response: Response;
-    try {
-      response = await this.#fetch(url, {
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch {
-      return err({ code: "NETWORK_UNAVAILABLE" });
-    }
-    traceResponse(trace, response);
-    if (!response.ok) {
-      const error = responseError(response);
-      logRateLimited("ticker", productResult.value, error);
-      await response.body?.cancel().catch(() => undefined);
-      return err(error);
-    }
+		const url = new URL(
+			`${this.#baseUrl}/api/v3/brokerage/market/products/${encodeURIComponent(productResult.value)}`,
+		);
+		let response: Response;
+		try {
+			response = await this.#fetch(url, {
+				headers: { accept: "application/json" },
+				signal: AbortSignal.timeout(10_000),
+			});
+		} catch {
+			return err({ code: "NETWORK_UNAVAILABLE" });
+		}
+		traceResponse(trace, response);
+		if (!response.ok) {
+			const error = responseError(response);
+			logRateLimited("ticker", productResult.value, error);
+			await response.body?.cancel().catch(() => undefined);
+			return err(error);
+		}
 
-    try {
-      const json = await readBoundedJson(response, MAX_COINBASE_RESPONSE_BYTES);
-      const parsed = coinbaseTickerResponseSchema.safeParse(json);
-      if (!parsed.success || parsed.data.price <= 0) {
-        return err({ code: "INVALID_RESPONSE" });
-      }
-      const snapshot = Object.freeze({
-        productId: productResult.value,
-        price: parsed.data.price,
-        observedAt: Math.floor(this.#now() / 1_000),
-        source: "coinbase" as const,
-        cached: false,
-      });
-      await this.#cache
-        .put(
-          cacheKey,
-          JSON.stringify({
-            productId: snapshot.productId,
-            price: snapshot.price,
-            observedAt: snapshot.observedAt,
-            source: snapshot.source,
-          }),
-          { expirationTtl: this.#cacheTtlSeconds },
-        )
-        .catch(() => undefined);
-      return ok(snapshot);
-    } catch {
-      return err({ code: "INVALID_RESPONSE" });
-    }
-  }
+		try {
+			const json = await readBoundedJson(response, MAX_COINBASE_RESPONSE_BYTES);
+			const parsed = coinbaseTickerResponseSchema.safeParse(json);
+			if (!parsed.success || parsed.data.price <= 0) {
+				return err({ code: "INVALID_RESPONSE" });
+			}
+			const snapshot = Object.freeze({
+				productId: productResult.value,
+				price: parsed.data.price,
+				observedAt: Math.floor(this.#now() / 1_000),
+				source: "coinbase" as const,
+				cached: false,
+			});
+			await this.#cache
+				.put(
+					cacheKey,
+					JSON.stringify({
+						productId: snapshot.productId,
+						price: snapshot.price,
+						observedAt: snapshot.observedAt,
+						source: snapshot.source,
+					}),
+					{ expirationTtl: this.#cacheTtlSeconds },
+				)
+				.catch(() => undefined);
+			return ok(snapshot);
+		} catch {
+			return err({ code: "INVALID_RESPONSE" });
+		}
+	}
 }

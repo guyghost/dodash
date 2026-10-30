@@ -1,26 +1,27 @@
 {
-  "name": "@dodash/mcp-market-data",
-  "version": "0.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "wrangler deploy --dry-run --outdir dist",
-    "check": "tsc -p tsconfig.json --noEmit",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev --port 8788",
-    "test": "vitest run",
-    "types": "wrangler types"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260823.1",
-    "@types/node": "^26.2.0",
-    "vitest": "^4.1.11",
-    "wrangler": "^4.125.0"
-  },
-  "dependencies": {
-    "@dodash/domain": "workspace:*",
-    "@modelcontextprotocol/server": "2.0.0",
-    "agents": "^0.21.0",
-    "zod": "^4.4.3"
-  }
+	"name": "@dodash/mcp-market-data",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "wrangler deploy --dry-run --outdir dist",
+		"check": "tsc -p tsconfig.json --noEmit",
+		"deploy": "wrangler deploy",
+		"dev": "wrangler dev --port 8788",
+		"test": "vitest run",
+		"types": "wrangler types"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^5.20260823.1",
+		"@types/node": "^26.2.0",
+		"vitest": "^4.1.11",
+		"wrangler": "^4.125.0"
+	},
+	"dependencies": {
+		"@dodash/domain": "workspace:*",
+		"@dodash/models": "workspace:*",
+		"@modelcontextprotocol/server": "2.0.0",
+		"agents": "^0.21.0",
+		"zod": "^4.4.3"
+	}
 }

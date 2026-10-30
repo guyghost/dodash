@@ -1,262 +1,308 @@
-import { err, ok, TIMEFRAME_MILLISECONDS, type OrderIntent, type ProductId, type Result } from "@dodash/domain";
+import {
+	type Candle,
+	err,
+	type OrderIntent,
+	ok,
+	type ProductId,
+	type Result,
+	TIMEFRAME_MILLISECONDS,
+} from "@dodash/domain";
+import {
+	type AiTrendBias,
+	type AiTrendSignal,
+	acceptPaperValuationMark,
+	assessLiveTradingAgentIdentity,
+	type ControlPermissions,
+	DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
+	DASHBOARD_PNL_HISTORY_MAX_CYCLES,
+	type DashboardPnlHistoryResult,
+	type DashboardPnlOrderRow,
+	type DashboardPortfolioSummaryResult,
+	type LivePreflightFailureReason,
+	type MarketRetryWakePayload,
+	normalizePaperValuationMark,
+	type PaperValuationMark,
+	PORTFOLIO_PRODUCT_STAGGER_MS,
+	planCycleWake,
+	projectDashboardPnlHistory,
+	projectDecisionAdmission,
+	projectPaperValuation,
+	resolveCycleSchedule,
+	resolveDailyRiskWindow,
+	resolveMissedDecision,
+	resolveRetryWake,
+	shouldStartPendingCycle,
+	type TradingCycleEvent,
+	type WorkflowError,
+} from "@dodash/models";
 import { executePaperOrder } from "@dodash/paper-execution";
 import type { RiskDecision } from "@dodash/risk";
-import {
-  assessLiveTradingAgentIdentity,
-  DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
-  DASHBOARD_PNL_HISTORY_MAX_CYCLES,
-  projectDashboardPnlHistory,
-  acceptPaperValuationMark,
-  normalizePaperValuationMark,
-  projectPaperValuation,
-  resolveCycleSchedule,
-  resolveDailyRiskWindow,
-  resolveMissedDecision,
-  resolveRetryWake,
-  planCycleWake,
-  shouldStartPendingCycle,
-  projectDecisionAdmission,
-  PORTFOLIO_PRODUCT_STAGGER_MS,
-  type ControlPermissions,
-  type MarketRetryWakePayload,
-  type DashboardPnlHistoryResult,
-  type DashboardPnlOrderRow,
-  type DashboardPortfolioSummaryResult,
-  type PaperValuationMark,
-  type TradingCycleEvent,
-  type LivePreflightFailureReason,
-  type WorkflowError,
-} from "@dodash/models";
 import { Agent } from "agents";
-
+import { requestGatewayDecision } from "./ai-decision-gateway.js";
 import {
-  admitAgentConfiguration,
-  isMultiProductConfigurationInput,
-  parseAgentConfiguration,
-  parseMultiProductAgentConfiguration,
-  projectProductSlotConfiguration,
-  type AgentConfiguration,
-} from "./configuration.js";
+	parseCalibrationQuery,
+	planOutcomeFetchWindows,
+	resolveTrendOutcomes,
+	type TrendOutcomeRow,
+	type TrendSignalRow,
+} from "./ai-trend-calibration.js";
+import type { AiTrendCollection } from "./ai-trend-producer.js";
 import {
-  type PerpOrderRequestResult,
-  recoverPerpOrders,
-  submitPerpOrderIntent,
-} from "./hyperliquid-control.js";
+	AI_TREND_CANDLE_LIMIT,
+	AI_TREND_SIGNALS_SCHEMA,
+	type AiTrendQuestionVersion,
+	collectTrendSignal,
+	collectTrendSignalV2,
+	resolveTrendTimeframe,
+	type TrendSignalMeta,
+} from "./ai-trend-producer.js";
 import {
-  admitHyperliquidPerpAgent,
-} from "./configuration.js";
+	collectRetrospectiveTrendSignals,
+	collectRetrospectiveTrendSignalsV2,
+	fetchCandlesViaMarketService,
+	parseRetrospectiveCommand,
+	type RetrospectiveCollectReport,
+} from "./ai-trend-retrospective.js";
 import {
-  PERP_FILLS_SCHEMA,
-  PERP_ORDERS_SCHEMA,
-  createSqlitePerpOrderStore,
-  type PerpOrderSqlAdapter,
-} from "./hyperliquid-store.js";
-import {
-  createHyperliquidPerpRunner,
-  type HyperliquidPerpRunner,
-} from "./hyperliquid-orchestrator.js";
-import { toPerpIntent } from "./hyperliquid-control.js";
-import {
-  derivePerpRiskGate,
-  fetchHyperliquidAccountState,
-  hyperliquidCoin,
-} from "./hyperliquid-execution.js";
-import {
-  type HyperliquidExecutionSettings,
-  resolveHyperliquidSettings,
-} from "./hyperliquid-settings.js";
-import {
-  preflightCoinbaseLive,
-  type CoinbaseLivePreflightReport,
-} from "./coinbase-preflight.js";
-import {
-  executeCoinbaseKill,
-  executeCoinbaseProtectedSell,
-  type CoinbaseProtectedSellCheckpoint,
-  type CoinbaseProtectedSellPersistence,
+	type CoinbaseProtectedSellCheckpoint,
+	type CoinbaseProtectedSellPersistence,
+	executeCoinbaseKill,
+	executeCoinbaseProtectedSell,
 } from "./coinbase-control.js";
 import {
-  COINBASE_CREATE_ORDER_PATH,
-  coinbaseOrderPath,
-  confirmCoinbaseProtectiveOrder,
-  createCoinbaseAuthorization,
-  getCoinbaseOrder,
-  resolveCoinbaseSettings,
-  submitCoinbaseOrder,
-  type CoinbaseExecutionSettings,
-  type CoinbaseProtectionPlan,
+	COINBASE_CREATE_ORDER_PATH,
+	type CoinbaseExecutionSettings,
+	type CoinbaseProtectionPlan,
+	coinbaseOrderPath,
+	confirmCoinbaseProtectiveOrder,
+	createCoinbaseAuthorization,
+	getCoinbaseOrder,
+	resolveCoinbaseSettings,
+	submitCoinbaseOrder,
 } from "./coinbase-execution.js";
-import { createTradingCycleEffects } from "./trading-effects.js";
+import {
+	type CoinbaseLivePreflightReport,
+	preflightCoinbaseLive,
+} from "./coinbase-preflight.js";
+import {
+	type AgentConfiguration,
+	admitAgentConfiguration,
+	admitHyperliquidPerpAgent,
+	isMultiProductConfigurationInput,
+	parseAgentConfiguration,
+	parseMultiProductAgentConfiguration,
+	projectProductSlotConfiguration,
+} from "./configuration.js";
+import {
+	type PerpOrderRequestResult,
+	recoverPerpOrders,
+	submitPerpOrderIntent,
+	toPerpIntent,
+} from "./hyperliquid-control.js";
+import {
+	derivePerpRiskGate,
+	fetchHyperliquidAccountState,
+	hyperliquidCoin,
+} from "./hyperliquid-execution.js";
+import {
+	createHyperliquidPerpRunner,
+	type HyperliquidPerpRunner,
+} from "./hyperliquid-orchestrator.js";
+import {
+	type HyperliquidExecutionSettings,
+	resolveHyperliquidSettings,
+} from "./hyperliquid-settings.js";
+import {
+	createSqlitePerpOrderStore,
+	PERP_FILLS_SCHEMA,
+	PERP_ORDERS_SCHEMA,
+	type PerpOrderSqlAdapter,
+} from "./hyperliquid-store.js";
 import { runTradingCycle } from "./interpreter.js";
 import {
-  createPortfolioMachineSession,
-  initialProductRuntime,
-  portfolioEventForProductPhase,
-  portfolioProductIds,
-  productGrossExposure,
-  projectPortfolioSessionSummary,
-  proposePortfolioRisk,
-  resolveRestoredPortfolioSession,
-  sendPortfolioEvent,
-  type PersistedPortfolioMachine,
-  type PortfolioSessionState,
-} from "./portfolio-runtime.js";
-import { createTradingMachineSession, type PersistedTradingMachine } from "./machine-session.js";
+	createTradingMachineSession,
+	type PersistedTradingMachine,
+} from "./machine-session.js";
 import {
-  INITIAL_AGENT_STATE,
-  machineIsEnabled,
-  portfolioIsEnabled,
-  paperValuationFor,
-  scheduleMatches,
-  resolveCycleDailyRiskCompletion,
-  resolveCycleDailyRiskStart,
-  resolveCycleInvocation,
-  resolveLiveStartContinuity,
-  toAgentStateSnapshot,
-  type AgentStateSnapshot,
-  type CycleSummary,
-  type PortfolioProductRuntime,
-  type TradingAgentState,
+	createOperatorNotificationDeduper,
+	emitOperatorNotifications,
+	type OperatorNotificationSourceKind,
+	resolveOperatorNotificationSettings,
+} from "./operator-notifications.js";
+import {
+	createPortfolioMachineSession,
+	initialProductRuntime,
+	type PersistedPortfolioMachine,
+	type PortfolioSessionState,
+	portfolioEventForProductPhase,
+	portfolioProductIds,
+	productGrossExposure,
+	projectPortfolioSessionSummary,
+	proposePortfolioRisk,
+	resolveRestoredPortfolioSession,
+	sendPortfolioEvent,
+} from "./portfolio-runtime.js";
+import {
+	type AgentStateSnapshot,
+	type CycleSummary,
+	INITIAL_AGENT_STATE,
+	machineIsEnabled,
+	type PortfolioProductRuntime,
+	paperValuationFor,
+	portfolioIsEnabled,
+	resolveCycleDailyRiskCompletion,
+	resolveCycleDailyRiskStart,
+	resolveCycleInvocation,
+	resolveLiveStartContinuity,
+	scheduleMatches,
+	type TradingAgentState,
+	toAgentStateSnapshot,
 } from "./state.js";
 import {
-  emitTradingTelemetry,
-  brokerRejectionCodeOf,
-  projectMissedDecisionTelemetry,
-  type TradingTelemetryEvent,
-  type TradingTelemetrySink,
+	brokerRejectionCodeOf,
+	emitTradingTelemetry,
+	projectMissedDecisionTelemetry,
+	type TradingTelemetryEvent,
+	type TradingTelemetrySink,
 } from "./telemetry.js";
-import {
-  createOperatorNotificationDeduper,
-  emitOperatorNotifications,
-  resolveOperatorNotificationSettings,
-  type OperatorNotificationSourceKind,
-} from "./operator-notifications.js";
+import { createTradingCycleEffects } from "./trading-effects.js";
 import type {
-  CycleArtifacts,
-  ExecutionAuthorization,
-  OrderSubmission,
-  TradingCycleEffects,
+	CycleArtifacts,
+	ExecutionAuthorization,
+	MarketSnapshot,
+	OrderSubmission,
+	TradingCycleEffects,
 } from "./types.js";
 import {
-  executionWorkflowError,
-  reconciliationWorkflowError,
-  storageWorkflowError,
+	executionWorkflowError,
+	reconciliationWorkflowError,
+	storageWorkflowError,
 } from "./workflow-errors.js";
 
 export interface TradingEnv extends Env {
-  readonly INTERNAL_SERVICE_TOKEN: string;
-  readonly CONTROL_API_TOKEN: string;
-  readonly LIVE_TRADING_ENABLED?: string;
-  readonly COINBASE_API_BASE_URL?: string;
-  readonly COINBASE_API_KEY_ID?: string;
-  readonly COINBASE_API_PRIVATE_KEY?: string;
-  readonly COINBASE_PORTFOLIO_ID?: string;
-  readonly HYPERLIQUID_PERP_TRADING_ENABLED?: string;
-  readonly HYPERLIQUID_AGENT_PRIVATE_KEY?: string;
-  readonly HYPERLIQUID_WALLET_ADDRESS?: string;
-  readonly HYPERLIQUID_TESTNET?: string;
-  readonly HYPERLIQUID_API_BASE_URL?: string;
-  readonly TRADING_TELEMETRY?: TradingTelemetrySink;
-  readonly OPERATOR_NOTIFY_WEBHOOK_URL?: string;
-  readonly OPERATOR_NOTIFY_SECRET?: string;
+	readonly INTERNAL_SERVICE_TOKEN: string;
+	readonly CONTROL_API_TOKEN: string;
+	readonly LIVE_TRADING_ENABLED?: string;
+	readonly COINBASE_API_BASE_URL?: string;
+	readonly COINBASE_API_KEY_ID?: string;
+	readonly COINBASE_API_PRIVATE_KEY?: string;
+	readonly COINBASE_PORTFOLIO_ID?: string;
+	readonly HYPERLIQUID_PERP_TRADING_ENABLED?: string;
+	readonly HYPERLIQUID_AGENT_PRIVATE_KEY?: string;
+	readonly HYPERLIQUID_WALLET_ADDRESS?: string;
+	readonly HYPERLIQUID_TESTNET?: string;
+	readonly HYPERLIQUID_API_BASE_URL?: string;
+	/** Clé du AI Gateway de Vercel (secret) : active le producteur SHADOW. */
+	readonly AI_GATEWAY_KEY?: string;
+	/** Mode figé par déploiement (models/ai-trend-signal.md §4) : DISABLED éteint la production. */
+	readonly AI_TREND_MODE?: string;
+	/** Grille propre du signal (amendement 2026-10-30) : défaut = timeframe du produit. */
+	readonly AI_TREND_TIMEFRAME?: string;
+	/** Batterie v2 en parallèle de v1 (§9, A/B) : "true" active la double collecte. */
+	readonly AI_TREND_V2?: string;
+	/** SHA du déploiement (wrangler --var BUILD_SHA:…) : sonde anti-DO-épinglé. */
+	readonly BUILD_SHA?: string;
+	readonly TRADING_TELEMETRY?: TradingTelemetrySink;
+	readonly OPERATOR_NOTIFY_WEBHOOK_URL?: string;
+	readonly OPERATOR_NOTIFY_SECRET?: string;
 }
 
 export type AgentCommandResult =
-  | { readonly ok: true; readonly state: AgentStateSnapshot }
-  | {
-      readonly ok: false;
-      readonly error: {
-        readonly code:
-          | "INVALID_CONFIGURATION"
-          | "INVALID_STATE"
-          | "LIVE_PRODUCT_NOT_ALLOWED"
-          | "LIVE_POLICY_MISMATCH"
-          | "LIVE_AGENT_NAME_MISMATCH"
-          | "LIVE_EXECUTION_UNAVAILABLE"
-          | "NOT_CONFIGURED"
-          | "PERP_PRODUCT_NOT_ALLOWED"
-          | "PERP_POLICY_MISMATCH"
-          | "PERP_ADMISSION_REQUIRED"
-          | "HYPERLIQUID_EXECUTION_UNAVAILABLE"
-          | "MULTI_PRODUCT_LIVE_UNSUPPORTED"
-          | "MULTI_PRODUCT_UNSUPPORTED";
-      };
-    };
+	| { readonly ok: true; readonly state: AgentStateSnapshot }
+	| {
+			readonly ok: false;
+			readonly error: {
+				readonly code:
+					| "INVALID_CONFIGURATION"
+					| "INVALID_STATE"
+					| "LIVE_PRODUCT_NOT_ALLOWED"
+					| "LIVE_POLICY_MISMATCH"
+					| "LIVE_AGENT_NAME_MISMATCH"
+					| "LIVE_EXECUTION_UNAVAILABLE"
+					| "NOT_CONFIGURED"
+					| "PERP_PRODUCT_NOT_ALLOWED"
+					| "PERP_POLICY_MISMATCH"
+					| "PERP_ADMISSION_REQUIRED"
+					| "HYPERLIQUID_EXECUTION_UNAVAILABLE"
+					| "MULTI_PRODUCT_LIVE_UNSUPPORTED"
+					| "MULTI_PRODUCT_UNSUPPORTED";
+			};
+	  };
 
 export type LivePreflightCommandResult =
-  | { readonly ok: true; readonly report: CoinbaseLivePreflightReport }
-  | {
-      readonly ok: false;
-      readonly error: {
-        readonly code:
-          | "CONTROL_PERMISSION_REQUIRED"
-          | "INVALID_CONFIGURATION"
-          | "LIVE_PRODUCT_NOT_ALLOWED"
-          | "LIVE_POLICY_MISMATCH"
-          | "LIVE_AGENT_NAME_MISMATCH"
-          | "PREFLIGHT_UNAVAILABLE"
-          | LivePreflightFailureReason;
-      };
-      readonly report?: CoinbaseLivePreflightReport;
-    };
+	| { readonly ok: true; readonly report: CoinbaseLivePreflightReport }
+	| {
+			readonly ok: false;
+			readonly error: {
+				readonly code:
+					| "CONTROL_PERMISSION_REQUIRED"
+					| "INVALID_CONFIGURATION"
+					| "LIVE_PRODUCT_NOT_ALLOWED"
+					| "LIVE_POLICY_MISMATCH"
+					| "LIVE_AGENT_NAME_MISMATCH"
+					| "PREFLIGHT_UNAVAILABLE"
+					| LivePreflightFailureReason;
+			};
+			readonly report?: CoinbaseLivePreflightReport;
+	  };
 
 const storageError = storageWorkflowError;
 const executionError = executionWorkflowError;
 /** Refus broker paper : porte le code fin fermé de l'exécution pure (dao #47). */
 const paperRejectionError = (detail: string): WorkflowError => ({
-  ...executionWorkflowError("ORDER_REJECTED", false),
-  detail,
+	...executionWorkflowError("ORDER_REJECTED", false),
+	detail,
 });
 const reconciliationError = (retryable = true): WorkflowError =>
-  reconciliationWorkflowError("RECONCILIATION_FAILURE", retryable);
+	reconciliationWorkflowError("RECONCILIATION_FAILURE", retryable);
 
 type ApprovedRiskDecision = Extract<
-  RiskDecision,
-  { readonly status: "APPROVED" }
+	RiskDecision,
+	{ readonly status: "APPROVED" }
 >;
 
 const protectionFromRisk = (
-  riskDecision: ApprovedRiskDecision,
+	riskDecision: ApprovedRiskDecision,
 ): CoinbaseProtectionPlan =>
-  Object.freeze({
-    stopLossPrice: riskDecision.stopLossPrice,
-    takeProfitPrice: riskDecision.takeProfitPrice,
-  });
+	Object.freeze({
+		stopLossPrice: riskDecision.stopLossPrice,
+		takeProfitPrice: riskDecision.takeProfitPrice,
+	});
 
 const parseJson = <T>(raw: string): T | null => {
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+	try {
+		return JSON.parse(raw) as T;
+	} catch {
+		return null;
+	}
 };
 
 export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
-  override initialState = INITIAL_AGENT_STATE;
+	override initialState = INITIAL_AGENT_STATE;
 
-  private readonly operatorNotificationDeduper =
-    createOperatorNotificationDeduper();
+	private readonly operatorNotificationDeduper =
+		createOperatorNotificationDeduper();
 
-  /**
-   * Effet de bord de sortie (dao #23) : ajoute la notification opérateur à
-   * l'émission télémétrie. Fire-and-forget : ne peut pas changer une
-   * transition ni bloquer le cycle.
-   */
-  private emitOperatorSideEffects(
-    kind: OperatorNotificationSourceKind,
-    event: TradingTelemetryEvent,
-  ): void {
-    const settings = resolveOperatorNotificationSettings(this.env);
-    emitOperatorNotifications(
-      settings.ok ? settings.value : undefined,
-      kind,
-      event,
-      this.operatorNotificationDeduper,
-    );
-  }
+	/**
+	 * Effet de bord de sortie (dao #23) : ajoute la notification opérateur à
+	 * l'émission télémétrie. Fire-and-forget : ne peut pas changer une
+	 * transition ni bloquer le cycle.
+	 */
+	private emitOperatorSideEffects(
+		kind: OperatorNotificationSourceKind,
+		event: TradingTelemetryEvent,
+	): void {
+		const settings = resolveOperatorNotificationSettings(this.env);
+		emitOperatorNotifications(
+			settings.ok ? settings.value : undefined,
+			kind,
+			event,
+			this.operatorNotificationDeduper,
+		);
+	}
 
-  private ensureTradingPersistenceSchema(): void {
-    this.sql`
+	private ensureTradingPersistenceSchema(): void {
+		this.sql`
       CREATE TABLE IF NOT EXISTS dodash_cycles (
         cycle_id TEXT PRIMARY KEY,
         triggered_at INTEGER NOT NULL,
@@ -269,7 +315,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         updated_at INTEGER NOT NULL
       )
     `;
-    this.sql`
+		this.sql`
       CREATE TABLE IF NOT EXISTS dodash_orders (
         client_order_id TEXT PRIMARY KEY,
         cycle_id TEXT NOT NULL,
@@ -282,1487 +328,2060 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         updated_at INTEGER NOT NULL
       )
     `;
-    // §9.7 : tables existantes étendues du productId — migration
-    // idempotente pour les instances créées avant le branchement.
-    this.ensureProductIdColumn("dodash_cycles");
-    this.ensureProductIdColumn("dodash_orders");
-    this.sql`
+		// §9.7 : tables existantes étendues du productId — migration
+		// idempotente pour les instances créées avant le branchement.
+		this.ensureProductIdColumn("dodash_cycles");
+		this.ensureProductIdColumn("dodash_orders");
+		this.sql`
       CREATE TABLE IF NOT EXISTS dodash_sell_workflows (
         client_order_id TEXT PRIMARY KEY,
         checkpoint_json TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `;
-    this.ctx.storage.sql.exec(PERP_ORDERS_SCHEMA);
-    // dao #31 : fills perp — migration additive (CREATE TABLE IF NOT
-    // EXISTS), idempotente, aucune ligne existante modifiée (C1).
-    this.ctx.storage.sql.exec(PERP_FILLS_SCHEMA);
-  }
+		this.ctx.storage.sql.exec(PERP_ORDERS_SCHEMA);
+		// dao #31 : fills perp — migration additive (CREATE TABLE IF NOT
+		// EXISTS), idempotente, aucune ligne existante modifiée (C1).
+		this.ctx.storage.sql.exec(PERP_FILLS_SCHEMA);
+		// Producteur SHADOW (models/ai-trend-signal.md §3-4) : signaux persistés,
+		// jamais consommés — table additive, idempotente.
+		this.ctx.storage.sql.exec(AI_TREND_SIGNALS_SCHEMA);
+		// Migrations additives (§7.A collection, §9 question_version/threshold_bps)
+		// pour les instances créées avant les collecteurs correspondants.
+		this.ensureAiTrendColumn("collection", "TEXT NOT NULL DEFAULT 'SHADOW'");
+		this.ensureAiTrendColumn("question_version", "TEXT NOT NULL DEFAULT 'v1'");
+		this.ensureAiTrendColumn("threshold_bps", "REAL");
+		// §9 : la PK doit distinguer v1/v2 — reconstruction idempotente.
+		this.migrateAiTrendSignalsPrimaryKey();
+		console.log(
+			JSON.stringify({
+				event: "agent_boot",
+				agentId: this.name,
+				buildSha: this.env.BUILD_SHA ?? "unknown",
+			}),
+		);
+	}
 
-  private ensureProductIdColumn(table: string): void {
-    const columns = this.ctx.storage.sql
-      .exec(`PRAGMA table_info(${table})`)
-      .toArray() as unknown as readonly { name: string }[];
-    if (!columns.some((column) => column.name === "product_id")) {
-      this.ctx.storage.sql.exec(
-        `ALTER TABLE ${table} ADD COLUMN product_id TEXT`,
-      );
-    }
-  }
+	/**
+	 * Reconstruction idempotente de ai_trend_signals avec la PK
+	 * (product_id, candle_closed_at, question_version) : sans elle, une
+	 * ligne v2 d'une même bougie écraserait (ou serait droppée face à) la
+	 * ligne v1 — l'A/B §9 exigerait des lignes distinctes.
+	 */
+	private migrateAiTrendSignalsPrimaryKey(): void {
+		const pk = this.ctx.storage.sql
+			.exec("PRAGMA table_info(ai_trend_signals)")
+			.toArray() as unknown as readonly { name: string; pk: number }[];
+		const pkColumns = pk
+			.filter((column) => column.pk > 0)
+			.map((column) => column.name)
+			.sort();
+		if (pkColumns.length === 3 && pkColumns.includes("question_version")) {
+			return;
+		}
+		this.ctx.storage.sql.exec(`
+      CREATE TABLE ai_trend_signals_rekeyed (
+        product_id TEXT NOT NULL,
+        candle_closed_at INTEGER NOT NULL,
+        observed_at INTEGER NOT NULL,
+        bias TEXT NOT NULL,
+        probability REAL NOT NULL,
+        provider TEXT NOT NULL,
+        latency_ms INTEGER,
+        input_tokens INTEGER,
+        collection TEXT NOT NULL DEFAULT 'SHADOW',
+        question_version TEXT NOT NULL DEFAULT 'v1',
+        threshold_bps REAL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (product_id, candle_closed_at, question_version)
+      )
+    `);
+		this.ctx.storage.sql.exec(
+			"INSERT OR IGNORE INTO ai_trend_signals_rekeyed SELECT product_id, candle_closed_at, observed_at, bias, probability, provider, latency_ms, input_tokens, collection, question_version, threshold_bps, created_at FROM ai_trend_signals",
+		);
+		this.ctx.storage.sql.exec("DROP TABLE ai_trend_signals");
+		this.ctx.storage.sql.exec(
+			"ALTER TABLE ai_trend_signals_rekeyed RENAME TO ai_trend_signals",
+		);
+	}
 
-  /**
-   * Restauration fail-closed de la session portefeuille (C3, règle
-   * models/agent-runtime.md) : tout champ ajouté est normalisé ; un
-   * instantané invalide est un refus fermé explicite — jamais un
-   * démarrage dégradé silencieux.
-   */
-  private restorePortfolioSession(): void {
-    const rawTopLevelMark = (this.state as { lastPaperMark?: unknown }).lastPaperMark;
-    const normalizedTopLevelMark = normalizePaperValuationMark(rawTopLevelMark);
-    if (this.state.lastPaperMark !== normalizedTopLevelMark) {
-      this.setState({ ...this.state, lastPaperMark: normalizedTopLevelMark });
-    }
-    const persisted =
-      (this.state as { portfolioSession?: unknown }).portfolioSession ?? null;
-    if (persisted === null) {
-      // Instantané legacy : normalisation unique des champs ajoutés
-      // (règle models/agent-runtime.md) — aucune écriture si déjà fait.
-      if (
-        this.state.portfolioSession !== null ||
-        this.state.portfolioRestoreError !== null
-      ) {
-        this.setState({
-          ...this.state,
-          portfolioSession: null,
-          portfolioRestoreError: null,
-        });
-      }
-      return;
-    }
-    const restored = resolveRestoredPortfolioSession(persisted);
-    if (restored.ok) {
-      this.setState({
-        ...this.state,
-        portfolioSession: restored.session,
-        portfolioRestoreError: null,
-      });
-      return;
-    }
-    console.error(
-      JSON.stringify({
-        type: "PORTFOLIO_RESTORE_FAILED",
-        reason: restored.reason,
-      }),
-    );
-    this.setState({
-      ...this.state,
-      portfolioSession: null,
-      portfolioRestoreError: restored.reason,
-      enabled: false,
-      updatedAt: Date.now(),
-    });
-  }
+	/** Migration additive : colonne de ai_trend_signals (§7.A, §9). */
+	private ensureAiTrendColumn(name: string, definition: string): void {
+		const columns = this.ctx.storage.sql
+			.exec("PRAGMA table_info(ai_trend_signals)")
+			.toArray() as unknown as readonly { name: string }[];
+		if (!columns.some((column) => column.name === name)) {
+			this.ctx.storage.sql.exec(
+				`ALTER TABLE ai_trend_signals ADD COLUMN ${name} ${definition}`,
+			);
+		}
+	}
 
-  override async onStart(): Promise<void> {
-    this.ensureTradingPersistenceSchema();
-    this.restorePortfolioSession();
-    const portfolio = this.state.portfolioSession;
-    if (this.state.enabled && portfolio !== null) {
-      await this.ensureIntervalSchedule(portfolio.configuration.intervalSeconds);
-      return;
-    }
-    if (this.state.enabled && this.state.configuration !== null) {
-      await this.ensureIntervalSchedule(this.state.configuration.intervalSeconds);
-    }
-  }
+	private ensureProductIdColumn(table: string): void {
+		const columns = this.ctx.storage.sql
+			.exec(`PRAGMA table_info(${table})`)
+			.toArray() as unknown as readonly { name: string }[];
+		if (!columns.some((column) => column.name === "product_id")) {
+			this.ctx.storage.sql.exec(
+				`ALTER TABLE ${table} ADD COLUMN product_id TEXT`,
+			);
+		}
+	}
 
-  private perpSqlAdapter(): PerpOrderSqlAdapter {
-    const raw = this.ctx.storage.sql;
-    return {
-      run: (query, params) => {
-        raw.exec(query, ...params);
-      },
-      all: <T>(query: string, params: readonly unknown[]): readonly T[] =>
-        raw
-          .exec<Record<string, string | number | null>>(query, ...params)
-          .toArray() as T[],
-    };
-  }
+	/**
+	 * Restauration fail-closed de la session portefeuille (C3, règle
+	 * models/agent-runtime.md) : tout champ ajouté est normalisé ; un
+	 * instantané invalide est un refus fermé explicite — jamais un
+	 * démarrage dégradé silencieux.
+	 */
+	private restorePortfolioSession(): void {
+		const rawTopLevelMark = (this.state as { lastPaperMark?: unknown })
+			.lastPaperMark;
+		const normalizedTopLevelMark = normalizePaperValuationMark(rawTopLevelMark);
+		if (this.state.lastPaperMark !== normalizedTopLevelMark) {
+			this.setState({ ...this.state, lastPaperMark: normalizedTopLevelMark });
+		}
+		const persisted =
+			(this.state as { portfolioSession?: unknown }).portfolioSession ?? null;
+		if (persisted === null) {
+			// Instantané legacy : normalisation unique des champs ajoutés
+			// (règle models/agent-runtime.md) — aucune écriture si déjà fait.
+			if (
+				this.state.portfolioSession !== null ||
+				this.state.portfolioRestoreError !== null
+			) {
+				this.setState({
+					...this.state,
+					portfolioSession: null,
+					portfolioRestoreError: null,
+				});
+			}
+			return;
+		}
+		const restored = resolveRestoredPortfolioSession(persisted);
+		if (restored.ok) {
+			this.setState({
+				...this.state,
+				portfolioSession: restored.session,
+				portfolioRestoreError: null,
+			});
+			return;
+		}
+		console.error(
+			JSON.stringify({
+				type: "PORTFOLIO_RESTORE_FAILED",
+				reason: restored.reason,
+			}),
+		);
+		this.setState({
+			...this.state,
+			portfolioSession: null,
+			portfolioRestoreError: restored.reason,
+			enabled: false,
+			updatedAt: Date.now(),
+		});
+	}
 
-  async submitPerpOrderIntent(
-    input: unknown,
-    permissions: ControlPermissions,
-  ): Promise<PerpOrderRequestResult> {
-    this.ensureTradingPersistenceSchema();
-    return submitPerpOrderIntent({
-      input,
-      permissions,
-      settingsInput: this.env,
-      sql: this.perpSqlAdapter(),
-      now: () => Date.now(),
-    });
-  }
+	override async onStart(): Promise<void> {
+		this.ensureTradingPersistenceSchema();
+		this.restorePortfolioSession();
+		const portfolio = this.state.portfolioSession;
+		if (this.state.enabled && portfolio !== null) {
+			await this.ensureIntervalSchedule(
+				portfolio.configuration.intervalSeconds,
+			);
+			return;
+		}
+		if (this.state.enabled && this.state.configuration !== null) {
+			await this.ensureIntervalSchedule(
+				this.state.configuration.intervalSeconds,
+			);
+		}
+	}
 
-  private async recoverPendingPerpOrders(): Promise<void> {
-    try {
-      const report = await recoverPerpOrders({
-        settingsInput: this.env,
-        sql: this.perpSqlAdapter(),
-        now: () => Date.now(),
-      });
-      if (!report.unavailable && report.unresolved > 0) {
-        console.log(
-          JSON.stringify({ type: "PERP_RECOVERY", ...report }),
-        );
-      }
-    } catch (error) {
-      // La reprise repartira au prochain tick : aucune resoumission n'est
-      // jamais déclenchée par un échec de réconciliation.
-      console.error(
-        "PERP_RECOVERY_FAILED",
-        error instanceof Error ? error.message : "unknown",
-      );
-    }
-  }
+	private perpSqlAdapter(): PerpOrderSqlAdapter {
+		const raw = this.ctx.storage.sql;
+		return {
+			run: (query, params) => {
+				raw.exec(query, ...params);
+			},
+			all: <T>(query: string, params: readonly unknown[]): readonly T[] =>
+				raw
+					.exec<Record<string, string | number | null>>(query, ...params)
+					.toArray() as T[],
+		};
+	}
 
-  override validateStateChange(
-    _nextState: TradingAgentState,
-    source: Parameters<Agent<TradingEnv, TradingAgentState>["validateStateChange"]>[1],
-  ): void {
-    if (source !== "server") {
-      throw new Error("Client-originated trading state changes are forbidden");
-    }
-  }
+	async submitPerpOrderIntent(
+		input: unknown,
+		permissions: ControlPermissions,
+	): Promise<PerpOrderRequestResult> {
+		this.ensureTradingPersistenceSchema();
+		return submitPerpOrderIntent({
+			input,
+			permissions,
+			settingsInput: this.env,
+			sql: this.perpSqlAdapter(),
+			now: () => Date.now(),
+		});
+	}
 
-  override shouldConnectionBeReadonly(): boolean {
-    return true;
-  }
+	private async recoverPendingPerpOrders(): Promise<void> {
+		try {
+			const report = await recoverPerpOrders({
+				settingsInput: this.env,
+				sql: this.perpSqlAdapter(),
+				now: () => Date.now(),
+			});
+			if (!report.unavailable && report.unresolved > 0) {
+				console.log(JSON.stringify({ type: "PERP_RECOVERY", ...report }));
+			}
+		} catch (error) {
+			// La reprise repartira au prochain tick : aucune resoumission n'est
+			// jamais déclenchée par un échec de réconciliation.
+			console.error(
+				"PERP_RECOVERY_FAILED",
+				error instanceof Error ? error.message : "unknown",
+			);
+		}
+	}
 
-  async startAgent(
-    configurationInput: unknown,
-    permissions: ControlPermissions,
-  ): Promise<AgentCommandResult> {
-    this.ensureTradingPersistenceSchema();
-    // Branchement runtime multi-produits (models/multi-product-portfolio.md
-    // §9) : N ≥ 2 créneaux pilotent le portefeuille ; N = 1 suit la voie
-    // legacy normalisée, sémantique strictement identique (C2).
-    if (isMultiProductConfigurationInput(configurationInput)) {
-      return this.startPortfolioAgent(configurationInput, permissions);
-    }
-    const configuration = parseAgentConfiguration(configurationInput);
-    if (!configuration.ok) {
-      return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
-    }
+	override validateStateChange(
+		_nextState: TradingAgentState,
+		source: Parameters<
+			Agent<TradingEnv, TradingAgentState>["validateStateChange"]
+		>[1],
+	): void {
+		if (source !== "server") {
+			throw new Error("Client-originated trading state changes are forbidden");
+		}
+	}
 
-    const currentPhase = this.state.machine?.value ?? "stopped";
-    if (currentPhase !== "stopped") {
-      return { ok: false, error: { code: "INVALID_STATE" } };
-    }
+	override shouldConnectionBeReadonly(): boolean {
+		return true;
+	}
 
-    const admission = admitAgentConfiguration(configuration.value);
-    if (configuration.value.executionMode === "perp") {
-      const perpAdmission = admitHyperliquidPerpAgent(configuration.value);
-      if (perpAdmission.status === "REJECTED") {
-        return { ok: false, error: { code: perpAdmission.reasonCode } };
-      }
-      if (!resolveHyperliquidSettings(this.env).ok) {
-        return { ok: false, error: { code: "HYPERLIQUID_EXECUTION_UNAVAILABLE" } };
-      }
-    } else if (admission.status === "REJECTED") {
-      return { ok: false, error: { code: admission.reasonCode } };
-    }
-    if (configuration.value.executionMode === "live") {
-      const identityAdmission = assessLiveTradingAgentIdentity(
-        configuration.value.productId,
-        this.name,
-      );
-      if (identityAdmission.status === "REJECTED") {
-        return { ok: false, error: { code: identityAdmission.reasonCode } };
-      }
-    }
+	async startAgent(
+		configurationInput: unknown,
+		permissions: ControlPermissions,
+	): Promise<AgentCommandResult> {
+		this.ensureTradingPersistenceSchema();
+		// Branchement runtime multi-produits (models/multi-product-portfolio.md
+		// §9) : N ≥ 2 créneaux pilotent le portefeuille ; N = 1 suit la voie
+		// legacy normalisée, sémantique strictement identique (C2).
+		if (isMultiProductConfigurationInput(configurationInput)) {
+			return this.startPortfolioAgent(configurationInput, permissions);
+		}
+		const configuration = parseAgentConfiguration(configurationInput);
+		if (!configuration.ok) {
+			return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+		}
 
-    if (
-      configuration.value.executionMode === "live" &&
-      !resolveCoinbaseSettings(this.env).ok
-    ) {
-      return { ok: false, error: { code: "LIVE_EXECUTION_UNAVAILABLE" } };
-    }
+		const currentPhase = this.state.machine?.value ?? "stopped";
+		if (currentPhase !== "stopped") {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
 
-    if (
-      this.state.schedule !== null &&
-      this.state.schedule.intervalSeconds !== configuration.value.intervalSeconds
-    ) {
-      await this.cancelSchedule(this.state.schedule.id);
-    }
+		const admission = admitAgentConfiguration(configuration.value);
+		if (configuration.value.executionMode === "perp") {
+			const perpAdmission = admitHyperliquidPerpAgent(configuration.value);
+			if (perpAdmission.status === "REJECTED") {
+				return { ok: false, error: { code: perpAdmission.reasonCode } };
+			}
+			if (!resolveHyperliquidSettings(this.env).ok) {
+				return {
+					ok: false,
+					error: { code: "HYPERLIQUID_EXECUTION_UNAVAILABLE" },
+				};
+			}
+		} else if (admission.status === "REJECTED") {
+			return { ok: false, error: { code: admission.reasonCode } };
+		}
+		if (configuration.value.executionMode === "live") {
+			const identityAdmission = assessLiveTradingAgentIdentity(
+				configuration.value.productId,
+				this.name,
+			);
+			if (identityAdmission.status === "REJECTED") {
+				return { ok: false, error: { code: identityAdmission.reasonCode } };
+			}
+		}
 
-    const continuity = resolveLiveStartContinuity(
-      this.state,
-      configuration.value,
-    );
+		if (
+			configuration.value.executionMode === "live" &&
+			!resolveCoinbaseSettings(this.env).ok
+		) {
+			return { ok: false, error: { code: "LIVE_EXECUTION_UNAVAILABLE" } };
+		}
 
-    const session = createTradingMachineSession({
-      agentId: this.name,
-      strategyIds: configuration.value.strategyIds,
-      maxMarketStalenessMs: configuration.value.maxMarketStalenessMs,
-      lastDecisionCandleClosedAt:
-        continuity.lastDecisionCandleClosedAt,
-    });
-    session.send({ type: "START_REQUESTED", permissions });
-    const machine = session.record;
-    session.stop();
+		if (
+			this.state.schedule !== null &&
+			this.state.schedule.intervalSeconds !==
+				configuration.value.intervalSeconds
+		) {
+			await this.cancelSchedule(this.state.schedule.id);
+		}
 
-    this.setState({
-      ...INITIAL_AGENT_STATE,
-      ...continuity,
-      configuration: configuration.value,
-      machine,
-      enabled: machineIsEnabled(machine.value),
-      schedule:
-        this.state.schedule?.intervalSeconds === configuration.value.intervalSeconds
-          ? this.state.schedule
-          : null,
-      updatedAt: Date.now(),
-    });
+		const continuity = resolveLiveStartContinuity(
+			this.state,
+			configuration.value,
+		);
 
-    await this.runCurrent(false);
-    return { ok: true, state: this.stateSnapshot() };
-  }
+		const session = createTradingMachineSession({
+			agentId: this.name,
+			strategyIds: configuration.value.strategyIds,
+			maxMarketStalenessMs: configuration.value.maxMarketStalenessMs,
+			lastDecisionCandleClosedAt: continuity.lastDecisionCandleClosedAt,
+		});
+		session.send({ type: "START_REQUESTED", permissions });
+		const machine = session.record;
+		session.stop();
 
-  async preflightLive(
-    configurationInput: unknown,
-    permissions: ControlPermissions,
-  ): Promise<LivePreflightCommandResult> {
-    const startedAt = Date.now();
-    if (!permissions.canControl) {
-      return { ok: false, error: { code: "CONTROL_PERMISSION_REQUIRED" } };
-    }
-    this.ensureTradingPersistenceSchema();
-    const configuration = parseAgentConfiguration(configurationInput);
-    if (!configuration.ok || configuration.value.executionMode !== "live") {
-      return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
-    }
-    const admission = admitAgentConfiguration(configuration.value);
-    if (admission.status === "REJECTED") {
-      return { ok: false, error: { code: admission.reasonCode } };
-    }
-    const identityAdmission = assessLiveTradingAgentIdentity(
-      configuration.value.productId,
-      this.name,
-    );
-    if (identityAdmission.status === "REJECTED") {
-      return { ok: false, error: { code: identityAdmission.reasonCode } };
-    }
-    const protections = this.loadKnownProtectiveOrderIds();
-    if (!protections.ok) {
-      return { ok: false, error: { code: "PREFLIGHT_UNAVAILABLE" } };
-    }
-    const report = await preflightCoinbaseLive(
-      this.env,
-      configuration.value.productId,
-      protections.value,
-    );
-    emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
-      schemaVersion: 3,
-      type: "preflight.completed",
-      timestamp: Date.now(),
-      agentId: this.name,
-      productId: configuration.value.productId,
-      executionMode: "live",
-      phase: "preflight",
-      outcome: report.assessment.status,
-      errorCode:
-        report.assessment.status === "REJECTED"
-          ? report.assessment.reasonCode
-          : null,
-      brokerRejectionCode: null,
-      latencyMs: Math.max(0, Date.now() - startedAt),
-      dailyPnl: null,
-      accountEquity: null,
-      positionQuantity: null,
-      otherExposureNotional: null,
-      valuationQuality: "not_applicable",
-      valuationPriceSource: "NONE",
-      valuationPrice: null,
-      valuationObservedAt: null,
-      valuationAgeMs: null,
-      consolidatedExposureNotional: null,
-      exposureQuality: "not_applicable",
-      executionObserved: false,
-      openOrderCount: report.openOrderCount,
-    });
-    return report.assessment.status === "APPROVED"
-      ? { ok: true, report }
-      : {
-          ok: false,
-          error: { code: report.assessment.reasonCode },
-          report,
-        };
-  }
+		this.setState({
+			...INITIAL_AGENT_STATE,
+			...continuity,
+			configuration: configuration.value,
+			machine,
+			enabled: machineIsEnabled(machine.value),
+			schedule:
+				this.state.schedule?.intervalSeconds ===
+				configuration.value.intervalSeconds
+					? this.state.schedule
+					: null,
+			updatedAt: Date.now(),
+		});
 
-  async stopAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
-    if (this.state.portfolioSession !== null) {
-      return this.stopPortfolioAgent(permissions);
-    }
-    return this.control({ type: "STOP_REQUESTED", permissions });
-  }
+		await this.runCurrent(false);
+		return { ok: true, state: this.stateSnapshot() };
+	}
 
-  async killAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
-    if (this.state.portfolioSession !== null) {
-      return this.killPortfolioAgent(permissions);
-    }
-    return this.control({
-      type: "KILL_SWITCH_ENGAGED",
-      permissions,
-      controlId: crypto.randomUUID(),
-    });
-  }
+	async preflightLive(
+		configurationInput: unknown,
+		permissions: ControlPermissions,
+	): Promise<LivePreflightCommandResult> {
+		const startedAt = Date.now();
+		if (!permissions.canControl) {
+			return { ok: false, error: { code: "CONTROL_PERMISSION_REQUIRED" } };
+		}
+		this.ensureTradingPersistenceSchema();
+		const configuration = parseAgentConfiguration(configurationInput);
+		if (!configuration.ok || configuration.value.executionMode !== "live") {
+			return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+		}
+		const admission = admitAgentConfiguration(configuration.value);
+		if (admission.status === "REJECTED") {
+			return { ok: false, error: { code: admission.reasonCode } };
+		}
+		const identityAdmission = assessLiveTradingAgentIdentity(
+			configuration.value.productId,
+			this.name,
+		);
+		if (identityAdmission.status === "REJECTED") {
+			return { ok: false, error: { code: identityAdmission.reasonCode } };
+		}
+		const protections = this.loadKnownProtectiveOrderIds();
+		if (!protections.ok) {
+			return { ok: false, error: { code: "PREFLIGHT_UNAVAILABLE" } };
+		}
+		const report = await preflightCoinbaseLive(
+			this.env,
+			configuration.value.productId,
+			protections.value,
+		);
+		emitTradingTelemetry(this.env.TRADING_TELEMETRY, {
+			schemaVersion: 3,
+			type: "preflight.completed",
+			timestamp: Date.now(),
+			agentId: this.name,
+			productId: configuration.value.productId,
+			executionMode: "live",
+			phase: "preflight",
+			outcome: report.assessment.status,
+			errorCode:
+				report.assessment.status === "REJECTED"
+					? report.assessment.reasonCode
+					: null,
+			brokerRejectionCode: null,
+			latencyMs: Math.max(0, Date.now() - startedAt),
+			dailyPnl: null,
+			accountEquity: null,
+			positionQuantity: null,
+			otherExposureNotional: null,
+			valuationQuality: "not_applicable",
+			valuationPriceSource: "NONE",
+			valuationPrice: null,
+			valuationObservedAt: null,
+			valuationAgeMs: null,
+			consolidatedExposureNotional: null,
+			exposureQuality: "not_applicable",
+			executionObserved: false,
+			openOrderCount: report.openOrderCount,
+		});
+		return report.assessment.status === "APPROVED"
+			? { ok: true, report }
+			: {
+					ok: false,
+					error: { code: report.assessment.reasonCode },
+					report,
+				};
+	}
 
-  async resetAgent(permissions: ControlPermissions): Promise<AgentCommandResult> {
-    this.ensureTradingPersistenceSchema();
-    if (this.state.portfolioSession !== null) {
-      return this.resetPortfolioAgent(permissions);
-    }
-    if (this.state.machine === null || this.state.configuration === null) {
-      return { ok: false, error: { code: "NOT_CONFIGURED" } };
-    }
-    const session = createTradingMachineSession(
-      {
-        agentId: this.name,
-        strategyIds: this.state.configuration.strategyIds,
-        maxMarketStalenessMs:
-          this.state.configuration.maxMarketStalenessMs,
-      },
-      this.state.machine,
-    );
-    session.send({ type: "RESET", permissions });
-    const machine = session.record;
-    session.stop();
-    await this.persistMachine(machine);
-    return { ok: true, state: this.stateSnapshot() };
-  }
+	async stopAgent(
+		permissions: ControlPermissions,
+	): Promise<AgentCommandResult> {
+		if (this.state.portfolioSession !== null) {
+			return this.stopPortfolioAgent(permissions);
+		}
+		return this.control({ type: "STOP_REQUESTED", permissions });
+	}
 
-  async runNow(): Promise<AgentCommandResult> {
-    this.ensureTradingPersistenceSchema();
-    if (this.state.portfolioSession !== null) {
-      await this.runPortfolio(true);
-      return { ok: true, state: this.stateSnapshot() };
-    }
-    if (this.state.configuration === null || this.state.machine === null) {
-      return { ok: false, error: { code: "NOT_CONFIGURED" } };
-    }
-    await this.runCurrent(true);
-    return { ok: true, state: this.stateSnapshot() };
-  }
+	async killAgent(
+		permissions: ControlPermissions,
+	): Promise<AgentCommandResult> {
+		if (this.state.portfolioSession !== null) {
+			return this.killPortfolioAgent(permissions);
+		}
+		return this.control({
+			type: "KILL_SWITCH_ENGAGED",
+			permissions,
+			controlId: crypto.randomUUID(),
+		});
+	}
 
-  async scheduledTick(): Promise<void> {
-    this.ensureTradingPersistenceSchema();
-    if (this.state.portfolioSession !== null) {
-      await this.runPortfolio(true, null, true);
-      return;
-    }
-    await this.recoverPendingPerpOrders();
-    if (!this.state.enabled) return;
-    await this.runCurrent(true);
-  }
+	async resetAgent(
+		permissions: ControlPermissions,
+	): Promise<AgentCommandResult> {
+		this.ensureTradingPersistenceSchema();
+		if (this.state.portfolioSession !== null) {
+			return this.resetPortfolioAgent(permissions);
+		}
+		if (this.state.machine === null || this.state.configuration === null) {
+			return { ok: false, error: { code: "NOT_CONFIGURED" } };
+		}
+		const session = createTradingMachineSession(
+			{
+				agentId: this.name,
+				strategyIds: this.state.configuration.strategyIds,
+				maxMarketStalenessMs: this.state.configuration.maxMarketStalenessMs,
+			},
+			this.state.machine,
+		);
+		session.send({ type: "RESET", permissions });
+		const machine = session.record;
+		session.stop();
+		await this.persistMachine(machine);
+		return { ok: true, state: this.stateSnapshot() };
+	}
 
-  /**
-   * Alarme ponctuelle de retry marché (models/market-retry-schedule.md §3) :
-   * reprend uniquement un cycle en attente (`triggerAlarm = false`), jamais
-   * un nouveau cycle, et uniquement pour le produit ciblé. Un réveil antérieur
-   * à l'échéance persistée se réarme (amendement 2026-10-07). Une alarme
-   * orpheline est un no-op.
-   */
-  async retryTick(payload?: MarketRetryWakePayload): Promise<void> {
-    this.ensureTradingPersistenceSchema();
-    const targetProductId = (payload?.productId ?? null) as ProductId | null;
-    const wake = resolveRetryWake({
-      now: Date.now(),
-      persistedNextRetryAt: this.pendingMarketRetryAt(targetProductId),
-      payload,
-    });
-    if (wake.kind === "drop") return;
-    if (wake.kind === "rearm") {
-      await this.schedule(new Date(wake.at), "retryTick", wake.payload, {
-        idempotent: true,
-      });
-      return;
-    }
-    if (this.state.portfolioSession !== null) {
-      // Alarme sans produit (instance mono-produit avant passage en
-      // portefeuille) : n'exécute aucun produit (invariant 8).
-      if (wake.productId === null) return;
-      await this.runPortfolio(false, wake.productId as ProductId);
-      return;
-    }
-    if (!this.state.enabled) return;
-    await this.runCurrent(false);
-  }
+	async runNow(): Promise<AgentCommandResult> {
+		this.ensureTradingPersistenceSchema();
+		if (this.state.portfolioSession !== null) {
+			await this.runPortfolio(true);
+			return { ok: true, state: this.stateSnapshot() };
+		}
+		if (this.state.configuration === null || this.state.machine === null) {
+			return { ok: false, error: { code: "NOT_CONFIGURED" } };
+		}
+		await this.runCurrent(true);
+		return { ok: true, state: this.stateSnapshot() };
+	}
 
-  /** Échéance `artifacts.marketRetry.nextRetryAt` du cycle en attente, sinon nulle. */
-  private pendingMarketRetryAt(productId: ProductId | null): number | null {
-    const session = this.state.portfolioSession;
-    const machine =
-      session === null
-        ? this.state.machine
-        : productId === null
-          ? null
-          : session.products[productId]?.machine ?? null;
-    if (machine === null || machine === undefined) return null;
-    if (machine.value !== "retryingMarketData") return null;
-    const cycleId = machine.context.cycleId;
-    if (cycleId === null) return null;
-    const artifacts =
-      session === null || productId === null
-        ? this.loadArtifacts(cycleId)
-        : this.loadArtifacts(cycleId, productId);
-    return artifacts?.marketRetry?.nextRetryAt ?? null;
-  }
+	async scheduledTick(): Promise<void> {
+		this.ensureTradingPersistenceSchema();
+		if (this.state.portfolioSession !== null) {
+			await this.runPortfolio(true, null, true);
+			return;
+		}
+		await this.recoverPendingPerpOrders();
+		if (!this.state.enabled) return;
+		await this.runCurrent(true);
+	}
 
-  private async scheduleMarketRetry(
-    at: number,
-    attempt: number,
-    productId: ProductId | null,
-  ): Promise<void> {
-    const payload: MarketRetryWakePayload = { productId, attempt, nextRetryAt: at, rearm: 0 };
-    await this.schedule(new Date(at), "retryTick", payload, { idempotent: true });
-  }
+	/**
+	 * Alarme ponctuelle de retry marché (models/market-retry-schedule.md §3) :
+	 * reprend uniquement un cycle en attente (`triggerAlarm = false`), jamais
+	 * un nouveau cycle, et uniquement pour le produit ciblé. Un réveil antérieur
+	 * à l'échéance persistée se réarme (amendement 2026-10-07). Une alarme
+	 * orpheline est un no-op.
+	 */
+	async retryTick(payload?: MarketRetryWakePayload): Promise<void> {
+		this.ensureTradingPersistenceSchema();
+		const targetProductId = (payload?.productId ?? null) as ProductId | null;
+		const wake = resolveRetryWake({
+			now: Date.now(),
+			persistedNextRetryAt: this.pendingMarketRetryAt(targetProductId),
+			payload,
+		});
+		if (wake.kind === "drop") return;
+		if (wake.kind === "rearm") {
+			await this.schedule(new Date(wake.at), "retryTick", wake.payload, {
+				idempotent: true,
+			});
+			return;
+		}
+		if (this.state.portfolioSession !== null) {
+			// Alarme sans produit (instance mono-produit avant passage en
+			// portefeuille) : n'exécute aucun produit (invariant 8).
+			if (wake.productId === null) return;
+			await this.runPortfolio(false, wake.productId as ProductId);
+			return;
+		}
+		if (!this.state.enabled) return;
+		await this.runCurrent(false);
+	}
 
-  /**
-   * Contrat `/state` (dao #34) : état figé plus hiérarchie portefeuille
-   * projetée à la lecture par le même seam pur que `/portfolio` (ST5).
-   */
-  private stateSnapshot(): AgentStateSnapshot {
-    const asOf = Date.now();
-    return toAgentStateSnapshot(
-      this.state,
-      projectPortfolioSessionSummary(this.state.portfolioSession, asOf),
-      asOf,
-    );
-  }
+	/** Échéance `artifacts.marketRetry.nextRetryAt` du cycle en attente, sinon nulle. */
+	private pendingMarketRetryAt(productId: ProductId | null): number | null {
+		const session = this.state.portfolioSession;
+		const machine =
+			session === null
+				? this.state.machine
+				: productId === null
+					? null
+					: (session.products[productId]?.machine ?? null);
+		if (machine === null || machine === undefined) return null;
+		if (machine.value !== "retryingMarketData") return null;
+		const cycleId = machine.context.cycleId;
+		if (cycleId === null) return null;
+		const artifacts =
+			session === null || productId === null
+				? this.loadArtifacts(cycleId)
+				: this.loadArtifacts(cycleId, productId);
+		return artifacts?.marketRetry?.nextRetryAt ?? null;
+	}
 
-  getAgentState(): AgentStateSnapshot {
-    return this.stateSnapshot();
-  }
+	private async scheduleMarketRetry(
+		at: number,
+		attempt: number,
+		productId: ProductId | null,
+	): Promise<void> {
+		const payload: MarketRetryWakePayload = {
+			productId,
+			attempt,
+			nextRetryAt: at,
+			rearm: 0,
+		};
+		await this.schedule(new Date(at), "retryTick", payload, {
+			idempotent: true,
+		});
+	}
 
-  listRecentCycles(limit = 50): readonly Record<string, unknown>[] {
-    this.ensureTradingPersistenceSchema();
-    const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
-    return this.sql<Record<string, string | number | null>>`
+	/**
+	 * Contrat `/state` (dao #34) : état figé plus hiérarchie portefeuille
+	 * projetée à la lecture par le même seam pur que `/portfolio` (ST5).
+	 */
+	private stateSnapshot(): AgentStateSnapshot {
+		const asOf = Date.now();
+		return toAgentStateSnapshot(
+			this.state,
+			projectPortfolioSessionSummary(this.state.portfolioSession, asOf),
+			asOf,
+		);
+	}
+
+	getAgentState(): AgentStateSnapshot {
+		return this.stateSnapshot();
+	}
+
+	listRecentCycles(limit = 50): readonly Record<string, unknown>[] {
+		this.ensureTradingPersistenceSchema();
+		const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+		return this.sql<Record<string, string | number | null>>`
       SELECT cycle_id, triggered_at, completed_at, phase, outcome,
              error_json, updated_at
       FROM dodash_cycles
       ORDER BY triggered_at DESC
       LIMIT ${boundedLimit}
     `;
-  }
+	}
 
-  /**
-   * Projection PnL/équité lecture-seule (dao #26) : deux lectures SQL
-   * locales bornées, aucun appel réseau sortant, aucun calcul UI.
-   * Source normative : models/dashboard-pnl-history.md §3-§4.
-   */
-  getPnlHistory(
-    limit: number = DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
-  ): DashboardPnlHistoryResult {
-    this.ensureTradingPersistenceSchema();
-    const boundedLimit = Math.max(
-      1,
-      Math.min(DASHBOARD_PNL_HISTORY_MAX_CYCLES, Math.trunc(limit)),
-    );
-    const cycles = this.sql<{
-      cycle_id: string;
-      triggered_at: number;
-      completed_at: number | null;
-      outcome: string;
-      artifacts_json: string;
-    }>`
+	/**
+	 * Projection PnL/équité lecture-seule (dao #26) : deux lectures SQL
+	 * locales bornées, aucun appel réseau sortant, aucun calcul UI.
+	 * Source normative : models/dashboard-pnl-history.md §3-§4.
+	 */
+	getPnlHistory(
+		limit: number = DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
+	): DashboardPnlHistoryResult {
+		this.ensureTradingPersistenceSchema();
+		const boundedLimit = Math.max(
+			1,
+			Math.min(DASHBOARD_PNL_HISTORY_MAX_CYCLES, Math.trunc(limit)),
+		);
+		const cycles = this.sql<{
+			cycle_id: string;
+			triggered_at: number;
+			completed_at: number | null;
+			outcome: string;
+			artifacts_json: string;
+		}>`
       SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json
       FROM dodash_cycles
       ORDER BY triggered_at DESC
       LIMIT ${boundedLimit}
     `;
-    const cycleIds = cycles.map((row) => row.cycle_id);
-    const orders = (
-      cycleIds.length === 0
-        ? []
-        : (
-            this.ctx.storage.sql.exec(
-              `SELECT client_order_id, cycle_id, status, execution_json
+		const cycleIds = cycles.map((row) => row.cycle_id);
+		const orders =
+			cycleIds.length === 0
+				? []
+				: (
+						this.ctx.storage.sql
+							.exec(
+								`SELECT client_order_id, cycle_id, status, execution_json
                FROM dodash_orders
                WHERE cycle_id IN (${cycleIds.map(() => "?").join(", ")})
                ORDER BY client_order_id ASC`,
-              ...cycleIds,
-            ).toArray() as readonly Record<string, string | number | null>[]
-          ).map((row): DashboardPnlOrderRow => ({
-            clientOrderId: row.client_order_id as string,
-            cycleId: row.cycle_id as string,
-            status: row.status as string,
-            executionJson:
-              row.execution_json === null ? null : (row.execution_json as string),
-          }))
-    );
-    return projectDashboardPnlHistory(
-      cycles.map((row) => ({
-        cycleId: row.cycle_id,
-        triggeredAt: row.triggered_at,
-        completedAt: row.completed_at,
-        outcome: row.outcome,
-        artifactsJson: row.artifacts_json,
-      })),
-      orders,
-      boundedLimit,
-    );
-  }
+								...cycleIds,
+							)
+							.toArray() as readonly Record<string, string | number | null>[]
+					).map(
+						(row): DashboardPnlOrderRow => ({
+							clientOrderId: row.client_order_id as string,
+							cycleId: row.cycle_id as string,
+							status: row.status as string,
+							executionJson:
+								row.execution_json === null
+									? null
+									: (row.execution_json as string),
+						}),
+					);
+		return projectDashboardPnlHistory(
+			cycles.map((row) => ({
+				cycleId: row.cycle_id,
+				triggeredAt: row.triggered_at,
+				completedAt: row.completed_at,
+				outcome: row.outcome,
+				artifactsJson: row.artifacts_json,
+			})),
+			orders,
+			boundedLimit,
+		);
+	}
 
-  /**
-   * Projection portefeuille lecture-seule (dao #32, convergée sur le
-   * contrat `/state` par #34) : lecture en mémoire de l'instantané
-   * `portfolioSession`, aucun SQL ni appel réseau sortant, même seam pur
-   * que `/state` — chiffres identiques par construction (ST5).
-   * Source normative : models/dashboard-portfolio-summary.md §3-§4 et
-   * models/state-portfolio-contract.md §2.
-   */
-  getPortfolioSummary(asOf = Date.now()): DashboardPortfolioSummaryResult {
-    return projectPortfolioSessionSummary(this.state.portfolioSession, asOf);
-  }
+	/**
+	 * Projection portefeuille lecture-seule (dao #32, convergée sur le
+	 * contrat `/state` par #34) : lecture en mémoire de l'instantané
+	 * `portfolioSession`, aucun SQL ni appel réseau sortant, même seam pur
+	 * que `/state` — chiffres identiques par construction (ST5).
+	 * Source normative : models/dashboard-portfolio-summary.md §3-§4 et
+	 * models/state-portfolio-contract.md §2.
+	 */
+	getPortfolioSummary(asOf = Date.now()): DashboardPortfolioSummaryResult {
+		return projectPortfolioSessionSummary(this.state.portfolioSession, asOf);
+	}
 
-  private async control(event: TradingCycleEvent): Promise<AgentCommandResult> {
-    const startedAt = Date.now();
-    this.ensureTradingPersistenceSchema();
-    if (this.state.machine === null || this.state.configuration === null) {
-      return { ok: false, error: { code: "NOT_CONFIGURED" } };
-    }
-    const session = createTradingMachineSession(
-      {
-        agentId: this.name,
-        strategyIds: this.state.configuration.strategyIds,
-        maxMarketStalenessMs:
-          this.state.configuration.maxMarketStalenessMs,
-      },
-      this.state.machine,
-    );
-    const resumeCycleId =
-      session.phase === "waiting" ||
-      session.phase === "scheduling" ||
-      session.phase === "stopped"
-        ? null
-        : session.context.cycleId;
-    session.send(event);
-    const machine = session.record;
-    session.stop();
-    await this.persistMachine(machine);
-    await this.runCurrent(false, resumeCycleId);
-    const controlEvent: TradingTelemetryEvent = {
-      schemaVersion: 3,
-      type: "control.completed",
-      timestamp: Date.now(),
-      agentId: this.name,
-      productId: this.state.configuration.productId,
-      executionMode: this.state.configuration.executionMode,
-      phase: this.state.machine?.value ?? machine.value,
-      outcome: this.state.machine?.context.outcome ?? machine.context.outcome,
-      errorCode:
-        this.state.machine?.context.lastError?.code ??
-        machine.context.lastError?.code ??
-        null,
-      brokerRejectionCode: brokerRejectionCodeOf(
-        this.state.machine?.context.lastError ?? machine.context.lastError,
-      ),
-      latencyMs: Math.max(0, Date.now() - startedAt),
-      dailyPnl: this.state.dailyPnl,
-      accountEquity: null,
-      positionQuantity: this.state.portfolio.positionQuantity,
-      otherExposureNotional: null,
-      valuationQuality: "not_applicable",
-      valuationPriceSource: "NONE",
-      valuationPrice: null,
-      valuationObservedAt: null,
-      valuationAgeMs: null,
-      consolidatedExposureNotional: null,
-      exposureQuality: "not_applicable",
-      executionObserved: false,
-      openOrderCount: null,
-    };
-    emitTradingTelemetry(this.env.TRADING_TELEMETRY, controlEvent);
-    this.emitOperatorSideEffects("control", controlEvent);
-    return { ok: true, state: this.stateSnapshot() };
-  }
+	private async control(event: TradingCycleEvent): Promise<AgentCommandResult> {
+		const startedAt = Date.now();
+		this.ensureTradingPersistenceSchema();
+		if (this.state.machine === null || this.state.configuration === null) {
+			return { ok: false, error: { code: "NOT_CONFIGURED" } };
+		}
+		const session = createTradingMachineSession(
+			{
+				agentId: this.name,
+				strategyIds: this.state.configuration.strategyIds,
+				maxMarketStalenessMs: this.state.configuration.maxMarketStalenessMs,
+			},
+			this.state.machine,
+		);
+		const resumeCycleId =
+			session.phase === "waiting" ||
+			session.phase === "scheduling" ||
+			session.phase === "stopped"
+				? null
+				: session.context.cycleId;
+		session.send(event);
+		const machine = session.record;
+		session.stop();
+		await this.persistMachine(machine);
+		await this.runCurrent(false, resumeCycleId);
+		const controlEvent: TradingTelemetryEvent = {
+			schemaVersion: 3,
+			type: "control.completed",
+			timestamp: Date.now(),
+			agentId: this.name,
+			productId: this.state.configuration.productId,
+			executionMode: this.state.configuration.executionMode,
+			phase: this.state.machine?.value ?? machine.value,
+			outcome: this.state.machine?.context.outcome ?? machine.context.outcome,
+			errorCode:
+				this.state.machine?.context.lastError?.code ??
+				machine.context.lastError?.code ??
+				null,
+			brokerRejectionCode: brokerRejectionCodeOf(
+				this.state.machine?.context.lastError ?? machine.context.lastError,
+			),
+			latencyMs: Math.max(0, Date.now() - startedAt),
+			dailyPnl: this.state.dailyPnl,
+			accountEquity: null,
+			positionQuantity: this.state.portfolio.positionQuantity,
+			otherExposureNotional: null,
+			valuationQuality: "not_applicable",
+			valuationPriceSource: "NONE",
+			valuationPrice: null,
+			valuationObservedAt: null,
+			valuationAgeMs: null,
+			consolidatedExposureNotional: null,
+			exposureQuality: "not_applicable",
+			executionObserved: false,
+			openOrderCount: null,
+		};
+		emitTradingTelemetry(this.env.TRADING_TELEMETRY, controlEvent);
+		this.emitOperatorSideEffects("control", controlEvent);
+		return { ok: true, state: this.stateSnapshot() };
+	}
 
-  private async runCurrent(
-    triggerAlarm: boolean,
-    resumeCycleIdOverride?: string | null,
-  ): Promise<void> {
-    const startedAt = Date.now();
-    const configuration = this.state.configuration;
-    const machine = this.state.machine;
-    if (configuration === null || machine === null) return;
+	private async runCurrent(
+		triggerAlarm: boolean,
+		resumeCycleIdOverride?: string | null,
+	): Promise<void> {
+		const startedAt = Date.now();
+		const configuration = this.state.configuration;
+		const machine = this.state.machine;
+		if (configuration === null || machine === null) return;
 
-    const wake = planCycleWake(machine.value, triggerAlarm);
+		const wake = planCycleWake(machine.value, triggerAlarm);
 
-    const identity = resolveCycleInvocation(
-      machine,
-      triggerAlarm,
-      Date.now(),
-      crypto.randomUUID(),
-      resumeCycleIdOverride,
-    );
-    const artifacts =
-      identity.loadCycleId === null
-        ? null
-        : this.loadArtifacts(identity.loadCycleId);
-    // models/daily-risk.md §3 : équité marquée paper = valorisation datée sur
-    // le dernier mark accepté ; jamais averagePrice.
-    const dailyRiskAtStart = resolveCycleDailyRiskStart(
-      configuration.executionMode,
-      this.state.dailyRiskWindow ?? null,
-      this.state.dailyPnl,
-      identity.triggeredAt,
-      paperValuationFor(
-        configuration.executionMode,
-        this.state.portfolio,
-        this.state.lastPaperMark,
-        identity.triggeredAt,
-      ),
-    );
-    const result = await runTradingCycle({
-      agentId: this.name,
-      configuration,
-      machine,
-      artifacts,
-      previousIndicators: this.state.previousIndicators,
-      portfolio: this.state.portfolio,
-      dailyPnl: dailyRiskAtStart.dailyPnl,
-      dailyRiskWindow: dailyRiskAtStart.window,
-      lastTradeAt: this.state.lastTradeAt,
-      triggeredAt: identity.triggeredAt,
-      cycleId: identity.cycleId,
-      triggerAlarm: wake.triggerAlarm,
-      effects: this.createEffects(configuration),
-    });
+		const identity = resolveCycleInvocation(
+			machine,
+			triggerAlarm,
+			Date.now(),
+			crypto.randomUUID(),
+			resumeCycleIdOverride,
+		);
+		const artifacts =
+			identity.loadCycleId === null
+				? null
+				: this.loadArtifacts(identity.loadCycleId);
+		// models/daily-risk.md §3 : équité marquée paper = valorisation datée sur
+		// le dernier mark accepté ; jamais averagePrice.
+		const dailyRiskAtStart = resolveCycleDailyRiskStart(
+			configuration.executionMode,
+			this.state.dailyRiskWindow ?? null,
+			this.state.dailyPnl,
+			identity.triggeredAt,
+			paperValuationFor(
+				configuration.executionMode,
+				this.state.portfolio,
+				this.state.lastPaperMark,
+				identity.triggeredAt,
+			),
+		);
+		const result = await runTradingCycle({
+			agentId: this.name,
+			configuration,
+			machine,
+			artifacts,
+			previousIndicators: this.state.previousIndicators,
+			portfolio: this.state.portfolio,
+			dailyPnl: dailyRiskAtStart.dailyPnl,
+			dailyRiskWindow: dailyRiskAtStart.window,
+			lastTradeAt: this.state.lastTradeAt,
+			triggeredAt: identity.triggeredAt,
+			cycleId: identity.cycleId,
+			triggerAlarm: wake.triggerAlarm,
+			effects: this.createEffects(configuration),
+		});
 
-    const acceptedPaperMark: PaperValuationMark | null =
-      configuration.executionMode === "paper"
-        ? acceptPaperValuationMark(
-            result.artifacts?.market?.valuationMark,
-            this.state.lastPaperMark,
-          )
-        : null;
-    const dailyRisk = resolveCycleDailyRiskCompletion(
-      configuration.executionMode,
-      result.dailyRiskWindow,
-      result.dailyPnl,
-      identity.triggeredAt,
-      paperValuationFor(
-        configuration.executionMode,
-        result.portfolio,
-        acceptedPaperMark,
-        identity.triggeredAt,
-      ),
-    );
-    const executed = result.artifacts?.execution !== undefined;
-    const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
-    this.setState({
-      ...this.state,
-      machine: result.machine,
-      enabled: machineIsEnabled(result.machine.value),
-      portfolio: result.portfolio,
-      lastPaperMark: acceptedPaperMark,
-      dailyRiskWindow: dailyRisk.window,
-      dailyPnl: dailyRisk.dailyPnl,
-      lastTradeAt: executed
-        ? result.artifacts?.triggeredAt ?? this.state.lastTradeAt
-        : this.state.lastTradeAt,
-      previousIndicators: result.previousIndicators,
-      lastCycle: lastCycle ?? this.state.lastCycle,
-      updatedAt: Date.now(),
-    });
+		const acceptedPaperMark: PaperValuationMark | null =
+			configuration.executionMode === "paper"
+				? acceptPaperValuationMark(
+						result.artifacts?.market?.valuationMark,
+						this.state.lastPaperMark,
+					)
+				: null;
+		const dailyRisk = resolveCycleDailyRiskCompletion(
+			configuration.executionMode,
+			result.dailyRiskWindow,
+			result.dailyPnl,
+			identity.triggeredAt,
+			paperValuationFor(
+				configuration.executionMode,
+				result.portfolio,
+				acceptedPaperMark,
+				identity.triggeredAt,
+			),
+		);
+		const executed = result.artifacts?.execution !== undefined;
+		const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
+		this.setState({
+			...this.state,
+			machine: result.machine,
+			enabled: machineIsEnabled(result.machine.value),
+			portfolio: result.portfolio,
+			lastPaperMark: acceptedPaperMark,
+			dailyRiskWindow: dailyRisk.window,
+			dailyPnl: dailyRisk.dailyPnl,
+			lastTradeAt: executed
+				? (result.artifacts?.triggeredAt ?? this.state.lastTradeAt)
+				: this.state.lastTradeAt,
+			previousIndicators: result.previousIndicators,
+			lastCycle: lastCycle ?? this.state.lastCycle,
+			updatedAt: Date.now(),
+		});
 
-    if (result.artifacts !== null) {
-      const eventAt = Date.now();
-      const projectedValuation = configuration.executionMode === "paper"
-        ? projectPaperValuation({
-            cash: result.portfolio.cash,
-            positionQuantity: result.portfolio.positionQuantity,
-            mark: acceptedPaperMark,
-            asOf: eventAt,
-          })
-        : null;
-      const paperValuation = projectedValuation?.ok === true
-        ? projectedValuation.value
-        : null;
-      const exposureNotional = configuration.executionMode === "paper"
-        ? paperValuation?.exposureNotional ?? null
-        : null;
-      const cycleEvent: TradingTelemetryEvent = {
-        schemaVersion: 4,
-        ...projectDecisionAdmission(result.machine.context),
-        type: "cycle.completed",
-        timestamp: eventAt,
-        agentId: this.name,
-        productId: configuration.productId,
-        executionMode: configuration.executionMode,
-        phase: result.machine.value,
-        outcome: result.machine.context.outcome,
-        errorCode: result.machine.context.lastError?.code ?? null,
-        brokerRejectionCode: brokerRejectionCodeOf(
-          result.machine.context.lastError,
-        ),
-        latencyMs: Math.max(0, Date.now() - startedAt),
-        dailyPnl: dailyRisk.dailyPnl,
-        accountEquity: configuration.executionMode === "paper"
-          ? paperValuation?.equity ?? null
-          : result.accountEquity,
-        positionQuantity: result.portfolio.positionQuantity,
-        otherExposureNotional: configuration.executionMode === "paper"
-          ? null
-          : result.otherExposureNotional,
-        valuationQuality: paperValuation?.quality ?? (configuration.executionMode === "paper" ? "unavailable" : "not_applicable"),
-        valuationPriceSource: paperValuation?.markSource ?? "NONE",
-        valuationPrice: paperValuation?.markPrice ?? null,
-        valuationObservedAt: paperValuation?.candleClosedAt ?? null,
-        valuationAgeMs: paperValuation?.ageMs ?? null,
-        consolidatedExposureNotional: exposureNotional,
-        exposureQuality: paperValuation?.exposureQuality ??
-          (configuration.executionMode === "paper" ? "unavailable" : "not_applicable"),
-        executionObserved: executed,
-        openOrderCount: null,
-      };
-      emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);
-      this.emitOperatorSideEffects("cycle", cycleEvent);
+		if (result.artifacts !== null) {
+			const eventAt = Date.now();
+			const projectedValuation =
+				configuration.executionMode === "paper"
+					? projectPaperValuation({
+							cash: result.portfolio.cash,
+							positionQuantity: result.portfolio.positionQuantity,
+							mark: acceptedPaperMark,
+							asOf: eventAt,
+						})
+					: null;
+			const paperValuation =
+				projectedValuation?.ok === true ? projectedValuation.value : null;
+			const exposureNotional =
+				configuration.executionMode === "paper"
+					? (paperValuation?.exposureNotional ?? null)
+					: null;
+			const cycleEvent: TradingTelemetryEvent = {
+				schemaVersion: 4,
+				...projectDecisionAdmission(result.machine.context),
+				type: "cycle.completed",
+				timestamp: eventAt,
+				agentId: this.name,
+				productId: configuration.productId,
+				executionMode: configuration.executionMode,
+				phase: result.machine.value,
+				outcome: result.machine.context.outcome,
+				errorCode: result.machine.context.lastError?.code ?? null,
+				brokerRejectionCode: brokerRejectionCodeOf(
+					result.machine.context.lastError,
+				),
+				latencyMs: Math.max(0, Date.now() - startedAt),
+				dailyPnl: dailyRisk.dailyPnl,
+				accountEquity:
+					configuration.executionMode === "paper"
+						? (paperValuation?.equity ?? null)
+						: result.accountEquity,
+				positionQuantity: result.portfolio.positionQuantity,
+				otherExposureNotional:
+					configuration.executionMode === "paper"
+						? null
+						: result.otherExposureNotional,
+				valuationQuality:
+					paperValuation?.quality ??
+					(configuration.executionMode === "paper"
+						? "unavailable"
+						: "not_applicable"),
+				valuationPriceSource: paperValuation?.markSource ?? "NONE",
+				valuationPrice: paperValuation?.markPrice ?? null,
+				valuationObservedAt: paperValuation?.candleClosedAt ?? null,
+				valuationAgeMs: paperValuation?.ageMs ?? null,
+				consolidatedExposureNotional: exposureNotional,
+				exposureQuality:
+					paperValuation?.exposureQuality ??
+					(configuration.executionMode === "paper"
+						? "unavailable"
+						: "not_applicable"),
+				executionObserved: executed,
+				openOrderCount: null,
+			};
+			emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);
+			this.emitOperatorSideEffects("cycle", cycleEvent);
 
-      if (result.machine.context.outcome !== "RUNNING") {
-        const missed = resolveMissedDecision({
-          triggeredAt: identity.triggeredAt,
-          completedAt: Date.now(),
-          timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
-          maxMarketStalenessMs: configuration.maxMarketStalenessMs,
-          lastDecisionCandleClosedAt: result.machine.context.lastDecisionCandleClosedAt,
-          lastMissedDecisionCandleClosedAt: this.state.lastMissedDecisionCandleClosedAt ?? null,
-        });
-        if (missed.missed) {
-          this.setState({
-            ...this.state,
-            lastMissedDecisionCandleClosedAt: missed.decisionCandleClosedAt,
-            updatedAt: Date.now(),
-          });
-          this.emitMissedDecision(configuration, cycleEvent, missed.decisionCandleClosedAt);
-        }
-      }
-    }
+			if (result.machine.context.outcome !== "RUNNING") {
+				const missed = resolveMissedDecision({
+					triggeredAt: identity.triggeredAt,
+					completedAt: Date.now(),
+					timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
+					maxMarketStalenessMs: configuration.maxMarketStalenessMs,
+					lastDecisionCandleClosedAt:
+						result.machine.context.lastDecisionCandleClosedAt,
+					lastMissedDecisionCandleClosedAt:
+						this.state.lastMissedDecisionCandleClosedAt ?? null,
+				});
+				if (missed.missed) {
+					this.setState({
+						...this.state,
+						lastMissedDecisionCandleClosedAt: missed.decisionCandleClosedAt,
+						updatedAt: Date.now(),
+					});
+					this.emitMissedDecision(
+						configuration,
+						cycleEvent,
+						missed.decisionCandleClosedAt,
+					);
+				}
+			}
+		}
 
-    if (!machineIsEnabled(result.machine.value)) {
-      await this.removeIntervalSchedule();
-    }
-    if (shouldStartPendingCycle(wake, this.state.machine?.value ?? null)) {
-      await this.runCurrent(true);
-    }
-  }
+		if (!machineIsEnabled(result.machine.value)) {
+			await this.removeIntervalSchedule();
+		}
+		if (shouldStartPendingCycle(wake, this.state.machine?.value ?? null)) {
+			await this.runCurrent(true);
+		}
+	}
 
-  /**
-   * Démarrage du portefeuille (models/multi-product-portfolio.md §9.1,
-   * §9.6) : configuration figée modifiable uniquement à l'état quiescent ;
-   * chaque créneau est admis individuellement par les admissions
-   * existantes — un seul refus ⇒ démarrage refusé (C4/INV-P7 : le
-   * multi-produits hors paper reste rejeté fail-closed) ; l'orchestrateur
-   * du §5 doit être `running` après PORTFOLIO_STARTED, sinon refus (C3).
-   */
-  private async startPortfolioAgent(
-    configurationInput: unknown,
-    permissions: ControlPermissions,
-  ): Promise<AgentCommandResult> {
-    const parsed = parseMultiProductAgentConfiguration(configurationInput);
-    if (!parsed.ok) {
-      return {
-        ok: false,
-        error: {
-          code:
-            parsed.error.code === "MULTI_PRODUCT_LIVE_UNSUPPORTED"
-              ? "MULTI_PRODUCT_LIVE_UNSUPPORTED"
-              : "INVALID_CONFIGURATION",
-        },
-      };
-    }
-    const multi = parsed.value;
-    // C4/INV-P7 : défense en profondeur — la configuration est déjà
-    // paper-only au parse ; la porte runtime ne lève jamais la porte.
-    if (multi.executionMode !== "paper") {
-      return { ok: false, error: { code: "MULTI_PRODUCT_LIVE_UNSUPPORTED" } };
-    }
-    if (multi.portfolioRisk === undefined) {
-      return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
-    }
-    if (
-      (this.state.portfolioSession !== null &&
-        portfolioIsEnabled(this.state.portfolioSession)) ||
-      (this.state.machine !== null && machineIsEnabled(this.state.machine.value))
-    ) {
-      return { ok: false, error: { code: "INVALID_STATE" } };
-    }
-    // §9.6 : admission individuelle de chaque créneau par les admissions
-    // existantes (politiques figées) ; une seule admission refusée ⇒
-    // démarrage refusé.
-    for (const slot of multi.products) {
-      const projected = projectProductSlotConfiguration(multi, slot.productId);
-      if (!projected.ok) {
-        return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
-      }
-      const admission = admitAgentConfiguration(projected.value);
-      if (admission.status === "REJECTED") {
-        return { ok: false, error: { code: admission.reasonCode } };
-      }
-    }
-    if (this.state.schedule !== null) {
-      await this.cancelSchedule(this.state.schedule.id);
-    }
+	/**
+	 * Démarrage du portefeuille (models/multi-product-portfolio.md §9.1,
+	 * §9.6) : configuration figée modifiable uniquement à l'état quiescent ;
+	 * chaque créneau est admis individuellement par les admissions
+	 * existantes — un seul refus ⇒ démarrage refusé (C4/INV-P7 : le
+	 * multi-produits hors paper reste rejeté fail-closed) ; l'orchestrateur
+	 * du §5 doit être `running` après PORTFOLIO_STARTED, sinon refus (C3).
+	 */
+	private async startPortfolioAgent(
+		configurationInput: unknown,
+		permissions: ControlPermissions,
+	): Promise<AgentCommandResult> {
+		const parsed = parseMultiProductAgentConfiguration(configurationInput);
+		if (!parsed.ok) {
+			return {
+				ok: false,
+				error: {
+					code:
+						parsed.error.code === "MULTI_PRODUCT_LIVE_UNSUPPORTED"
+							? "MULTI_PRODUCT_LIVE_UNSUPPORTED"
+							: "INVALID_CONFIGURATION",
+				},
+			};
+		}
+		const multi = parsed.value;
+		// C4/INV-P7 : défense en profondeur — la configuration est déjà
+		// paper-only au parse ; la porte runtime ne lève jamais la porte.
+		if (multi.executionMode !== "paper") {
+			return { ok: false, error: { code: "MULTI_PRODUCT_LIVE_UNSUPPORTED" } };
+		}
+		if (multi.portfolioRisk === undefined) {
+			return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+		}
+		if (
+			(this.state.portfolioSession !== null &&
+				portfolioIsEnabled(this.state.portfolioSession)) ||
+			(this.state.machine !== null &&
+				machineIsEnabled(this.state.machine.value))
+		) {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
+		// §9.6 : admission individuelle de chaque créneau par les admissions
+		// existantes (politiques figées) ; une seule admission refusée ⇒
+		// démarrage refusé.
+		for (const slot of multi.products) {
+			const projected = projectProductSlotConfiguration(multi, slot.productId);
+			if (!projected.ok) {
+				return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+			}
+			const admission = admitAgentConfiguration(projected.value);
+			if (admission.status === "REJECTED") {
+				return { ok: false, error: { code: admission.reasonCode } };
+			}
+		}
+		if (this.state.schedule !== null) {
+			await this.cancelSchedule(this.state.schedule.id);
+		}
 
-    const portfolioSession = createPortfolioMachineSession({
-      products: multi.products.map((slot) => slot.productId),
-      limits: multi.portfolioRisk,
-    });
-    portfolioSession.send({ type: "PORTFOLIO_STARTED" });
-    const portfolioRecord = portfolioSession.record;
-    portfolioSession.stop();
-    // Fail-closed (C3) : un orchestrateur non `running` n'amorce jamais.
-    if (portfolioRecord.value !== "running") {
-      return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
-    }
+		const portfolioSession = createPortfolioMachineSession({
+			products: multi.products.map((slot) => slot.productId),
+			limits: multi.portfolioRisk,
+		});
+		portfolioSession.send({ type: "PORTFOLIO_STARTED" });
+		const portfolioRecord = portfolioSession.record;
+		portfolioSession.stop();
+		// Fail-closed (C3) : un orchestrateur non `running` n'amorce jamais.
+		if (portfolioRecord.value !== "running") {
+			return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
+		}
 
-    const products: Record<string, PortfolioProductRuntime> = {};
-    for (const slot of multi.products) {
-      const productSession = createTradingMachineSession({
-        agentId: this.name,
-        strategyIds: multi.strategyIds,
-        maxMarketStalenessMs: multi.maxMarketStalenessMs,
-      });
-      productSession.send({ type: "START_REQUESTED", permissions });
-      const machine = productSession.record;
-      productSession.stop();
-      products[slot.productId] = initialProductRuntime(
-        machine,
-        multi.initialCapital,
-      );
-    }
+		const products: Record<string, PortfolioProductRuntime> = {};
+		for (const slot of multi.products) {
+			const productSession = createTradingMachineSession({
+				agentId: this.name,
+				strategyIds: multi.strategyIds,
+				maxMarketStalenessMs: multi.maxMarketStalenessMs,
+			});
+			productSession.send({ type: "START_REQUESTED", permissions });
+			const machine = productSession.record;
+			productSession.stop();
+			products[slot.productId] = initialProductRuntime(
+				machine,
+				multi.initialCapital,
+			);
+		}
 
-    this.setState({
-      ...INITIAL_AGENT_STATE,
-      enabled: true,
-      portfolioSession: Object.freeze({
-        configuration: multi,
-        portfolio: portfolioRecord,
-        products: Object.freeze(products),
-      }),
-      portfolioRestoreError: null,
-      updatedAt: Date.now(),
-    });
+		this.setState({
+			...INITIAL_AGENT_STATE,
+			enabled: true,
+			portfolioSession: Object.freeze({
+				configuration: multi,
+				portfolio: portfolioRecord,
+				products: Object.freeze(products),
+			}),
+			portfolioRestoreError: null,
+			updatedAt: Date.now(),
+		});
 
-    await this.runPortfolio(false);
-    return { ok: true, state: this.stateSnapshot() };
-  }
+		await this.runPortfolio(false);
+		return { ok: true, state: this.stateSnapshot() };
+	}
 
-  private async stopPortfolioAgent(
-    permissions: ControlPermissions,
-  ): Promise<AgentCommandResult> {
-    const session = this.state.portfolioSession;
-    if (session === null) {
-      return { ok: false, error: { code: "NOT_CONFIGURED" } };
-    }
-    for (const productId of portfolioProductIds(session)) {
-      const product = session.products[productId];
-      if (product === undefined || !machineIsEnabled(product.machine.value)) {
-        continue;
-      }
-      await this.controlProduct(session, productId, {
-        type: "STOP_REQUESTED",
-        permissions,
-      });
-    }
-    await this.runPortfolio(false);
-    return { ok: true, state: this.stateSnapshot() };
-  }
+	private async stopPortfolioAgent(
+		permissions: ControlPermissions,
+	): Promise<AgentCommandResult> {
+		const session = this.state.portfolioSession;
+		if (session === null) {
+			return { ok: false, error: { code: "NOT_CONFIGURED" } };
+		}
+		for (const productId of portfolioProductIds(session)) {
+			const product = session.products[productId];
+			if (product === undefined || !machineIsEnabled(product.machine.value)) {
+				continue;
+			}
+			await this.controlProduct(session, productId, {
+				type: "STOP_REQUESTED",
+				permissions,
+			});
+		}
+		await this.runPortfolio(false);
+		return { ok: true, state: this.stateSnapshot() };
+	}
 
-  /**
-   * Kill portefeuille (§5, §9.5) : l'orchestrateur passe en `draining`
-   * (plus aucune admission consolidée), chaque produit actif draine son
-   * propre cycle ; le portefeuille atteint `halted` à la quiescence.
-   */
-  private async killPortfolioAgent(
-    permissions: ControlPermissions,
-  ): Promise<AgentCommandResult> {
-    const session = this.state.portfolioSession;
-    if (session === null) {
-      return { ok: false, error: { code: "NOT_CONFIGURED" } };
-    }
-    this.persistPortfolio(
-      sendPortfolioEvent(session.portfolio, {
-        type: "KILL_SWITCH_ENGAGED",
-        controlId: crypto.randomUUID(),
-      }),
-    );
-    for (const productId of portfolioProductIds(session)) {
-      const product = session.products[productId];
-      if (product === undefined || !machineIsEnabled(product.machine.value)) {
-        continue;
-      }
-      await this.controlProduct(session, productId, {
-        type: "KILL_SWITCH_ENGAGED",
-        permissions,
-        controlId: crypto.randomUUID(),
-      });
-    }
-    await this.runPortfolio(false);
-    return { ok: true, state: this.stateSnapshot() };
-  }
+	/**
+	 * Kill portefeuille (§5, §9.5) : l'orchestrateur passe en `draining`
+	 * (plus aucune admission consolidée), chaque produit actif draine son
+	 * propre cycle ; le portefeuille atteint `halted` à la quiescence.
+	 */
+	private async killPortfolioAgent(
+		permissions: ControlPermissions,
+	): Promise<AgentCommandResult> {
+		const session = this.state.portfolioSession;
+		if (session === null) {
+			return { ok: false, error: { code: "NOT_CONFIGURED" } };
+		}
+		this.persistPortfolio(
+			sendPortfolioEvent(session.portfolio, {
+				type: "KILL_SWITCH_ENGAGED",
+				controlId: crypto.randomUUID(),
+			}),
+		);
+		for (const productId of portfolioProductIds(session)) {
+			const product = session.products[productId];
+			if (product === undefined || !machineIsEnabled(product.machine.value)) {
+				continue;
+			}
+			await this.controlProduct(session, productId, {
+				type: "KILL_SWITCH_ENGAGED",
+				permissions,
+				controlId: crypto.randomUUID(),
+			});
+		}
+		await this.runPortfolio(false);
+		return { ok: true, state: this.stateSnapshot() };
+	}
 
-  private async resetPortfolioAgent(
-    permissions: ControlPermissions,
-  ): Promise<AgentCommandResult> {
-    const session = this.state.portfolioSession;
-    if (session === null) {
-      return { ok: false, error: { code: "NOT_CONFIGURED" } };
-    }
-    for (const productId of portfolioProductIds(session)) {
-      await this.controlProduct(session, productId, {
-        type: "RESET",
-        permissions,
-      });
-    }
-    const latest = this.state.portfolioSession;
-    if (latest !== null) {
-      this.persistPortfolio(sendPortfolioEvent(latest.portfolio, { type: "RESET" }));
-    }
-    return { ok: true, state: this.stateSnapshot() };
-  }
+	private async resetPortfolioAgent(
+		permissions: ControlPermissions,
+	): Promise<AgentCommandResult> {
+		const session = this.state.portfolioSession;
+		if (session === null) {
+			return { ok: false, error: { code: "NOT_CONFIGURED" } };
+		}
+		for (const productId of portfolioProductIds(session)) {
+			await this.controlProduct(session, productId, {
+				type: "RESET",
+				permissions,
+			});
+		}
+		const latest = this.state.portfolioSession;
+		if (latest !== null) {
+			this.persistPortfolio(
+				sendPortfolioEvent(latest.portfolio, { type: "RESET" }),
+			);
+		}
+		return { ok: true, state: this.stateSnapshot() };
+	}
 
-  /** Événement de contrôle typé vers la machine d'un seul produit. */
-  private async controlProduct(
-    session: PortfolioSessionState,
-    productId: ProductId,
-    event: TradingCycleEvent,
-  ): Promise<void> {
-    const product = session.products[productId];
-    if (product === undefined) return;
-    const machine = createTradingMachineSession(
-      {
-        agentId: this.name,
-        strategyIds: session.configuration.strategyIds,
-        maxMarketStalenessMs: session.configuration.maxMarketStalenessMs,
-      },
-      product.machine,
-    );
-    machine.send(event);
-    const record = machine.record;
-    machine.stop();
-    this.persistProductMachine(productId, record);
-  }
+	/** Événement de contrôle typé vers la machine d'un seul produit. */
+	private async controlProduct(
+		session: PortfolioSessionState,
+		productId: ProductId,
+		event: TradingCycleEvent,
+	): Promise<void> {
+		const product = session.products[productId];
+		if (product === undefined) return;
+		const machine = createTradingMachineSession(
+			{
+				agentId: this.name,
+				strategyIds: session.configuration.strategyIds,
+				maxMarketStalenessMs: session.configuration.maxMarketStalenessMs,
+			},
+			product.machine,
+		);
+		machine.send(event);
+		const record = machine.record;
+		machine.stop();
+		this.persistProductMachine(productId, record);
+	}
 
-  private persistPortfolio(portfolio: PersistedPortfolioMachine): void {
-    const session = this.state.portfolioSession;
-    if (session === null) return;
-    this.setState({
-      ...this.state,
-      portfolioSession: { ...session, portfolio },
-      updatedAt: Date.now(),
-    });
-  }
+	private persistPortfolio(portfolio: PersistedPortfolioMachine): void {
+		const session = this.state.portfolioSession;
+		if (session === null) return;
+		this.setState({
+			...this.state,
+			portfolioSession: { ...session, portfolio },
+			updatedAt: Date.now(),
+		});
+	}
 
-  private persistProductMachine(
-    productId: ProductId,
-    machine: PersistedTradingMachine,
-  ): void {
-    const session = this.state.portfolioSession;
-    if (session === null) return;
-    const product = session.products[productId];
-    if (product === undefined) return;
-    const products = { ...session.products, [productId]: { ...product, machine } };
-    const next = { ...session, products: Object.freeze(products) };
-    this.setState({
-      ...this.state,
-      portfolioSession: next,
-      enabled: portfolioIsEnabled(next),
-      updatedAt: Date.now(),
-    });
-  }
+	private persistProductMachine(
+		productId: ProductId,
+		machine: PersistedTradingMachine,
+	): void {
+		const session = this.state.portfolioSession;
+		if (session === null) return;
+		const product = session.products[productId];
+		if (product === undefined) return;
+		const products = {
+			...session.products,
+			[productId]: { ...product, machine },
+		};
+		const next = { ...session, products: Object.freeze(products) };
+		this.setState({
+			...this.state,
+			portfolioSession: next,
+			enabled: portfolioIsEnabled(next),
+			updatedAt: Date.now(),
+		});
+	}
 
-  /**
-   * §9.4 : publication de l'exposition et du PnL quotidien d'un produit
-   * à l'orchestrateur du §5 depuis le dernier état persisté (au réveil
-   * et après chaque cycle produit).
-   */
-  private reportProductExposureFromState(productId: ProductId): void {
-    const session = this.state.portfolioSession;
-    if (session === null) return;
-    const product = session.products[productId];
-    if (product === undefined) return;
-    this.persistPortfolio(
-      sendPortfolioEvent(session.portfolio, {
-        type: "PRODUCT_EXPOSURE_REPORTED",
-        productId,
-        grossExposure: productGrossExposure(
-          product.portfolio,
-          product.lastCycle?.marketPrice ?? null,
-        ),
-        dailyPnl: product.dailyPnl,
-      }),
-    );
-  }
+	/**
+	 * §9.4 : publication de l'exposition et du PnL quotidien d'un produit
+	 * à l'orchestrateur du §5 depuis le dernier état persisté (au réveil
+	 * et après chaque cycle produit).
+	 */
+	private reportProductExposureFromState(productId: ProductId): void {
+		const session = this.state.portfolioSession;
+		if (session === null) return;
+		const product = session.products[productId];
+		if (product === undefined) return;
+		this.persistPortfolio(
+			sendPortfolioEvent(session.portfolio, {
+				type: "PRODUCT_EXPOSURE_REPORTED",
+				productId,
+				grossExposure: productGrossExposure(
+					product.portfolio,
+					product.lastCycle?.marketPrice ?? null,
+				),
+				dailyPnl: product.dailyPnl,
+			}),
+		);
+	}
 
-  /**
-   * Ordonnancement déterministe (INV-P4) : les créneaux sont parcourus
-   * dans l'ordre trié figé de la configuration ; l'arrêt ou l'échec d'un
-   * produit ne re-planifie jamais les autres (INV-P3). L'alarme partagée
-   * n'est retirée qu'à la quiescence du portefeuille entier.
-   */
-  /**
-   * `onlyProductId` restreint un réveil de retry au produit ciblé
-   * (models/market-retry-schedule.md §3). `staggerProducts` (réveil de
-   * grille uniquement) décale les produits exécutés de
-   * PORTFOLIO_PRODUCT_STAGGER_MS (models/cycle-schedule.md §4).
-   */
-  private async runPortfolio(
-    triggerAlarm: boolean,
-    onlyProductId: ProductId | null = null,
-    staggerProducts = false,
-  ): Promise<void> {
-    const session = this.state.portfolioSession;
-    if (session === null) return;
-    if (triggerAlarm) {
-      for (const productId of portfolioProductIds(session)) {
-        this.reportProductExposureFromState(productId);
-      }
-    }
-    const productIds = portfolioProductIds(session).filter(
-      (productId) => onlyProductId === null || productId === onlyProductId,
-    );
-    let executed = 0;
-    for (const productId of productIds) {
-      const candidate = this.state.portfolioSession?.products[productId];
-      if (candidate === undefined || !machineIsEnabled(candidate.machine.value)) {
-        continue;
-      }
-      if (staggerProducts && executed > 0) {
-        await new Promise((resolve) => setTimeout(resolve, PORTFOLIO_PRODUCT_STAGGER_MS));
-      }
-      // L'attente rend la main : relire l'état avant d'exécuter le produit.
-      const current = this.state.portfolioSession;
-      if (current === null) return;
-      const product = current.products[productId];
-      if (
-        product === undefined ||
-        !machineIsEnabled(product.machine.value)
-      ) {
-        continue;
-      }
-      executed += 1;
-      await this.runProductCycle(current, productId, triggerAlarm);
-    }
-    const current = this.state.portfolioSession;
-    if (current !== null && !portfolioIsEnabled(current)) {
-      await this.removeIntervalSchedule();
-    }
-  }
+	/**
+	 * Ordonnancement déterministe (INV-P4) : les créneaux sont parcourus
+	 * dans l'ordre trié figé de la configuration ; l'arrêt ou l'échec d'un
+	 * produit ne re-planifie jamais les autres (INV-P3). L'alarme partagée
+	 * n'est retirée qu'à la quiescence du portefeuille entier.
+	 */
+	/**
+	 * `onlyProductId` restreint un réveil de retry au produit ciblé
+	 * (models/market-retry-schedule.md §3). `staggerProducts` (réveil de
+	 * grille uniquement) décale les produits exécutés de
+	 * PORTFOLIO_PRODUCT_STAGGER_MS (models/cycle-schedule.md §4).
+	 */
+	private async runPortfolio(
+		triggerAlarm: boolean,
+		onlyProductId: ProductId | null = null,
+		staggerProducts = false,
+	): Promise<void> {
+		const session = this.state.portfolioSession;
+		if (session === null) return;
+		if (triggerAlarm) {
+			for (const productId of portfolioProductIds(session)) {
+				this.reportProductExposureFromState(productId);
+			}
+		}
+		const productIds = portfolioProductIds(session).filter(
+			(productId) => onlyProductId === null || productId === onlyProductId,
+		);
+		let executed = 0;
+		for (const productId of productIds) {
+			const candidate = this.state.portfolioSession?.products[productId];
+			if (
+				candidate === undefined ||
+				!machineIsEnabled(candidate.machine.value)
+			) {
+				continue;
+			}
+			if (staggerProducts && executed > 0) {
+				await new Promise((resolve) =>
+					setTimeout(resolve, PORTFOLIO_PRODUCT_STAGGER_MS),
+				);
+			}
+			// L'attente rend la main : relire l'état avant d'exécuter le produit.
+			const current = this.state.portfolioSession;
+			if (current === null) return;
+			const product = current.products[productId];
+			if (product === undefined || !machineIsEnabled(product.machine.value)) {
+				continue;
+			}
+			executed += 1;
+			await this.runProductCycle(current, productId, triggerAlarm);
+		}
+		const current = this.state.portfolioSession;
+		if (current !== null && !portfolioIsEnabled(current)) {
+			await this.removeIntervalSchedule();
+		}
+	}
 
-  /** Cycle d'un seul produit : projection §9.2 de models/agent-runtime.md. */
-  private async runProductCycle(
-    session: PortfolioSessionState,
-    productId: ProductId,
-    triggerAlarm: boolean,
-  ): Promise<void> {
-    const startedAt = Date.now();
-    const product = session.products[productId];
-    if (product === undefined) return;
-    const projected = projectProductSlotConfiguration(session.configuration, productId);
-    if (!projected.ok) {
-      // Créneau restauré incohérent : refus fermé du produit (C3) sans
-      // re-planifier les autres (INV-P3).
-      const latest = this.state.portfolioSession;
-      if (latest !== null) {
-        this.persistPortfolio(
-          sendPortfolioEvent(latest.portfolio, {
-            type: "PRODUCT_FAILED",
-            productId,
-          }),
-        );
-      }
-      return;
-    }
-    const configuration = projected.value;
-    const wake = planCycleWake(product.machine.value, triggerAlarm);
-    const identity = resolveCycleInvocation(
-      product.machine,
-      triggerAlarm,
-      Date.now(),
-      crypto.randomUUID(),
-    );
-    const artifacts =
-      identity.loadCycleId === null
-        ? null
-        : this.loadArtifacts(identity.loadCycleId, productId);
-    // models/daily-risk.md §3 : équité marquée paper = valorisation datée sur
-    // le dernier mark accepté du produit ; jamais averagePrice.
-    const dailyRiskAtStart = resolveCycleDailyRiskStart(
-      configuration.executionMode,
-      product.dailyRiskWindow ?? null,
-      product.dailyPnl,
-      identity.triggeredAt,
-      paperValuationFor(
-        configuration.executionMode,
-        product.portfolio,
-        product.lastPaperMark,
-        identity.triggeredAt,
-      ),
-    );
-    const result = await runTradingCycle({
-      agentId: this.name,
-      configuration,
-      machine: product.machine,
-      artifacts,
-      previousIndicators: product.previousIndicators,
-      portfolio: product.portfolio,
-      dailyPnl: dailyRiskAtStart.dailyPnl,
-      dailyRiskWindow: dailyRiskAtStart.window,
-      lastTradeAt: product.lastTradeAt,
-      triggeredAt: identity.triggeredAt,
-      cycleId: identity.cycleId,
-      triggerAlarm: wake.triggerAlarm,
-      effects: this.createProductEffects(configuration),
-    });
+	/** Cycle d'un seul produit : projection §9.2 de models/agent-runtime.md. */
+	private async runProductCycle(
+		session: PortfolioSessionState,
+		productId: ProductId,
+		triggerAlarm: boolean,
+	): Promise<void> {
+		const startedAt = Date.now();
+		const product = session.products[productId];
+		if (product === undefined) return;
+		const projected = projectProductSlotConfiguration(
+			session.configuration,
+			productId,
+		);
+		if (!projected.ok) {
+			// Créneau restauré incohérent : refus fermé du produit (C3) sans
+			// re-planifier les autres (INV-P3).
+			const latest = this.state.portfolioSession;
+			if (latest !== null) {
+				this.persistPortfolio(
+					sendPortfolioEvent(latest.portfolio, {
+						type: "PRODUCT_FAILED",
+						productId,
+					}),
+				);
+			}
+			return;
+		}
+		const configuration = projected.value;
+		const wake = planCycleWake(product.machine.value, triggerAlarm);
+		const identity = resolveCycleInvocation(
+			product.machine,
+			triggerAlarm,
+			Date.now(),
+			crypto.randomUUID(),
+		);
+		const artifacts =
+			identity.loadCycleId === null
+				? null
+				: this.loadArtifacts(identity.loadCycleId, productId);
+		// models/daily-risk.md §3 : équité marquée paper = valorisation datée sur
+		// le dernier mark accepté du produit ; jamais averagePrice.
+		const dailyRiskAtStart = resolveCycleDailyRiskStart(
+			configuration.executionMode,
+			product.dailyRiskWindow ?? null,
+			product.dailyPnl,
+			identity.triggeredAt,
+			paperValuationFor(
+				configuration.executionMode,
+				product.portfolio,
+				product.lastPaperMark,
+				identity.triggeredAt,
+			),
+		);
+		const result = await runTradingCycle({
+			agentId: this.name,
+			configuration,
+			machine: product.machine,
+			artifacts,
+			previousIndicators: product.previousIndicators,
+			portfolio: product.portfolio,
+			dailyPnl: dailyRiskAtStart.dailyPnl,
+			dailyRiskWindow: dailyRiskAtStart.window,
+			lastTradeAt: product.lastTradeAt,
+			triggeredAt: identity.triggeredAt,
+			cycleId: identity.cycleId,
+			triggerAlarm: wake.triggerAlarm,
+			effects: this.createProductEffects(configuration),
+		});
 
-    const lastPaperMark = acceptPaperValuationMark(
-      result.artifacts?.market?.valuationMark,
-      product.lastPaperMark,
-    );
-    const dailyRisk = resolveCycleDailyRiskCompletion(
-      configuration.executionMode,
-      result.dailyRiskWindow,
-      result.dailyPnl,
-      identity.triggeredAt,
-      paperValuationFor(
-        configuration.executionMode,
-        result.portfolio,
-        lastPaperMark,
-        identity.triggeredAt,
-      ),
-    );
-    const executed = result.artifacts?.execution !== undefined;
-    const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
-    const missed =
-      result.artifacts !== null && result.machine.context.outcome !== "RUNNING"
-        ? resolveMissedDecision({
-            triggeredAt: identity.triggeredAt,
-            completedAt: Date.now(),
-            timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
-            maxMarketStalenessMs: configuration.maxMarketStalenessMs,
-            lastDecisionCandleClosedAt: result.machine.context.lastDecisionCandleClosedAt,
-            lastMissedDecisionCandleClosedAt: product.lastMissedDecisionCandleClosedAt ?? null,
-          })
-        : null;
-    const updated: PortfolioProductRuntime = Object.freeze({
-      machine: result.machine,
-      portfolio: result.portfolio,
-      dailyRiskWindow: dailyRisk.window,
-      dailyPnl: dailyRisk.dailyPnl,
-      lastTradeAt: executed
-        ? result.artifacts?.triggeredAt ?? product.lastTradeAt
-        : product.lastTradeAt,
-      lastPaperMark,
-      previousIndicators: result.previousIndicators,
-      lastCycle: lastCycle ?? product.lastCycle,
-      lastMissedDecisionCandleClosedAt:
-        missed?.missed === true
-          ? missed.decisionCandleClosedAt
-          : product.lastMissedDecisionCandleClosedAt ?? null,
-    });
-    const currentSession = this.state.portfolioSession;
-    if (currentSession !== null) {
-      const products = { ...currentSession.products, [productId]: updated };
-      const next = { ...currentSession, products: Object.freeze(products) };
-      this.setState({
-        ...this.state,
-        portfolioSession: next,
-        enabled: portfolioIsEnabled(next),
-        updatedAt: Date.now(),
-      });
-    }
+		const lastPaperMark = acceptPaperValuationMark(
+			result.artifacts?.market?.valuationMark,
+			product.lastPaperMark,
+		);
+		const dailyRisk = resolveCycleDailyRiskCompletion(
+			configuration.executionMode,
+			result.dailyRiskWindow,
+			result.dailyPnl,
+			identity.triggeredAt,
+			paperValuationFor(
+				configuration.executionMode,
+				result.portfolio,
+				lastPaperMark,
+				identity.triggeredAt,
+			),
+		);
+		const executed = result.artifacts?.execution !== undefined;
+		const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
+		const missed =
+			result.artifacts !== null && result.machine.context.outcome !== "RUNNING"
+				? resolveMissedDecision({
+						triggeredAt: identity.triggeredAt,
+						completedAt: Date.now(),
+						timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
+						maxMarketStalenessMs: configuration.maxMarketStalenessMs,
+						lastDecisionCandleClosedAt:
+							result.machine.context.lastDecisionCandleClosedAt,
+						lastMissedDecisionCandleClosedAt:
+							product.lastMissedDecisionCandleClosedAt ?? null,
+					})
+				: null;
+		const updated: PortfolioProductRuntime = Object.freeze({
+			machine: result.machine,
+			portfolio: result.portfolio,
+			dailyRiskWindow: dailyRisk.window,
+			dailyPnl: dailyRisk.dailyPnl,
+			lastTradeAt: executed
+				? (result.artifacts?.triggeredAt ?? product.lastTradeAt)
+				: product.lastTradeAt,
+			lastPaperMark,
+			previousIndicators: result.previousIndicators,
+			lastCycle: lastCycle ?? product.lastCycle,
+			lastMissedDecisionCandleClosedAt:
+				missed?.missed === true
+					? missed.decisionCandleClosedAt
+					: (product.lastMissedDecisionCandleClosedAt ?? null),
+		});
+		const currentSession = this.state.portfolioSession;
+		if (currentSession !== null) {
+			const products = { ...currentSession.products, [productId]: updated };
+			const next = { ...currentSession, products: Object.freeze(products) };
+			this.setState({
+				...this.state,
+				portfolioSession: next,
+				enabled: portfolioIsEnabled(next),
+				updatedAt: Date.now(),
+			});
+		}
 
-    // §9.4 : rapport d'exposition après le cycle produit.
-    this.reportProductExposureFromState(productId);
-    // §9.5 : l'état terminal du produit est publié à l'orchestrateur —
-    // les autres produits ne sont jamais re-planifiés (INV-P3).
-    const terminalEvent = portfolioEventForProductPhase(productId, result.machine.value);
-    if (terminalEvent !== null) {
-      const latest = this.state.portfolioSession;
-      if (latest !== null) {
-        this.persistPortfolio(sendPortfolioEvent(latest.portfolio, terminalEvent));
-      }
-    }
+		// §9.4 : rapport d'exposition après le cycle produit.
+		this.reportProductExposureFromState(productId);
+		// §9.5 : l'état terminal du produit est publié à l'orchestrateur —
+		// les autres produits ne sont jamais re-planifiés (INV-P3).
+		const terminalEvent = portfolioEventForProductPhase(
+			productId,
+			result.machine.value,
+		);
+		if (terminalEvent !== null) {
+			const latest = this.state.portfolioSession;
+			if (latest !== null) {
+				this.persistPortfolio(
+					sendPortfolioEvent(latest.portfolio, terminalEvent),
+				);
+			}
+		}
 
-    if (result.artifacts !== null) {
-      const eventAt = Date.now();
-      const projectedValuation = projectPaperValuation({
-        cash: result.portfolio.cash,
-        positionQuantity: result.portfolio.positionQuantity,
-        mark: lastPaperMark,
-        asOf: eventAt,
-      });
-      const paperValuation = projectedValuation.ok ? projectedValuation.value : null;
-      const portfolioSummary = this.getPortfolioSummary(eventAt);
-      const consolidatedExposure = portfolioSummary.ok && portfolioSummary.value.kind === "portfolio"
-        ? portfolioSummary.value.consolidated.grossExposure
-        : null;
-      const consolidatedExposureQuality = portfolioSummary.ok && portfolioSummary.value.kind === "portfolio"
-        ? portfolioSummary.value.consolidated.exposureQuality
-        : "unavailable";
-      const cycleEvent: TradingTelemetryEvent = {
-        schemaVersion: 4,
-        ...projectDecisionAdmission(result.machine.context),
-        type: "cycle.completed",
-        timestamp: eventAt,
-        agentId: this.name,
-        productId,
-        executionMode: configuration.executionMode,
-        phase: result.machine.value,
-        outcome: result.machine.context.outcome,
-        errorCode: result.machine.context.lastError?.code ?? null,
-        brokerRejectionCode: brokerRejectionCodeOf(
-          result.machine.context.lastError,
-        ),
-        latencyMs: Math.max(0, Date.now() - startedAt),
-        dailyPnl: dailyRisk.dailyPnl,
-        accountEquity: paperValuation?.equity ?? null,
-        positionQuantity: result.portfolio.positionQuantity,
-        otherExposureNotional: null,
-        valuationQuality: paperValuation?.quality ?? "unavailable",
-        valuationPriceSource: paperValuation?.markSource ?? "NONE",
-        valuationPrice: paperValuation?.markPrice ?? null,
-        valuationObservedAt: paperValuation?.candleClosedAt ?? null,
-        valuationAgeMs: paperValuation?.ageMs ?? null,
-        consolidatedExposureNotional: consolidatedExposure,
-        exposureQuality: consolidatedExposureQuality,
-        executionObserved: executed,
-        openOrderCount: null,
-      };
-      emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);
-      this.emitOperatorSideEffects("cycle", cycleEvent);
-      if (missed?.missed === true) {
-        this.emitMissedDecision(configuration, cycleEvent, missed.decisionCandleClosedAt);
-      }
-    }
-    const latest = this.state.portfolioSession;
-    if (latest !== null && shouldStartPendingCycle(wake, latest.products[productId]?.machine.value ?? null)) {
-      await this.runProductCycle(latest, productId, true);
-    }
-  }
+		if (result.artifacts !== null) {
+			const eventAt = Date.now();
+			const projectedValuation = projectPaperValuation({
+				cash: result.portfolio.cash,
+				positionQuantity: result.portfolio.positionQuantity,
+				mark: lastPaperMark,
+				asOf: eventAt,
+			});
+			const paperValuation = projectedValuation.ok
+				? projectedValuation.value
+				: null;
+			const portfolioSummary = this.getPortfolioSummary(eventAt);
+			const consolidatedExposure =
+				portfolioSummary.ok && portfolioSummary.value.kind === "portfolio"
+					? portfolioSummary.value.consolidated.grossExposure
+					: null;
+			const consolidatedExposureQuality =
+				portfolioSummary.ok && portfolioSummary.value.kind === "portfolio"
+					? portfolioSummary.value.consolidated.exposureQuality
+					: "unavailable";
+			const cycleEvent: TradingTelemetryEvent = {
+				schemaVersion: 4,
+				...projectDecisionAdmission(result.machine.context),
+				type: "cycle.completed",
+				timestamp: eventAt,
+				agentId: this.name,
+				productId,
+				executionMode: configuration.executionMode,
+				phase: result.machine.value,
+				outcome: result.machine.context.outcome,
+				errorCode: result.machine.context.lastError?.code ?? null,
+				brokerRejectionCode: brokerRejectionCodeOf(
+					result.machine.context.lastError,
+				),
+				latencyMs: Math.max(0, Date.now() - startedAt),
+				dailyPnl: dailyRisk.dailyPnl,
+				accountEquity: paperValuation?.equity ?? null,
+				positionQuantity: result.portfolio.positionQuantity,
+				otherExposureNotional: null,
+				valuationQuality: paperValuation?.quality ?? "unavailable",
+				valuationPriceSource: paperValuation?.markSource ?? "NONE",
+				valuationPrice: paperValuation?.markPrice ?? null,
+				valuationObservedAt: paperValuation?.candleClosedAt ?? null,
+				valuationAgeMs: paperValuation?.ageMs ?? null,
+				consolidatedExposureNotional: consolidatedExposure,
+				exposureQuality: consolidatedExposureQuality,
+				executionObserved: executed,
+				openOrderCount: null,
+			};
+			emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);
+			this.emitOperatorSideEffects("cycle", cycleEvent);
+			if (missed?.missed === true) {
+				this.emitMissedDecision(
+					configuration,
+					cycleEvent,
+					missed.decisionCandleClosedAt,
+				);
+			}
+		}
+		const latest = this.state.portfolioSession;
+		if (
+			latest !== null &&
+			shouldStartPendingCycle(
+				wake,
+				latest.products[productId]?.machine.value ?? null,
+			)
+		) {
+			await this.runProductCycle(latest, productId, true);
+		}
+	}
 
-  /**
-   * Effets d'un créneau (§9.2) : projection à l'identique de
-   * models/agent-runtime.md, avec le productId sur la persistance ; la
-   * couture d'admission consolidée (§9.3) est câblée sur l'orchestrateur
-   * du §5 — la garde décide, l'effet transporte (INV-P5).
-   */
-  private createProductEffects(
-    configuration: AgentConfiguration,
-  ): TradingCycleEffects {
-    const productId = configuration.productId;
-    const base = createTradingCycleEffects({
-      configuration,
-      env: this.env,
-      agentName: this.name,
-      ensureIntervalSchedule: (intervalSeconds) =>
-        this.ensureIntervalSchedule(intervalSeconds),
-      // INV-P3 : l'alarme partagée appartient au portefeuille — un
-      // produit en cancellation ne la retire jamais (paper : rien à
-      // liquider, le drain est porté par le portefeuille).
-      removeIntervalSchedule: () => Promise.resolve(),
-      scheduleRetry: (at, attempt) => this.scheduleMarketRetry(at, attempt, productId),
-      checkpoint: (artifacts) => this.checkpoint(artifacts, productId),
-      persistMachine: async (nextMachine) =>
-        this.persistProductMachine(productId, nextMachine),
-      persistOrderIntent: (cycleId, intent) =>
-        this.persistOrderIntent(cycleId, intent, productId),
-      submitPaperOrder: (intent, marketPrice, portfolio, executedAt, config) =>
-        this.submitPaperOrder(intent, marketPrice, portfolio, executedAt, config, productId),
-      submitLiveOrder: (settings, intent, riskDecision, authorization) =>
-        this.submitLiveOrder(settings, intent, riskDecision, authorization),
-      submitPerpOrder: (settings, intent, riskDecision, marketPrice) =>
-        this.submitPerpSignalOrder(settings, intent, riskDecision, marketPrice),
-      reconcilePaperOrder: (intent) => this.reconcilePaperOrder(intent, productId),
-      reconcileLiveOrder: (settings, intent, riskDecision, portfolio) =>
-        this.reconcileLiveOrder(settings, intent, riskDecision, portfolio),
-      reconcilePerpOrder: (settings, intent) =>
-        this.reconcilePerpSignalOrder(settings, intent),
-      persistCycle: (cycleArtifacts, nextMachine) =>
-        this.persistCycle(cycleArtifacts, nextMachine, productId),
-      loadKnownProtectiveOrderIds: () => this.loadKnownProtectiveOrderIds(),
-      getKillContext: () => null,
-      applyKilledAccount: () => undefined,
-    });
-    return {
-      ...base,
-      cancelCurrentEffect: async () => ok(undefined),
-      proposePortfolioRisk: async (proposedProductId, proposedGrossExposure) => {
-        const current = this.state.portfolioSession;
-        if (current === null) {
-          return { approved: false, reasonCode: "UNKNOWN_PRODUCT" };
-        }
-        const proposal = proposePortfolioRisk(
-          current.portfolio,
-          proposedProductId,
-          proposedGrossExposure,
-        );
-        this.persistPortfolio(proposal.record);
-        return proposal.decision;
-      },
-    };
-  }
+	/**
+	 * Effets d'un créneau (§9.2) : projection à l'identique de
+	 * models/agent-runtime.md, avec le productId sur la persistance ; la
+	 * couture d'admission consolidée (§9.3) est câblée sur l'orchestrateur
+	 * du §5 — la garde décide, l'effet transporte (INV-P5).
+	 */
+	private createProductEffects(
+		configuration: AgentConfiguration,
+	): TradingCycleEffects {
+		const productId = configuration.productId;
+		const base = createTradingCycleEffects({
+			configuration,
+			env: this.env,
+			agentName: this.name,
+			onMarketDataFetched: (config, triggeredAt, snapshot) =>
+				this.collectAiTrendShadow(config, triggeredAt, snapshot),
+			ensureIntervalSchedule: (intervalSeconds) =>
+				this.ensureIntervalSchedule(intervalSeconds),
+			// INV-P3 : l'alarme partagée appartient au portefeuille — un
+			// produit en cancellation ne la retire jamais (paper : rien à
+			// liquider, le drain est porté par le portefeuille).
+			removeIntervalSchedule: () => Promise.resolve(),
+			scheduleRetry: (at, attempt) =>
+				this.scheduleMarketRetry(at, attempt, productId),
+			checkpoint: (artifacts) => this.checkpoint(artifacts, productId),
+			persistMachine: async (nextMachine) =>
+				this.persistProductMachine(productId, nextMachine),
+			persistOrderIntent: (cycleId, intent) =>
+				this.persistOrderIntent(cycleId, intent, productId),
+			submitPaperOrder: (intent, marketPrice, portfolio, executedAt, config) =>
+				this.submitPaperOrder(
+					intent,
+					marketPrice,
+					portfolio,
+					executedAt,
+					config,
+					productId,
+				),
+			submitLiveOrder: (settings, intent, riskDecision, authorization) =>
+				this.submitLiveOrder(settings, intent, riskDecision, authorization),
+			submitPerpOrder: (settings, intent, riskDecision, marketPrice) =>
+				this.submitPerpSignalOrder(settings, intent, riskDecision, marketPrice),
+			reconcilePaperOrder: (intent) =>
+				this.reconcilePaperOrder(intent, productId),
+			reconcileLiveOrder: (settings, intent, riskDecision, portfolio) =>
+				this.reconcileLiveOrder(settings, intent, riskDecision, portfolio),
+			reconcilePerpOrder: (settings, intent) =>
+				this.reconcilePerpSignalOrder(settings, intent),
+			persistCycle: (cycleArtifacts, nextMachine) =>
+				this.persistCycle(cycleArtifacts, nextMachine, productId),
+			loadKnownProtectiveOrderIds: () => this.loadKnownProtectiveOrderIds(),
+			getKillContext: () => null,
+			applyKilledAccount: () => undefined,
+		});
+		return {
+			...base,
+			cancelCurrentEffect: async () => ok(undefined),
+			proposePortfolioRisk: async (
+				proposedProductId,
+				proposedGrossExposure,
+			) => {
+				const current = this.state.portfolioSession;
+				if (current === null) {
+					return { approved: false, reasonCode: "UNKNOWN_PRODUCT" };
+				}
+				const proposal = proposePortfolioRisk(
+					current.portfolio,
+					proposedProductId,
+					proposedGrossExposure,
+				);
+				this.persistPortfolio(proposal.record);
+				return proposal.decision;
+			},
+		};
+	}
 
-  private createEffects(configuration: AgentConfiguration): TradingCycleEffects {
-    return createTradingCycleEffects({
-      configuration,
-      env: this.env,
-      agentName: this.name,
-      ensureIntervalSchedule: (intervalSeconds) =>
-        this.ensureIntervalSchedule(intervalSeconds),
-      removeIntervalSchedule: () => this.removeIntervalSchedule(),
-      scheduleRetry: (at, attempt) => this.scheduleMarketRetry(at, attempt, null),
-      checkpoint: (artifacts) => this.checkpoint(artifacts),
-      persistMachine: (nextMachine) => this.persistMachine(nextMachine),
-      persistOrderIntent: (cycleId, intent) =>
-        this.persistOrderIntent(cycleId, intent),
-      submitPaperOrder: (intent, marketPrice, portfolio, executedAt, config) =>
-        this.submitPaperOrder(intent, marketPrice, portfolio, executedAt, config),
-      submitLiveOrder: (settings, intent, riskDecision, authorization) =>
-        this.submitLiveOrder(settings, intent, riskDecision, authorization),
-      submitPerpOrder: (settings, intent, riskDecision, marketPrice) =>
-        this.submitPerpSignalOrder(settings, intent, riskDecision, marketPrice),
-      reconcilePaperOrder: (intent) => this.reconcilePaperOrder(intent),
-      reconcileLiveOrder: (settings, intent, riskDecision, portfolio) =>
-        this.reconcileLiveOrder(settings, intent, riskDecision, portfolio),
-      reconcilePerpOrder: (settings, intent) =>
-        this.reconcilePerpSignalOrder(settings, intent),
-      persistCycle: (cycleArtifacts, nextMachine) =>
-        this.persistCycle(cycleArtifacts, nextMachine),
-      loadKnownProtectiveOrderIds: () => this.loadKnownProtectiveOrderIds(),
-      getKillContext: () => {
-        const context = this.state.machine?.context;
-        if (context?.killRequestId == null) {
-          return null;
-        }
-        return {
-          killRequestId: context.killRequestId,
-          permissions: context.permissions,
-        };
-      },
-      applyKilledAccount: (account) => {
-        // Live : la fenêtre réconciliée vient du compte réel (inchangé).
-        const dailyRisk = resolveDailyRiskWindow(
-          this.state.dailyRiskWindow,
-          account.observedAt,
-          account.accountEquity,
-        );
-        this.setState({
-          ...this.state,
-          portfolio: account.portfolio,
-          dailyRiskWindow: dailyRisk.window,
-          dailyPnl: dailyRisk.dailyPnl,
-          updatedAt: Date.now(),
-        });
-      },
-    });
-  }
+	private createEffects(
+		configuration: AgentConfiguration,
+	): TradingCycleEffects {
+		return createTradingCycleEffects({
+			configuration,
+			env: this.env,
+			agentName: this.name,
+			onMarketDataFetched: (config, triggeredAt, snapshot) =>
+				this.collectAiTrendShadow(config, triggeredAt, snapshot),
+			ensureIntervalSchedule: (intervalSeconds) =>
+				this.ensureIntervalSchedule(intervalSeconds),
+			removeIntervalSchedule: () => this.removeIntervalSchedule(),
+			scheduleRetry: (at, attempt) =>
+				this.scheduleMarketRetry(at, attempt, null),
+			checkpoint: (artifacts) => this.checkpoint(artifacts),
+			persistMachine: (nextMachine) => this.persistMachine(nextMachine),
+			persistOrderIntent: (cycleId, intent) =>
+				this.persistOrderIntent(cycleId, intent),
+			submitPaperOrder: (intent, marketPrice, portfolio, executedAt, config) =>
+				this.submitPaperOrder(
+					intent,
+					marketPrice,
+					portfolio,
+					executedAt,
+					config,
+				),
+			submitLiveOrder: (settings, intent, riskDecision, authorization) =>
+				this.submitLiveOrder(settings, intent, riskDecision, authorization),
+			submitPerpOrder: (settings, intent, riskDecision, marketPrice) =>
+				this.submitPerpSignalOrder(settings, intent, riskDecision, marketPrice),
+			reconcilePaperOrder: (intent) => this.reconcilePaperOrder(intent),
+			reconcileLiveOrder: (settings, intent, riskDecision, portfolio) =>
+				this.reconcileLiveOrder(settings, intent, riskDecision, portfolio),
+			reconcilePerpOrder: (settings, intent) =>
+				this.reconcilePerpSignalOrder(settings, intent),
+			persistCycle: (cycleArtifacts, nextMachine) =>
+				this.persistCycle(cycleArtifacts, nextMachine),
+			loadKnownProtectiveOrderIds: () => this.loadKnownProtectiveOrderIds(),
+			getKillContext: () => {
+				const context = this.state.machine?.context;
+				if (context?.killRequestId == null) {
+					return null;
+				}
+				return {
+					killRequestId: context.killRequestId,
+					permissions: context.permissions,
+				};
+			},
+			applyKilledAccount: (account) => {
+				// Live : la fenêtre réconciliée vient du compte réel (inchangé).
+				const dailyRisk = resolveDailyRiskWindow(
+					this.state.dailyRiskWindow,
+					account.observedAt,
+					account.accountEquity,
+				);
+				this.setState({
+					...this.state,
+					portfolio: account.portfolio,
+					dailyRiskWindow: dailyRisk.window,
+					dailyPnl: dailyRisk.dailyPnl,
+					updatedAt: Date.now(),
+				});
+			},
+		});
+	}
 
-  /**
-   * Planification des réveils (models/cycle-schedule.md §2) : grille cron
-   * alignée quand l'intervalle le permet, sinon intervalle. Un état legacy
-   * (sans `kind`) ou une résolution différente annule l'ancienne
-   * planification avant d'en créer une nouvelle ; une planification déjà
-   * conforme est réutilisée (jamais deux réveils pour la même instance).
-   */
-  private async ensureIntervalSchedule(intervalSeconds: number) {
-    const resolution = resolveCycleSchedule(intervalSeconds);
-    const current = this.state.schedule;
-    if (current !== null && scheduleMatches(current, resolution)) {
-      const existing = await this.getScheduleById(current.id);
-      if (existing !== undefined) return existing;
-    } else if (current !== null) {
-      await this.cancelSchedule(current.id);
-    }
-    const schedule =
-      resolution.kind === "cron"
-        ? await this.schedule(resolution.expression, "scheduledTick")
-        : await this.scheduleEvery(intervalSeconds, "scheduledTick");
-    this.setState({
-      ...this.state,
-      schedule: {
-        id: schedule.id,
-        intervalSeconds,
-        kind: resolution.kind,
-        ...(resolution.kind === "cron" ? { expression: resolution.expression } : {}),
-      },
-      updatedAt: Date.now(),
-    });
-    return schedule;
-  }
+	/**
+	 * Planification des réveils (models/cycle-schedule.md §2) : grille cron
+	 * alignée quand l'intervalle le permet, sinon intervalle. Un état legacy
+	 * (sans `kind`) ou une résolution différente annule l'ancienne
+	 * planification avant d'en créer une nouvelle ; une planification déjà
+	 * conforme est réutilisée (jamais deux réveils pour la même instance).
+	 */
+	private async ensureIntervalSchedule(intervalSeconds: number) {
+		const resolution = resolveCycleSchedule(intervalSeconds);
+		const current = this.state.schedule;
+		if (current !== null && scheduleMatches(current, resolution)) {
+			const existing = await this.getScheduleById(current.id);
+			if (existing !== undefined) return existing;
+		} else if (current !== null) {
+			await this.cancelSchedule(current.id);
+		}
+		const schedule =
+			resolution.kind === "cron"
+				? await this.schedule(resolution.expression, "scheduledTick")
+				: await this.scheduleEvery(intervalSeconds, "scheduledTick");
+		this.setState({
+			...this.state,
+			schedule: {
+				id: schedule.id,
+				intervalSeconds,
+				kind: resolution.kind,
+				...(resolution.kind === "cron"
+					? { expression: resolution.expression }
+					: {}),
+			},
+			updatedAt: Date.now(),
+		});
+		return schedule;
+	}
 
-  /**
-   * Bougie de décision manquée (models/cycle-schedule.md §3) : projection
-   * pure après un cycle terminé ; émission télémétrie et notification une
-   * seule fois par bougie. Aucune transition n'en dépend.
-   */
-  private emitMissedDecision(
-    configuration: AgentConfiguration,
-    cycleEvent: TradingTelemetryEvent,
-    candleClosedAt: number,
-  ): void {
-    const event = projectMissedDecisionTelemetry(cycleEvent, Date.now(), candleClosedAt);
-    console.warn(
-      JSON.stringify({
-        event: "decision_window_missed",
-        agentId: this.name,
-        productId: configuration.productId,
-        decisionCandleClosedAt: candleClosedAt,
-        timeframe: configuration.timeframe,
-      }),
-    );
-    emitTradingTelemetry(this.env.TRADING_TELEMETRY, event);
-    this.emitOperatorSideEffects("decision", event);
-  }
+	/**
+	 * Bougie de décision manquée (models/cycle-schedule.md §3) : projection
+	 * pure après un cycle terminé ; émission télémétrie et notification une
+	 * seule fois par bougie. Aucune transition n'en dépend.
+	 */
+	private emitMissedDecision(
+		configuration: AgentConfiguration,
+		cycleEvent: TradingTelemetryEvent,
+		candleClosedAt: number,
+	): void {
+		const event = projectMissedDecisionTelemetry(
+			cycleEvent,
+			Date.now(),
+			candleClosedAt,
+		);
+		console.warn(
+			JSON.stringify({
+				event: "decision_window_missed",
+				agentId: this.name,
+				productId: configuration.productId,
+				decisionCandleClosedAt: candleClosedAt,
+				timeframe: configuration.timeframe,
+			}),
+		);
+		emitTradingTelemetry(this.env.TRADING_TELEMETRY, event);
+		this.emitOperatorSideEffects("decision", event);
+	}
 
-  private async removeIntervalSchedule(): Promise<void> {
-    if (this.state.schedule === null) return;
-    await this.cancelSchedule(this.state.schedule.id);
-    this.setState({
-      ...this.state,
-      schedule: null,
-      updatedAt: Date.now(),
-    });
-  }
+	/**
+	 * Sonde de version (post-mortem 2026-10-30) : un DO épinglé à une
+	 * ancienne classe ne expose pas cette méthode — l'appel échoue et la
+	 * route répond STALE_DURABLE_OBJECT au lieu de laisser diagnostiquer
+	 * le pinning au comportement. agentVersion monte à chaque capacité.
+	 */
+	getBuildInfo(): { readonly sha: string; readonly agentVersion: number } {
+		return { sha: this.env.BUILD_SHA ?? "unknown", agentVersion: 2 };
+	}
 
-  private async persistMachine(machine: PersistedTradingMachine): Promise<void> {
-    this.setState({
-      ...this.state,
-      machine,
-      enabled: machineIsEnabled(machine.value),
-      updatedAt: Date.now(),
-    });
-  }
+	/**
+	 * Producteur SHADOW (models/ai-trend-signal.md §3-4) : signal IA produit
+	 * et persisté, jamais consommé — fire-and-forget après un fetch marché
+	 * réussi, aucun événement ni transition du cycle n'en dépend.
+	 */
+	private collectAiTrendShadow(
+		configuration: AgentConfiguration,
+		triggeredAt: number,
+		snapshot: MarketSnapshot,
+	): void {
+		const gatewayKey = this.env.AI_GATEWAY_KEY;
+		if (gatewayKey === undefined || this.env.AI_TREND_MODE === "DISABLED") {
+			return;
+		}
+		void this.collectAiTrendShadowTask(
+			configuration,
+			triggeredAt,
+			snapshot,
+			gatewayKey,
+		).catch((error) => {
+			console.warn(
+				JSON.stringify({
+					event: "ai_trend_error",
+					agentId: this.name,
+					message: error instanceof Error ? error.message : String(error),
+				}),
+			);
+		});
+	}
 
-  private async checkpoint(
-    artifacts: CycleArtifacts,
-    productId?: ProductId,
-  ): Promise<ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>> {
-    try {
-      const now = Date.now();
-      const phase =
-        productId === undefined
-          ? this.state.machine?.value ?? "unknown"
-          : this.state.portfolioSession?.products[productId]?.machine.value ??
-            "unknown";
-      const outcome =
-        productId === undefined
-          ? this.state.machine?.context.outcome ?? "RUNNING"
-          : this.state.portfolioSession?.products[productId]?.machine.context
-              .outcome ?? "RUNNING";
-      this.sql`
+	/** Grille propre du signal (amendement 2026-10-30) : fenêtre dédiée du
+	 * service marché quand `AI_TREND_TIMEFRAME` diffère du timeframe du
+	 * produit ; sinon les bougies du cycle sont réutilisées telles quelles. */
+	private async collectAiTrendShadowTask(
+		configuration: AgentConfiguration,
+		triggeredAt: number,
+		snapshot: MarketSnapshot,
+		gatewayKey: string,
+	): Promise<void> {
+		const trendTimeframe = resolveTrendTimeframe(
+			this.env.AI_TREND_TIMEFRAME,
+			configuration.timeframe,
+		);
+		const timeframeMs = TIMEFRAME_MILLISECONDS[trendTimeframe];
+		let candles: readonly Candle[] = snapshot.candles;
+		if (trendTimeframe !== configuration.timeframe) {
+			const fetched = await fetchCandlesViaMarketService(
+				this.env.MARKET_DATA,
+				this.env.INTERNAL_SERVICE_TOKEN,
+				{
+					productId: configuration.productId,
+					timeframe: trendTimeframe,
+					limit: AI_TREND_CANDLE_LIMIT,
+					candleClosedAt: Math.floor(triggeredAt / timeframeMs) * timeframeMs,
+					timeframeMs,
+				},
+			);
+			// Échec de la fenêtre dédiée ⇒ aucune production : dégradation sûre,
+			// jamais de repli sur une autre grille.
+			candles = fetched.ok ? fetched.candles : [];
+		}
+		await collectTrendSignal({
+			productId: configuration.productId,
+			timeframeMs,
+			triggeredAt,
+			candles,
+			nowMs: Date.now,
+			decide: (request) =>
+				requestGatewayDecision("jev", request, { gatewayKey }),
+			persist: (signal, meta) => this.persistAiTrendSignal(signal, meta),
+			log: (entry) =>
+				console.log(JSON.stringify({ agentId: this.name, ...entry })),
+		});
+	}
+
+	/** INV 8 : une ligne par (product_id, candle_closed_at), la production la
+	 * plus récente gagne. */
+	private persistAiTrendSignal(
+		signal: AiTrendSignal,
+		meta: TrendSignalMeta,
+		collection: AiTrendCollection = "SHADOW",
+		questionVersion: AiTrendQuestionVersion = "v1",
+		thresholdBps: number | null = null,
+	): void {
+		const now = Date.now();
+		this.sql`
+      INSERT INTO ai_trend_signals (
+        product_id, candle_closed_at, observed_at, bias, probability,
+        provider, latency_ms, input_tokens, collection, question_version,
+        threshold_bps, created_at
+      ) VALUES (
+        ${signal.productId}, ${signal.candleClosedAt}, ${signal.observedAt},
+        ${signal.bias}, ${signal.probability}, ${signal.provider},
+        ${meta.latencyMs}, ${meta.inputTokens ?? null}, ${collection},
+        ${questionVersion}, ${thresholdBps}, ${now}
+      )
+      ON CONFLICT(product_id, candle_closed_at, question_version) DO UPDATE SET
+        observed_at = excluded.observed_at,
+        bias = excluded.bias,
+        probability = excluded.probability,
+        provider = excluded.provider,
+        latency_ms = excluded.latency_ms,
+        input_tokens = excluded.input_tokens,
+        collection = excluded.collection,
+        question_version = excluded.question_version,
+        threshold_bps = excluded.threshold_bps,
+        created_at = excluded.created_at
+      WHERE ai_trend_signals.collection = 'RETROSPECTIVE'
+    `;
+	}
+
+	/**
+	 * Collecteur rétrospectif — protocole A (models/ai-trend-signal.md §7.A).
+	 * Commande admin authentifiée : fenêtre alignée sur la grille, bornée à
+	 * AI_TREND_RETROSPECTIVE_MAX_CANDLES bougies par appel. Les lignes SHADOW
+	 * ne sont jamais réécrites (INV 12) ; tout rapport issu de ce collecteur
+	 * porte RETROSPECTIVE_POSSIBLY_CONTAMINATED.
+	 */
+	async collectAiTrendRetrospective(
+		input: unknown,
+	): Promise<
+		| { ok: true; report: RetrospectiveCollectReport }
+		| { ok: false; code: string }
+	> {
+		const gatewayKey = this.env.AI_GATEWAY_KEY;
+		if (gatewayKey === undefined || this.env.AI_TREND_MODE === "DISABLED") {
+			return { ok: false, code: "AI_TREND_DISABLED" };
+		}
+		const command = parseRetrospectiveCommand(input);
+		if (!command.ok) return { ok: false, code: command.error.code };
+		const timeframeMs = TIMEFRAME_MILLISECONDS[command.value.timeframe];
+		const productId = command.value.productId;
+		const from = command.value.fromCandleClosedAt;
+		const to = command.value.toCandleClosedAt;
+		const loadExisting = async (questionVersion: "v1" | "v2") => {
+			const rows = this.sql<{ candle_closed_at: number; collection: string }>`
+          SELECT candle_closed_at, collection FROM ai_trend_signals
+          WHERE product_id = ${productId} AND candle_closed_at BETWEEN ${from} AND ${to}
+            AND question_version = ${questionVersion}
+        `;
+			const map = new Map<number, AiTrendCollection>();
+			for (const row of rows) {
+				map.set(row.candle_closed_at, row.collection as AiTrendCollection);
+			}
+			return map;
+		};
+		const report =
+			command.value.questionVersion === "v2"
+				? await this.collectRetrospectiveV2(command.value, {
+						productId,
+						timeframeMs,
+						from,
+						to,
+						gatewayKey,
+						loadExisting,
+					})
+				: await collectRetrospectiveTrendSignals({
+						productId,
+						timeframe: command.value.timeframe,
+						timeframeMs,
+						candleLimit: command.value.candleLimit,
+						fromCandleClosedAt: from,
+						toCandleClosedAt: to,
+						force: command.value.force,
+						fetchCandles: (request) =>
+							fetchCandlesViaMarketService(
+								this.env.MARKET_DATA,
+								this.env.INTERNAL_SERVICE_TOKEN,
+								request,
+							),
+						decide: (request) =>
+							requestGatewayDecision("jev", request, { gatewayKey }),
+						loadExisting: async () => loadExisting("v1"),
+						persist: (signal, meta, collection) =>
+							this.persistAiTrendSignal(signal, meta, collection),
+						nowMs: Date.now,
+						log: (entry) =>
+							console.log(JSON.stringify({ agentId: this.name, ...entry })),
+					});
+		return { ok: true, report };
+	}
+
+	/** Branchement v2 du collecteur rétrospectif (§9) : une seule fenêtre
+	 * marché pour tout le lot, features par bougie de référence. */
+	private async collectRetrospectiveV2(
+		command: {
+			productId: string;
+			timeframe: string;
+			candleLimit: number;
+			force: boolean;
+		},
+		scope: {
+			productId: string;
+			timeframeMs: number;
+			from: number;
+			to: number;
+			gatewayKey: string;
+			loadExisting: (
+				questionVersion: "v1" | "v2",
+			) => Promise<ReadonlyMap<number, AiTrendCollection>>;
+		},
+	): Promise<RetrospectiveCollectReport> {
+		const spanCandles = (scope.to - scope.from) / scope.timeframeMs;
+		const limit = Math.min(
+			300,
+			spanCandles + Math.max(command.candleLimit, 70) + 2,
+		);
+		return collectRetrospectiveTrendSignalsV2({
+			productId: scope.productId,
+			timeframe: command.timeframe,
+			timeframeMs: scope.timeframeMs,
+			candleLimit: command.candleLimit,
+			fromCandleClosedAt: scope.from,
+			toCandleClosedAt: scope.to,
+			force: command.force,
+			fetchWindowCandles: () =>
+				fetchCandlesViaMarketService(
+					this.env.MARKET_DATA,
+					this.env.INTERNAL_SERVICE_TOKEN,
+					{
+						productId: scope.productId,
+						timeframe: command.timeframe,
+						limit,
+						candleClosedAt: scope.to,
+						timeframeMs: scope.timeframeMs,
+					},
+				),
+			decide: (request) =>
+				requestGatewayDecision("jev", request, {
+					gatewayKey: scope.gatewayKey,
+				}),
+			loadExisting: async () => scope.loadExisting("v2"),
+			persist: (signal, meta, collection, questionVersion, thresholdBps) =>
+				this.persistAiTrendSignal(
+					signal,
+					meta,
+					collection,
+					questionVersion,
+					thresholdBps,
+				),
+			nowMs: Date.now,
+			log: (entry) =>
+				console.log(JSON.stringify({ agentId: this.name, ...entry })),
+		});
+	}
+
+	/**
+	 * Lecture calibration (§8) : lignes jointes signal + issue réalisée au
+	 * créneau h, stratifiablees par collection. Une fenêtre historique par
+	 * produit via le service marché ; issues non closes → PENDING (INV 13).
+	 */
+	async getAiTrendCalibration(
+		query: Parameters<typeof parseCalibrationQuery>[0],
+	): Promise<
+		| { ok: true; generatedAt: number; rows: readonly TrendOutcomeRow[] }
+		| { ok: false; code: string }
+	> {
+		const parsed = parseCalibrationQuery(query);
+		if (!parsed.ok) return { ok: false, code: parsed.code };
+		const { from, to, collection, horizon, timeframe, timeframeMs } =
+			parsed.query;
+		const raw = this.sql<{
+			product_id: string;
+			candle_closed_at: number;
+			observed_at: number;
+			bias: AiTrendBias;
+			probability: number;
+			collection: AiTrendCollection;
+			question_version: string;
+			threshold_bps: number | null;
+		}>`
+      SELECT product_id, candle_closed_at, observed_at, bias, probability,
+             collection, question_version, threshold_bps
+      FROM ai_trend_signals
+      WHERE candle_closed_at BETWEEN ${from} AND ${to}
+      ORDER BY product_id, candle_closed_at
+    `;
+		const filtered = raw.filter(
+			(row) => collection === "ALL" || row.collection === collection,
+		);
+		const byProduct = new Map<string, typeof filtered>();
+		for (const row of filtered) {
+			const list = byProduct.get(row.product_id) ?? [];
+			list.push(row);
+			byProduct.set(row.product_id, list);
+		}
+		const now = Date.now();
+		const rows: TrendOutcomeRow[] = [];
+		for (const [productId, productRows] of byProduct) {
+			// Fetch chunké ≤ 290 bougies (la limite 300 du service tronquait
+			// les issues de queue) + comblement ciblé des PENDING.
+			const candlesByStart = new Map<number, Candle>();
+			for (const window of planOutcomeFetchWindows(
+				from,
+				to,
+				timeframeMs,
+				horizon,
+			)) {
+				const fetched = await fetchCandlesViaMarketService(
+					this.env.MARKET_DATA,
+					this.env.INTERNAL_SERVICE_TOKEN,
+					{
+						productId,
+						timeframe,
+						limit: window.limit,
+						candleClosedAt: window.endMs + timeframeMs,
+						timeframeMs,
+					},
+				);
+				if (fetched.ok) {
+					for (const candle of fetched.candles)
+						candlesByStart.set(candle.start, candle);
+				}
+			}
+			const resolveRows = (
+				input: readonly TrendSignalRow[],
+			): readonly TrendOutcomeRow[] =>
+				resolveTrendOutcomes(
+					input,
+					[...candlesByStart.values()],
+					timeframeMs,
+					horizon,
+					now,
+				);
+			let resolved = resolveRows(
+				productRows.map((row) => ({
+					productId: row.product_id,
+					candleClosedAt: row.candle_closed_at,
+					observedAt: row.observed_at,
+					bias: row.bias,
+					probability: row.probability,
+					collection: row.collection,
+					questionVersion: row.question_version,
+					thresholdBps: row.threshold_bps,
+				})),
+			);
+			// Comblement : une fenêtre ciblée sur les bougies d'issue manquantes.
+			const pending = resolved.filter((row) => row.outcome === "PENDING");
+			if (pending.length > 0) {
+				const needed = new Set<number>();
+				for (const row of pending) {
+					needed.add(row.candleClosedAt - timeframeMs);
+					needed.add(row.candleClosedAt + (horizon - 1) * timeframeMs);
+				}
+				const missing = [...needed].filter(
+					(start) => !candlesByStart.has(start),
+				);
+				if (missing.length > 0) {
+					const minStart = Math.min(...missing);
+					const maxStart = Math.max(...missing);
+					const fill = await fetchCandlesViaMarketService(
+						this.env.MARKET_DATA,
+						this.env.INTERNAL_SERVICE_TOKEN,
+						{
+							productId,
+							timeframe,
+							limit: Math.min(
+								300,
+								Math.floor((maxStart - minStart) / timeframeMs) + 2,
+							),
+							candleClosedAt: maxStart + timeframeMs,
+							timeframeMs,
+						},
+					);
+					if (fill.ok) {
+						for (const candle of fill.candles)
+							candlesByStart.set(candle.start, candle);
+						const pendingKeys = new Set(
+							pending.map((row) => row.candleClosedAt),
+						);
+						resolved = resolved.map((row) =>
+							pendingKeys.has(row.candleClosedAt) && row.outcome === "PENDING"
+								? (resolveRows([row])[0] ?? row)
+								: row,
+						);
+					}
+				}
+			}
+			rows.push(...resolved);
+		}
+		return { ok: true, generatedAt: now, rows };
+	}
+
+	private async removeIntervalSchedule(): Promise<void> {
+		if (this.state.schedule === null) return;
+		await this.cancelSchedule(this.state.schedule.id);
+		this.setState({
+			...this.state,
+			schedule: null,
+			updatedAt: Date.now(),
+		});
+	}
+
+	private async persistMachine(
+		machine: PersistedTradingMachine,
+	): Promise<void> {
+		this.setState({
+			...this.state,
+			machine,
+			enabled: machineIsEnabled(machine.value),
+			updatedAt: Date.now(),
+		});
+	}
+
+	private async checkpoint(
+		artifacts: CycleArtifacts,
+		productId?: ProductId,
+	): Promise<
+		ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>
+	> {
+		try {
+			const now = Date.now();
+			const phase =
+				productId === undefined
+					? (this.state.machine?.value ?? "unknown")
+					: (this.state.portfolioSession?.products[productId]?.machine.value ??
+						"unknown");
+			const outcome =
+				productId === undefined
+					? (this.state.machine?.context.outcome ?? "RUNNING")
+					: (this.state.portfolioSession?.products[productId]?.machine.context
+							.outcome ?? "RUNNING");
+			this.sql`
         INSERT INTO dodash_cycles (
           cycle_id, triggered_at, completed_at, phase, outcome,
           artifacts_json, error_json, product_id, updated_at
@@ -1778,43 +2397,50 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           artifacts_json = excluded.artifacts_json,
           updated_at = excluded.updated_at
       `;
-      return ok(undefined);
-    } catch {
-      return err(storageError());
-    }
-  }
+			return ok(undefined);
+		} catch {
+			return err(storageError());
+		}
+	}
 
-  private loadArtifacts(cycleId: string, productId?: ProductId): CycleArtifacts | null {
-    const row =
-      productId === undefined
-        ? this.sql<{ artifacts_json: string }>`
+	private loadArtifacts(
+		cycleId: string,
+		productId?: ProductId,
+	): CycleArtifacts | null {
+		const row =
+			productId === undefined
+				? this.sql<{ artifacts_json: string }>`
             SELECT artifacts_json FROM dodash_cycles WHERE cycle_id = ${cycleId} LIMIT 1
           `.at(0)
-        : this.sql<{ artifacts_json: string }>`
+				: this.sql<{ artifacts_json: string }>`
             SELECT artifacts_json FROM dodash_cycles
             WHERE cycle_id = ${cycleId} AND product_id = ${productId}
             LIMIT 1
           `.at(0);
-    return row === undefined ? null : parseJson<CycleArtifacts>(row.artifacts_json);
-  }
+		return row === undefined
+			? null
+			: parseJson<CycleArtifacts>(row.artifacts_json);
+	}
 
-  private async persistOrderIntent(
-    cycleId: string,
-    intent: OrderIntent,
-    productId?: ProductId,
-  ): Promise<ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>> {
-    try {
-      const now = Date.now();
-      const existing = this.sql<{ intent_json: string }>`
+	private async persistOrderIntent(
+		cycleId: string,
+		intent: OrderIntent,
+		productId?: ProductId,
+	): Promise<
+		ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>
+	> {
+		try {
+			const now = Date.now();
+			const existing = this.sql<{ intent_json: string }>`
         SELECT intent_json FROM dodash_orders
         WHERE client_order_id = ${intent.clientOrderId}
         LIMIT 1
       `.at(0);
-      const serialized = JSON.stringify(intent);
-      if (existing !== undefined && existing.intent_json !== serialized) {
-        return err(storageError(false));
-      }
-      this.sql`
+			const serialized = JSON.stringify(intent);
+			if (existing !== undefined && existing.intent_json !== serialized) {
+				return err(storageError(false));
+			}
+			this.sql`
         INSERT INTO dodash_orders (
           client_order_id, cycle_id, intent_json, status,
           exchange_order_id, execution_json, product_id, created_at, updated_at
@@ -1825,49 +2451,49 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         ON CONFLICT(client_order_id) DO UPDATE SET
           updated_at = excluded.updated_at
       `;
-      return ok(undefined);
-    } catch {
-      return err(storageError());
-    }
-  }
+			return ok(undefined);
+		} catch {
+			return err(storageError());
+		}
+	}
 
-  private async submitPaperOrder(
-    intent: OrderIntent,
-    marketPrice: number,
-    portfolio: TradingAgentState["portfolio"],
-    executedAt: number,
-    configuration: AgentConfiguration,
-    productId?: ProductId,
-  ): Promise<OrderSubmission> {
-    const reconciled = await this.reconcilePaperOrder(intent, productId);
-    if (reconciled.ok && reconciled.value.status === "CONFIRMED") {
-      return reconciled.value;
-    }
+	private async submitPaperOrder(
+		intent: OrderIntent,
+		marketPrice: number,
+		portfolio: TradingAgentState["portfolio"],
+		executedAt: number,
+		configuration: AgentConfiguration,
+		productId?: ProductId,
+	): Promise<OrderSubmission> {
+		const reconciled = await this.reconcilePaperOrder(intent, productId);
+		if (reconciled.ok && reconciled.value.status === "CONFIRMED") {
+			return reconciled.value;
+		}
 
-    const execution = executePaperOrder(
-      portfolio,
-      intent,
-      marketPrice,
-      executedAt,
-      configuration.broker,
-    );
-    if (!execution.ok) {
-      return {
-        status: "REJECTED",
-        error: paperRejectionError(execution.error.code),
-      };
-    }
-    const submission: OrderSubmission = {
-      status: "CONFIRMED",
-      exchangeOrderId: execution.value.trade.fill.exchangeOrderId,
-      portfolio: execution.value.portfolio,
-      fill: execution.value.trade.fill,
-    };
+		const execution = executePaperOrder(
+			portfolio,
+			intent,
+			marketPrice,
+			executedAt,
+			configuration.broker,
+		);
+		if (!execution.ok) {
+			return {
+				status: "REJECTED",
+				error: paperRejectionError(execution.error.code),
+			};
+		}
+		const submission: OrderSubmission = {
+			status: "CONFIRMED",
+			exchangeOrderId: execution.value.trade.fill.exchangeOrderId,
+			portfolio: execution.value.portfolio,
+			fill: execution.value.trade.fill,
+		};
 
-    try {
-      const now = Date.now();
-      if (productId === undefined) {
-        this.sql`
+		try {
+			const now = Date.now();
+			if (productId === undefined) {
+				this.sql`
           UPDATE dodash_orders SET
             status = 'CONFIRMED',
             exchange_order_id = ${submission.exchangeOrderId},
@@ -1875,8 +2501,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
             updated_at = ${now}
           WHERE client_order_id = ${intent.clientOrderId}
         `;
-      } else {
-        this.sql`
+			} else {
+				this.sql`
           UPDATE dodash_orders SET
             status = 'CONFIRMED',
             exchange_order_id = ${submission.exchangeOrderId},
@@ -1885,116 +2511,119 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           WHERE client_order_id = ${intent.clientOrderId}
             AND product_id = ${productId}
         `;
-      }
-      return submission;
-    } catch {
-      return {
-        status: "UNKNOWN",
-        error: executionError("ORDER_OUTCOME_UNKNOWN", true),
-      };
-    }
-  }
+			}
+			return submission;
+		} catch {
+			return {
+				status: "UNKNOWN",
+				error: executionError("ORDER_OUTCOME_UNKNOWN", true),
+			};
+		}
+	}
 
-  private async reconcilePaperOrder(
-    intent: OrderIntent,
-    productId?: ProductId,
-  ): Promise<
-    | ReturnType<typeof ok<OrderSubmission>>
-    | ReturnType<typeof err<WorkflowError>>
-  > {
-    try {
-      const row =
-        productId === undefined
-          ? this.sql<{ status: string; execution_json: string | null }>`
+	private async reconcilePaperOrder(
+		intent: OrderIntent,
+		productId?: ProductId,
+	): Promise<
+		| ReturnType<typeof ok<OrderSubmission>>
+		| ReturnType<typeof err<WorkflowError>>
+	> {
+		try {
+			const row =
+				productId === undefined
+					? this.sql<{ status: string; execution_json: string | null }>`
               SELECT status, execution_json FROM dodash_orders
               WHERE client_order_id = ${intent.clientOrderId}
               LIMIT 1
             `.at(0)
-          : this.sql<{ status: string; execution_json: string | null }>`
+					: this.sql<{ status: string; execution_json: string | null }>`
               SELECT status, execution_json FROM dodash_orders
               WHERE client_order_id = ${intent.clientOrderId}
                 AND product_id = ${productId}
               LIMIT 1
             `.at(0);
-      if (row?.status === "CONFIRMED" && row.execution_json !== null) {
-        const submission = parseJson<OrderSubmission>(row.execution_json);
-        if (submission !== null && submission.status === "CONFIRMED") {
-          return ok(submission);
-        }
-      }
-      return ok({
-        status: "REJECTED",
-        error: executionError("ORDER_REJECTED", false),
-      });
-    } catch {
-      return err({
-        phase: "reconciliation",
-        code: "RECONCILIATION_FAILURE",
-        retryable: true,
-      });
-    }
-  }
+			if (row?.status === "CONFIRMED" && row.execution_json !== null) {
+				const submission = parseJson<OrderSubmission>(row.execution_json);
+				if (submission !== null && submission.status === "CONFIRMED") {
+					return ok(submission);
+				}
+			}
+			return ok({
+				status: "REJECTED",
+				error: executionError("ORDER_REJECTED", false),
+			});
+		} catch {
+			return err({
+				phase: "reconciliation",
+				code: "RECONCILIATION_FAILURE",
+				retryable: true,
+			});
+		}
+	}
 
-  private loadExchangeOrderId(clientOrderId: string): string | null {
-    const row = this.sql<{ exchange_order_id: string | null }>`
+	private loadExchangeOrderId(clientOrderId: string): string | null {
+		const row = this.sql<{ exchange_order_id: string | null }>`
       SELECT exchange_order_id FROM dodash_orders
       WHERE client_order_id = ${clientOrderId}
       LIMIT 1
     `.at(0);
-    return row?.exchange_order_id ?? null;
-  }
+		return row?.exchange_order_id ?? null;
+	}
 
-  private loadKnownProtectiveOrderIds(): Result<readonly string[], WorkflowError> {
-    try {
-      const rows = this.sql<{ execution_json: string }>`
+	private loadKnownProtectiveOrderIds(): Result<
+		readonly string[],
+		WorkflowError
+	> {
+		try {
+			const rows = this.sql<{ execution_json: string }>`
         SELECT execution_json FROM dodash_orders
         WHERE execution_json IS NOT NULL
       `;
-      const orderIds = new Set<string>();
-      for (const row of rows) {
-        const submission = parseJson<OrderSubmission>(row.execution_json);
-        if (
-          submission !== null &&
-          "protectiveOrderId" in submission &&
-          typeof submission.protectiveOrderId === "string" &&
-          submission.protectiveOrderId.length > 0
-        ) {
-          orderIds.add(submission.protectiveOrderId);
-        }
-      }
-      return ok(Object.freeze([...orderIds]));
-    } catch {
-      return err(storageError(false));
-    }
-  }
+			const orderIds = new Set<string>();
+			for (const row of rows) {
+				const submission = parseJson<OrderSubmission>(row.execution_json);
+				if (
+					submission !== null &&
+					"protectiveOrderId" in submission &&
+					typeof submission.protectiveOrderId === "string" &&
+					submission.protectiveOrderId.length > 0
+				) {
+					orderIds.add(submission.protectiveOrderId);
+				}
+			}
+			return ok(Object.freeze([...orderIds]));
+		} catch {
+			return err(storageError(false));
+		}
+	}
 
-  private persistLiveOrderResult(
-    intent: OrderIntent,
-    submission: OrderSubmission,
-  ): Result<void, WorkflowError> {
-    try {
-      const exchangeOrderId =
-        "exchangeOrderId" in submission
-          ? submission.exchangeOrderId ?? null
-          : null;
-      const status =
-        submission.status === "CONFIRMED"
-          ? "CONFIRMED"
-          : submission.status === "PROTECTION_FAILED"
-            ? "PROTECTION_FAILED"
-          : submission.status === "TERMINAL_FAILED"
-            ? "TERMINAL_FAILED"
-          : submission.status === "NO_SELL_NEEDED"
-            ? "NO_SELL_NEEDED"
-          : submission.status === "REJECTED"
-            ? "REJECTED"
-            : exchangeOrderId === null
-              ? "OUTCOME_UNKNOWN"
-              : "ACKNOWLEDGED";
-      const executionJson =
-        submission.status === "UNKNOWN" ? null : JSON.stringify(submission);
-      const now = Date.now();
-      this.sql`
+	private persistLiveOrderResult(
+		intent: OrderIntent,
+		submission: OrderSubmission,
+	): Result<void, WorkflowError> {
+		try {
+			const exchangeOrderId =
+				"exchangeOrderId" in submission
+					? (submission.exchangeOrderId ?? null)
+					: null;
+			const status =
+				submission.status === "CONFIRMED"
+					? "CONFIRMED"
+					: submission.status === "PROTECTION_FAILED"
+						? "PROTECTION_FAILED"
+						: submission.status === "TERMINAL_FAILED"
+							? "TERMINAL_FAILED"
+							: submission.status === "NO_SELL_NEEDED"
+								? "NO_SELL_NEEDED"
+								: submission.status === "REJECTED"
+									? "REJECTED"
+									: exchangeOrderId === null
+										? "OUTCOME_UNKNOWN"
+										: "ACKNOWLEDGED";
+			const executionJson =
+				submission.status === "UNKNOWN" ? null : JSON.stringify(submission);
+			const now = Date.now();
+			this.sql`
         UPDATE dodash_orders SET
           status = ${status},
           exchange_order_id = COALESCE(${exchangeOrderId}, exchange_order_id),
@@ -2002,42 +2631,42 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           updated_at = ${now}
         WHERE client_order_id = ${intent.clientOrderId}
       `;
-      return ok(undefined);
-    } catch {
-      return err(storageError());
-    }
-  }
+			return ok(undefined);
+		} catch {
+			return err(storageError());
+		}
+	}
 
-  private loadProtectedSellCheckpoint(
-    clientOrderId: string,
-  ): Result<CoinbaseProtectedSellCheckpoint | null, WorkflowError> {
-    try {
-      const row = this.sql<{ checkpoint_json: string }>`
+	private loadProtectedSellCheckpoint(
+		clientOrderId: string,
+	): Result<CoinbaseProtectedSellCheckpoint | null, WorkflowError> {
+		try {
+			const row = this.sql<{ checkpoint_json: string }>`
         SELECT checkpoint_json FROM dodash_sell_workflows
         WHERE client_order_id = ${clientOrderId}
         LIMIT 1
       `.at(0);
-      if (row === undefined) return ok(null);
-      const checkpoint = parseJson<CoinbaseProtectedSellCheckpoint>(
-        row.checkpoint_json,
-      );
-      return checkpoint === null ? err(storageError(false)) : ok(checkpoint);
-    } catch {
-      return err(storageError(false));
-    }
-  }
+			if (row === undefined) return ok(null);
+			const checkpoint = parseJson<CoinbaseProtectedSellCheckpoint>(
+				row.checkpoint_json,
+			);
+			return checkpoint === null ? err(storageError(false)) : ok(checkpoint);
+		} catch {
+			return err(storageError(false));
+		}
+	}
 
-  private protectedSellPersistence(
-    intent: OrderIntent,
-  ): Result<CoinbaseProtectedSellPersistence, WorkflowError> {
-    const restored = this.loadProtectedSellCheckpoint(intent.clientOrderId);
-    if (!restored.ok) return restored;
-    return ok({
-      restored: restored.value,
-      persist: async (checkpoint) => {
-        try {
-          const now = Date.now();
-          this.sql`
+	private protectedSellPersistence(
+		intent: OrderIntent,
+	): Result<CoinbaseProtectedSellPersistence, WorkflowError> {
+		const restored = this.loadProtectedSellCheckpoint(intent.clientOrderId);
+		if (!restored.ok) return restored;
+		return ok({
+			restored: restored.value,
+			persist: async (checkpoint) => {
+				try {
+					const now = Date.now();
+					this.sql`
             INSERT INTO dodash_sell_workflows (
               client_order_id, checkpoint_json, updated_at
             ) VALUES (
@@ -2047,305 +2676,307 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
               checkpoint_json = excluded.checkpoint_json,
               updated_at = excluded.updated_at
           `;
-          return ok(undefined);
-        } catch {
-          return err(storageError());
-        }
-      },
-    });
-  }
+					return ok(undefined);
+				} catch {
+					return err(storageError());
+				}
+			},
+		});
+	}
 
-  private async submitLiveOrder(
-    settings: CoinbaseExecutionSettings,
-    intent: OrderIntent,
-    riskDecision: ApprovedRiskDecision,
-    authorization: ExecutionAuthorization,
-  ): Promise<OrderSubmission> {
-    const protection = protectionFromRisk(riskDecision);
-    let submission: OrderSubmission;
-    if (intent.side === "SELL") {
-      const protectiveOrderIds = this.loadKnownProtectiveOrderIds();
-      if (!protectiveOrderIds.ok) {
-        return {
-          status: "TERMINAL_FAILED",
-          exchangeOrderId: null,
-          fill: null,
-          error: protectiveOrderIds.error,
-        };
-      }
-      const persistence = this.protectedSellPersistence(intent);
-      if (!persistence.ok) {
-        return {
-          status: "TERMINAL_FAILED",
-          exchangeOrderId: null,
-          fill: null,
-          error: persistence.error,
-        };
-      }
-      submission = await executeCoinbaseProtectedSell(
-        settings,
-        intent,
-        this.state.machine?.context.permissions ?? {
-          canControl: false,
-          canTrade: false,
-        },
-        protectiveOrderIds.value,
-        {
-          stopLossBps: this.state.configuration?.risk.stopLossBps ?? 0,
-          takeProfitBps: this.state.configuration?.risk.takeProfitBps ?? 0,
-        },
-        {},
-        persistence.value,
-      );
-    } else {
-      submission = await submitCoinbaseOrder(
-        settings,
-        intent,
-        authorization,
-        {},
-        protection,
-      );
-    }
-    const persisted = this.persistLiveOrderResult(intent, submission);
-    if (persisted.ok || submission.status !== "UNKNOWN") return submission;
-    return {
-      status: "UNKNOWN",
-      error: executionError("ORDER_OUTCOME_UNKNOWN", true),
-    };
-  }
+	private async submitLiveOrder(
+		settings: CoinbaseExecutionSettings,
+		intent: OrderIntent,
+		riskDecision: ApprovedRiskDecision,
+		authorization: ExecutionAuthorization,
+	): Promise<OrderSubmission> {
+		const protection = protectionFromRisk(riskDecision);
+		let submission: OrderSubmission;
+		if (intent.side === "SELL") {
+			const protectiveOrderIds = this.loadKnownProtectiveOrderIds();
+			if (!protectiveOrderIds.ok) {
+				return {
+					status: "TERMINAL_FAILED",
+					exchangeOrderId: null,
+					fill: null,
+					error: protectiveOrderIds.error,
+				};
+			}
+			const persistence = this.protectedSellPersistence(intent);
+			if (!persistence.ok) {
+				return {
+					status: "TERMINAL_FAILED",
+					exchangeOrderId: null,
+					fill: null,
+					error: persistence.error,
+				};
+			}
+			submission = await executeCoinbaseProtectedSell(
+				settings,
+				intent,
+				this.state.machine?.context.permissions ?? {
+					canControl: false,
+					canTrade: false,
+				},
+				protectiveOrderIds.value,
+				{
+					stopLossBps: this.state.configuration?.risk.stopLossBps ?? 0,
+					takeProfitBps: this.state.configuration?.risk.takeProfitBps ?? 0,
+				},
+				{},
+				persistence.value,
+			);
+		} else {
+			submission = await submitCoinbaseOrder(
+				settings,
+				intent,
+				authorization,
+				{},
+				protection,
+			);
+		}
+		const persisted = this.persistLiveOrderResult(intent, submission);
+		if (persisted.ok || submission.status !== "UNKNOWN") return submission;
+		return {
+			status: "UNKNOWN",
+			error: executionError("ORDER_OUTCOME_UNKNOWN", true),
+		};
+	}
 
-  private perpRunner(
-    settings: HyperliquidExecutionSettings,
-  ): HyperliquidPerpRunner {
-    return createHyperliquidPerpRunner({
-      settings,
-      store: createSqlitePerpOrderStore(this.perpSqlAdapter()),
-      dependencies: { now: () => Date.now() },
-    });
-  }
+	private perpRunner(
+		settings: HyperliquidExecutionSettings,
+	): HyperliquidPerpRunner {
+		return createHyperliquidPerpRunner({
+			settings,
+			store: createSqlitePerpOrderStore(this.perpSqlAdapter()),
+			dependencies: { now: () => Date.now() },
+		});
+	}
 
-  private async submitPerpSignalOrder(
-    settings: HyperliquidExecutionSettings,
-    intent: OrderIntent,
-    _riskDecision: ApprovedRiskDecision,
-    marketPrice: number,
-  ): Promise<OrderSubmission> {
-    const portfolio = this.state.portfolio;
-    const perpIntent = toPerpIntent({
-      intent: {
-        productId: intent.productId,
-        side: intent.side,
-        quantity: intent.quantity,
-      },
-      markPrice: marketPrice,
-    });
-    if (perpIntent === null) {
-      return {
-        status: "REJECTED",
-        error: executionWorkflowError("ORDER_REJECTED", false),
-      };
-    }
-    const account = await fetchHyperliquidAccountState(settings);
-    if (account === null) {
-      return { status: "REJECTED", error: executionWorkflowError("ORDER_REJECTED", false) };
-    }
-    const gate = derivePerpRiskGate({
-      snapshot: account,
-      coin: "BTC" === hyperliquidCoin(perpIntent.productId) ? "BTC" : "ETH",
-      markPrice: marketPrice,
-      dailyPnl: this.state.dailyPnl,
-    });
-    const runner = this.perpRunner(settings);
-    const result = await runner.runOrder({
-      intent: perpIntent,
-      gate,
-      clientOrderId: intent.clientOrderId,
-    });
-    if (result.status === "SETTLED" && result.outcome === "ACCEPTED") {
-      return {
-        status: "CONFIRMED",
-        exchangeOrderId: result.clientOrderId,
-        portfolio,
-        fill: null,
-      };
-    }
-    if (result.status === "SETTLED" && result.outcome === "REJECTED") {
-      return {
-        status: "REJECTED",
-        error: executionWorkflowError("ORDER_REJECTED", false),
-      };
-    }
-    if (result.status === "REFUSED") {
-      return {
-        status: "REJECTED",
-        error: executionWorkflowError("ORDER_REJECTED", false),
-      };
-    }
-    return {
-      status: "UNKNOWN",
-      error: executionWorkflowError("ORDER_OUTCOME_UNKNOWN", true),
-    };
-  }
+	private async submitPerpSignalOrder(
+		settings: HyperliquidExecutionSettings,
+		intent: OrderIntent,
+		_riskDecision: ApprovedRiskDecision,
+		marketPrice: number,
+	): Promise<OrderSubmission> {
+		const portfolio = this.state.portfolio;
+		const perpIntent = toPerpIntent({
+			intent: {
+				productId: intent.productId,
+				side: intent.side,
+				quantity: intent.quantity,
+			},
+			markPrice: marketPrice,
+		});
+		if (perpIntent === null) {
+			return {
+				status: "REJECTED",
+				error: executionWorkflowError("ORDER_REJECTED", false),
+			};
+		}
+		const account = await fetchHyperliquidAccountState(settings);
+		if (account === null) {
+			return {
+				status: "REJECTED",
+				error: executionWorkflowError("ORDER_REJECTED", false),
+			};
+		}
+		const gate = derivePerpRiskGate({
+			snapshot: account,
+			coin: "BTC" === hyperliquidCoin(perpIntent.productId) ? "BTC" : "ETH",
+			markPrice: marketPrice,
+			dailyPnl: this.state.dailyPnl,
+		});
+		const runner = this.perpRunner(settings);
+		const result = await runner.runOrder({
+			intent: perpIntent,
+			gate,
+			clientOrderId: intent.clientOrderId,
+		});
+		if (result.status === "SETTLED" && result.outcome === "ACCEPTED") {
+			return {
+				status: "CONFIRMED",
+				exchangeOrderId: result.clientOrderId,
+				portfolio,
+				fill: null,
+			};
+		}
+		if (result.status === "SETTLED" && result.outcome === "REJECTED") {
+			return {
+				status: "REJECTED",
+				error: executionWorkflowError("ORDER_REJECTED", false),
+			};
+		}
+		if (result.status === "REFUSED") {
+			return {
+				status: "REJECTED",
+				error: executionWorkflowError("ORDER_REJECTED", false),
+			};
+		}
+		return {
+			status: "UNKNOWN",
+			error: executionWorkflowError("ORDER_OUTCOME_UNKNOWN", true),
+		};
+	}
 
-  private async reconcilePerpSignalOrder(
-    settings: HyperliquidExecutionSettings,
-    intent: OrderIntent,
-  ): Promise<Result<OrderSubmission, WorkflowError>> {
-    const runner = this.perpRunner(settings);
-    const report = await runner.recoverPending();
-    void report;
-    return ok({
-      status: "CONFIRMED",
-      exchangeOrderId: intent.clientOrderId,
-      portfolio: this.state.portfolio,
-      fill: null,
-    } satisfies OrderSubmission);
-  }
+	private async reconcilePerpSignalOrder(
+		settings: HyperliquidExecutionSettings,
+		intent: OrderIntent,
+	): Promise<Result<OrderSubmission, WorkflowError>> {
+		const runner = this.perpRunner(settings);
+		const report = await runner.recoverPending();
+		void report;
+		return ok({
+			status: "CONFIRMED",
+			exchangeOrderId: intent.clientOrderId,
+			portfolio: this.state.portfolio,
+			fill: null,
+		} satisfies OrderSubmission);
+	}
 
-  private async reconcileLiveOrder(
-    settings: CoinbaseExecutionSettings,
-    intent: OrderIntent,
-    riskDecision: ApprovedRiskDecision,
-    portfolio: TradingAgentState["portfolio"],
-  ): Promise<Result<OrderSubmission, WorkflowError>> {
-    const protection = protectionFromRisk(riskDecision);
-    if (intent.side === "SELL") {
-      const protectiveOrderIds = this.loadKnownProtectiveOrderIds();
-      if (!protectiveOrderIds.ok) return protectiveOrderIds;
-      const persistence = this.protectedSellPersistence(intent);
-      if (!persistence.ok) return persistence;
-      const submission = await executeCoinbaseProtectedSell(
-        settings,
-        intent,
-        this.state.machine?.context.permissions ?? {
-          canControl: false,
-          canTrade: false,
-        },
-        protectiveOrderIds.value,
-        {
-          stopLossBps: this.state.configuration?.risk.stopLossBps ?? 0,
-          takeProfitBps: this.state.configuration?.risk.takeProfitBps ?? 0,
-        },
-        {},
-        persistence.value,
-      );
-      const persisted = this.persistLiveOrderResult(intent, submission);
-      return persisted.ok ? ok(submission) : err(reconciliationError());
-    }
-    let exchangeOrderId = this.loadExchangeOrderId(intent.clientOrderId);
-    if (exchangeOrderId === null) {
-      const replayAuthorization = createCoinbaseAuthorization(
-        settings,
-        "POST",
-        COINBASE_CREATE_ORDER_PATH,
-      );
-      if (!replayAuthorization.ok) return err(reconciliationError(false));
+	private async reconcileLiveOrder(
+		settings: CoinbaseExecutionSettings,
+		intent: OrderIntent,
+		riskDecision: ApprovedRiskDecision,
+		portfolio: TradingAgentState["portfolio"],
+	): Promise<Result<OrderSubmission, WorkflowError>> {
+		const protection = protectionFromRisk(riskDecision);
+		if (intent.side === "SELL") {
+			const protectiveOrderIds = this.loadKnownProtectiveOrderIds();
+			if (!protectiveOrderIds.ok) return protectiveOrderIds;
+			const persistence = this.protectedSellPersistence(intent);
+			if (!persistence.ok) return persistence;
+			const submission = await executeCoinbaseProtectedSell(
+				settings,
+				intent,
+				this.state.machine?.context.permissions ?? {
+					canControl: false,
+					canTrade: false,
+				},
+				protectiveOrderIds.value,
+				{
+					stopLossBps: this.state.configuration?.risk.stopLossBps ?? 0,
+					takeProfitBps: this.state.configuration?.risk.takeProfitBps ?? 0,
+				},
+				{},
+				persistence.value,
+			);
+			const persisted = this.persistLiveOrderResult(intent, submission);
+			return persisted.ok ? ok(submission) : err(reconciliationError());
+		}
+		let exchangeOrderId = this.loadExchangeOrderId(intent.clientOrderId);
+		if (exchangeOrderId === null) {
+			const replayAuthorization = createCoinbaseAuthorization(
+				settings,
+				"POST",
+				COINBASE_CREATE_ORDER_PATH,
+			);
+			if (!replayAuthorization.ok) return err(reconciliationError(false));
 
-      const replay = await submitCoinbaseOrder(
-        settings,
-        intent,
-        replayAuthorization.value,
-        {},
-        intent.side === "BUY" ? protection : undefined,
-      );
-      if (replay.status === "REJECTED") {
-        const persisted = this.persistLiveOrderResult(intent, replay);
-        return persisted.ok ? ok(replay) : err(reconciliationError());
-      }
-      if (replay.status === "CONFIRMED") {
-        const persisted = this.persistLiveOrderResult(intent, replay);
-        return persisted.ok ? ok(replay) : err(reconciliationError());
-      }
-      if (replay.status !== "UNKNOWN") return err(reconciliationError(false));
-      exchangeOrderId = replay.exchangeOrderId ?? null;
-      if (exchangeOrderId === null) return err(reconciliationError());
-      if (!this.persistLiveOrderResult(intent, replay).ok) {
-        return err(reconciliationError());
-      }
-    }
+			const replay = await submitCoinbaseOrder(
+				settings,
+				intent,
+				replayAuthorization.value,
+				{},
+				intent.side === "BUY" ? protection : undefined,
+			);
+			if (replay.status === "REJECTED") {
+				const persisted = this.persistLiveOrderResult(intent, replay);
+				return persisted.ok ? ok(replay) : err(reconciliationError());
+			}
+			if (replay.status === "CONFIRMED") {
+				const persisted = this.persistLiveOrderResult(intent, replay);
+				return persisted.ok ? ok(replay) : err(reconciliationError());
+			}
+			if (replay.status !== "UNKNOWN") return err(reconciliationError(false));
+			exchangeOrderId = replay.exchangeOrderId ?? null;
+			if (exchangeOrderId === null) return err(reconciliationError());
+			if (!this.persistLiveOrderResult(intent, replay).ok) {
+				return err(reconciliationError());
+			}
+		}
 
-    const path = coinbaseOrderPath(exchangeOrderId);
-    const lookupAuthorization = createCoinbaseAuthorization(
-      settings,
-      "GET",
-      path,
-    );
-    if (!lookupAuthorization.ok) return err(reconciliationError(false));
-    const reconciled = await getCoinbaseOrder(
-      settings,
-      intent,
-      exchangeOrderId,
-      lookupAuthorization.value,
-      portfolio,
-      {},
-      intent.side === "BUY" ? protection : undefined,
-    );
-    if (!reconciled.ok) return reconciled;
-    if (
-      intent.side === "BUY" &&
-      reconciled.value.status === "CONFIRMED"
-    ) {
-      const protectiveOrderId = reconciled.value.protectiveOrderId;
-      if (protectiveOrderId === undefined) {
-        return err(reconciliationError(false));
-      }
-      const confirmedProtection =
-        reconciled.value.fill === null
-          ? err({
-              phase: "reconciliation" as const,
-              code: "INVALID_RESPONSE" as const,
-              retryable: false,
-            })
-          : await confirmCoinbaseProtectiveOrder(
-              settings,
-              intent.productId,
-              protectiveOrderId,
-              protection,
-              {},
-              reconciled.value.fill.quantity,
-            );
-      if (!confirmedProtection.ok) {
-        const killed = await executeCoinbaseKill(
-          settings,
-          intent.productId,
-          { canControl: true, canTrade: true },
-          `protection-${intent.clientOrderId}`,
-        );
-        if (!killed.ok) {
-          return err({ ...killed.error, phase: "reconciliation" });
-        }
-        const protectionFailure: OrderSubmission = {
-          status: "PROTECTION_FAILED",
-          exchangeOrderId: reconciled.value.exchangeOrderId,
-          portfolio: killed.value.portfolio,
-          fill: reconciled.value.fill,
-          protectiveOrderId,
-          accountEquity: killed.value.accountEquity,
-          otherExposureNotional: killed.value.otherExposureNotional,
-          observedAt: killed.value.observedAt,
-          error: { ...confirmedProtection.error, retryable: false },
-        };
-        if (!this.persistLiveOrderResult(intent, protectionFailure).ok) {
-          return err(reconciliationError());
-        }
-        return ok(protectionFailure);
-      }
-    }
-    if (!this.persistLiveOrderResult(intent, reconciled.value).ok) {
-      return err(reconciliationError());
-    }
-    return reconciled;
-  }
+		const path = coinbaseOrderPath(exchangeOrderId);
+		const lookupAuthorization = createCoinbaseAuthorization(
+			settings,
+			"GET",
+			path,
+		);
+		if (!lookupAuthorization.ok) return err(reconciliationError(false));
+		const reconciled = await getCoinbaseOrder(
+			settings,
+			intent,
+			exchangeOrderId,
+			lookupAuthorization.value,
+			portfolio,
+			{},
+			intent.side === "BUY" ? protection : undefined,
+		);
+		if (!reconciled.ok) return reconciled;
+		if (intent.side === "BUY" && reconciled.value.status === "CONFIRMED") {
+			const protectiveOrderId = reconciled.value.protectiveOrderId;
+			if (protectiveOrderId === undefined) {
+				return err(reconciliationError(false));
+			}
+			const confirmedProtection =
+				reconciled.value.fill === null
+					? err({
+							phase: "reconciliation" as const,
+							code: "INVALID_RESPONSE" as const,
+							retryable: false,
+						})
+					: await confirmCoinbaseProtectiveOrder(
+							settings,
+							intent.productId,
+							protectiveOrderId,
+							protection,
+							{},
+							reconciled.value.fill.quantity,
+						);
+			if (!confirmedProtection.ok) {
+				const killed = await executeCoinbaseKill(
+					settings,
+					intent.productId,
+					{ canControl: true, canTrade: true },
+					`protection-${intent.clientOrderId}`,
+				);
+				if (!killed.ok) {
+					return err({ ...killed.error, phase: "reconciliation" });
+				}
+				const protectionFailure: OrderSubmission = {
+					status: "PROTECTION_FAILED",
+					exchangeOrderId: reconciled.value.exchangeOrderId,
+					portfolio: killed.value.portfolio,
+					fill: reconciled.value.fill,
+					protectiveOrderId,
+					accountEquity: killed.value.accountEquity,
+					otherExposureNotional: killed.value.otherExposureNotional,
+					observedAt: killed.value.observedAt,
+					error: { ...confirmedProtection.error, retryable: false },
+				};
+				if (!this.persistLiveOrderResult(intent, protectionFailure).ok) {
+					return err(reconciliationError());
+				}
+				return ok(protectionFailure);
+			}
+		}
+		if (!this.persistLiveOrderResult(intent, reconciled.value).ok) {
+			return err(reconciliationError());
+		}
+		return reconciled;
+	}
 
-  private async persistCycle(
-    artifacts: CycleArtifacts | null,
-    machine: PersistedTradingMachine,
-    productId?: ProductId,
-  ): Promise<ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>> {
-    if (artifacts === null) return ok(undefined);
-    try {
-      const now = Date.now();
-      this.sql`
+	private async persistCycle(
+		artifacts: CycleArtifacts | null,
+		machine: PersistedTradingMachine,
+		productId?: ProductId,
+	): Promise<
+		ReturnType<typeof ok<void>> | ReturnType<typeof err<WorkflowError>>
+	> {
+		if (artifacts === null) return ok(undefined);
+		try {
+			const now = Date.now();
+			this.sql`
         INSERT INTO dodash_cycles (
           cycle_id, triggered_at, completed_at, phase, outcome,
           artifacts_json, error_json, product_id, updated_at
@@ -2353,10 +2984,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           ${artifacts.cycleId}, ${artifacts.triggeredAt}, ${now},
           ${machine.value}, ${machine.context.outcome},
           ${JSON.stringify(artifacts)}, ${
-            machine.context.lastError === null
-              ? null
-              : JSON.stringify(machine.context.lastError)
-          },
+						machine.context.lastError === null
+							? null
+							: JSON.stringify(machine.context.lastError)
+					},
           ${productId ?? null}, ${now}
         )
         ON CONFLICT(cycle_id) DO UPDATE SET
@@ -2367,28 +2998,29 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           error_json = excluded.error_json,
           updated_at = excluded.updated_at
       `;
-      return ok(undefined);
-    } catch {
-      return err(storageError());
-    }
-  }
+			return ok(undefined);
+		} catch {
+			return err(storageError());
+		}
+	}
 
-  private toCycleSummary(
-    artifacts: CycleArtifacts | null,
-    machine: PersistedTradingMachine,
-  ): CycleSummary | null {
-    if (artifacts === null || machine.context.outcome === "RUNNING") return null;
-    return Object.freeze({
-      cycleId: artifacts.cycleId,
-      triggeredAt: artifacts.triggeredAt,
-      completedAt: Date.now(),
-      outcome: machine.context.outcome,
-      marketPrice: artifacts.market?.candles.at(-1)?.close ?? null,
-      valuationMark: artifacts.market?.valuationMark ?? null,
-      signalCount: artifacts.signals?.length ?? 0,
-      clientOrderId: artifacts.order?.clientOrderId ?? null,
-      exchangeOrderId: artifacts.execution?.exchangeOrderId ?? null,
-      error: machine.context.lastError,
-    });
-  }
+	private toCycleSummary(
+		artifacts: CycleArtifacts | null,
+		machine: PersistedTradingMachine,
+	): CycleSummary | null {
+		if (artifacts === null || machine.context.outcome === "RUNNING")
+			return null;
+		return Object.freeze({
+			cycleId: artifacts.cycleId,
+			triggeredAt: artifacts.triggeredAt,
+			completedAt: Date.now(),
+			outcome: machine.context.outcome,
+			marketPrice: artifacts.market?.candles.at(-1)?.close ?? null,
+			valuationMark: artifacts.market?.valuationMark ?? null,
+			signalCount: artifacts.signals?.length ?? 0,
+			clientOrderId: artifacts.order?.clientOrderId ?? null,
+			exchangeOrderId: artifacts.execution?.exchangeOrderId ?? null,
+			error: machine.context.lastError,
+		});
+	}
 }

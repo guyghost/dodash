@@ -67,6 +67,7 @@ describe("fetchMarketSnapshot", () => {
     );
     expect(JSON.parse(String(tickerInit.body))).toEqual({
       productId: "BTC-USD",
+      sources: ["COINBASE"],
     });
   });
 
