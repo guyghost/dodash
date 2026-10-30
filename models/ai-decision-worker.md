@@ -161,3 +161,11 @@ Conséquences :
   valide le schéma avant l'authentification et répond par des erreurs
   descriptives ; l'adaptateur réutilise la normalisation Decisions tant
   que le gateway suit cette forme.
+
+**Confirmation 2026-10-30 (premier appel authentifié, modèle
+`typesafe-ai/jev`) :** schéma `choices`/`levels` accepté tel quel ; la
+réponse `choice` inclut de surcroît `probabilities` par option — le
+parseur `parseOpenAiAnswers` construit désormais le record `CHOICE`
+depuis cette distribution quand elle est présente (clés ∈ options,
+probabilités ∈ [0, 1]), avec repli sur `{ [choisi]: confidence }` pour
+les réponses OpenAI pures. La limite « schéma à confirmer » est levée.

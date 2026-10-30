@@ -269,6 +269,53 @@ describe("ai decision port — openai mapping", () => {
 		]);
 	});
 
+	it("builds the choice record from per-option probabilities when present (gateway/Jev)", () => {
+		const parsed = parseOpenAiAnswers(questions, {
+			answers: [
+				{
+					type: "predicate",
+					name: "urgent",
+					probability: 0.9,
+				},
+				{
+					type: "choice",
+					name: "team",
+					choice: "trading",
+					confidence: 1,
+					probabilities: [
+						{ value: "trading", probability: 1 },
+						{ value: "infra", probability: 0 },
+					],
+				},
+				{ type: "score", name: "severity", score: 0 },
+			],
+		});
+		expect(parsed).toEqual({
+			kind: "ANSWERED",
+			answers: [
+				{ kind: "PREDICATE", id: "urgent", probability: 0.9 },
+				{ kind: "CHOICE", id: "team", probabilities: { trading: 1, infra: 0 } },
+				{ kind: "SCORE", id: "severity", score: 0 },
+			],
+		});
+	});
+
+	it("rejects a per-option entry outside the declared options", () => {
+		const parsed = parseOpenAiAnswers(questions, {
+			answers: [
+				{ type: "predicate", name: "urgent", probability: 0.9 },
+				{
+					type: "choice",
+					name: "team",
+					choice: "trading",
+					probabilities: [{ value: "billing", probability: 1 }],
+				},
+				{ type: "score", name: "severity", score: 0 },
+			],
+		});
+		expect(parsed).toEqual({ kind: "FAILED", errorCode: "AI_SCHEMA_MISMATCH" });
+	});
+
 	it("parses answers, mapping choice confidence to the chosen option", () => {
 		const parsed = parseOpenAiAnswers(questions, {
 			answers: [

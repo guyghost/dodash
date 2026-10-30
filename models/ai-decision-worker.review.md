@@ -72,3 +72,11 @@ l'opérateur ; preuves de catalogue et d'endpoint relevées par probe).
 - Limite acceptée : le schéma exact des questions Jev via le gateway
   reste à confirmer au premier appel authentifié avant de compter
   l'adaptateur comme figé.
+
+**Levée de la limite (2026-10-30, premier appel authentifié).** Schéma
+`choices`/`levels` accepté ; la réponse `choice` de Jev porte
+`probabilities` par option, désormais consommées : le record `CHOICE`
+est construit depuis la distribution quand elle existe (clés ∈ options,
+valeurs ∈ [0, 1]), repli `{ [choisi]: confidence }` sinon. C'est cette
+distribution — et non la confiance — qui alimente
+`AiTrendSignal.probability`.

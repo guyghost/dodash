@@ -91,6 +91,44 @@ describe("ai decision gateway adapter", () => {
 		]);
 	});
 
+	it("carries per-option probabilities through (probe shape, 2026-10-30)", async () => {
+		const fetchMock = vi.fn<typeof fetch>(async () => {
+			return new Response(
+				JSON.stringify({
+					answers: [
+					{
+						type: "choice",
+						name: "team",
+						choice: "trading",
+						confidence: 1,
+						probabilities: [
+							{ value: "trading", probability: 0.75 },
+							{ value: "infra", probability: 0.25 },
+						],
+					},
+					{ type: "predicate", name: "urgent", probability: 0.4 },
+					],
+					usage: { input_tokens: 412 },
+				}),
+				{ status: 200 },
+			);
+		});
+		const result = await requestGatewayDecision(
+				"jev",
+				request,
+				deps(fetchMock as unknown as typeof fetch, [0, 1]),
+		);
+		expect(result).toEqual({
+			kind: "ANSWERED",
+			answers: [
+				{ kind: "PREDICATE", id: "urgent", probability: 0.4 },
+				{ kind: "CHOICE", id: "team", probabilities: { trading: 0.75, infra: 0.25 } },
+			],
+			latencyMs: 1,
+			inputTokens: 412,
+		});
+	});
+
 	it("resolves the openai-decisions provider to its gateway model", async () => {
 		const fetchMock = vi.fn<typeof fetch>(async () => {
 			return new Response(

@@ -320,6 +320,10 @@ export interface OpenAiDecisionAnswerSpec {
 	readonly probability?: number | undefined;
 	readonly choice?: string | undefined;
 	readonly confidence?: number | undefined;
+	/** Gateway/Jev extension: per-option probabilities of a choice answer. */
+	readonly probabilities?:
+		| readonly { readonly value: string; readonly probability: number }[]
+		| undefined;
 	readonly score?: number | undefined;
 }
 
@@ -367,9 +371,10 @@ export const mapOpenAiQuestions = (
 /**
  * Normalizes an OpenAI Decisions response. A refusal is an answer (INV 3):
  * any refused question returns `REFUSED` with the concerned ids and no
- * partial answer is consumed. OpenAI reports the chosen value and its
- * confidence, not per-option probabilities: the normalized record carries
- * `{ [chosen]: confidence }` (review note).
+ * partial answer is consumed. When the response carries per-option
+ * probabilities (gateway/Jev extension), the record is built from them;
+ * otherwise OpenAI reports the chosen value and its confidence, and the
+ * normalized record carries `{ [chosen]: confidence }` (review note).
  */
 export const parseOpenAiAnswers = (
 	questions: readonly AiQuestion[],
@@ -409,12 +414,30 @@ export const parseOpenAiAnswers = (
 			) {
 				return schemaMismatch;
 			}
+			const perOption = answer.probabilities;
+			let probabilities: Readonly<Record<string, number>>;
+			if (perOption !== undefined) {
+				if (perOption.length === 0) return schemaMismatch;
+				const normalized: Record<string, number> = {};
+				for (const entry of perOption) {
+					if (
+						!question.options.includes(entry.value) ||
+						!isProbability(entry.probability)
+					) {
+						return schemaMismatch;
+					}
+					normalized[entry.value] = entry.probability;
+				}
+				probabilities = Object.freeze(normalized);
+			} else {
+				probabilities = Object.freeze({
+					[answer.choice]: answer.confidence ?? 1,
+				});
+			}
 			answers.push({
 				kind: "CHOICE",
 				id: question.id,
-				probabilities: Object.freeze({
-					[answer.choice]: answer.confidence ?? 1,
-				}),
+			probabilities,
 			});
 		} else {
 			const score = answer.score;

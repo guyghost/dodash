@@ -39,6 +39,10 @@ const gatewayAnswerSchema = z.object({
 	choice: z.string().optional(),
 	confidence: z.number().optional(),
 	score: z.number().optional(),
+	// Extension gateway/Jev : probabilités par option d'une réponse choice.
+	probabilities: z
+		.array(z.object({ value: z.string(), probability: z.number() }))
+		.optional(),
 });
 
 const gatewayResponseSchema = z.object({
