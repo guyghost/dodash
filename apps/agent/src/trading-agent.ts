@@ -1,4 +1,5 @@
 import {
+	type Candle,
 	err,
 	type OrderIntent,
 	ok,
@@ -44,8 +45,10 @@ import {
 	type TrendOutcomeRow,
 } from "./ai-trend-calibration.js";
 import {
+	AI_TREND_CANDLE_LIMIT,
 	AI_TREND_SIGNALS_SCHEMA,
 	collectTrendSignal,
+	resolveTrendTimeframe,
 	type TrendSignalMeta,
 } from "./ai-trend-producer.js";
 import {
@@ -188,6 +191,8 @@ export interface TradingEnv extends Env {
 	readonly AI_GATEWAY_KEY?: string;
 	/** Mode figé par déploiement (models/ai-trend-signal.md §4) : DISABLED éteint la production. */
 	readonly AI_TREND_MODE?: string;
+	/** Grille propre du signal (amendement 2026-10-30) : défaut = timeframe du produit. */
+	readonly AI_TREND_TIMEFRAME?: string;
 	readonly TRADING_TELEMETRY?: TradingTelemetrySink;
 	readonly OPERATOR_NOTIFY_WEBHOOK_URL?: string;
 	readonly OPERATOR_NOTIFY_SECRET?: string;
@@ -1895,18 +1900,12 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		if (gatewayKey === undefined || this.env.AI_TREND_MODE === "DISABLED") {
 			return;
 		}
-		void collectTrendSignal({
-			productId: configuration.productId,
-			timeframeMs: TIMEFRAME_MILLISECONDS[configuration.timeframe],
+		void this.collectAiTrendShadowTask(
+			configuration,
 			triggeredAt,
-			candles: snapshot.candles,
-			nowMs: Date.now,
-			decide: (request) =>
-				requestGatewayDecision("jev", request, { gatewayKey }),
-			persist: (signal, meta) => this.persistAiTrendSignal(signal, meta),
-			log: (entry) =>
-				console.log(JSON.stringify({ agentId: this.name, ...entry })),
-		}).catch((error) => {
+			snapshot,
+			gatewayKey,
+		).catch((error) => {
 			console.warn(
 				JSON.stringify({
 					event: "ai_trend_error",
@@ -1914,6 +1913,51 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 					message: error instanceof Error ? error.message : String(error),
 				}),
 			);
+		});
+	}
+
+	/** Grille propre du signal (amendement 2026-10-30) : fenêtre dédiée du
+	 * service marché quand `AI_TREND_TIMEFRAME` diffère du timeframe du
+	 * produit ; sinon les bougies du cycle sont réutilisées telles quelles. */
+	private async collectAiTrendShadowTask(
+		configuration: AgentConfiguration,
+		triggeredAt: number,
+		snapshot: MarketSnapshot,
+		gatewayKey: string,
+	): Promise<void> {
+		const trendTimeframe = resolveTrendTimeframe(
+			this.env.AI_TREND_TIMEFRAME,
+			configuration.timeframe,
+		);
+		const timeframeMs = TIMEFRAME_MILLISECONDS[trendTimeframe];
+		let candles: readonly Candle[] = snapshot.candles;
+		if (trendTimeframe !== configuration.timeframe) {
+			const fetched = await fetchCandlesViaMarketService(
+				this.env.MARKET_DATA,
+				this.env.INTERNAL_SERVICE_TOKEN,
+				{
+					productId: configuration.productId,
+					timeframe: trendTimeframe,
+					limit: AI_TREND_CANDLE_LIMIT,
+					candleClosedAt: Math.floor(triggeredAt / timeframeMs) * timeframeMs,
+					timeframeMs,
+				},
+			);
+			// Échec de la fenêtre dédiée ⇒ aucune production : dégradation sûre,
+			// jamais de repli sur une autre grille.
+			candles = fetched.ok ? fetched.candles : [];
+		}
+		await collectTrendSignal({
+			productId: configuration.productId,
+			timeframeMs,
+			triggeredAt,
+			candles,
+			nowMs: Date.now,
+			decide: (request) =>
+				requestGatewayDecision("jev", request, { gatewayKey }),
+			persist: (signal, meta) => this.persistAiTrendSignal(signal, meta),
+			log: (entry) =>
+				console.log(JSON.stringify({ agentId: this.name, ...entry })),
 		});
 	}
 

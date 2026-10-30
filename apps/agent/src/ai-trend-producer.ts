@@ -13,7 +13,11 @@
  * decorator. The mode is deployment-frozen configuration
  * (`AI_TREND_MODE`, default SHADOW when `AI_GATEWAY_KEY` is present).
  */
-import type { Candle } from "@dodash/domain";
+import {
+	type Candle,
+	TIMEFRAME_MILLISECONDS,
+	type Timeframe,
+} from "@dodash/domain";
 import {
 	type AiAnswer,
 	type AiDecisionRequest,
@@ -38,6 +42,21 @@ export const AI_TREND_QUESTION = {
 } as const;
 
 export const AI_TREND_DECISION_TIMEOUT_MS = 5_000;
+
+/** Fenêtre d'état du signal (amendement 2026-10-30) : 120 bougies de la grille du signal. */
+export const AI_TREND_CANDLE_LIMIT = 120;
+
+/**
+ * Grille propre du signal : `AI_TREND_TIMEFRAME` figé par déploiement,
+ * repli sur le timeframe du produit si absent ou inconnu.
+ */
+export const resolveTrendTimeframe = (
+	raw: string | undefined,
+	fallback: Timeframe,
+): Timeframe =>
+	raw !== undefined && raw in TIMEFRAME_MILLISECONDS
+		? (raw as Timeframe)
+		: fallback;
 
 export const AI_TREND_SIGNALS_SCHEMA = `
   CREATE TABLE IF NOT EXISTS ai_trend_signals (

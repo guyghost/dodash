@@ -6,6 +6,7 @@ import {
 	collectTrendSignal,
 	mapCandlesToTrendState,
 	resolveTrendFromAnswers,
+	resolveTrendTimeframe,
 	runDecisionWithMachine,
 	type TrendCollectDeps,
 } from "../src/ai-trend-producer.js";
@@ -267,5 +268,13 @@ describe("ai trend producer — SHADOW collection", () => {
 		);
 		expect(outcome).toEqual({ kind: "SKIPPED", reason: "UNRESOLVED" });
 		expect(persist).not.toHaveBeenCalled();
+	});
+});
+
+describe("ai trend producer — signal grid (amendement 2026-10-30)", () => {
+	it("resolves the deployment-frozen trend timeframe with product fallback", () => {
+		expect(resolveTrendTimeframe("ONE_MINUTE", "ONE_DAY")).toBe("ONE_MINUTE");
+		expect(resolveTrendTimeframe(undefined, "ONE_DAY")).toBe("ONE_DAY");
+		expect(resolveTrendTimeframe("TWO_HOUR", "ONE_DAY")).toBe("ONE_DAY");
 	});
 });

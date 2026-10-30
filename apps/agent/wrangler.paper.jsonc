@@ -15,7 +15,8 @@
   },
   "vars": {
     "LIVE_TRADING_ENABLED": "false",
-    "HYPERLIQUID_PERP_TRADING_ENABLED": "false"
+    "HYPERLIQUID_PERP_TRADING_ENABLED": "false",
+    "AI_TREND_TIMEFRAME": "ONE_MINUTE"
   },
   "analytics_engine_datasets": [
     {

@@ -211,6 +211,18 @@ parallèle ; l'activation `PAPER` ne se juge que sur B.
 14. Aucune activation `PAPER` ne se juge sur un rapport incluant des
     lignes `PENDING` ou non stratifiées par `collection`.
 
+### Amendement 2026-10-30 — grille propre du signal
+
+Le signal possède sa propre grille `AI_TREND_TIMEFRAME` (configuration
+figée par déploiement ; défaut : le timeframe du produit) : l'état est
+construit sur cette grille via une fenêtre dédiée du service marché
+(limite fixe 120 bougies), indépendante du snapshot du cycle — le
+producteur ne réutilise les bougies du cycle que lorsque les deux grilles
+coïncident. La calibration (§8) et le replay se lisent sur cette même
+grille. Sur la grille minute, chaque réveil horaire échantillonne la
+bougie minute courante : les issues se ferment au créneau minute, la
+cadence de collecte reste celle des réveils du cycle.
+
 ### Vérification requise additionnelle (§8)
 
 - `computeTrendCalibration` : ECE exact sur fixture figée ; bins bornés,
