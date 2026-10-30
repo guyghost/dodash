@@ -482,10 +482,14 @@ export const collectRetrospectiveTrendSignalsV2 = async (
 				event: "ai_trend_retrospective_unavailable",
 				candleClosedAt,
 				resultKind: result.kind,
+				errorCode: result.kind === "FAILED" ? result.errorCode : null,
 				version: "v2",
 			});
 			continue;
 		}
+		// Pacing : ~1,2 s par bougie — une rafale de 48 appels minute heurte
+		// le quota/minute du gateway (constat 2026-10-30, tous FAILED).
+		await new Promise((resolve) => setTimeout(resolve, 1_200));
 		const battery = extractBatteryProbabilities(result.answers);
 		const trend =
 			battery === null
