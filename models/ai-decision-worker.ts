@@ -429,10 +429,14 @@ export const parseOpenAiAnswers = (
 					normalized[entry.value] = entry.probability;
 				}
 				probabilities = Object.freeze(normalized);
-			} else {
+			} else if (isProbability(answer.confidence)) {
+				// Revue PR #27 : la confiance fallback doit être validée ∈ [0, 1]
+				// comme toute probabilité — hors plage ⇒ AI_SCHEMA_MISMATCH.
 				probabilities = Object.freeze({
-					[answer.choice]: answer.confidence ?? 1,
+					[answer.choice]: answer.confidence,
 				});
+			} else {
+				return schemaMismatch;
 			}
 			answers.push({
 				kind: "CHOICE",

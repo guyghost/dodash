@@ -34,7 +34,17 @@ const collection = arg("collection") ?? "ALL";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const D = timeframe === "ONE_DAY" ? DAY : HOUR;
+// Revue PR #27 : la grille du signal détermine D (ONE_MINUTE ≠ 1 h) ;
+// --days compte des jours calendaires quelle que soit la grille.
+const DURATION_BY_TIMEFRAME = {
+	ONE_MINUTE: 60_000,
+	FIVE_MINUTE: 5 * 60_000,
+	FIFTEEN_MINUTE: 15 * 60_000,
+	ONE_HOUR: HOUR,
+	SIX_HOUR: 6 * HOUR,
+	ONE_DAY: DAY,
+};
+const D = DURATION_BY_TIMEFRAME[timeframe] ?? HOUR;
 
 let from = Number(arg("from") ?? 0);
 let to = Number(arg("to") ?? 0);
@@ -42,7 +52,7 @@ if (!from || !to) {
 	const days = Number(arg("days") ?? 7);
 	const now = Date.now();
 	to = Math.floor(now / D) * D - horizon * D;
-	from = to - days * D;
+	from = to - days * DAY;
 }
 
 if (!agentName || !token) {

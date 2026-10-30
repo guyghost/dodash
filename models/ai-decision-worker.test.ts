@@ -414,3 +414,16 @@ describe("ai decision port — network audit (§7)", () => {
 		}
 	});
 });
+
+describe("ai decision port — confiance fallback validée (revue PR #27)", () => {
+	it("rejette une confiance hors [0, 1] en fallback choice", () => {
+		const parsed = parseOpenAiAnswers(questions, {
+			answers: [
+				{ type: "predicate", name: "urgent", probability: 0.5 },
+				{ type: "choice", name: "team", choice: "trading", confidence: 1.2 },
+				{ type: "score", name: "severity", score: 0 },
+			],
+		});
+		expect(parsed).toEqual({ kind: "FAILED", errorCode: "AI_SCHEMA_MISMATCH" });
+	});
+});

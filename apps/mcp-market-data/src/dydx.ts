@@ -103,7 +103,14 @@ export const fetchDydxCandles = async (
 		await response.body?.cancel().catch(() => undefined);
 		return err({ code: "UPSTREAM_UNAVAILABLE", status: response.status });
 	}
-	const text = await response.text();
+	let text: string;
+	try {
+		text = await response.text();
+	} catch {
+		// Revue PR #27 : un échec de flux après des en-têtes 200 doit rester
+		// une erreur transport typée — jamais s'échapper du failover.
+		return err(networkUnavailable);
+	}
 	if (text.length > MAX_RESPONSE_BYTES) return err(invalidResponse);
 	let parsed: z.infer<typeof candlesSchema>;
 	try {
@@ -159,7 +166,14 @@ export const fetchDydxBookMid = async (
 		await response.body?.cancel().catch(() => undefined);
 		return err({ code: "UPSTREAM_UNAVAILABLE", status: response.status });
 	}
-	const text = await response.text();
+	let text: string;
+	try {
+		text = await response.text();
+	} catch {
+		// Revue PR #27 : un échec de flux après des en-têtes 200 doit rester
+		// une erreur transport typée — jamais s'échapper du failover.
+		return err(networkUnavailable);
+	}
 	if (text.length > MAX_RESPONSE_BYTES) return err(invalidResponse);
 	let book: z.infer<typeof bookSchema>;
 	try {

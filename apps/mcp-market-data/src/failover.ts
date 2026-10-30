@@ -139,11 +139,10 @@ export const serveBackupCandles = async (
 		now: (deps.now ?? Date.now)(),
 	});
 	if (!gate.ok) {
-		return {
-			ok: false,
-			failure:
-				gate.reason === "BASIS_REJECTED" ? "BASIS_REJECTED" : "BASIS_REJECTED",
-		};
+		// NO_REFERENCE est volontairement replié dans BASIS_REJECTED : la closed
+		// vocabulary MarketSourceFailure n'a pas de NO_REFERENCE, et l'effet
+		// attendu est identique (source écartée, fail-closed).
+		return { ok: false, failure: "BASIS_REJECTED" };
 	}
 	return { ok: true, candles: fetched.value };
 };

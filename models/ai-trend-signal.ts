@@ -315,17 +315,16 @@ export const composeTrendFromBatteryV2 = (
 		1,
 		Math.max(0, 1 - probabilityUp - probabilityDown),
 	);
-	let bias: AiTrendBias = "NEUTRAL";
-	let probability = pNeutral;
-	if (probabilityUp >= probability && probabilityUp >= pNeutral) {
-		bias = "UP";
-		probability = probabilityUp;
+	// Ordre documenté UP > DOWN > NEUTRAL (§9) : UP gagne les égalités contre
+	// DOWN, DOWN gagne les égalités contre NEUTRAL (revue PR #27 : la forme
+	// précédente laissait pDown == pNeutral en NEUTRAL).
+	if (probabilityUp >= probabilityDown && probabilityUp >= pNeutral) {
+		return { bias: "UP", probability: probabilityUp };
 	}
-	if (probabilityDown > probability && probabilityDown >= pNeutral) {
-		bias = "DOWN";
-		probability = probabilityDown;
+	if (probabilityDown >= pNeutral) {
+		return { bias: "DOWN", probability: probabilityDown };
 	}
-	return { bias, probability };
+	return { bias: "NEUTRAL", probability: pNeutral };
 };
 
 const isUnit = (value: number): boolean =>

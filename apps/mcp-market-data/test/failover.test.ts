@@ -208,3 +208,51 @@ describe("failover service — gate de basis (INV 3)", () => {
 		expect(rejected).toMatchObject({ ok: false, failure: "BASIS_REJECTED" });
 	});
 });
+
+describe("transports — échec de flux après en-têtes 200 (revue PR #27)", () => {
+	const brokenStream = vi.fn<typeof fetch>(async () => {
+		return {
+			ok: true,
+			text: async () => {
+				throw new Error("stream aborted");
+			},
+			body: { cancel: async () => undefined },
+		} as unknown as Response;
+	});
+
+	it("ramène l'échec de body en erreur transport typée, pas en exception", async () => {
+		const hl = await fetchHyperliquidCandles(
+			{ productId: "BTC-USD", timeframe: "ONE_MINUTE", limit: 2, endMs },
+			{ fetch: brokenStream as unknown as typeof fetch },
+		);
+		expect(hl).toMatchObject({
+			ok: false,
+			error: { code: "NETWORK_UNAVAILABLE" },
+		});
+
+		const mid = await fetchHyperliquidMid("BTC-USD", {
+			fetch: brokenStream as unknown as typeof fetch,
+		});
+		expect(mid).toMatchObject({
+			ok: false,
+			error: { code: "NETWORK_UNAVAILABLE" },
+		});
+
+		const dydx = await fetchDydxCandles(
+			{ productId: "BTC-USD", timeframe: "ONE_MINUTE", limit: 2, endMs },
+			{ fetch: brokenStream as unknown as typeof fetch },
+		);
+		expect(dydx).toMatchObject({
+			ok: false,
+			error: { code: "NETWORK_UNAVAILABLE" },
+		});
+
+		const book = await fetchDydxBookMid("BTC-USD", {
+			fetch: brokenStream as unknown as typeof fetch,
+		});
+		expect(book).toMatchObject({
+			ok: false,
+			error: { code: "NETWORK_UNAVAILABLE" },
+		});
+	});
+});

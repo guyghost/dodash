@@ -409,3 +409,24 @@ describe("ai trend signal — question v2 (§9)", () => {
 		expect(resolveVolScaledOutcome(100, -5, 20)).toBeNull();
 	});
 });
+
+describe("ai trend signal — tie-break v2 (revue PR #27)", () => {
+	it("DOWN gagne l'égalité contre NEUTRAL (pDown == pNeutral)", () => {
+		// pUp 0.2, pDown 0.4, pNeutral 0.4 → DOWN (documenté : DOWN > NEUTRAL)
+		expect(composeTrendFromBatteryV2(0.2, 0.4)).toEqual({
+			bias: "DOWN",
+			probability: 0.4,
+		});
+	});
+
+	it("UP gagne l'égalité contre DOWN et contre NEUTRAL", () => {
+		expect(composeTrendFromBatteryV2(0.4, 0.4)).toEqual({
+			bias: "UP",
+			probability: 0.4,
+		});
+		expect(composeTrendFromBatteryV2(0.5, 0.2)).toEqual({
+			bias: "UP",
+			probability: 0.5,
+		});
+	});
+});
