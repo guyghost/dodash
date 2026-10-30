@@ -174,6 +174,96 @@ export type TrendStateBuild =
 	| { readonly ok: true; readonly state: AiState }
 	| { readonly ok: false; readonly errorCode: "LOOKAHEAD" | "EMPTY" };
 
+/** Issue réalisée d'une bougie de référence (§8) ; FLAT = strictement égale. */
+export type TrendOutcome = "UP" | "DOWN" | "FLAT" | "PENDING";
+
+export interface TrendCalibrationSample {
+	readonly productId: string;
+	readonly candleClosedAt: number;
+	readonly bias: AiTrendBias;
+	readonly probability: number;
+	readonly outcome: TrendOutcome;
+}
+
+export interface TrendCalibrationBin {
+	readonly lower: number;
+	readonly upper: number;
+	readonly count: number;
+	/** Moyenne des probability du bin ; null si bin vide. */
+	readonly meanProbability: number | null;
+	/** Part de réponses correctes ; null si bin vide. */
+	readonly accuracy: number | null;
+}
+
+export type TrendCalibrationReport =
+	| {
+			readonly ok: true;
+			readonly sampleSize: number;
+			readonly ece: number;
+			readonly bins: readonly TrendCalibrationBin[];
+	  }
+	| { readonly ok: false; readonly errorCode: "EMPTY_SAMPLE" };
+
+const isCorrectTrendAnswer = (
+	bias: AiTrendBias,
+	outcome: TrendOutcome,
+): boolean => {
+	if (outcome === "PENDING") return false;
+	if (outcome === "FLAT") return bias === "NEUTRAL";
+	return bias === outcome;
+};
+
+/**
+ * ECE et courbe de fiabilité (§8) : 10 bins égaux sur [0, 1] de
+ * `probability`, ECE = Σ (n_b/N)·|précision_b − confiance_b|. Pure — les
+ * issues PENDING n'entrent jamais dans le calcul (INV 13) ; un échantillon
+ * sans issue close est refusé explicitement.
+ */
+export const computeTrendCalibration = (
+	samples: readonly TrendCalibrationSample[],
+): TrendCalibrationReport => {
+	const closed = samples.filter((sample) => sample.outcome !== "PENDING");
+	if (closed.length === 0) {
+		return { ok: false, errorCode: "EMPTY_SAMPLE" };
+	}
+	const bins: TrendCalibrationBin[] = [];
+	let ece = 0;
+	for (let i = 0; i < 10; i++) {
+		const lower = i / 10;
+		const upper = (i + 1) / 10;
+		const inBin = closed.filter((sample) =>
+			i === 9
+				? sample.probability >= lower && sample.probability <= upper
+				: sample.probability >= lower && sample.probability < upper,
+		);
+		if (inBin.length === 0) {
+			bins.push({
+				lower,
+				upper,
+				count: 0,
+				meanProbability: null,
+				accuracy: null,
+			});
+			continue;
+		}
+		const meanProbability =
+			inBin.reduce((sum, sample) => sum + sample.probability, 0) / inBin.length;
+		const accuracy =
+			inBin.filter((sample) =>
+				isCorrectTrendAnswer(sample.bias, sample.outcome),
+			).length / inBin.length;
+		ece +=
+			(inBin.length / closed.length) * Math.abs(accuracy - meanProbability);
+		bins.push({ lower, upper, count: inBin.length, meanProbability, accuracy });
+	}
+	return {
+		ok: true,
+		sampleSize: closed.length,
+		ece,
+		bins: Object.freeze(bins),
+	};
+};
+
 /**
  * §7.A anti-lookahead state construction: any candle closing after the
  * reference candle is a blocking `LOOKAHEAD` defect (never silently

@@ -1,0 +1,119 @@
+import type { Candle } from "@dodash/domain";
+import { describe, expect, it } from "vitest";
+import {
+	parseCalibrationQuery,
+	resolveTrendOutcomes,
+	type TrendSignalRow,
+} from "../src/ai-trend-calibration.js";
+
+const HOUR = 3_600_000;
+
+const candle = (start: number, close: number): Candle => ({
+	start,
+	open: 1,
+	high: 2,
+	low: 0.5,
+	close,
+	volume: 10,
+});
+
+const row = (candleClosedAt: number): TrendSignalRow => ({
+	productId: "BTC-USD",
+	candleClosedAt,
+	observedAt: candleClosedAt + 60_000,
+	bias: "UP",
+	probability: 0.8,
+	collection: "SHADOW",
+});
+
+describe("ai trend calibration — outcome join (§8)", () => {
+	// close(C) = close de la bougie start C−D ; issue h=1 = close de la bougie start C.
+	const candles = [
+		candle(21 * HOUR, 100),
+		candle(22 * HOUR, 100), // issue de C=22h : 100 = 100 → FLAT
+		candle(23 * HOUR, 110), // close(C=24h) = 110
+		candle(24 * HOUR, 105), // issue h=1 : 105 < 110 → DOWN
+	];
+
+	it("resolves UP, DOWN and FLAT outcomes from the closes", () => {
+		const rows = resolveTrendOutcomes(
+			[row(24 * HOUR), row(23 * HOUR), row(22 * HOUR)],
+			[...candles, candle(25 * HOUR, 111)], // issue de C=23h : 105 > 100 → UP
+			HOUR,
+			1,
+			Date.now() + 10 * HOUR,
+		);
+		expect(rows.map((r) => r.outcome)).toEqual(["DOWN", "UP", "FLAT"]);
+	});
+
+	it("marks outcomes whose candle is not closed yet as PENDING", () => {
+		const now = 24 * HOUR + 30 * 60_000; // la bougie start 24h n'est pas close
+		const rows = resolveTrendOutcomes([row(24 * HOUR)], candles, HOUR, 1, now);
+		expect(rows[0]?.outcome).toBe("PENDING");
+	});
+
+	it("marks rows with a missing reference or outcome candle as PENDING", () => {
+		const rows = resolveTrendOutcomes(
+			[row(25 * HOUR)],
+			candles,
+			HOUR,
+			1,
+			Date.now(),
+		);
+		expect(rows[0]?.outcome).toBe("PENDING");
+	});
+});
+
+describe("ai trend calibration — query parsing", () => {
+	it("accepts a bounded window with defaults", () => {
+		expect(
+			parseCalibrationQuery({
+				from: "23",
+				to: "47",
+				collection: null,
+				horizon: null,
+				timeframe: null,
+			}),
+		).toEqual({
+			ok: true,
+			query: {
+				from: 23,
+				to: 47,
+				collection: "ALL",
+				horizon: 1,
+				timeframe: "ONE_HOUR",
+				timeframeMs: HOUR,
+			},
+		});
+	});
+
+	it.each([
+		["missing bounds", {}],
+		["inverted window", { from: "50", to: "10" }],
+		["unknown timeframe", { from: "10", to: "20", timeframe: "TWO_HOUR" }],
+	])("rejects %s", (_name, input) => {
+		expect(parseCalibrationQuery(input)).toEqual({
+			ok: false,
+			code: "INVALID_REQUEST",
+		});
+	});
+
+	it("rejects an out-of-range horizon", () => {
+		expect(
+			parseCalibrationQuery({ from: "10", to: "20", horizon: "25" }),
+		).toEqual({
+			ok: false,
+			code: "INVALID_HORIZON",
+		});
+	});
+
+	it("rejects an oversized window for the timeframe", () => {
+		expect(
+			parseCalibrationQuery({
+				from: String(HOUR),
+				to: String(290 * HOUR),
+				timeframe: "ONE_HOUR",
+			}),
+		).toEqual({ ok: false, code: "WINDOW_TOO_LARGE" });
+	});
+});

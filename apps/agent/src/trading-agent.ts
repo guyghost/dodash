@@ -7,6 +7,7 @@ import {
 	TIMEFRAME_MILLISECONDS,
 } from "@dodash/domain";
 import {
+	type AiTrendBias,
 	type AiTrendSignal,
 	acceptPaperValuationMark,
 	assessLiveTradingAgentIdentity,
@@ -37,6 +38,11 @@ import { executePaperOrder } from "@dodash/paper-execution";
 import type { RiskDecision } from "@dodash/risk";
 import { Agent } from "agents";
 import { requestGatewayDecision } from "./ai-decision-gateway.js";
+import {
+	parseCalibrationQuery,
+	resolveTrendOutcomes,
+	type TrendOutcomeRow,
+} from "./ai-trend-calibration.js";
 import {
 	AI_TREND_SIGNALS_SCHEMA,
 	collectTrendSignal,
@@ -1998,6 +2004,92 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				console.log(JSON.stringify({ agentId: this.name, ...entry })),
 		});
 		return { ok: true, report };
+	}
+
+	/**
+	 * Lecture calibration (§8) : lignes jointes signal + issue réalisée au
+	 * créneau h, stratifiablees par collection. Une fenêtre historique par
+	 * produit via le service marché ; issues non closes → PENDING (INV 13).
+	 */
+	async getAiTrendCalibration(
+		query: Parameters<typeof parseCalibrationQuery>[0],
+	): Promise<
+		| { ok: true; generatedAt: number; rows: readonly TrendOutcomeRow[] }
+		| { ok: false; code: string }
+	> {
+		const parsed = parseCalibrationQuery(query);
+		if (!parsed.ok) return { ok: false, code: parsed.code };
+		const { from, to, collection, horizon, timeframe, timeframeMs } =
+			parsed.query;
+		const raw = this.sql<{
+			product_id: string;
+			candle_closed_at: number;
+			observed_at: number;
+			bias: AiTrendBias;
+			probability: number;
+			collection: AiTrendCollection;
+		}>`
+      SELECT product_id, candle_closed_at, observed_at, bias, probability, collection
+      FROM ai_trend_signals
+      WHERE candle_closed_at BETWEEN ${from} AND ${to}
+      ORDER BY product_id, candle_closed_at
+    `;
+		const filtered = raw.filter(
+			(row) => collection === "ALL" || row.collection === collection,
+		);
+		const byProduct = new Map<string, typeof filtered>();
+		for (const row of filtered) {
+			const list = byProduct.get(row.product_id) ?? [];
+			list.push(row);
+			byProduct.set(row.product_id, list);
+		}
+		const now = Date.now();
+		const rows: TrendOutcomeRow[] = [];
+		for (const [productId, productRows] of byProduct) {
+			const candles = await fetchCandlesViaMarketService(
+				this.env.MARKET_DATA,
+				this.env.INTERNAL_SERVICE_TOKEN,
+				{
+					productId,
+					timeframe,
+					limit: (to - from) / timeframeMs + horizon + 2,
+					candleClosedAt: to + horizon * timeframeMs,
+					timeframeMs,
+				},
+			);
+			if (!candles.ok) {
+				// Sans closes, aucune issue n'est jugeable : tout reste PENDING.
+				for (const row of productRows) {
+					rows.push({
+						productId: row.product_id,
+						candleClosedAt: row.candle_closed_at,
+						observedAt: row.observed_at,
+						bias: row.bias,
+						probability: row.probability,
+						collection: row.collection,
+						outcome: "PENDING" as const,
+					});
+				}
+				continue;
+			}
+			rows.push(
+				...resolveTrendOutcomes(
+					productRows.map((row) => ({
+						productId: row.product_id,
+						candleClosedAt: row.candle_closed_at,
+						observedAt: row.observed_at,
+						bias: row.bias,
+						probability: row.probability,
+						collection: row.collection,
+					})),
+					candles.candles,
+					timeframeMs,
+					horizon,
+					now,
+				),
+			);
+		}
+		return { ok: true, generatedAt: now, rows };
 	}
 
 	private async removeIntervalSchedule(): Promise<void> {

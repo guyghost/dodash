@@ -55,6 +55,16 @@ explicite de `decision-core.md` INV 5 et note datée `README.md` INV 8-9.
   `RETROSPECTIVE_POSSIBLY_CONTAMINATED`. La fenêtre historique passe par le
   même service marché (`end` en secondes), sans ticker ni gate de fraîcheur
   live.
+- Rapport de calibration (§8, implémentation 2026-10-30) :
+  `computeTrendCalibration` est pure dans `models/` (ECE + 10 bins,
+  INV 13) ; la jointure issue (`resolveTrendOutcomes`) vit dans la coquille,
+  pure également ; issues non closes ou bougies absentes → `PENDING`,
+  jamais comptées. La lecture passe par
+  `GET /api/agents/:name/ai-trend-calibration` (fenêtre ≤ 288 bougies,
+  horizon 1-24) ; le script `apps/agent/scripts/ai-trend-calibration.mjs`
+  stratifie par collection et appose l'étiquette de contamination. Le
+  vocabulaire FLAT (issue) et NEUTRAL (biais) est distinct : FLAT n'est
+  correct que pour NEUTRAL (bug attrapé par les tests).
 
 ## Vérification requise (§6, §7) → couverture de tests
 

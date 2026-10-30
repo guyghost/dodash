@@ -176,3 +176,44 @@ parallèle ; l'activation `PAPER` ne se juge que sur B.
   `observedAt ≤ instant < observedAt + maxAgeMs`.
 - L'étiquette `RETROSPECTIVE_POSSIBLY_CONTAMINATED` figure sur tout
   rapport du protocole A.
+
+## 8. Rapport de calibration (amendement 2026-10-30)
+
+§4 exige un rapport de calibration accepté avant toute activation
+`PAPER`. Définition normative du rapport :
+
+- **Échantillon** : chaque ligne `ai_trend_signals` (productId,
+  candleClosedAt, bias, probability, collection) dans la fenêtre demandée.
+- **Issue réalisée** au créneau `h` (défaut 1) : `UP | DOWN | FLAT` selon
+  `close(bougie C + h·D)` comparée à `close(bougie C)` (la clôture de la
+  bougie de référence est le dernier close de l'état). Une issue non
+  encore close à l'instant du rapport est `PENDING` : listée, jamais
+  comptée.
+- **Réponse correcte** : `bias = outcome` ; `FLAT` n'est correct que pour
+  `NEUTRAL`.
+- **Bins** : 10 intervalles égaux sur `[0, 1]` de `probability` ; chaque
+  bin porte effectif, confiance moyenne et précision (part de réponses
+  correctes). La courbe de fiabilité est l'ensemble de ces bins.
+- **ECE** = Σ_b (n_b / N) · |précision_b − confiance_b|.
+- **Stratification obligatoire** par `collection` (SHADOW vs
+  RETROSPECTIVE) ; tout rapport incluant des lignes RETROSPECTIVE porte
+  l'étiquette `RETROSPECTIVE_POSSIBLY_CONTAMINATED` (INV 12).
+- **Surfaces** : la lecture des lignes jointes (signal + issue) passe par
+  `GET /api/agents/:name/ai-trend-calibration` ; l'ECE et les bins sont
+  une fonction pure de `models/` ; le script de rapport assemble et
+  affiche. Le replay backtest (§7) consomme ces mêmes lignes.
+
+### Invariants additionnels
+
+13. L'ECE et la courbe de fiabilité sont produits par une fonction pure de
+    `models/` sur les lignes persistées ; les issues `PENDING` n'entrent
+    jamais dans le calcul.
+14. Aucune activation `PAPER` ne se juge sur un rapport incluant des
+    lignes `PENDING` ou non stratifiées par `collection`.
+
+### Vérification requise additionnelle (§8)
+
+- `computeTrendCalibration` : ECE exact sur fixture figée ; bins bornés,
+    vides signalés ; échantillon vide refusé explicitement.
+- Jointure issue : `UP/DOWN/FLAT` selon les closes ; issue non close →
+  `PENDING` ; stratification par `collection` dans le script de rapport.

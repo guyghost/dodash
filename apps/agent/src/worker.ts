@@ -30,6 +30,7 @@ type TradingAgentRpc = Pick<
 	| "getAgentState"
 	| "getPnlHistory"
 	| "getPortfolioSummary"
+	| "getAiTrendCalibration"
 	| "collectAiTrendRetrospective"
 	| "killAgent"
 	| "listRecentCycles"
@@ -83,6 +84,17 @@ const handleApi = async (
 		);
 		const result = await agent.getPnlHistory(rawLimit);
 		return json(result, result.ok ? 200 : 500);
+	}
+	if (request.method === "GET" && action === "ai-trend-calibration") {
+		const params = new URL(request.url).searchParams;
+		const result = await agent.getAiTrendCalibration({
+			from: params.get("from"),
+			to: params.get("to"),
+			collection: params.get("collection"),
+			horizon: params.get("horizon"),
+			timeframe: params.get("timeframe"),
+		});
+		return json(result, result.ok ? 200 : 400);
 	}
 	if (request.method === "GET" && action === "portfolio") {
 		// Instantané lecture-seul sans query (dao #32, §4) : lecture en

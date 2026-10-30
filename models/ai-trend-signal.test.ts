@@ -1,12 +1,15 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { AiTrendSignal } from "./ai-trend-signal.js";
+import type { AiTrendBias, AiTrendSignal } from "./ai-trend-signal.js";
 import {
 	applyTrendModulation,
 	buildRetrospectiveTrendState,
+	computeTrendCalibration,
 	dedupeTrendSignals,
 	evaluateTrendSignal,
+	type TrendCalibrationSample,
+	type TrendOutcome,
 	type TrendPolicy,
 	validateTrendPolicy,
 } from "./ai-trend-signal.js";
@@ -273,5 +276,85 @@ describe("ai trend signal — network audit (§6)", () => {
 				`ai-trend-signal.ts must not contain ${forbidden}`,
 			).toBe(false);
 		}
+	});
+});
+
+describe("ai trend signal — calibration (§8)", () => {
+	const sample = (
+		probability: number,
+		bias: AiTrendBias,
+		outcome: TrendOutcome,
+	): TrendCalibrationSample => ({
+		productId: "BTC-USD",
+		candleClosedAt: 0,
+		bias,
+		probability,
+		outcome,
+	});
+
+	it("computes a perfect-calibration ECE of 0", () => {
+		// bin [0.8, 0.9[ : 4 échantillons à p=0.8, 4 corrects sur 5 → acc 0.8
+		const samples = [
+			sample(0.8, "UP", "UP"),
+			sample(0.8, "UP", "UP"),
+			sample(0.8, "UP", "UP"),
+			sample(0.8, "UP", "UP"),
+			sample(0.8, "UP", "DOWN"),
+		];
+		const report = computeTrendCalibration(samples);
+		expect(report.ok).toBe(true);
+		if (report.ok) {
+			expect(report.sampleSize).toBe(5);
+			expect(report.ece).toBe(0);
+			const bin = report.bins[8];
+			expect(bin).toMatchObject({
+				lower: 0.8,
+				upper: 0.9,
+				count: 5,
+				meanProbability: 0.8,
+				accuracy: 0.8,
+			});
+		}
+	});
+
+	it("computes an exact ECE on a fixed fixture", () => {
+		// bin [0.5, 0.6[ : p moyen 0.5, acc 0.5 → |0.5 − 0.5| = 0, poids 2/4
+		// bin [0.9, 1.0] : p moyen 0.9, acc 0.5 → |0.5 − 0.9| = 0.4, poids 2/4
+		// ECE = 0.5 × 0 + 0.5 × 0.4 = 0.2
+		const samples = [
+			sample(0.5, "UP", "UP"),
+			sample(0.5, "DOWN", "UP"),
+			sample(0.9, "UP", "UP"),
+			sample(0.9, "UP", "DOWN"),
+		];
+		const report = computeTrendCalibration(samples);
+		expect(report.ok).toBe(true);
+		if (report.ok) expect(report.ece).toBeCloseTo(0.2, 12);
+	});
+
+	it("never counts PENDING outcomes and rejects an all-pending sample", () => {
+		const report = computeTrendCalibration([sample(0.9, "UP", "PENDING")]);
+		expect(report).toEqual({ ok: false, errorCode: "EMPTY_SAMPLE" });
+		const mixed = computeTrendCalibration([
+			sample(1, "UP", "UP"),
+			sample(1, "UP", "PENDING"),
+		]);
+		expect(mixed.ok && mixed.sampleSize).toBe(1);
+	});
+
+	it("accepts probability 1.0 into the last bin only", () => {
+		const report = computeTrendCalibration([sample(1, "UP", "DOWN")]);
+		expect(report.ok && report.bins[9]?.count).toBe(1);
+		expect(
+			report.ok && report.bins.slice(0, 9).every((b) => b.count === 0),
+		).toBe(true);
+	});
+
+	it("treats FLAT as correct only for NEUTRAL", () => {
+		const report = computeTrendCalibration([
+			sample(0.8, "NEUTRAL", "FLAT"),
+			sample(0.8, "UP", "FLAT"),
+		]);
+		expect(report.ok && report.bins[8]?.accuracy).toBe(0.5);
 	});
 });
