@@ -129,3 +129,35 @@ idle → requesting → answered | refused | failed
 - La machine n'émet aucun événement métier (assertion sur le journal
   d'événements en test).
 - Aucun appel réseau dans `models/` (imports audités).
+
+## 8. Amendement 2026-10-30 — Jev via le AI Gateway de Vercel
+
+Décision opérateur : Jev passe par le AI Gateway de Vercel, sans clé
+directe TypeSafe. Preuves (probes du 2026-10-30) : `typesafe-ai/jev`,
+`typesafe-ai/jev-1.13.0` et `typesafe-ai/jev-1.14.0` figurent au
+catalogue `https://ai-gateway.vercel.sh/v1/models` ; le gateway expose
+`/v1/decisions` qui valide la même forme que l'API OpenAI Decisions
+(`input` + `questions`) — le catalogue inclut aussi `openai/gpt-6-luna-decisions`.
+
+Conséquences :
+
+- L'adaptateur HTTP devient **unique et partagé** (forme Decisions) :
+  `mapOpenAiQuestions` / `parseOpenAiAnswers` servent tout endpoint
+  `/v1/decisions`. La coquille résout `provider` → (transport, URL de
+  base, identifiant de modèle) : `clef` → binding `env.AI` ; `jev` →
+  `ai-gateway.vercel.sh/v1`, modèle `typesafe-ai/jev` ; `openai-decisions`
+  → même gateway et même clé, modèle `openai/gpt-6-luna-decisions`
+  (décision opérateur 2026-10-30 : l'API Decisions passe par le gateway,
+  ce qui permet la comparaison de calibration croisée Jev ↔ luna).
+- `mapJevQuestions` / `parseJevAnswers` (§2) sont retirés de la feuille
+  de route : même forme de fils que l'adaptateur Decisions.
+- §5 : une clé unique `AI_GATEWAY_KEY` (wrangler secret) couvre Jev et le
+  passage éventuel d'OpenAI par le gateway ; jamais dans le repo ni le
+  contexte persisté. Egress du Worker Cloudflare vers
+  `ai-gateway.vercel.sh` ; le saut ajoute de la latence, couverte par la
+  fraîcheur `maxAgeMs` exigée du consommateur.
+- Le schéma exact des questions Jev via le gateway (libellés `choices` /
+  `levels`) est à confirmer au premier appel authentifié : l'endpoint
+  valide le schéma avant l'authentification et répond par des erreurs
+  descriptives ; l'adaptateur réutilise la normalisation Decisions tant
+  que le gateway suit cette forme.

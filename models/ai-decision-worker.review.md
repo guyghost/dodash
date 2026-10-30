@@ -57,3 +57,18 @@ lieu de délibération.
 | `validateRequest` (bornes questions/options/ids/niveaux, état hors limites) | `ai-decision-worker.test.ts` « validates requests » |
 | Machine : aucun événement métier émis | `ai-decision-worker.machine.test.ts` « emits no business events » |
 | Aucun appel réseau dans `models/` | `ai-decision-worker.test.ts` « performs no network access » |
+
+## Revue de l'amendement du 2026-10-30 — Jev via le AI Gateway de Vercel
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE** (routage décidé par
+l'opérateur ; preuves de catalogue et d'endpoint relevées par probe).
+
+- Le gateway expose `/v1/decisions` à la forme OpenAI Decisions et liste
+  `typesafe-ai/jev` : l'adaptateur HTTP est unique et partagé, ce qui
+  supprime l'adaptateur Jev dédié et la dépendance au waitlist TypeSafe.
+- Une clé unique `AI_GATEWAY_KEY` réduit la surface de secrets (§5) ; egress
+  et latence du saut sont bornés par la fraîcheur `maxAgeMs` exigée du
+  consommateur.
+- Limite acceptée : le schéma exact des questions Jev via le gateway
+  reste à confirmer au premier appel authentifié avant de compter
+  l'adaptateur comme figé.

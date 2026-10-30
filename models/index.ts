@@ -28,6 +28,22 @@ export type {
 	AiDecisionWorkerEvent,
 } from "./ai-decision-worker.types.js";
 export {
+	type AiTrendBias,
+	type AiTrendSignal,
+	applyTrendModulation,
+	buildRetrospectiveTrendState,
+	dedupeTrendSignals,
+	evaluateTrendSignal,
+	type ModulableSignal,
+	type TrendCandleInput,
+	type TrendInactivityReason,
+	type TrendModulation,
+	type TrendPolicy,
+	type TrendPolicyValidation,
+	type TrendStateBuild,
+	validateTrendPolicy,
+} from "./ai-trend-signal.js";
+export {
 	extractBacktestDiagnosticSamples,
 	summarizeBacktestDiagnostics,
 } from "./backtest-diagnostics.js";

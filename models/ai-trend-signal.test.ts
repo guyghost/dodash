@@ -1,0 +1,277 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import type { AiTrendSignal } from "./ai-trend-signal.js";
+import {
+	applyTrendModulation,
+	buildRetrospectiveTrendState,
+	dedupeTrendSignals,
+	evaluateTrendSignal,
+	type TrendPolicy,
+	validateTrendPolicy,
+} from "./ai-trend-signal.js";
+
+const policy: TrendPolicy = {
+	enabled: true,
+	maxAgeMs: 3_600_000,
+	minProbability: 0.6,
+	maxFactor: 1.5,
+};
+
+const signal = (overrides: Partial<AiTrendSignal> = {}): AiTrendSignal => ({
+	kind: "AI_TREND",
+	productId: "BTC-USD",
+	candleClosedAt: 1_000,
+	observedAt: 1_200,
+	bias: "UP",
+	probability: 0.8,
+	provider: "jev",
+	...overrides,
+});
+
+describe("ai trend signal — policy validation (INV 7)", () => {
+	it("accepts a bounded policy", () => {
+		expect(validateTrendPolicy(policy)).toEqual({ ok: true });
+	});
+
+	it.each([
+		["maxAgeMs zero", { ...policy, maxAgeMs: 0 }],
+		["fractional maxAgeMs", { ...policy, maxAgeMs: 1.5 }],
+		["minProbability at 0.5", { ...policy, minProbability: 0.5 }],
+		["minProbability at 1", { ...policy, minProbability: 1 }],
+		["maxFactor at 1", { ...policy, maxFactor: 1 }],
+		["maxFactor above 2", { ...policy, maxFactor: 2.1 }],
+	])("rejects %s", (_name, invalid) => {
+		expect(validateTrendPolicy(invalid)).toEqual({ ok: false });
+	});
+});
+
+describe("ai trend signal — evaluateTrendSignal", () => {
+	it("rejects each inactivity reason", () => {
+		expect(
+			evaluateTrendSignal(signal(), { ...policy, enabled: false }, 1_300),
+		).toEqual({
+			kind: "INACTIVE",
+			reason: "DISABLED",
+		});
+		expect(
+			evaluateTrendSignal(signal(), policy, signal().observedAt - 1),
+		).toEqual({
+			kind: "INACTIVE",
+			reason: "STALE",
+		});
+		expect(
+			evaluateTrendSignal(
+				signal(),
+				policy,
+				signal().observedAt + policy.maxAgeMs,
+			),
+		).toEqual({
+			kind: "INACTIVE",
+			reason: "STALE",
+		});
+		expect(
+			evaluateTrendSignal(signal({ bias: "NEUTRAL" }), policy, 1_300),
+		).toEqual({
+			kind: "INACTIVE",
+			reason: "NEUTRAL",
+		});
+		expect(
+			evaluateTrendSignal(signal({ probability: 0.59 }), policy, 1_300),
+		).toEqual({
+			kind: "INACTIVE",
+			reason: "BELOW_THRESHOLD",
+		});
+	});
+
+	it("enforces the availability window (INV 11, strict upper bound)", () => {
+		expect(
+			evaluateTrendSignal(signal(), policy, signal().observedAt).kind,
+		).toBe("MODULATION");
+		expect(
+			evaluateTrendSignal(
+				signal(),
+				policy,
+				signal().observedAt + policy.maxAgeMs - 1,
+			).kind,
+		).toBe("MODULATION");
+		expect(
+			evaluateTrendSignal(
+				signal(),
+				policy,
+				signal().observedAt + policy.maxAgeMs,
+			).kind,
+		).toBe("INACTIVE");
+	});
+
+	it("maps thresholds exactly: minProbability → 1, probability 1 → maxFactor", () => {
+		expect(
+			evaluateTrendSignal(signal({ probability: 0.6 }), policy, 1_300),
+		).toEqual({
+			kind: "MODULATION",
+			bias: "UP",
+			factor: 1,
+		});
+		expect(
+			evaluateTrendSignal(signal({ probability: 1 }), policy, 1_300),
+		).toEqual({
+			kind: "MODULATION",
+			bias: "UP",
+			factor: 1.5,
+		});
+		expect(
+			evaluateTrendSignal(
+				signal({ probability: 0.8, bias: "DOWN" }),
+				policy,
+				1_300,
+			),
+		).toEqual({
+			kind: "MODULATION",
+			bias: "DOWN",
+			factor: 1.25,
+		});
+	});
+
+	it("bounds the factor over the whole probability range (property, INV 1)", () => {
+		for (const minProbability of [0.51, 0.6, 0.75, 0.9]) {
+			for (const maxFactor of [1.0001, 1.2, 1.5, 2]) {
+				const scoped = { ...policy, minProbability, maxFactor };
+				for (let i = 0; i <= 100; i++) {
+					const probability = i / 100;
+					const modulation = evaluateTrendSignal(
+						signal({ probability }),
+						scoped,
+						1_300,
+					);
+					if (modulation.kind === "MODULATION") {
+						expect(modulation.factor).toBeGreaterThanOrEqual(1);
+						expect(modulation.factor).toBeLessThanOrEqual(maxFactor);
+						expect(modulation.factor).toBeGreaterThan(0);
+					}
+				}
+				// INV 1 holds unconditionally, even on malformed probabilities.
+				const malformed = evaluateTrendSignal(
+					signal({ probability: 5 }),
+					scoped,
+					1_300,
+				);
+				expect(
+					malformed.kind === "MODULATION" ? malformed.factor : 1,
+				).toBeLessThanOrEqual(maxFactor);
+			}
+		}
+	});
+});
+
+describe("ai trend signal — applyTrendModulation", () => {
+	const base = {
+		strategyId: "ema-cross",
+		productId: "BTC-USD",
+		confidence: 0.8,
+		suggestedSize: 100,
+		reasonCode: "CROSS_UP",
+	} as const;
+
+	it("multiplies aligned confidence and leaves others unchanged", () => {
+		const up = applyTrendModulation(
+			{ ...base, side: "BUY" as const },
+			{ kind: "MODULATION", bias: "UP", factor: 1.25 },
+		);
+		expect(up.confidence).toBe(1);
+		expect(up).toEqual({ ...base, side: "BUY", confidence: 1 });
+
+		const sell = applyTrendModulation(
+			{ ...base, side: "SELL" as const },
+			{ kind: "MODULATION", bias: "UP", factor: 1.25 },
+		);
+		expect(sell.confidence).toBe(0.8);
+
+		const hold = applyTrendModulation(
+			{ ...base, side: "HOLD" as const },
+			{ kind: "MODULATION", bias: "UP", factor: 1.25 },
+		);
+		expect(hold.confidence).toBe(0.8);
+
+		const inactive = applyTrendModulation(
+			{ ...base, side: "BUY" as const },
+			{ kind: "INACTIVE", reason: "STALE" },
+		);
+		expect(inactive.confidence).toBe(0.8);
+	});
+
+	it("preserves every other field of the modulated signal", () => {
+		const modulated = applyTrendModulation(
+			{ ...base, side: "BUY" as const, confidence: 0.5 },
+			{ kind: "MODULATION", bias: "UP", factor: 1.2 },
+		);
+		expect(modulated).toEqual({ ...base, side: "BUY", confidence: 0.6 });
+	});
+});
+
+describe("ai trend signal — dedupeTrendSignals (INV 8)", () => {
+	it("keeps the most recent signal per (productId, candleClosedAt)", () => {
+		const first = signal({ observedAt: 1_200, probability: 0.7 });
+		const recent = signal({ observedAt: 1_400, probability: 0.9 });
+		const other = signal({ candleClosedAt: 2_000, observedAt: 2_200 });
+		const eth = signal({ productId: "ETH-USD" });
+		const result = dedupeTrendSignals([first, recent, other, eth, recent]);
+		expect(result).toEqual([recent, other, eth]);
+	});
+});
+
+describe("ai trend signal — buildRetrospectiveTrendState (§7.A, INV 10)", () => {
+	const candles = [
+		{ closeTime: 300, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
+		{ closeTime: 100, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
+		{ closeTime: 200, open: 1, high: 2, low: 0.5, close: 1.5, volume: 10 },
+	];
+
+	it("rejects any candle closing after the reference (blocking LOOKAHEAD)", () => {
+		expect(
+			buildRetrospectiveTrendState(
+				[...candles, { closeTime: 400 } as never],
+				300,
+			),
+		).toEqual({
+			ok: false,
+			errorCode: "LOOKAHEAD",
+		});
+	});
+
+	it("rejects an empty input with EMPTY", () => {
+		expect(buildRetrospectiveTrendState([], 300)).toEqual({
+			ok: false,
+			errorCode: "EMPTY",
+		});
+	});
+
+	it("builds a state with candles closed at or before C, sorted", () => {
+		const built = buildRetrospectiveTrendState(candles, 300);
+		expect(built.ok).toBe(true);
+		if (built.ok) {
+			const json = built.state.json as { candles: { closeTime: number }[] };
+			expect(json.candles.map((c) => c.closeTime)).toEqual([100, 200, 300]);
+		}
+	});
+});
+
+describe("ai trend signal — network audit (§6)", () => {
+	it("performs no network access from models/", () => {
+		const code = readFileSync(
+			fileURLToPath(new URL("ai-trend-signal.ts", import.meta.url)),
+			"utf8",
+		);
+		for (const forbidden of [
+			"fetch(",
+			"ai-gateway.vercel.sh",
+			"api.openai.com",
+			"env.AI",
+			"https://",
+		]) {
+			expect(
+				code.includes(forbidden),
+				`ai-trend-signal.ts must not contain ${forbidden}`,
+			).toBe(false);
+		}
+	});
+});
