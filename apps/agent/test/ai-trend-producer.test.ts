@@ -183,6 +183,7 @@ describe("ai trend producer — SHADOW collection", () => {
 		overrides: Partial<TrendCollectDeps> = {},
 	): TrendCollectDeps => ({
 		productId: "BTC-USD",
+		timeframe: "ONE_HOUR",
 		timeframeMs: HOUR,
 		triggeredAt: 24 * HOUR + 60_000,
 		candles,
@@ -220,6 +221,10 @@ describe("ai trend producer — SHADOW collection", () => {
 				provider: "jev",
 			},
 			{ latencyMs: 120, inputTokens: 500 },
+			"SHADOW",
+			"v1",
+			null,
+			"ONE_HOUR",
 		);
 		expect(log).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -319,6 +324,7 @@ describe("ai trend producer — question v2 (§9)", () => {
 		const persist = vi.fn();
 		const outcome = await collectTrendSignalV2({
 			productId: "BTC-USD",
+			timeframe: "ONE_MINUTE",
 			timeframeMs: 60_000,
 			triggeredAt: 24 * HOUR + 70 * 60_000 + 5_000,
 			candles: seventy,
@@ -341,7 +347,7 @@ describe("ai trend producer — question v2 (§9)", () => {
 			log: () => {},
 		});
 		expect(outcome).toEqual({ kind: "PERSISTED" });
-		const [signal, , collection, questionVersion, thresholdBps] =
+		const [signal, , collection, questionVersion, thresholdBps, timeframe] =
 			persist.mock.calls[0] ?? [];
 		expect(signal.bias).toBe("NEUTRAL");
 		expect(signal.probability).toBeCloseTo(0.5, 8);

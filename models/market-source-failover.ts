@@ -27,8 +27,10 @@ export const MARKET_SOURCE_ORDER: readonly MarketSourceId[] = Object.freeze([
 /** Basis perp/spot maximal accepté (revue 2026-10-31). */
 export const BASIS_MAX_BPS = 200;
 
-/** Âge maximal de la référence Coinbase pour la gate de basis. */
-export const BASIS_REFERENCE_MAX_AGE_MS = 600_000;
+/** Âge maximal de la référence Coinbase pour la gate de basis (4 h : le
+ * failover reste armé pendant les pannes longues, la borne 200 bps couvre
+ * la dérive du basis perp sur cette fenêtre). */
+export const BASIS_REFERENCE_MAX_AGE_MS = 4 * 3_600_000;
 
 export type MarketSourceResolution =
 	| { readonly source: MarketSourceId }

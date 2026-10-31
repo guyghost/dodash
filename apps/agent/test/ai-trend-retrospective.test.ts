@@ -218,6 +218,9 @@ describe("ai trend retrospective — collection", () => {
 			},
 			{ latencyMs: 100, inputTokens: 400 },
 			"RETROSPECTIVE",
+			"v1",
+			null,
+			"ONE_HOUR",
 		);
 	});
 
