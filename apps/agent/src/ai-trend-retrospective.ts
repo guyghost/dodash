@@ -207,6 +207,9 @@ export interface RetrospectiveCollectDeps {
 		signal: AiTrendSignal,
 		meta: TrendSignalMeta,
 		collection: AiTrendCollection,
+		questionVersion: "v1" | "v2",
+		thresholdBps: number | null,
+		timeframe: string,
 	) => void;
 	readonly nowMs: () => number;
 	readonly log: (entry: Record<string, unknown>) => void;
@@ -340,6 +343,9 @@ export const collectRetrospectiveTrendSignals = async (
 				? { latencyMs: result.latencyMs }
 				: { latencyMs: result.latencyMs, inputTokens: result.inputTokens },
 			"RETROSPECTIVE",
+			"v1",
+			null,
+			deps.timeframe,
 		);
 		counters.collected += 1;
 	}
@@ -519,6 +525,7 @@ export const collectRetrospectiveTrendSignalsV2 = async (
 			"RETROSPECTIVE",
 			"v2",
 			features.thresholdBps,
+			deps.timeframe,
 		);
 		counters.collected += 1;
 	}

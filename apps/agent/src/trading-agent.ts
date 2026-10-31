@@ -376,9 +376,11 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			.filter((column) => column.pk > 0)
 			.map((column) => column.name)
 			.sort();
-		if (pkColumns.length === 3 && pkColumns.includes("question_version")) {
+		if (pkColumns.length === 4 && pkColumns.includes("timeframe")) {
 			return;
 		}
+		// Idempotence : une table orpheline d'un crash précédent est purgée.
+		this.ctx.storage.sql.exec('DROP TABLE IF EXISTS ai_trend_signals_rekeyed');
 		this.ctx.storage.sql.exec(`
       CREATE TABLE ai_trend_signals_rekeyed (
         product_id TEXT NOT NULL,
@@ -391,13 +393,14 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         input_tokens INTEGER,
         collection TEXT NOT NULL DEFAULT 'SHADOW',
         question_version TEXT NOT NULL DEFAULT 'v1',
+        timeframe TEXT NOT NULL DEFAULT 'ONE_MINUTE',
         threshold_bps REAL,
         created_at INTEGER NOT NULL,
-        PRIMARY KEY (product_id, candle_closed_at, question_version)
+        PRIMARY KEY (product_id, candle_closed_at, question_version, timeframe)
       )
     `);
 		this.ctx.storage.sql.exec(
-			"INSERT OR IGNORE INTO ai_trend_signals_rekeyed SELECT product_id, candle_closed_at, observed_at, bias, probability, provider, latency_ms, input_tokens, collection, question_version, threshold_bps, created_at FROM ai_trend_signals",
+			"INSERT OR IGNORE INTO ai_trend_signals_rekeyed SELECT product_id, candle_closed_at, observed_at, bias, probability, provider, latency_ms, input_tokens, collection, question_version, 'ONE_MINUTE', threshold_bps, created_at FROM ai_trend_signals",
 		);
 		this.ctx.storage.sql.exec("DROP TABLE ai_trend_signals");
 		this.ctx.storage.sql.exec(
@@ -2022,13 +2025,29 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		}
 		await collectTrendSignal({
 			productId: configuration.productId,
+			timeframe: trendTimeframe,
 			timeframeMs,
 			triggeredAt,
 			candles,
 			nowMs: Date.now,
 			decide: (request) =>
 				requestGatewayDecision("jev", request, { gatewayKey }),
-			persist: (signal, meta) => this.persistAiTrendSignal(signal, meta),
+			persist: (
+				signal,
+				meta,
+				collection,
+				questionVersion,
+				thresholdBps,
+				timeframe,
+			) =>
+				this.persistAiTrendSignal(
+					signal,
+					meta,
+					collection,
+					questionVersion,
+					thresholdBps,
+					timeframe,
+				),
 			log: (entry) =>
 				console.log(JSON.stringify({ agentId: this.name, ...entry })),
 		});
@@ -2037,6 +2056,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		if (this.env.AI_TREND_V2 === "true") {
 			await collectTrendSignalV2({
 				productId: configuration.productId,
+				timeframe: trendTimeframe,
 				timeframeMs,
 				triggeredAt,
 				candles,
@@ -2065,20 +2085,21 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		collection: AiTrendCollection = "SHADOW",
 		questionVersion: AiTrendQuestionVersion = "v1",
 		thresholdBps: number | null = null,
+		timeframe: string = "ONE_MINUTE",
 	): void {
 		const now = Date.now();
 		this.sql`
       INSERT INTO ai_trend_signals (
         product_id, candle_closed_at, observed_at, bias, probability,
         provider, latency_ms, input_tokens, collection, question_version,
-        threshold_bps, created_at
+        timeframe, threshold_bps, created_at
       ) VALUES (
         ${signal.productId}, ${signal.candleClosedAt}, ${signal.observedAt},
         ${signal.bias}, ${signal.probability}, ${signal.provider},
         ${meta.latencyMs}, ${meta.inputTokens ?? null}, ${collection},
-        ${questionVersion}, ${thresholdBps}, ${now}
+        ${questionVersion}, ${timeframe}, ${thresholdBps}, ${now}
       )
-      ON CONFLICT(product_id, candle_closed_at, question_version) DO UPDATE SET
+      ON CONFLICT(product_id, candle_closed_at, question_version, timeframe) DO UPDATE SET
         observed_at = excluded.observed_at,
         bias = excluded.bias,
         probability = excluded.probability,
@@ -2087,6 +2108,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
         input_tokens = excluded.input_tokens,
         collection = excluded.collection,
         question_version = excluded.question_version,
+        timeframe = excluded.timeframe,
         threshold_bps = excluded.threshold_bps,
         created_at = excluded.created_at
       WHERE ai_trend_signals.collection = 'RETROSPECTIVE'

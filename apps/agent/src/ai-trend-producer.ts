@@ -74,9 +74,10 @@ export const AI_TREND_SIGNALS_SCHEMA = `
     input_tokens INTEGER,
     collection TEXT NOT NULL DEFAULT 'SHADOW',
     question_version TEXT NOT NULL DEFAULT 'v1',
+    timeframe TEXT NOT NULL DEFAULT 'ONE_MINUTE',
     threshold_bps REAL,
     created_at INTEGER NOT NULL,
-    PRIMARY KEY (product_id, candle_closed_at, question_version)
+    PRIMARY KEY (product_id, candle_closed_at, question_version, timeframe)
   )
 `;
 
@@ -200,6 +201,7 @@ export interface TrendSignalMeta {
 
 export interface TrendCollectDeps {
 	readonly productId: string;
+	readonly timeframe: string;
 	readonly timeframeMs: number;
 	readonly triggeredAt: number;
 	readonly candles: readonly Candle[];
@@ -208,7 +210,7 @@ export interface TrendCollectDeps {
 		request: AiDecisionRequest,
 		attempt: number,
 	) => Promise<AiDecisionResult>;
-	readonly persist: (signal: AiTrendSignal, meta: TrendSignalMeta) => void;
+	readonly persist: TrendPersistFn;
 	readonly log: (entry: Record<string, unknown>) => void;
 }
 
@@ -285,7 +287,7 @@ export const collectTrendSignal = async (
 		result.inputTokens === undefined
 			? { latencyMs: result.latencyMs }
 			: { latencyMs: result.latencyMs, inputTokens: result.inputTokens };
-	deps.persist(signal, meta);
+	deps.persist(signal, meta, "SHADOW", "v1", null, deps.timeframe);
 	deps.log({
 		event: "ai_trend_signal_persisted",
 		productId: deps.productId,
@@ -311,6 +313,7 @@ export type TrendPersistFn = (
 	collection: AiTrendCollection,
 	questionVersion: AiTrendQuestionVersion,
 	thresholdBps: number | null,
+	timeframe: string,
 ) => void;
 
 /** §9 : horizon de la batterie v2, en bougies de la grille du signal. */
@@ -466,6 +469,7 @@ export const extractBatteryProbabilities = (
 
 export interface TrendCollectV2Deps {
 	readonly productId: string;
+	readonly timeframe: string;
 	readonly timeframeMs: number;
 	readonly triggeredAt: number;
 	readonly candles: readonly Candle[];
@@ -548,7 +552,14 @@ export const collectTrendSignalV2 = async (
 		result.inputTokens === undefined
 			? { latencyMs: result.latencyMs }
 			: { latencyMs: result.latencyMs, inputTokens: result.inputTokens };
-	deps.persist(signal, meta, "SHADOW", "v2", features.thresholdBps);
+	deps.persist(
+		signal,
+		meta,
+		"SHADOW",
+		"v2",
+		features.thresholdBps,
+		deps.timeframe,
+	);
 	deps.log({
 		event: "ai_trend_signal_persisted",
 		productId: deps.productId,
