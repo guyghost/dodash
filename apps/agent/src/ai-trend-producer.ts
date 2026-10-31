@@ -45,7 +45,7 @@ export const AI_TREND_QUESTION = {
 	options: ["UP", "DOWN", "NEUTRAL"],
 } as const;
 
-export const AI_TREND_DECISION_TIMEOUT_MS = 5_000;
+export const AI_TREND_DECISION_TIMEOUT_MS = 8_000;
 
 /** Fenêtre d'état du signal (amendement 2026-10-30) : 120 bougies de la grille du signal. */
 export const AI_TREND_CANDLE_LIMIT = 120;

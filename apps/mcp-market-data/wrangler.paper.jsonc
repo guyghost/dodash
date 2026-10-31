@@ -15,7 +15,7 @@
   },
   "vars": {
     "COINBASE_API_BASE_URL": "https://api.coinbase.com",
-    "MARKET_CACHE_TTL_SECONDS": "30"
+    "MARKET_CACHE_TTL_SECONDS": "300"
   },
   "kv_namespaces": [
     {
