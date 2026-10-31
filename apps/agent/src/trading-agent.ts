@@ -2032,6 +2032,29 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			log: (entry) =>
 				console.log(JSON.stringify({ agentId: this.name, ...entry })),
 		});
+		// §9 A/B : la batterie v2 est collectée en parallèle de la v1 sur les
+		// mêmes bougies (revue PR #27 — l'appel avait disparu du merge squash).
+		if (this.env.AI_TREND_V2 === "true") {
+			await collectTrendSignalV2({
+				productId: configuration.productId,
+				timeframeMs,
+				triggeredAt,
+				candles,
+				nowMs: Date.now,
+				decide: (request) =>
+					requestGatewayDecision("jev", request, { gatewayKey }),
+				persist: (signal, meta, collection, questionVersion, thresholdBps) =>
+					this.persistAiTrendSignal(
+						signal,
+						meta,
+						collection,
+						questionVersion,
+						thresholdBps,
+					),
+				log: (entry) =>
+					console.log(JSON.stringify({ agentId: this.name, ...entry })),
+			});
+		}
 	}
 
 	/** INV 8 : une ligne par (product_id, candle_closed_at), la production la
