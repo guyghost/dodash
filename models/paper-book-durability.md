@@ -87,9 +87,13 @@ remise à zéro.
   (`dodash_paper_book`), table qui n'est pas celle du SDK, et seulement
   après `resolveRestoredPortfolioSession`. `onStart` recharge cette copie
   lorsque `shouldRecoverDurablePortfolio` est vrai. Le passage en
-  mono-produit retire la ligne.
+  mono-produit retire la ligne seulement si le portefeuille est quiescent
+  et qu'un reset explicite a déverrouillé le remplacement. Un `/start`
+  mono-produit ne remplace pas une session active et n'efface pas
+  `dodash_paper_book`.
 - Une restauration de session invalide désarme l'agent
   (`portfolioRestoreError`) **sans** effacer la session ni le book.
+  `/stop` et `/kill` répondent alors sans reconstruire l'acteur.
 - `/start` sur les mêmes créneaux reprend les manches et
   `lastDecisionCandleClosedAt`. Si la session en mémoire est absente ou
   illisible, la session durable qui se restaure encore est cette source,

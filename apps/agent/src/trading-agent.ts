@@ -737,6 +737,18 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		if (currentPhase !== "stopped") {
 			return { ok: false, error: { code: "INVALID_STATE" } };
 		}
+		const portfolio = this.state.portfolioSession;
+		if (portfolio !== null) {
+			// Un top-level machine absent n'est pas un portefeuille arrêté.
+			// Le book multi-produits ne cède qu'après un reset explicite.
+			if (
+				this.state.portfolioRestoreError !== null ||
+				this.state.paperBookUnlocked !== true ||
+				portfolioIsEnabled(portfolio)
+			) {
+				return { ok: false, error: { code: "INVALID_STATE" } };
+			}
+		}
 
 		const admission = admitAgentConfiguration(configuration.value);
 		if (configuration.value.executionMode === "perp") {
@@ -1569,6 +1581,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		if (session === null) {
 			return { ok: false, error: { code: "NOT_CONFIGURED" } };
 		}
+		if (this.state.portfolioRestoreError !== null) {
+			return { ok: true, state: this.stateSnapshot() };
+		}
 		for (const productId of portfolioProductIds(session)) {
 			const product = session.products[productId];
 			if (product === undefined || !machineIsEnabled(product.machine.value)) {
@@ -1594,6 +1609,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		const session = this.state.portfolioSession;
 		if (session === null) {
 			return { ok: false, error: { code: "NOT_CONFIGURED" } };
+		}
+		if (this.state.portfolioRestoreError !== null) {
+			return { ok: true, state: this.stateSnapshot() };
 		}
 		this.persistPortfolio(
 			sendPortfolioEvent(session.portfolio, {
@@ -1707,18 +1725,25 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	): Promise<void> {
 		const product = session.products[productId];
 		if (product === undefined) return;
-		const machine = createTradingMachineSession(
-			{
-				agentId: this.name,
-				strategyIds: session.configuration.strategyIds,
-				maxMarketStalenessMs: session.configuration.maxMarketStalenessMs,
-			},
-			product.machine,
-		);
-		machine.send(event);
-		const record = machine.record;
-		machine.stop();
-		this.persistProductMachine(productId, record);
+		try {
+			const machine = createTradingMachineSession(
+				{
+					agentId: this.name,
+					strategyIds: session.configuration.strategyIds,
+					maxMarketStalenessMs: session.configuration.maxMarketStalenessMs,
+				},
+				product.machine,
+			);
+			machine.send(event);
+			const record = machine.record;
+			machine.stop();
+			this.persistProductMachine(productId, record);
+		} catch (error) {
+			console.error(
+				"PRODUCT_CONTROL_UNRESTORABLE",
+				error instanceof Error ? error.message : "unknown",
+			);
+		}
 	}
 
 	private persistPortfolio(portfolio: PersistedPortfolioMachine): void {

@@ -88,6 +88,9 @@ type Shell = {
     permissions: ControlPermissions,
   ): Promise<{ ok: boolean; error?: { code: string } }>;
   scheduledTick(): Promise<void>;
+  stopAgent(
+    permissions: ControlPermissions,
+  ): Promise<{ ok: boolean; error?: { code: string } }>;
 };
 
 const shell = (
@@ -363,18 +366,94 @@ describe("paper book survives deploy and restart", () => {
     expect(failed.state.portfolioSession).toBeNull();
   });
 
-  it("retires the portfolio backup when a single-product runtime starts", async () => {
+  it("refuses a single-product start while a portfolio book is still locked", async () => {
+    const waiting = createTradingMachineSession({
+      agentId: "btc-usd-paper",
+      strategyIds: ["rsi-reversion"],
+      maxMarketStalenessMs: 90_000,
+    });
+    waiting.send({ type: "START_REQUESTED", permissions });
+    waiting.send({ type: "SCHEDULE_SUCCEEDED", nextWakeAt: 3_600_000 });
+    const active = waiting.record;
+    waiting.stop();
+    const session = openSession();
+    const btc = session.products["BTC-USD"];
+    if (btc === undefined) throw new Error("missing BTC sleeve");
+    const running: PortfolioSessionState = {
+      ...session,
+      products: { ...session.products, "BTC-USD": { ...btc, machine: active } },
+    };
     const agent = shell(
-      { ...INITIAL_AGENT_STATE, portfolioSession: openSession(), enabled: false },
+      { ...INITIAL_AGENT_STATE, portfolioSession: running, enabled: true },
       () => [],
     );
     const result = await agent.startAgent(
       { productId: "BTC-USD", executionMode: "paper" },
       permissions,
     );
+    expect(result).toEqual({ ok: false, error: { code: "INVALID_STATE" } });
+    expect(agent.state.portfolioSession?.products["BTC-USD"]?.portfolio.positionQuantity).toBe(
+      0.1288,
+    );
+    expect(agent.queries.some((query) => query.includes("DELETE"))).toBe(false);
+  });
+
+  it("retires the portfolio backup only after an explicit reset unlocks replacement", async () => {
+    const locked = shell(
+      { ...INITIAL_AGENT_STATE, portfolioSession: openSession(), enabled: false },
+      () => [],
+    );
+    expect(
+      await locked.startAgent({ productId: "BTC-USD", executionMode: "paper" }, permissions),
+    ).toEqual({ ok: false, error: { code: "INVALID_STATE" } });
+    expect(locked.queries.some((query) => query.includes("DELETE"))).toBe(false);
+    expect(locked.state.portfolioSession?.products["ETH-USD"]?.portfolio.positionQuantity).toBe(
+      4.4347,
+    );
+
+    const unlocked = shell(
+      {
+        ...INITIAL_AGENT_STATE,
+        portfolioSession: openSession(),
+        enabled: false,
+        paperBookUnlocked: true,
+      },
+      () => [],
+    );
+    const result = await unlocked.startAgent(
+      { productId: "BTC-USD", executionMode: "paper" },
+      permissions,
+    );
     expect(result.ok).toBe(true);
-    expect(agent.state.portfolioSession).toBeNull();
-    expect(agent.queries.some((query) => query.includes("DELETE"))).toBe(true);
+    expect(unlocked.state.portfolioSession).toBeNull();
+    expect(unlocked.queries.some((query) => query.includes("DELETE"))).toBe(true);
+  });
+
+  it("stops a session that failed restore without throwing", async () => {
+    const session = openSession();
+    const btc = session.products["BTC-USD"];
+    if (btc === undefined) throw new Error("missing BTC sleeve");
+    const broken: PortfolioSessionState = {
+      ...session,
+      products: {
+        ...session.products,
+        "BTC-USD": { ...btc, machine: { ...btc.machine, value: "not-a-phase" } },
+      },
+    };
+    const agent = shell(
+      {
+        ...INITIAL_AGENT_STATE,
+        portfolioSession: broken,
+        portfolioRestoreError: "INVALID_PORTFOLIO_SNAPSHOT",
+        enabled: false,
+      },
+      () => [],
+    );
+    const result = await agent.stopAgent(permissions);
+    expect(result).toEqual({ ok: true, state: expect.any(Object) });
+    expect(agent.state.portfolioSession?.products["BTC-USD"]?.portfolio.positionQuantity).toBe(
+      0.1288,
+    );
   });
 
   it("keeps the accepted state when the durable book write fails", () => {
