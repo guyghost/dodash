@@ -218,7 +218,7 @@ const handleInternalRequest = async (
 				logResolved({
 					kind,
 					productId: parsed.data.productId,
-					source: "COINBASE",
+					source: "coinbase",
 					outcome: failure,
 					coinbaseTries: attempt.tries,
 				});
@@ -304,7 +304,7 @@ const handleInternalRequest = async (
 			logResolved({
 				kind,
 				productId: parsed.data.productId,
-				source: "COINBASE",
+				source: "coinbase",
 				outcome: failure,
 				coinbaseTries: attempt.tries,
 			});
