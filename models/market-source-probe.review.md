@@ -50,3 +50,34 @@ ISOLÉ**, conformément à l'autorisation explicite de l'opérateur.
 429 Advanced puis Exchange, sans Retry-After ; aucune cause du quota affirmée.
 Cron installé mais non observé dans le tail initial de 150 s ; propagation
 possible, pas de preuve de SLA. Expiration non prolongée après les corrections.
+
+## Revue du retrait — 14 novembre 2026
+
+Revue locale préalable au retrait du script. **APPROUVÉ POUR RETIRER LE
+PAQUET**, pas pour supprimer la machine ni les archives, et pas pour
+appeler l'API Cloudflare.
+
+- Le shell honorait `PROBE_EXPIRES_AT`. `scheduled` et `POST /probe`
+  appellent `isMarketProbeWindowOpen` avant `runMarketProbe`. Avec
+  `PROBE_ENABLED=true` et `now >= expiresAt`, le lot reste `inactive` et
+  aucun fetch amont n'a lieu. Le cron Cloudflare `11 * * * *` continuait
+  d'invoquer cette fonction vide. Le dépôt avait déjà `PROBE_ENABLED`
+  à `false`, mais le cron restait dans `wrangler.jsonc` et la production
+  gardait l'override `true`.
+- Rien n'importe `@dodash/market-source-probe`. L'agent, le service marché,
+  le dashboard, l'API dashboard et le collector P7 ne le bindent pas. Le
+  manifeste de release ne le déploie pas. Le failover et le profil P7
+  citent les sémantiques du modèle et les rapports archivés
+  `market-source-probe-v1`, pas le Worker vivant.
+- `qualifyCoinbaseL2` ne vivait que dans ce paquet. La qualification
+  normative reste `evaluateP7SourceCandidate` dans les modèles. Les
+  commandes de reproduction du 14 octobre deviennent historiques.
+- La surface publique des modèles ne change pas. Un test épingle la
+  fenêtre archivée `1791925486713` → `1792011886713` comme close au
+  14 novembre 2026 même si `enabled` est vrai.
+- Aucun `wrangler deploy`, `delete`, `secret` ou changement de config
+  Cloudflare dans cette revue. Live inchangé. La commande de suppression
+  est réservée à l'opérateur, avec le nom explicite
+  `dodash-market-source-probe-20261013`.
+
+**Verdict : le script et son cron sortent du dépôt. La machine reste.**

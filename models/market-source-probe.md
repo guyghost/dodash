@@ -1,8 +1,13 @@
 # Comparateur de sources depuis Cloudflare — 13 octobre 2026
 
-Statut : normatif, modélisé et revu avant implémentation. Worker diagnostic distinct autorisé
-par l'opérateur ; aucune intégration au bot, aucun ordre, aucun transfert,
-aucun secret de trading ni binding vers les Workers existants.
+Statut : fenêtre close, script retiré du dépôt le 14 novembre 2026.
+`marketSourceProbeMachine` reste la décision historique des lots archivés
+`market-source-probe-v1` et des sémantiques citées par le failover.
+Aucune intégration au bot, aucun ordre, aucun transfert, aucun secret de
+trading et aucun binding vers les Workers existants. Aucune nouvelle
+fenêtre, aucun cron et aucun redéploiement. La suppression du script
+Cloudflare, de son cron et de son secret est l'opération opérateur de
+`docs/operations/market-source-probe.md` ; ce dépôt ne l'exécute pas.
 
 ## Workflow XState
 
@@ -47,11 +52,19 @@ Hyperliquid via Base concerne les fonds et reste hors périmètre.
 
 - `GET /health` sans effets ; `POST /probe` exige un token diagnostic ≥ 32
   caractères, aucun paramètre/query/body ; secret distinct du bot.
-- Cron `11 * * * *`, inactif par défaut ; fenêtre autorisée de 24 h maximum.
-  Le décalage évite le réveil `HH:01` du bot et ses premiers retries : ces
-  requêtes peuvent néanmoins partager un quota de sortie, à signaler comme
-  influence possible, pas comme une expérience parfaitement indépendante.
-  Aucun état de compte, secret broker, stockage KV/DO ou endpoint d'ordre.
+- La campagne d'octobre 2026 utilisait le cron `11 * * * *`, décalé du
+  réveil `HH:01` du bot. Ce cron n'est plus autorisé : le script n'est plus
+  dans le dépôt, pour qu'un déploiement ne le recrée pas. Un quota de
+  sortie partagé avec le bot restait une influence possible, pas une
+  expérience indépendante. Aucun état de compte, secret broker, stockage
+  KV/DO ou endpoint d'ordre.
+- `isMarketProbeWindowOpen` n'est vrai que si `enabled`, `requestCount`
+  vaut 15, les trois instants sont des entiers sûrs ≥ 0,
+  `startedAt ≤ now < expiresAt` et `expiresAt - startedAt ≤ 24 h`.
+  Sinon `START` termine en `inactive` et aucun appel amont n'est permis.
+  La fenêtre archivée `1791925486713` → `1792011886713`
+  (2026-10-13 21:04:46.713 UTC → 2026-10-14 21:04:46.713 UTC) est close
+  pour tout instant du 14 novembre 2026, y compris si `enabled` est vrai.
 - URLs amont fixes, redirects refusés, réponse ≤ 2 MiB, timeout ≤ 10 s et
   borné par la durée restante. Journaux : résumés uniquement, pas de headers
   d'authentification, bodies amont ou erreurs libres.
@@ -60,14 +73,19 @@ Hyperliquid via Base concerne les fonds et reste hors périmètre.
   statuts HTTP, latence, Retry-After, cache amont, empreinte du body, qualité.
 - Protection globale persistante par quota non implémentée : token détenu
   seulement par l'opérateur ; pas d'accès public aux sondes coûteuses.
-- L'expiration coupe les appels amont, pas la ressource Worker/cron. Suppression
-  requiert autorisation distincte ; aucun déploiement du bot n'est permis.
+- L'expiration coupait les appels amont sans retirer la ressource
+  Cloudflare. Le code du script honorait déjà cette borne : le handler
+  planifié retournait sans appel dès que la fenêtre était close. Le cron
+  `11 * * * *` continuait néanmoins d'invoquer le Worker, avec
+  `PROBE_ENABLED=true` encore posé en production après l'échéance. Le
+  retrait du 14 novembre 2026 retire le script du dépôt. Aucun déploiement
+  du bot, et aucun déploiement de ce Worker, n'est permis.
 
 ## Critères de vérification
 
-Tests : expiration/default fermé, HTTP sans authentification ne fetch pas,
-requêtes fixes, 429 bloque le même fournisseur, bornes/contiguïté/identités,
-body trop grand, JSON invalide, timeout, aucun trade/binding. Déployer d'abord
-inactif, poser le token diagnostic, activer avec bornes, vérifier health et
-une sonde manuelle. Les résultats ponctuels ne constituent pas une SLA ;
-la première fenêtre daily est attendue à 00:11 sur le cron, pas prétendue mesurée.
+Tests : expiration et défaut fermés, fenêtre archivée encore close le
+14 novembre 2026 avec `enabled` vrai, 429 qui bloque le même fournisseur.
+Le paquet `apps/market-source-probe` n'est plus un point d'entrée : rien
+ne l'importait. Les archives et la machine suffisent. Pas de déploiement,
+pas de cron, pas de lecture de secret. Les résultats ponctuels d'octobre
+ne constituent pas une SLA.

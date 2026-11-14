@@ -175,7 +175,8 @@ distante ou campagne n'est créé. Les APIs de fixtures ne constituent pas
 une authentification opérateur distante.
 
 Depuis la racine, `npm test` inclut les tests du collector ; `npm run
-test:runtime` vérifie le probe et le SDK paper. Les tests runtime nécessitent
+test:runtime` vérifie le SDK paper (`apps/agent`). Le probe de sources a
+été retiré le 14 novembre 2026. Les tests runtime nécessitent
 des ports loopback locaux. Le calendrier complet de 180 jours est testé,
 mais la charge économique complète sur 180 jours sous workerd reste à mesurer.
 Les hashes/R2 ne constituent pas un anchor indépendant.
