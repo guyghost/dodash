@@ -364,3 +364,25 @@ relancée. L'hypothèse de dépendance au régime du 1-min (verdict §4.2) est
 routée vers la boucle backtest (campagne #40, `regime-aware-selector`), pas
 vers le paper. Le passage live reste hors périmètre :
 `models/production-launch.md` et `models/live-preflight.ts` inchangés.
+
+## 14. Amendement 2026-11-14 — le book survit au déploiement
+
+Constat (book paper ~21,1 k$, BTC 0,1288, ETH 4,4347, redéploiement
+`dodash-paper-agent` du 6 novembre 2026, commit `d66e8da`) : `CANCELLED`
+sur les deux créneaux est l'issue de `STOP_REQUESTED` → `cancelling` →
+`markCancelled`. Le cash et les positions ne sont pas réécrits par cette
+issue. Le retour à 10 000 $ par créneau est `startPortfolioAgent`, qui
+reconstruisait chaque manche avec `initialProductRuntime(initialCapital)`.
+L'épinglage de classe
+(`docs/operations/incident-do-version-pinning-2026-10-30.md`) motive un
+stop/start pour charger le nouveau code ; il ne vide pas SQLite tant que
+la migration `v1` reste en place. Le diff `8a2f391..d66e8da` (base `main`
+du commit déployé ; le SHA de production précédent n'est pas un objet git)
+ne change pas cette initialisation.
+
+**Décision** : le book suit `models/paper-book-durability.md`. `START` et
+le redémarrage recopient le book et `lastDecisionCandleClosedAt`. Seul
+`/reset` explicite, agent quiescent, `canControl`, produit `portfolio.reset`
+et ramène chaque manche à `initialCapital`. Une restauration invalide
+désarme sans effacer la session. Le mode live et les flags
+`LIVE_TRADING_ENABLED` / `HYPERLIQUID_PERP_TRADING_ENABLED` sont inchangés.

@@ -11,6 +11,7 @@ import {
 	type AiTrendBias,
 	type AiTrendSignal,
 	acceptPaperValuationMark,
+	applyPaperBookCommand,
 	assessLiveTradingAgentIdentity,
 	type ControlPermissions,
 	DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
@@ -18,10 +19,13 @@ import {
 	type DashboardPnlHistoryResult,
 	type DashboardPnlOrderRow,
 	type DashboardPortfolioSummaryResult,
+	type DurablePaperBook,
 	type LivePreflightFailureReason,
 	type MarketRetryWakePayload,
 	normalizePaperValuationMark,
 	type PaperValuationMark,
+	parseDurablePaperBook,
+	type PaperBookResetAudit,
 	PORTFOLIO_PRODUCT_STAGGER_MS,
 	planCycleWake,
 	projectDashboardPnlHistory,
@@ -130,16 +134,20 @@ import {
 	resolveOperatorNotificationSettings,
 } from "./operator-notifications.js";
 import {
+	carryPaperProductRuntime,
 	createPortfolioMachineSession,
 	initialProductRuntime,
+	overlayDurablePaperPosition,
 	type PersistedPortfolioMachine,
 	type PortfolioSessionState,
 	portfolioEventForProductPhase,
 	portfolioProductIds,
 	productGrossExposure,
+	projectDurablePaperBook,
 	projectPortfolioSessionSummary,
 	proposePortfolioRisk,
 	resolveRestoredPortfolioSession,
+	samePortfolioProductIds,
 	sendPortfolioEvent,
 } from "./portfolio-runtime.js";
 import {
@@ -220,6 +228,7 @@ export type AgentCommandResult =
 					| "LIVE_AGENT_NAME_MISMATCH"
 					| "LIVE_EXECUTION_UNAVAILABLE"
 					| "NOT_CONFIGURED"
+					| "CONTROL_PERMISSION_REQUIRED"
 					| "PERP_PRODUCT_NOT_ALLOWED"
 					| "PERP_POLICY_MISMATCH"
 					| "PERP_ADMISSION_REQUIRED"
@@ -277,8 +286,21 @@ const parseJson = <T>(raw: string): T | null => {
 	}
 };
 
+const PAPER_BOOK_ROW_ID = "session";
+
 export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	override initialState = INITIAL_AGENT_STATE;
+
+	/**
+	 * Toute écriture d'état recopié le book paper dans une table dédiée.
+	 * Un blob SDK réinitialisé se reconstruit depuis cette copie (INV-B3).
+	 */
+	override setState(next: TradingAgentState): void {
+		super.setState(next);
+		if (next.portfolioSession !== null) {
+			this.persistDurablePaperSession(next.portfolioSession);
+		}
+	}
 
 	private readonly operatorNotificationDeduper =
 		createOperatorNotificationDeduper();
@@ -353,6 +375,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		this.ensureAiTrendColumn("threshold_bps", "REAL");
 		// §9 : la PK doit distinguer v1/v2 — reconstruction idempotente.
 		this.migrateAiTrendSignalsPrimaryKey();
+		this.ensurePaperBookSchema();
 		console.log(
 			JSON.stringify({
 				event: "agent_boot",
@@ -420,6 +443,83 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		}
 	}
 
+	private ensurePaperBookSchema(): void {
+		this.sql`
+      CREATE TABLE IF NOT EXISTS dodash_paper_book (
+        id TEXT PRIMARY KEY,
+        session_json TEXT NOT NULL,
+        book_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `;
+		this.sql`
+      CREATE TABLE IF NOT EXISTS dodash_paper_book_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `;
+	}
+
+	private persistDurablePaperSession(session: PortfolioSessionState): void {
+		this.ensurePaperBookSchema();
+		const book = projectDurablePaperBook(session);
+		this.sql`
+      INSERT OR REPLACE INTO dodash_paper_book (id, session_json, book_json, updated_at)
+      VALUES (
+        ${PAPER_BOOK_ROW_ID},
+        ${JSON.stringify(session)},
+        ${JSON.stringify(book)},
+        ${Date.now()}
+      )
+    `;
+	}
+
+	private readPaperBookRow(): { session_json: string; book_json: string } | null {
+		try {
+			this.ensurePaperBookSchema();
+			const rows = this.sql`
+        SELECT session_json, book_json FROM dodash_paper_book WHERE id = ${PAPER_BOOK_ROW_ID}
+      ` as unknown as readonly { session_json?: string; book_json?: string }[];
+			const row = rows[0];
+			if (row === undefined || typeof row.session_json !== "string") return null;
+			return {
+				session_json: row.session_json,
+				book_json: typeof row.book_json === "string" ? row.book_json : "",
+			};
+		} catch (error) {
+			console.error(
+				"PAPER_BOOK_READ_FAILED",
+				error instanceof Error ? error.message : "unknown",
+			);
+			return null;
+		}
+	}
+
+	private readDurablePaperSession(): PortfolioSessionState | null {
+		const row = this.readPaperBookRow();
+		if (row === null) return null;
+		const parsed = parseJson<unknown>(row.session_json);
+		if (parsed === null) return null;
+		const restored = resolveRestoredPortfolioSession(parsed);
+		return restored.ok ? restored.session : null;
+	}
+
+	private readDurablePaperBook(): DurablePaperBook | null {
+		const row = this.readPaperBookRow();
+		if (row === null || row.book_json.length === 0) return null;
+		return parseDurablePaperBook(parseJson<unknown>(row.book_json));
+	}
+
+	private appendPaperBookAudit(audit: PaperBookResetAudit): void {
+		this.ensurePaperBookSchema();
+		this.sql`
+      INSERT INTO dodash_paper_book_audit (event, payload_json, created_at)
+      VALUES (${audit.event}, ${JSON.stringify(audit)}, ${Date.now()})
+    `;
+	}
+
 	private ensureProductIdColumn(table: string): void {
 		const columns = this.ctx.storage.sql
 			.exec(`PRAGMA table_info(${table})`)
@@ -476,9 +576,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				reason: restored.reason,
 			}),
 		);
+		// INV-B4 : désarmer sans effacer le book. Le capital initial n'est pas un repli.
 		this.setState({
 			...this.state,
-			portfolioSession: null,
 			portfolioRestoreError: restored.reason,
 			enabled: false,
 			updatedAt: Date.now(),
@@ -487,7 +587,22 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
 	override async onStart(): Promise<void> {
 		this.ensureTradingPersistenceSchema();
+		if (this.state.portfolioSession === null) {
+			const recovered = this.readDurablePaperSession();
+			if (recovered !== null) {
+				this.setState({
+					...this.state,
+					portfolioSession: recovered,
+					enabled: portfolioIsEnabled(recovered),
+					portfolioRestoreError: null,
+					updatedAt: Date.now(),
+				});
+			}
+		}
 		this.restorePortfolioSession();
+		if (this.state.portfolioSession !== null) {
+			this.persistDurablePaperSession(this.state.portfolioSession);
+		}
 		const portfolio = this.state.portfolioSession;
 		if (this.state.enabled && portfolio !== null) {
 			await this.ensureIntervalSchedule(
@@ -778,6 +893,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
 	async runNow(): Promise<AgentCommandResult> {
 		this.ensureTradingPersistenceSchema();
+		if (this.state.portfolioRestoreError !== null) {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
 		if (this.state.portfolioSession !== null) {
 			await this.runPortfolio(true);
 			return { ok: true, state: this.stateSnapshot() };
@@ -791,6 +909,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
 	async scheduledTick(): Promise<void> {
 		this.ensureTradingPersistenceSchema();
+		if (this.state.portfolioRestoreError !== null) return;
 		if (this.state.portfolioSession !== null) {
 			await this.runPortfolio(true, null, true);
 			return;
@@ -809,6 +928,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	 */
 	async retryTick(payload?: MarketRetryWakePayload): Promise<void> {
 		this.ensureTradingPersistenceSchema();
+		if (this.state.portfolioRestoreError !== null) return;
 		const targetProductId = (payload?.productId ?? null) as ProductId | null;
 		const wake = resolveRetryWake({
 			now: Date.now(),
@@ -1253,9 +1373,12 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		if (multi.portfolioRisk === undefined) {
 			return { ok: false, error: { code: "INVALID_CONFIGURATION" } };
 		}
+		const previous = this.state.portfolioSession;
+		const restoreBlocked = this.state.portfolioRestoreError !== null;
 		if (
-			(this.state.portfolioSession !== null &&
-				portfolioIsEnabled(this.state.portfolioSession)) ||
+			(!restoreBlocked &&
+				previous !== null &&
+				portfolioIsEnabled(previous)) ||
 			(this.state.machine !== null &&
 				machineIsEnabled(this.state.machine.value))
 		) {
@@ -1272,6 +1395,36 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			const admission = admitAgentConfiguration(projected.value);
 			if (admission.status === "REJECTED") {
 				return { ok: false, error: { code: admission.reasonCode } };
+			}
+		}
+		const requestedIds = multi.products.map((slot) => slot.productId);
+		const sameProducts =
+			previous !== null &&
+			samePortfolioProductIds([...portfolioProductIds(previous)], requestedIds);
+		if (
+			previous !== null &&
+			!sameProducts &&
+			this.state.paperBookUnlocked !== true
+		) {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
+		const durableBook = previous === null ? this.readDurablePaperBook() : null;
+		if (
+			durableBook !== null &&
+			!samePortfolioProductIds(
+				durableBook.products.map((position) => position.productId),
+				requestedIds,
+			) &&
+			this.state.paperBookUnlocked !== true
+		) {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
+		if (sameProducts && previous !== null) {
+			const carried = applyPaperBookCommand(projectDurablePaperBook(previous), {
+				type: "START",
+			});
+			if (!carried.ok || carried.audit !== null) {
+				return { ok: false, error: { code: "INVALID_STATE" } };
 			}
 		}
 		if (this.state.schedule !== null) {
@@ -1292,29 +1445,48 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
 		const products: Record<string, PortfolioProductRuntime> = {};
 		for (const slot of multi.products) {
+			const previousProduct = sameProducts
+				? previous?.products[slot.productId]
+				: undefined;
 			const productSession = createTradingMachineSession({
 				agentId: this.name,
 				strategyIds: multi.strategyIds,
 				maxMarketStalenessMs: multi.maxMarketStalenessMs,
+				...(previousProduct === undefined
+					? {}
+					: {
+							lastDecisionCandleClosedAt:
+								previousProduct.machine.context.lastDecisionCandleClosedAt,
+						}),
 			});
 			productSession.send({ type: "START_REQUESTED", permissions });
 			const machine = productSession.record;
 			productSession.stop();
-			products[slot.productId] = initialProductRuntime(
-				machine,
-				multi.initialCapital,
+			const seeded = initialProductRuntime(machine, multi.initialCapital);
+			const durablePosition = durableBook?.products.find(
+				(position) => position.productId === slot.productId,
 			);
+			products[slot.productId] =
+				previousProduct !== undefined
+					? carryPaperProductRuntime(previousProduct, machine)
+					: durablePosition !== undefined
+						? overlayDurablePaperPosition(seeded, durablePosition)
+						: seeded;
 		}
 
 		this.setState({
-			...INITIAL_AGENT_STATE,
+			...this.state,
+			configuration: null,
+			machine: null,
 			enabled: true,
+			schedule: null,
 			portfolioSession: Object.freeze({
 				configuration: multi,
 				portfolio: portfolioRecord,
 				products: Object.freeze(products),
 			}),
 			portfolioRestoreError: null,
+			paperBookUnlocked: false,
 			updatedAt: Date.now(),
 		});
 
@@ -1383,16 +1555,70 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		if (session === null) {
 			return { ok: false, error: { code: "NOT_CONFIGURED" } };
 		}
-		for (const productId of portfolioProductIds(session)) {
-			await this.controlProduct(session, productId, {
-				type: "RESET",
-				permissions,
-			});
+		if (!permissions.canControl) {
+			return { ok: false, error: { code: "CONTROL_PERMISSION_REQUIRED" } };
 		}
-		const latest = this.state.portfolioSession;
-		if (latest !== null) {
-			this.persistPortfolio(
-				sendPortfolioEvent(latest.portfolio, { type: "RESET" }),
+		if (portfolioIsEnabled(session)) {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
+		const decision = applyPaperBookCommand(projectDurablePaperBook(session), {
+			type: "RESET",
+			explicit: true,
+			initialCapital: session.configuration.initialCapital,
+		});
+		if (!decision.ok || decision.audit === null) {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
+		const products: Record<string, PortfolioProductRuntime> = {};
+		for (const productId of portfolioProductIds(session)) {
+			const fresh = createTradingMachineSession({
+				agentId: this.name,
+				strategyIds: session.configuration.strategyIds,
+				maxMarketStalenessMs: session.configuration.maxMarketStalenessMs,
+			});
+			products[productId] = initialProductRuntime(
+				fresh.record,
+				session.configuration.initialCapital,
+			);
+			fresh.stop();
+		}
+		const limits = session.configuration.portfolioRisk ?? {
+			maxGrossExposure: 1,
+			maxDailyLoss: 1,
+		};
+		const orchestrator = createPortfolioMachineSession({
+			products: [...portfolioProductIds(session)],
+			limits,
+		});
+		const portfolioRecord = orchestrator.record;
+		orchestrator.stop();
+		this.setState({
+			...this.state,
+			enabled: false,
+			portfolioSession: Object.freeze({
+				configuration: session.configuration,
+				portfolio: portfolioRecord,
+				products: Object.freeze(products),
+			}),
+			portfolioRestoreError: null,
+			paperBookUnlocked: true,
+			updatedAt: Date.now(),
+		});
+		console.log(
+			JSON.stringify({
+				event: decision.audit.event,
+				explicit: true,
+				agentId: this.name,
+				before: decision.audit.before,
+				after: decision.audit.after,
+			}),
+		);
+		try {
+			this.appendPaperBookAudit(decision.audit);
+		} catch (error) {
+			console.error(
+				"PAPER_BOOK_AUDIT_FAILED",
+				error instanceof Error ? error.message : "unknown",
 			);
 		}
 		return { ok: true, state: this.stateSnapshot() };
@@ -1492,7 +1718,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		staggerProducts = false,
 	): Promise<void> {
 		const session = this.state.portfolioSession;
-		if (session === null) return;
+		if (session === null || this.state.portfolioRestoreError !== null) return;
 		if (triggerAlarm) {
 			for (const productId of portfolioProductIds(session)) {
 				this.reportProductExposureFromState(productId);

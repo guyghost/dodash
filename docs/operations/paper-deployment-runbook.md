@@ -363,3 +363,55 @@ Vérification au premier cycle aligné (`HH:01`) : signal `target-exposure`
 (`TARGET_EXPOSURE_TREND_UP/DOWN` ou `WARMUP`) ; ordre seulement à une ancre
 (lundi, changement de tendance), le 1er du mois ou sur dérive > 10 points ;
 `LIVE_TRADING_ENABLED=false`, `HYPERLIQUID_PERP_TRADING_ENABLED=false`.
+
+## 10. Le book survit au déploiement (2026-11-14)
+
+Modèle : `models/paper-book-durability.md`. Un `wrangler deploy` du worker
+paper, un redémarrage du Durable Object, et un `POST /start` **conservent**
+le cash, la quantité et le prix moyen de chaque manche. `CANCELLED` est
+l'issue d'un `/stop` (cycle annulé) : ce n'est pas une remise à zéro du
+book.
+
+Le 6 novembre 2026, 11:43 heure de Paris, le redéploiement de
+`dodash-paper-agent` (commit déployé `d66e8da`) a émis `CANCELLED` sur
+BTC-USD et ETH-USD alors que le book valait environ 21,1 k$ (BTC 0,1288,
+ETH 4,4347). Le SHA de production précédent n'est pas dans git : les
+identifiants `b42f5930`, `3d3f7fb6`, `e0ea9937` du post-mortem du 30
+octobre sont des versions Cloudflare. La base `main` de `d66e8da` est
+`8a2f391` (31 octobre 2026, 00:34 +0100). Le diff `8a2f391..d66e8da` ne
+réinitialise pas le book (PK du signal de tendance, variables
+d'endurance). La migration SQLite `v1` / `TradingAgent` est la même : le
+deploy ne recrée pas la classe et ne vide pas le stockage. L'épinglage de
+classe laisse l'isolate sur l'ancien code jusqu'à un recyclage. Le stop
+utilisé pour ce recyclage émet `CANCELLED` sans solder les positions ; le
+`/start` qui suivait reconstruisait chaque manche à `initialCapital`
+(10 000 $). C'est ce start, pas le constructeur du SDK (`initialState`
+laisse `portfolioSession` à null et le cash top-level à 0), qui a rendu
+le book plat. Le `decision.missed` du 7 novembre est le premier cycle
+d'une machine neuve (`lastDecisionCandleClosedAt` vide) clos hors de la
+fenêtre de fraîcheur.
+
+Depuis ce correctif :
+
+- archiver **avant** toute commande de contrôle (`scripts/archive-paper-state.mjs`) ;
+- un deploy **ne doit pas** être suivi d'un `/stop` + `/start` pour « prendre
+  le nouveau code » si le but est de garder le book. Vérifier
+  `GET /api/agents/btc-usd-paper/build-info` (`503 STALE_DURABLE_OBJECT` =
+  isolate encore épinglé). Le book reste dans SQLite (`dodash_paper_book`
+  et `cf_agents_state`) au redémarrage de l'isolate ;
+- `POST /start` avec les mêmes créneaux reprend le book et la dernière
+  bougie de décision. Il ne ramène pas les manches à 10 000 $ ;
+- seul `POST /reset`, agent déjà arrêté (`/stop` d'abord), exige le droit
+  de contrôle, écrit le journal `portfolio.reset` (avant / après) et une
+  ligne `dodash_paper_book_audit`, puis pose 10 000 $ et une quantité nulle
+  par manche. Un reset sur un portefeuille encore actif est refusé
+  (`INVALID_STATE`) et ne modifie rien ;
+- un jeu de créneaux différent au `/start` est refusé tant que ce `/reset`
+  n'a pas déverrouillé le remplacement ;
+- `LIVE_TRADING_ENABLED` et `HYPERLIQUID_PERP_TRADING_ENABLED` restent
+  `false`. Cette section n'autorise aucun deploy, secret, ni changement de
+  config wrangler.
+
+Le `POST /reset` du §9 (« repart de 10 000 $ par créneau ») est désormais
+cette commande explicite. Le `/start` qui le suit ne refait pas la remise
+à zéro : il reprend le book déjà soldé.

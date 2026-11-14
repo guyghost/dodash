@@ -52,6 +52,9 @@ de retry ou une commande de contrôle ne lance jamais cette suite.
 - À la restauration, tout champ de contexte ajouté à une release est normalisé
   vers sa valeur fail-closed explicite avant `resolveState`. Un snapshot legacy
   ne peut laisser ni garde ni identifiant de contrôle dépendre de `undefined`.
+- Une restauration de session portefeuille invalide désarme l'agent et
+  conserve le book. Elle ne le remplace pas par le capital initial. Contrat :
+  `models/paper-book-durability.md` (INV-B1 à INV-B5).
 - `EFFECT_CANCEL_FAILED` marque une défaillance terminale puis passe par
   `persisting`. Après `PERSIST_SUCCEEDED`, cette défaillance est prioritaire sur
   stop, kill et scheduling et atteint uniquement `failed`.

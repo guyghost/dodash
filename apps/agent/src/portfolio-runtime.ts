@@ -6,6 +6,8 @@ import {
   tradingCycleMachine,
   type DashboardPortfolioProductInput,
   type DashboardPortfolioSummaryResult,
+  type DurablePaperBook,
+  type DurablePaperPosition,
   type MultiProductPortfolioContext,
   type MultiProductPortfolioEvent,
   type MultiProductPortfolioInput,
@@ -547,3 +549,53 @@ export const resolveRestoredPortfolioSession = (
     }),
   };
 };
+
+/** Projection comptable du book (models/paper-book-durability.md). */
+export const projectDurablePaperBook = (
+  session: PortfolioSessionState,
+): DurablePaperBook =>
+  Object.freeze({
+    products: Object.freeze(
+      portfolioProductIds(session).flatMap((productId) => {
+        const product = session.products[productId];
+        if (product === undefined) return [];
+        const position: DurablePaperPosition = Object.freeze({
+          productId,
+          cash: product.portfolio.cash,
+          positionQuantity: product.portfolio.positionQuantity,
+          averagePrice: product.portfolio.averagePrice,
+        });
+        return [position];
+      }),
+    ),
+  });
+
+/** Reprise d'une manche : la machine redémarre, le book comptable reste. */
+export const carryPaperProductRuntime = (
+  previous: PortfolioProductRuntime,
+  machine: PersistedTradingMachine,
+): PortfolioProductRuntime =>
+  Object.freeze({
+    ...previous,
+    machine,
+  });
+
+/** Applique cash / quantité / prix moyen d'un book durable sur une manche neuve. */
+export const overlayDurablePaperPosition = (
+  runtime: PortfolioProductRuntime,
+  position: DurablePaperPosition,
+): PortfolioProductRuntime =>
+  Object.freeze({
+    ...runtime,
+    portfolio: Object.freeze({
+      cash: position.cash,
+      positionQuantity: position.positionQuantity,
+      averagePrice: position.averagePrice,
+    }),
+  });
+
+export const samePortfolioProductIds = (
+  left: readonly string[],
+  right: readonly string[],
+): boolean =>
+  left.length === right.length && left.every((productId, index) => productId === right[index]);

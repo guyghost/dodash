@@ -524,6 +524,18 @@ export {
 	normalizePaperValuationMark,
 	projectPaperValuation,
 } from "./paper-valuation.js";
+export type {
+	DurablePaperBook,
+	DurablePaperPosition,
+	PaperBookCommand,
+	PaperBookCommandResult,
+	PaperBookResetAudit,
+} from "./paper-book-durability.js";
+export {
+	applyPaperBookCommand,
+	paperBookAfterRestart,
+	parseDurablePaperBook,
+} from "./paper-book-durability.js";
 export { perpOrderUiMachine } from "./perp-order-ui.machine.js";
 export type {
 	PerpOrderFormDraft,

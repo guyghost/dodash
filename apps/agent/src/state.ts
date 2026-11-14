@@ -74,6 +74,11 @@ export interface TradingAgentState {
    */
   readonly portfolioSession: PortfolioSessionState | null;
   readonly portfolioRestoreError: "INVALID_PORTFOLIO_SNAPSHOT" | null;
+  /**
+   * Vrai seulement après un `/reset` explicite : le prochain `/start` peut
+   * remplacer le jeu de créneaux. Absent sur un état legacy ⇒ verrouillé.
+   */
+  readonly paperBookUnlocked?: boolean;
   readonly updatedAt: number;
 }
 
@@ -97,6 +102,7 @@ export const INITIAL_AGENT_STATE: TradingAgentState = Object.freeze({
   lastMissedDecisionCandleClosedAt: null,
   portfolioSession: null,
   portfolioRestoreError: null,
+  paperBookUnlocked: false,
   updatedAt: 0,
 });
 
