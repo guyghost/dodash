@@ -64,8 +64,19 @@ export interface MissedDecisionResolution {
  * A decision candle is missed when a cycle completes after the freshness
  * window without a recorded decision for it, and it has not been reported yet.
  */
-/** Délai avant le produit de rang k ≥ 1 sur un réveil de grille (§4). */
+/**
+ * Delay before product rank k ≥ 1 on a grid wake (§4).
+ * Decision candles no longer call Coinbase, so the 8s jittered gap is
+ * withdrawn. Two seconds still separates the Coinbase execution quotes
+ * of BTC and ETH when both products are about to place an order.
+ */
 export const PORTFOLIO_PRODUCT_STAGGER_MS = 2_000;
+
+/** First executed product waits 0. Later products wait the constant gap. */
+export const planPortfolioProductStaggerMs = (executedBefore: number): number =>
+  !Number.isSafeInteger(executedBefore) || executedBefore <= 0
+    ? 0
+    : PORTFOLIO_PRODUCT_STAGGER_MS;
 
 export const resolveMissedDecision = (input: MissedDecisionInput): MissedDecisionResolution => {
   const decisionCandleClosedAt =

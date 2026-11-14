@@ -6,7 +6,11 @@ import {
 	type Result,
 } from "@dodash/domain";
 import { FUNDING_AVG_PERIOD } from "@dodash/indicators-prolog";
-import type { ControlPermissions, WorkflowError } from "@dodash/models";
+import {
+	EXECUTION_PRICE_MAX_DIVERGENCE_BPS,
+	type ControlPermissions,
+	type WorkflowError,
+} from "@dodash/models";
 import type { PaperPortfolio } from "@dodash/paper-execution";
 import type { RiskDecision } from "@dodash/risk";
 import type { CoinbaseAccountSnapshot } from "./coinbase-account.js";
@@ -31,7 +35,8 @@ import {
 import type { HyperliquidExecutionSettings } from "./hyperliquid-settings.js";
 import { resolveHyperliquidSettings } from "./hyperliquid-settings.js";
 import type { PersistedTradingMachine } from "./machine-session.js";
-import { fetchMarketSnapshot } from "./market-service.js";
+import { guardExecutionPrice } from "./execution-price-guard.js";
+import { fetchExecutionQuote, fetchMarketSnapshot } from "./market-service.js";
 import type { TradingEnv } from "./trading-agent.js";
 import type {
 	CycleArtifacts,
@@ -264,6 +269,20 @@ export const createTradingCycleEffects = (
 			portfolio,
 			at,
 		) => {
+			const quote = await fetchExecutionQuote(
+				deps.env.MARKET_DATA,
+				deps.env.INTERNAL_SERVICE_TOKEN,
+				deps.configuration.productId,
+			);
+			const guarded = guardExecutionPrice({
+				productId: deps.configuration.productId,
+				decisionPrice: marketPrice,
+				quote,
+				maxDivergenceBps:
+					deps.configuration.executionPriceMaxDivergenceBps ??
+					EXECUTION_PRICE_MAX_DIVERGENCE_BPS,
+			});
+			if (!guarded.ok) return { status: "REJECTED", error: guarded.error };
 			if (deps.configuration.executionMode === "paper") {
 				return deps.submitPaperOrder(
 					intent,

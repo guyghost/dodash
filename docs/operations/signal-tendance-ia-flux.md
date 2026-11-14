@@ -12,7 +12,7 @@ flowchart TB
         subgraph MACH["tradingCycleMachine (XState — inchangée)"]
             PH["fetchingMarketData → indicators →<br/>strategies → allocating → risk"]
         end
-        PH -->|"effet fetchMarketData"| MD["MARKET_DATA (service)<br/>→ Coinbase"]
+        PH -->|"effet fetchMarketData"| MD["MARKET_DATA (service)<br/>→ Hyperliquid, puis dYdX"]
         MD -->|"snapshot OK"| SHADOW
         PH --> CORE
         subgraph CORE["Cœur pur (models/, INV 8)"]

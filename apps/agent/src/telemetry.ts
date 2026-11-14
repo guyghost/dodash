@@ -1,4 +1,4 @@
-import type { WorkflowError } from "@dodash/models";
+import type { CandleCloseMarkSource, WorkflowError } from "@dodash/models";
 
 export type TradingTelemetryEventType =
   | "cycle.completed"
@@ -29,7 +29,7 @@ export interface TradingTelemetryEvent {
   readonly positionQuantity: number | null;
   readonly otherExposureNotional: number | null;
   readonly valuationQuality: "fresh" | "stale" | "unavailable" | "not_applicable";
-  readonly valuationPriceSource: "COINBASE_CANDLE_CLOSE" | "NONE";
+  readonly valuationPriceSource: CandleCloseMarkSource | "NONE";
   readonly valuationPrice: number | null;
   readonly valuationObservedAt: number | null;
   readonly valuationAgeMs: number | null;

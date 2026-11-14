@@ -9,7 +9,12 @@ import {
 	TIMEFRAME_MILLISECONDS,
 	validateMarketDataIntegrity,
 } from "@dodash/domain";
-import { planMarketRetry, type WorkflowError } from "@dodash/models";
+import {
+	candleCloseMarkSource,
+	DECISION_MARKET_SOURCE_ORDER,
+	planMarketRetry,
+	type WorkflowError,
+} from "@dodash/models";
 import { z } from "zod";
 
 import { readBoundedJson } from "./bounded-json.js";
@@ -206,46 +211,98 @@ const fetchMarketSnapshotUnqualified = async (
 	const duration = TIMEFRAME_MILLISECONDS[configuration.timeframe];
 	const currentBucketStart = Math.floor(triggeredAt / duration) * duration;
 	const latestClosedStart = currentBucketStart - duration;
-	let response: Response;
-	try {
-		response = await service.fetch("https://market-data/internal/candles", {
-			method: "POST",
-			headers: {
-				authorization: `Bearer ${internalToken}`,
-				"content-type": "application/json",
-			},
-			body: JSON.stringify({
-				productId: configuration.productId,
-				timeframe: configuration.timeframe,
-				limit: configuration.candleLimit,
-				end: Math.floor(latestClosedStart / 1_000),
-			}),
-		});
-	} catch (caught) {
+	const rejected: string[] = [];
+	for (const source of DECISION_MARKET_SOURCE_ORDER) {
+		if (source === "COINBASE") continue;
+		const wire = source === "HYPERLIQUID" ? "hyperliquid" : "dydx";
+		let response: Response;
+		try {
+			response = await service.fetch("https://market-data/internal/candles", {
+				method: "POST",
+				headers: {
+					authorization: `Bearer ${internalToken}`,
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({
+					productId: configuration.productId,
+					timeframe: configuration.timeframe,
+					limit: configuration.candleLimit,
+					end: Math.floor(latestClosedStart / 1_000),
+					sources: [source],
+				}),
+			});
+		} catch (caught) {
+			rejected.push(source);
+			console.warn(
+				JSON.stringify({
+					event: "decision_source_rejected",
+					source,
+					reason: "NETWORK_UNAVAILABLE",
+					errorType: caught instanceof Error ? caught.name : "UnknownError",
+				}),
+			);
+			continue;
+		}
+		if (response.status === 401 || response.status === 403) {
+			await response.body?.cancel().catch(() => undefined);
+			return err(error("AUTHENTICATION_FAILURE", false));
+		}
+		if (!response.ok) {
+			rejected.push(source);
+			console.warn(
+				JSON.stringify({
+					event: "decision_source_rejected",
+					source,
+					reason: responseError(response).code,
+					status: response.status,
+				}),
+			);
+			await response.body?.cancel().catch(() => undefined);
+			continue;
+		}
+
+		const assembled = await assembleDecisionSnapshot(
+			service,
+			internalToken,
+			configuration,
+			duration,
+			wire,
+			response,
+		);
+		if (assembled.ok) return assembled;
+		rejected.push(source);
 		console.warn(
 			JSON.stringify({
-				event: "market_service_fetch_failed",
-				errorType: caught instanceof Error ? caught.name : "UnknownError",
+				event: "decision_source_rejected",
+				source,
+				reason: assembled.error.code,
 			}),
 		);
-		return err(error("NETWORK_UNAVAILABLE", true));
 	}
+	console.warn(
+		JSON.stringify({
+			event: "decision_sources_exhausted",
+			productId: configuration.productId,
+			rejected,
+		}),
+	);
+	return err(error("MARKET_SOURCES_EXHAUSTED", true));
+};
 
-	if (!response.ok) {
-		console.warn(
-			JSON.stringify({
-				event: "market_service_response_failed",
-				status: response.status,
-			}),
-		);
-		await response.body?.cancel().catch(() => undefined);
-		return err(responseError(response));
-	}
-
+const assembleDecisionSnapshot = async (
+	service: MarketService,
+	internalToken: string,
+	configuration: AgentConfiguration,
+	duration: number,
+	wire: "hyperliquid" | "dydx",
+	response: Response,
+): Promise<Result<MarketSnapshot, WorkflowError>> => {
 	try {
 		const json = await readBoundedJson(response, MAX_MARKET_RESPONSE_BYTES);
 		const parsed = responseSchema.safeParse(json);
-		if (!parsed.success) return err(error("INVALID_RESPONSE", false));
+		if (!parsed.success || parsed.data.source !== wire) {
+			return err(error("INVALID_RESPONSE", false));
+		}
 
 		const product = createProductId(parsed.data.productId);
 		if (
@@ -262,22 +319,13 @@ const fetchMarketSnapshotUnqualified = async (
 			candles.push(candle.value);
 		}
 
-		// models/market-data-integrity.md §4.1 : point de branchement live —
-		// avant MARKET_DATA_READY, donc avant computingIndicators. Mapping
-		// des causes vers les codes fermés existants (table §3 du modèle).
-		// Revue PR #27 : le ticker est épinglé à la source des bougies du
-		// snapshot (INV 1/4 — jamais de snapshot multi-sources).
-		const pinnedSource =
-			parsed.data.source === "coinbase"
-				? "COINBASE"
-				: parsed.data.source === "hyperliquid"
-					? "HYPERLIQUID"
-					: "DYDX";
+		// Ticker pinned to the candle source. A failure here rejects only
+		// this source; the caller tries the next decision source.
 		const ticker = await fetchTickerPrice(
 			service,
 			internalToken,
 			configuration.productId,
-			pinnedSource,
+			wire === "hyperliquid" ? "HYPERLIQUID" : "DYDX",
 		);
 		if (!ticker.ok) return ticker;
 		const integrity = validateMarketDataIntegrity(candles, duration, {
@@ -303,6 +351,17 @@ const fetchMarketSnapshotUnqualified = async (
 		if (!Number.isSafeInteger(candleClosedAt)) {
 			return err(error("INVALID_RESPONSE", false));
 		}
+		const markSource = candleCloseMarkSource(parsed.data.source);
+		console.log(
+			JSON.stringify({
+				event: "market_snapshot_resolved",
+				productId: product.value,
+				source: parsed.data.source,
+				markSource,
+				cached: parsed.data.cached,
+				candleClosedAt,
+			}),
+		);
 		return ok(
 			Object.freeze({
 				productId: product.value,
@@ -312,7 +371,7 @@ const fetchMarketSnapshotUnqualified = async (
 				cached: parsed.data.cached,
 				valuationMark: Object.freeze({
 					price: lastCandle.close,
-					source: "COINBASE_CANDLE_CLOSE" as const,
+					source: markSource,
 					timeframe: parsed.data.timeframe,
 					candleClosedAt,
 					maxMarketStalenessMs: configuration.maxMarketStalenessMs,
@@ -322,4 +381,16 @@ const fetchMarketSnapshotUnqualified = async (
 	} catch {
 		return err(error("INVALID_RESPONSE", false));
 	}
+};
+
+/** Coinbase product quote used only to guard an order, never a decision candle. */
+export const fetchExecutionQuote = async (
+	service: MarketService,
+	internalToken: string,
+	productId: ProductId,
+): Promise<Result<number, WorkflowError>> => {
+	if (internalToken.length < 32) {
+		return err(error("AUTHENTICATION_FAILURE", false));
+	}
+	return fetchTickerPrice(service, internalToken, productId, "COINBASE");
 };

@@ -21,11 +21,19 @@ import {
 	resolveMarketSource,
 } from "@dodash/models";
 import {
-	serveBackupCandles,
 	serveBackupTicker,
+	serveDecisionCandles,
 	writeBasisReference,
 } from "./failover.js";
+import { runWithRateLimitBackoff } from "./rate-limit-backoff.js";
 import { createMarketMcpServer } from "./server.js";
+
+export interface MarketWorkerDeps {
+	readonly fetch?: typeof fetch;
+	readonly sleep?: (ms: number) => Promise<void>;
+	readonly randomUnit?: () => number;
+	readonly now?: () => number;
+}
 
 const MAX_INTERNAL_REQUEST_BYTES = 16_384;
 
@@ -65,11 +73,15 @@ const constantTimeEqual = (left: string, right: string): boolean => {
 	return difference === 0;
 };
 
-const createMarket = (env: MarketDataEnv): CoinbaseMarketData =>
+const createMarket = (
+	env: MarketDataEnv,
+	fetchImpl?: typeof fetch,
+): CoinbaseMarketData =>
 	new CoinbaseMarketData({
 		baseUrl: env.COINBASE_API_BASE_URL,
 		cache: env.MARKET_CACHE,
 		cacheTtlSeconds: Number(env.MARKET_CACHE_TTL_SECONDS),
+		...(fetchImpl === undefined ? {} : { fetch: fetchImpl }),
 	});
 
 const isAuthorizedInternalRequest = (
@@ -102,10 +114,15 @@ const marketErrorStatus = (error: MarketDataError): number => {
 	}
 };
 
+const logResolved = (entry: Record<string, unknown>): void => {
+	console.log(JSON.stringify({ event: "market_source_resolved", ...entry }));
+};
+
 const handleInternalRequest = async (
 	request: Request,
 	env: MarketDataEnv,
 	kind: "candles" | "ticker",
+	deps: MarketWorkerDeps = {},
 ): Promise<Response> => {
 	if (request.method !== "POST") {
 		return new Response("Method Not Allowed", {
@@ -124,7 +141,15 @@ const handleInternalRequest = async (
 		return json({ error: { code: "INVALID_REQUEST" } }, 400);
 	}
 
-	const market = createMarket(env);
+	const market = createMarket(env, deps.fetch);
+	const backoffDeps = {
+		...(deps.sleep === undefined ? {} : { sleep: deps.sleep }),
+		...(deps.randomUnit === undefined ? {} : { randomUnit: deps.randomUnit }),
+	};
+	const backupDeps = {
+		...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+		...(deps.now === undefined ? {} : { now: deps.now }),
+	};
 	const attempts: { source: MarketSourceId; failure: MarketSourceFailure }[] =
 		[];
 	const failures: Partial<Record<MarketSourceId, MarketSourceFailure>> = {};
@@ -145,28 +170,58 @@ const handleInternalRequest = async (
 		for (;;) {
 			const resolution = resolveMarketSource(sources, failures);
 			if ("exhausted" in resolution) {
+				logResolved({
+					kind,
+					productId: parsed.data.productId,
+					source: null,
+					attempts,
+				});
 				if (lastCoinbaseError !== null) {
 					return marketErrorResponse(lastCoinbaseError);
 				}
-				return json({ error: { code: "RATE_LIMITED" }, attempts }, 429);
+				return json(
+					{ error: { code: "MARKET_SOURCES_EXHAUSTED" }, attempts },
+					503,
+				);
 			}
 			const { source } = resolution;
 			if (source === "COINBASE") {
-				const result = await market.getCandles(parsed.data);
-				if (result.ok) {
+				const attempt = await runWithRateLimitBackoff(
+					() => market.getCandles(parsed.data),
+					backoffDeps,
+				);
+				if (attempt.result.ok) {
 					// Référence de basis : write-through de la dernière close réussie.
 					await writeBasisReference(
 						env.MARKET_CACHE,
 						parsed.data.productId,
 						parsed.data.timeframe,
-						result.value.candles,
+						attempt.result.value.candles,
 					);
-					return json({ ...result.value, source: "coinbase", attempts });
+					logResolved({
+						kind,
+						productId: parsed.data.productId,
+						source: "coinbase",
+						coinbaseTries: attempt.tries,
+						attempts,
+					});
+					return json({
+						...attempt.result.value,
+						source: "coinbase",
+						attempts,
+					});
 				}
-				lastCoinbaseError = result.error;
-				const failure = mapFailure(result.error.code);
+				lastCoinbaseError = attempt.result.error;
+				const failure = mapFailure(attempt.result.error.code);
 				failures.COINBASE = failure;
 				attempts.push({ source, failure });
+				logResolved({
+					kind,
+					productId: parsed.data.productId,
+					source: "coinbase",
+					outcome: failure,
+					coinbaseTries: attempt.tries,
+				});
 				continue;
 			}
 			const endMs =
@@ -174,7 +229,7 @@ const handleInternalRequest = async (
 					? parsed.data.end * 1_000 +
 						TIMEFRAME_MILLISECONDS[parsed.data.timeframe]
 					: Date.now();
-			const backup = await serveBackupCandles(
+			const backup = await serveDecisionCandles(
 				source,
 				{
 					productId: parsed.data.productId,
@@ -182,14 +237,21 @@ const handleInternalRequest = async (
 					limit: parsed.data.limit,
 					endMs,
 				},
-				env.MARKET_CACHE,
+				backupDeps,
 			);
 			if (backup.ok && backup.candles !== undefined) {
+				const served = source === "HYPERLIQUID" ? "hyperliquid" : "dydx";
+				logResolved({
+					kind,
+					productId: parsed.data.productId,
+					source: served,
+					attempts,
+				});
 				return json({
 					productId: parsed.data.productId,
 					timeframe: parsed.data.timeframe,
 					candles: backup.candles,
-					source: source === "HYPERLIQUID" ? "hyperliquid" : "dydx",
+					source: served,
 					cached: false,
 					attempts,
 				});
@@ -205,33 +267,71 @@ const handleInternalRequest = async (
 	for (;;) {
 		const resolution = resolveMarketSource(sources, failures);
 		if ("exhausted" in resolution) {
+			logResolved({
+				kind,
+				productId: parsed.data.productId,
+				source: null,
+				attempts,
+			});
 			if (lastCoinbaseError !== null) {
 				return marketErrorResponse(lastCoinbaseError);
 			}
-			return json({ error: { code: "RATE_LIMITED" }, attempts }, 429);
+			return json(
+				{ error: { code: "MARKET_SOURCES_EXHAUSTED" }, attempts },
+				503,
+			);
 		}
 		const { source } = resolution;
 		if (source === "COINBASE") {
-			const result = await market.getTicker(parsed.data);
-			if (result.ok)
-				return json({ ...result.value, source: "coinbase", attempts });
-			lastCoinbaseError = result.error;
-			const failure = mapFailure(result.error.code);
+			const attempt = await runWithRateLimitBackoff(
+				() => market.getTicker(parsed.data),
+				backoffDeps,
+			);
+			if (attempt.result.ok) {
+				logResolved({
+					kind,
+					productId: parsed.data.productId,
+					source: "coinbase",
+					coinbaseTries: attempt.tries,
+					attempts,
+				});
+				return json({ ...attempt.result.value, source: "coinbase", attempts });
+			}
+			lastCoinbaseError = attempt.result.error;
+			const failure = mapFailure(attempt.result.error.code);
 			failures.COINBASE = failure;
 			attempts.push({ source, failure });
+			logResolved({
+				kind,
+				productId: parsed.data.productId,
+				source: "coinbase",
+				outcome: failure,
+				coinbaseTries: attempt.tries,
+			});
 			continue;
 		}
-		const backup = await serveBackupTicker(source, parsed.data.productId);
+		const backup = await serveBackupTicker(
+			source,
+			parsed.data.productId,
+			backupDeps,
+		);
 		if (
 			backup.ok &&
 			backup.price !== undefined &&
 			backup.observedAt !== undefined
 		) {
+			const served = source === "HYPERLIQUID" ? "hyperliquid" : "dydx";
+			logResolved({
+				kind,
+				productId: parsed.data.productId,
+				source: served,
+				attempts,
+			});
 			return json({
 				productId: parsed.data.productId,
 				price: backup.price,
 				observedAt: backup.observedAt,
-				source: source === "HYPERLIQUID" ? "hyperliquid" : "dydx",
+				source: served,
 				cached: false,
 				attempts,
 			});
@@ -260,6 +360,7 @@ export const handleWorkerRequest = async (
 	request: Request,
 	env: MarketDataEnv,
 	ctx: ExecutionContext,
+	deps: MarketWorkerDeps = {},
 ): Promise<Response> => {
 	const { pathname } = new URL(request.url);
 
@@ -267,14 +368,14 @@ export const handleWorkerRequest = async (
 		return json({ status: "ok", service: "dodash-mcp-market-data" });
 	}
 	if (pathname === "/internal/candles") {
-		return handleInternalRequest(request, env, "candles");
+		return handleInternalRequest(request, env, "candles", deps);
 	}
 	if (pathname === "/internal/ticker") {
-		return handleInternalRequest(request, env, "ticker");
+		return handleInternalRequest(request, env, "ticker", deps);
 	}
 	if (pathname === "/mcp") {
 		const handler = createMcpHandler(
-			() => createMarketMcpServer(createMarket(env)),
+			() => createMarketMcpServer(createMarket(env, deps.fetch)),
 			{
 				route: "/mcp",
 				corsOptions: false,

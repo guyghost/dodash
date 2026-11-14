@@ -243,4 +243,21 @@ describe("trading telemetry", () => {
       "RATE_LIMITED",
     ]);
   });
+
+  it("projects decision.missed with MARKET_SOURCES_EXHAUSTED when both venues are down", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    emitTradingTelemetry(
+      sink,
+      {
+        ...event(),
+        type: "decision.missed",
+        outcome: "DECISION_WINDOW_MISSED",
+        errorCode: "MARKET_SOURCES_EXHAUSTED",
+      },
+    );
+    const point = sink.writeDataPoint.mock.calls[0]?.[0] as { blobs: readonly string[] };
+    expect(point.blobs[0]).toBe("decision.missed");
+    expect(point.blobs[4]).toBe("DECISION_WINDOW_MISSED");
+    expect(point.blobs[5]).toBe("MARKET_SOURCES_EXHAUSTED");
+  });
 });
