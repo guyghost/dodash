@@ -90,7 +90,9 @@ remise à zéro.
   mono-produit retire la ligne seulement si le portefeuille est quiescent
   et qu'un reset explicite a déverrouillé le remplacement. Un `/start`
   mono-produit ne remplace pas une session active et n'efface pas
-  `dodash_paper_book`.
+  `dodash_paper_book`. Si la session mémoire est absente et que la copie
+  durable existe ou est illisible, ce `/start` est refusé : le book SQL
+  reste la seule copie.
 - Une restauration de session invalide désarme l'agent
   (`portfolioRestoreError`) **sans** effacer la session ni le book.
   `/stop` et `/kill` répondent alors sans reconstruire l'acteur.

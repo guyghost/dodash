@@ -366,6 +366,23 @@ describe("paper book survives deploy and restart", () => {
     expect(failed.state.portfolioSession).toBeNull();
   });
 
+  it("refuses a single-product start when only the durable book survived a wipe", async () => {
+    const session = openSession();
+    const agent = shell(INITIAL_AGENT_STATE, () => [
+      {
+        session_json: "{}",
+        book_json: JSON.stringify(projectDurablePaperBook(session)),
+      },
+    ]);
+    const result = await agent.startAgent(
+      { productId: "BTC-USD", executionMode: "paper" },
+      permissions,
+    );
+    expect(result).toEqual({ ok: false, error: { code: "INVALID_STATE" } });
+    expect(agent.state.machine).toBeNull();
+    expect(agent.queries.some((query) => query.includes("DELETE"))).toBe(false);
+  });
+
   it("refuses a single-product start while a portfolio book is still locked", async () => {
     const waiting = createTradingMachineSession({
       agentId: "btc-usd-paper",

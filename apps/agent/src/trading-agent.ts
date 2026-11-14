@@ -748,6 +748,13 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			) {
 				return { ok: false, error: { code: "INVALID_STATE" } };
 			}
+		} else {
+			// Blob d'état perdu : le book SQL peut encore porter les positions.
+			// Un /start mono-produit ne doit pas l'effacer.
+			const durable = this.loadDurablePaperBook();
+			if (durable.status !== "missing") {
+				return { ok: false, error: { code: "INVALID_STATE" } };
+			}
 		}
 
 		const admission = admitAgentConfiguration(configuration.value);
