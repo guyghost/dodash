@@ -521,6 +521,49 @@ describe("runTradingCycle", () => {
     });
   });
 
+  it("fails the cycle when Hyperliquid and dYdX are both down", async () => {
+    const config = configuration();
+    const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 9, 8, 7, 6, 5]),
+        source: "hyperliquid",
+        cached: false,
+      },
+      portfolio,
+    );
+    const result = await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine: readyMachine("agent-1", config.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt: 360_000,
+      cycleId: "cycle-sources-exhausted",
+      now: () => 360_000,
+      triggerAlarm: true,
+      effects: {
+        ...fixture.effects,
+        fetchMarketData: async () =>
+          err({
+            phase: "market-data",
+            code: "MARKET_SOURCES_EXHAUSTED",
+            retryable: false,
+          }),
+      },
+    });
+    expect(result.machine.context.outcome).toBe("FAILED");
+    expect(result.machine.context.lastError).toMatchObject({
+      code: "MARKET_SOURCES_EXHAUSTED",
+    });
+    expect(fixture.intents).toHaveLength(0);
+  });
+
   describe("scheduled market retries (models/market-retry-schedule.md)", () => {
     const rateLimited = (retryAfterMs?: number): WorkflowError => ({
       phase: "market-data",

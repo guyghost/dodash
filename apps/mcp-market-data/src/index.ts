@@ -21,8 +21,8 @@ import {
 	resolveMarketSource,
 } from "@dodash/models";
 import {
-	serveBackupCandles,
 	serveBackupTicker,
+	serveDecisionCandles,
 	writeBasisReference,
 } from "./failover.js";
 import { runWithRateLimitBackoff } from "./rate-limit-backoff.js";
@@ -179,7 +179,10 @@ const handleInternalRequest = async (
 				if (lastCoinbaseError !== null) {
 					return marketErrorResponse(lastCoinbaseError);
 				}
-				return json({ error: { code: "RATE_LIMITED" }, attempts }, 429);
+				return json(
+					{ error: { code: "MARKET_SOURCES_EXHAUSTED" }, attempts },
+					503,
+				);
 			}
 			const { source } = resolution;
 			if (source === "COINBASE") {
@@ -226,7 +229,7 @@ const handleInternalRequest = async (
 					? parsed.data.end * 1_000 +
 						TIMEFRAME_MILLISECONDS[parsed.data.timeframe]
 					: Date.now();
-			const backup = await serveBackupCandles(
+			const backup = await serveDecisionCandles(
 				source,
 				{
 					productId: parsed.data.productId,
@@ -234,7 +237,6 @@ const handleInternalRequest = async (
 					limit: parsed.data.limit,
 					endMs,
 				},
-				env.MARKET_CACHE,
 				backupDeps,
 			);
 			if (backup.ok && backup.candles !== undefined) {
@@ -274,7 +276,10 @@ const handleInternalRequest = async (
 			if (lastCoinbaseError !== null) {
 				return marketErrorResponse(lastCoinbaseError);
 			}
-			return json({ error: { code: "RATE_LIMITED" }, attempts }, 429);
+			return json(
+				{ error: { code: "MARKET_SOURCES_EXHAUSTED" }, attempts },
+				503,
+			);
 		}
 		const { source } = resolution;
 		if (source === "COINBASE") {

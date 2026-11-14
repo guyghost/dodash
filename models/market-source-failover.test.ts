@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	assessBasisGate,
+	assessExecutionPriceDivergence,
 	BASIS_MAX_BPS,
 	BASIS_REFERENCE_MAX_AGE_MS,
 	candleCloseMarkSource,
@@ -12,19 +13,22 @@ import {
 } from "./market-source-failover.js";
 
 describe("market source failover — résolution (§2)", () => {
-	it("sert le primaire sain et ne le contourne jamais", () => {
+	it("sert Hyperliquid, puis dYdX, et n'interroge pas Coinbase", () => {
 		expect(resolveMarketSource(MARKET_SOURCE_ORDER, {})).toEqual({
-			source: "COINBASE",
+			source: "HYPERLIQUID",
 		});
 		expect(
-			resolveMarketSource(MARKET_SOURCE_ORDER, { COINBASE: "RATE_LIMITED" }),
-		).toEqual({ source: "HYPERLIQUID" });
-		expect(
 			resolveMarketSource(MARKET_SOURCE_ORDER, {
-				COINBASE: "RATE_LIMITED",
-				HYPERLIQUID: "BASIS_REJECTED",
+				HYPERLIQUID: "NETWORK_UNAVAILABLE",
 			}),
 		).toEqual({ source: "DYDX" });
+		expect(
+			resolveMarketSource(MARKET_SOURCE_ORDER, {
+				HYPERLIQUID: "NETWORK_UNAVAILABLE",
+				DYDX: "NETWORK_UNAVAILABLE",
+			}),
+		).toEqual({ exhausted: true });
+		expect(MARKET_SOURCE_ORDER).not.toContain("COINBASE");
 	});
 
 	it("échoue fermement quand toutes les sources sont épuisées", () => {
@@ -210,6 +214,30 @@ describe("market source failover — recouvrement et backoff (2026-11-14)", () =
 				spentMs: 1_500,
 			}),
 		).toEqual({ kind: "stop", reason: "BUDGET" });
+	});
+
+	it("bloque un écart d'exécution au-dessus de 200 bps et laisse passer la borne", () => {
+		expect(
+			assessExecutionPriceDivergence({
+				decisionPrice: 100,
+				executionPrice: 101,
+				maxDivergenceBps: 200,
+			}),
+		).toMatchObject({ ok: true });
+		expect(
+			assessExecutionPriceDivergence({
+				decisionPrice: 100,
+				executionPrice: 103,
+				maxDivergenceBps: 200,
+			}),
+		).toMatchObject({ ok: false, reason: "DIVERGENCE" });
+		expect(
+			assessExecutionPriceDivergence({
+				decisionPrice: 100,
+				executionPrice: Number.NaN,
+				maxDivergenceBps: 200,
+			}),
+		).toEqual({ ok: false, reason: "INVALID_PRICE", divergenceBps: null });
 	});
 
 	it("étiquette le mark par la source de la série", () => {

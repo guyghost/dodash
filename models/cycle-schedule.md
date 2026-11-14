@@ -65,17 +65,15 @@ bougie de 00:00 dès 02:01. `resolveMissedDecision` reçoit `completedAt = N`,
 Sur un réveil de grille (`scheduledTick` uniquement : ni `runNow` HTTP, ni
 alarme de retry), les produits actifs d'un portefeuille sont exécutés
 séquentiellement ; avant le produit actif de rang `k ≥ 1`, le runtime attend
-`planPortfolioProductStaggerMs(k, randomUnit)` (un produit désactivé n'ajoute
-aucune attente) puis relit l'état, l'attente rendant la main à d'autres
-événements. La base est `PORTFOLIO_PRODUCT_STAGGER_MS = 8 000`, gigue ±25 %
-injectée : le second produit attend donc entre 6 s et 10 s. Ce délai laisse
-passer les bougies, le ticker et le backoff intra-requête (≤ 2,5 s) du
-produit précédent avant l'appel Coinbase suivant. `randomUnit` est fourni
-par le runtime ; la fonction reste pure. Aucune transition, aucune politique
-ni intervalle ne change ; `T` de chaque produit est l'instant réel de son
-déclenchement. Les alarmes de retry ne sont pas décalées
-(`market-retry-schedule.md` §3, limite acceptée). Le runtime journalise
-`portfolio_product_stagger` (`productId`, rang, `delayMs`).
+`PORTFOLIO_PRODUCT_STAGGER_MS = 2 000` (un produit désactivé n'ajoute aucune
+attente) puis relit l'état. Les bougies de décision ne passent plus par
+Coinbase (amendement marché 2026-11-14), donc l'écart de 8 s n'est plus
+utile. Les deux secondes restent pour que les quotes Coinbase d'exécution
+de BTC et d'ETH, lues seulement au moment de placer un ordre, ne partent
+pas dans la même seconde. Aucune transition, aucune politique ni intervalle
+ne change ; `T` de chaque produit est l'instant réel de son déclenchement.
+Les alarmes de retry ne sont pas décalées (`market-retry-schedule.md` §3).
+Le runtime journalise `portfolio_product_stagger`.
 
 ## 5. Invariants
 
@@ -95,5 +93,4 @@ déclenchement. Les alarmes de retry ne sont pas décalées
   émission pendant la fenêtre ; cycle repris (`T` = 00:01) clos à 02:01 →
   émise à 02:01 avec `completedAt`.
 - Décalage : sur un réveil de grille à deux produits, le premier n'attend
-  pas et le second attend 6–10 s (`randomUnit` 0 → 6 000 ms, 1 → 10 000 ms,
-  0,5 → 8 000 ms) ; un réveil de retry n'attend pas.
+  pas et le second attend 2 s ; un réveil de retry n'attend pas.

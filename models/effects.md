@@ -11,6 +11,10 @@ Entrée fermée : produit, timeframe, limite. Sortie : chandelles ou ticker vali
 - Toute réponse non conforme devient `INVALID_RESPONSE`.
 - `429` devient `RATE_LIMITED`, les pannes réseau `NETWORK_UNAVAILABLE`
   (retryable uniquement si le statut est ≥ 500).
+- Les bougies de décision (amendement chairman 2026-11-14) sont lues chez
+  Hyperliquid puis dYdX. Coinbase n'est appelé que pour la quote
+  d'exécution, avant l'ordre. Les deux sources de décision épuisées
+  deviennent `MARKET_SOURCES_EXHAUSTED`.
 - Un refus d'authentification du worker marché (`401`/`403`) ainsi qu'un
   secret interne absent ou trop court deviennent `AUTHENTICATION_FAILURE`
   (non retryable) : un secret partagé incorrect n'est jamais une panne

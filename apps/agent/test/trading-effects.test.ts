@@ -8,16 +8,31 @@ import type { TradingEffectsDependencies } from "../src/trading-effects.js";
 
 const paperConfiguration: AgentConfiguration = {
   executionMode: "paper",
+  productId: "BTC-USD",
+  executionPriceMaxDivergenceBps: 200,
 } as AgentConfiguration;
 
 const liveConfiguration: AgentConfiguration = {
   executionMode: "live",
+  productId: "BTC-USD",
+  executionPriceMaxDivergenceBps: 200,
 } as AgentConfiguration;
 
 const baseEnv = {
-  INTERNAL_SERVICE_TOKEN: "internal-token",
+  INTERNAL_SERVICE_TOKEN: "x".repeat(32),
   CONTROL_API_TOKEN: "control-token",
-} as TradingEffectsDependencies["env"];
+  MARKET_DATA: {
+    fetch: vi.fn(async () =>
+      Response.json({
+        productId: "BTC-USD",
+        price: 100,
+        observedAt: 1,
+        source: "coinbase",
+        cached: false,
+      }),
+    ),
+  },
+} as unknown as TradingEffectsDependencies["env"];
 
 const makeDependencies = (
   overrides: Partial<TradingEffectsDependencies> = {},

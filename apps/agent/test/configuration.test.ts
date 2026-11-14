@@ -208,6 +208,7 @@ describe("configuration multi-produits (dao #24)", () => {
       "strategyIds",
       "intervalSeconds",
       "maxMarketStalenessMs",
+      "executionPriceMaxDivergenceBps",
       "candleLimit",
       "initialCapital",
       "maxDecisionNotional",

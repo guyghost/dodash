@@ -19,7 +19,10 @@ sont des mesures distinctes ; seules les bougies closes comptent.
 
 ## 2. Décision — résolution pure
 
-Ordre figé par déploiement : `COINBASE → HYPERLIQUID → DYDX`.
+Ordre de décision figé (amendement chairman 2026-11-14) :
+`HYPERLIQUID → DYDX`. Coinbase n'est pas une source de bougies de
+décision. Une requête explicite `sources: ["COINBASE"]` ne sert que la
+quote d'exécution.
 
 ```ts
 type MarketSourceId = "COINBASE" | "HYPERLIQUID" | "DYDX";
@@ -132,4 +135,30 @@ La comparaison de closes utilise le même start de bougie, jamais un ticker
 - Étiquetage : snapshot + télémétrie portent la source ; aucun mélange
   de série (test d'architecture) ; un cycle entier servi par une seule
   source.
+
+## 7. Amendement chairman 2026-11-14 — décision perp, exécution Coinbase
+
+Les bougies et le mark de décision viennent d'Hyperliquid, puis de dYdX
+si Hyperliquid ne sert pas une série utilisable (transport, ticker ou
+intégrité). Coinbase n'est pas appelé sur ce chemin : un `RATE_LIMITED`
+Coinbase ne peut plus produire `decision.missed`.
+
+Les deux sources épuisées donnent `MARKET_SOURCES_EXHAUSTED` (phase
+`market-data`, retryable tant que la fenêtre de fraîcheur le permet).
+Passé l'échéance, le cycle clos porte ce code et `decision.missed` le
+reprend tel quel.
+
+Avant toute soumission d'ordre (paper, live ou perp), le shell lit la
+quote Coinbase et appelle `assessExecutionPriceDivergence`. Seuil par
+défaut `EXECUTION_PRICE_MAX_DIVERGENCE_BPS = 200`, champ de
+configuration `executionPriceMaxDivergenceBps` (]0, 10 000], défaut 200).
+Au-delà, l'ordre n'est pas envoyé : `ORDER_REJECTED` non retryable,
+détail `EXECUTION_PRICE_DIVERGENCE`, journal `execution_price_guard`
+avec `outcome: "BLOCKED"`. Quote indisponible, y compris `RATE_LIMITED` :
+même refus avec le détail `EXECUTION_QUOTE_UNAVAILABLE`. La décision
+(bougie admise) reste enregistrée. Le prix paper, s'il est exécuté,
+reste la close de décision.
+
+La gate de basis sur les bougies n'autorise plus ni ne bloque la série
+de décision. Le contrôle de divergence est celui de la quote d'exécution.
 - Aucune modification de machine (diff des transitions/gardes).

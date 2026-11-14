@@ -192,7 +192,6 @@ export type {
 } from "./cycle-schedule.js";
 export {
 	planPortfolioProductStaggerMs,
-	PORTFOLIO_PRODUCT_STAGGER_JITTER_RATIO,
 	PORTFOLIO_PRODUCT_STAGGER_MS,
 	resolveCycleSchedule,
 	resolveMissedDecision,
@@ -367,7 +366,11 @@ export {
 	type BasisAssessment,
 	type BasisCandle,
 	type BasisGateInput,
+	assessExecutionPriceDivergence,
 	candleCloseMarkSource,
+	DECISION_MARKET_SOURCE_ORDER,
+	EXECUTION_PRICE_MAX_DIVERGENCE_BPS,
+	type ExecutionPriceAssessment,
 	COINBASE_RATE_LIMIT_BASE_DELAYS_MS,
 	COINBASE_RATE_LIMIT_BUDGET_MS,
 	COINBASE_RATE_LIMIT_JITTER_RATIO,

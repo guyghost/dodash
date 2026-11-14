@@ -1,14 +1,11 @@
 /**
  * Market source failover (models/market-source-failover.md).
  *
- * Pure resolution: fixed deployment order COINBASE → HYPERLIQUID → DYDX.
+ * Decision candles (amendement 2026-11-14, chairman): HYPERLIQUID then
+ * DYDX. Coinbase is not a decision source. It remains the execution
+ * quote used by `assessExecutionPriceDivergence` before an order.
  * The trading machine stays the owner of cycle retries
- * (market-retry-schedule.md). Coinbase RATE_LIMITED may be re-attempted
- * inside one request on the bounded plan below; every other failure is
- * one attempt. A perp backup is never served without a Coinbase close
- * that shares a candle start and sits within BASIS_MAX_BPS. The compared
- * candle is that overlapping close, which may be older than the newest
- * backup candle. No overlap or no reference means fail-closed.
+ * (market-retry-schedule.md).
  */
 
 import type { CandleCloseMarkSource } from "./paper-valuation.js";
@@ -22,12 +19,23 @@ export type MarketSourceFailure =
 	| "STALE_SERIES"
 	| "BASIS_REJECTED";
 
-/** Ordre figé par déploiement (§2). */
-export const MARKET_SOURCE_ORDER: readonly MarketSourceId[] = Object.freeze([
-	"COINBASE",
-	"HYPERLIQUID",
-	"DYDX",
-]);
+/**
+ * Decision-candle order. Coinbase is absent: a Coinbase rate limit cannot
+ * fail the decision. An explicit `sources: ["COINBASE"]` request is the
+ * execution quote only.
+ */
+export const DECISION_MARKET_SOURCE_ORDER: readonly MarketSourceId[] =
+	Object.freeze(["HYPERLIQUID", "DYDX"]);
+
+/** @deprecated Use `DECISION_MARKET_SOURCE_ORDER`. Kept as the deployment alias. */
+export const MARKET_SOURCE_ORDER = DECISION_MARKET_SOURCE_ORDER;
+
+/**
+ * Default maximum |execution quote − decision close| / decision close.
+ * 200 bps matches the previous perp/spot basis bound: wide enough for a
+ * one-minute gap after the daily close, tight enough to refuse a bad venue.
+ */
+export const EXECUTION_PRICE_MAX_DIVERGENCE_BPS = 200;
 
 /** Basis perp/spot maximal accepté (revue 2026-10-31). */
 export const BASIS_MAX_BPS = 200;
@@ -126,6 +134,48 @@ export const assessBasisGate = (input: BasisGateInput): BasisAssessment => {
 		return { ok: false, reason: "BASIS_REJECTED" };
 	}
 	return { ok: true };
+};
+
+export type ExecutionPriceAssessment =
+	| { readonly ok: true; readonly divergenceBps: number }
+	| {
+			readonly ok: false;
+			readonly reason: "INVALID_PRICE" | "DIVERGENCE";
+			readonly divergenceBps: number | null;
+	  };
+
+/**
+ * Compares the decision close with the Coinbase execution quote.
+ * The shell fetches the quote; this function only classifies. A result
+ * of `DIVERGENCE` skips the order and does not revisit the decision.
+ */
+export const assessExecutionPriceDivergence = (input: {
+	readonly decisionPrice: number;
+	readonly executionPrice: number;
+	readonly maxDivergenceBps: number;
+}): ExecutionPriceAssessment => {
+	if (
+		!Number.isFinite(input.decisionPrice) ||
+		input.decisionPrice <= 0 ||
+		!Number.isFinite(input.executionPrice) ||
+		input.executionPrice <= 0 ||
+		!Number.isFinite(input.maxDivergenceBps) ||
+		input.maxDivergenceBps < 0
+	) {
+		return Object.freeze({
+			ok: false,
+			reason: "INVALID_PRICE",
+			divergenceBps: null,
+		});
+	}
+	const divergenceBps =
+		(Math.abs(input.executionPrice - input.decisionPrice) /
+			input.decisionPrice) *
+		10_000;
+	if (divergenceBps > input.maxDivergenceBps) {
+		return Object.freeze({ ok: false, reason: "DIVERGENCE", divergenceBps });
+	}
+	return Object.freeze({ ok: true, divergenceBps });
 };
 
 export interface BasisCandle {

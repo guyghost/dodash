@@ -55,7 +55,7 @@ describe("market data worker routing", () => {
             authorization: `Bearer ${"x".repeat(32)}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify({ productId: "BTC-USD" }),
+          body: JSON.stringify({ productId: "BTC-USD", sources: ["COINBASE"] }),
         }),
         env,
         context,
@@ -80,12 +80,6 @@ describe("market data worker routing", () => {
     { t: anchorStart, o: "100", h: "101", l: "99", c: "100.4", v: "1", s: "BTC" },
     { t: newestStart, o: "100.4", h: "102", l: "100", c: "101", v: "2", s: "BTC" },
   ]);
-  const coinbaseCandle = JSON.stringify({
-    candles: [
-      { start: endSeconds, open: 100, high: 101, low: 99, close: 100.5, volume: 3 },
-    ],
-  });
-
   const candleRequest = () =>
     new Request("https://market.test/internal/candles", {
       method: "POST",
@@ -101,7 +95,7 @@ describe("market data worker routing", () => {
       }),
     });
 
-  it("serves the Hyperliquid mark when Coinbase is rate limited and an older close still anchors it", async () => {
+  it("serves Hyperliquid candles without calling Coinbase", async () => {
     const urls: string[] = [];
     const upstream = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -141,46 +135,64 @@ describe("market data worker routing", () => {
     };
     expect(body.source).toBe("hyperliquid");
     expect(body.candles.at(-1)).toMatchObject({ start: newestStart, close: 101 });
-    expect(body.attempts).toEqual([
-      { source: "COINBASE", failure: "RATE_LIMITED" },
-    ]);
+    expect(body.attempts).toEqual([]);
+    expect(urls.some((url) => url.includes("coinbase"))).toBe(false);
     expect(urls.some((url) => url.includes("dydx"))).toBe(false);
     expect(urls.some((url) => url.includes("hyperliquid.xyz"))).toBe(true);
   });
 
-  it("keeps Coinbase when it is healthy and does not call a backup", async () => {
+  it("serves dYdX when Hyperliquid is down", async () => {
+    const dydxCandles = JSON.stringify({
+      candles: [
+        {
+          startedAt: new Date(anchorStart).toISOString(),
+          open: "100",
+          high: "101",
+          low: "99",
+          close: "100.4",
+          baseTokenVolume: "1",
+          ticker: "BTC-USD",
+        },
+        {
+          startedAt: new Date(newestStart).toISOString(),
+          open: "100.4",
+          high: "102",
+          low: "100",
+          close: "101.2",
+          baseTokenVolume: "2",
+          ticker: "BTC-USD",
+        },
+      ],
+    });
     const urls: string[] = [];
     const upstream = (async (input: RequestInfo | URL) => {
       const url = String(input);
       urls.push(url);
-      if (url.includes("hyperliquid.xyz") || url.includes("dydx")) {
-        throw new Error("backup fetched while Coinbase was healthy");
-      }
-      return new Response(coinbaseCandle, { status: 200 });
+      if (url.includes("hyperliquid.xyz")) return new Response("down", { status: 503 });
+      if (url.includes("dydx")) return new Response(dydxCandles, { status: 200 });
+      return new Response("rate limited", { status: 429 });
     }) as typeof globalThis.fetch;
-    const response = await handleWorkerRequest(
-      candleRequest(),
-      env,
-      context,
-      { fetch: upstream, sleep: async () => undefined, randomUnit: () => 0 },
-    );
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
-      source: "coinbase",
-      candles: [{ close: 100.5 }],
+    const response = await handleWorkerRequest(candleRequest(), env, context, {
+      fetch: upstream,
+      sleep: async () => undefined,
+      randomUnit: () => 0,
     });
-    expect(urls).toHaveLength(1);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      source: string;
+      candles: { close: number }[];
+    };
+    expect(body.source).toBe("dydx");
+    expect(body.candles.at(-1)?.close).toBe(101.2);
+    expect(urls.some((url) => url.includes("coinbase"))).toBe(false);
   });
 
-  it("stays closed when Coinbase is rate limited and no anchor exists", async () => {
+  it("reports both decision sources down without calling Coinbase", async () => {
     const urls: string[] = [];
     const upstream = (async (input: RequestInfo | URL) => {
       const url = String(input);
       urls.push(url);
-      if (url.includes("hyperliquid.xyz")) {
-        return new Response(hyperliquidCandles, { status: 200 });
-      }
-      return new Response("no", { status: 429, headers: { "retry-after": "9" } });
+      return new Response("down", { status: 503 });
     }) as typeof globalThis.fetch;
     const response = await handleWorkerRequest(
       candleRequest(),
@@ -188,11 +200,12 @@ describe("market data worker routing", () => {
       context,
       { fetch: upstream, sleep: async () => undefined, randomUnit: () => 0.5 },
     );
-    expect(response.status).toBe(429);
+    expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
-      error: { code: "RATE_LIMITED" },
+      error: { code: "MARKET_SOURCES_EXHAUSTED" },
     });
     expect(urls.some((url) => url.includes("hyperliquid.xyz"))).toBe(true);
     expect(urls.some((url) => url.includes("dydx"))).toBe(true);
+    expect(urls.some((url) => url.includes("coinbase"))).toBe(false);
   });
 });

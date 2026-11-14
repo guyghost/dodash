@@ -28,14 +28,13 @@ describe("resolveCycleSchedule", () => {
 
 describe("planPortfolioProductStaggerMs", () => {
   it("laisse partir le premier produit tout de suite", () => {
-    expect(planPortfolioProductStaggerMs(0, 0.5)).toBe(0);
-    expect(planPortfolioProductStaggerMs(-1, 0.5)).toBe(0);
+    expect(planPortfolioProductStaggerMs(0)).toBe(0);
+    expect(planPortfolioProductStaggerMs(-1)).toBe(0);
   });
 
-  it("décale le produit suivant de 6 à 10 s selon la gigue injectée", () => {
-    expect(planPortfolioProductStaggerMs(1, 0)).toBe(6_000);
-    expect(planPortfolioProductStaggerMs(1, 0.5)).toBe(8_000);
-    expect(planPortfolioProductStaggerMs(1, 1)).toBe(10_000);
+  it("décale le produit suivant de 2 s pour séparer les quotes d'exécution", () => {
+    expect(planPortfolioProductStaggerMs(1)).toBe(2_000);
+    expect(planPortfolioProductStaggerMs(2)).toBe(2_000);
   });
 });
 

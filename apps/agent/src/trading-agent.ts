@@ -1511,12 +1511,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				continue;
 			}
 			if (staggerProducts && executed > 0) {
-				const buffer = new Uint32Array(1);
-				crypto.getRandomValues(buffer);
-				const delayMs = planPortfolioProductStaggerMs(
-					executed,
-					(buffer[0] ?? 0) / 4_294_967_296,
-				);
+				const delayMs = planPortfolioProductStaggerMs(executed);
 				console.log(
 					JSON.stringify({
 						event: "portfolio_product_stagger",

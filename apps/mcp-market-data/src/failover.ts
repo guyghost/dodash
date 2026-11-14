@@ -77,6 +77,55 @@ export interface BackupCandleOutcome {
 }
 
 /**
+ * Decision series for one perp source. No Coinbase basis gate: the
+ * execution-price guard runs later, against the Coinbase quote, and only
+ * skips the order.
+ */
+export const serveDecisionCandles = async (
+	source: "HYPERLIQUID" | "DYDX",
+	request: {
+		productId: string;
+		timeframe: string;
+		limit: number;
+		endMs: number;
+	},
+	deps: { fetch?: typeof fetch; now?: () => number } = {},
+): Promise<BackupCandleOutcome> => {
+	const timeframeMs =
+		TIMEFRAME_MILLISECONDS[
+			request.timeframe as keyof typeof TIMEFRAME_MILLISECONDS
+		];
+	if (timeframeMs === undefined) {
+		return { ok: false, failure: "INVALID_RESPONSE" };
+	}
+	const fetched =
+		source === "HYPERLIQUID"
+			? await fetchHyperliquidCandles(
+					{
+						productId: request.productId,
+						timeframe: request.timeframe as never,
+						limit: request.limit,
+						endMs: request.endMs,
+					},
+					deps,
+				)
+			: await fetchDydxCandles(
+					{
+						productId: request.productId,
+						timeframe: request.timeframe as never,
+						limit: request.limit,
+						endMs: request.endMs,
+					},
+					deps,
+				);
+	if (!fetched.ok) {
+		return { ok: false, failure: mapTransportError(fetched.error) };
+	}
+	if (fetched.value.length === 0) return { ok: false, failure: "STALE_SERIES" };
+	return { ok: true, candles: fetched.value };
+};
+
+/**
  * Un secours perp : bougies puis gate de basis sur la dernière close,
  * comparée à la référence Coinbase au même start (jamais un ticker).
  */

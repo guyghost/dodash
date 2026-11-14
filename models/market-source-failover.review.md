@@ -90,9 +90,20 @@ appel et concentre les `RATE_LIMITED`.
   `HYPERLIQUID_CANDLE_CLOSE` ou `DYDX_CANDLE_CLOSE` quand cette série a
   servi. La décision reste celle de la machine sur les bougies closes.
 
-### Hors périmètre
+### Décision chairman 2026-11-14
 
-Aucun secret, aucun déploiement, `LIVE_TRADING_ENABLED` inchangé. Pas de
-nouvelle transition. Le résidu accepté : un secours dont l'ancre a
-plusieurs jours peut porter un basis plus récent non mesuré ; l'étiquette
-du mark le dit, et l'absence d'ancre reste un échec fermé.
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**. Remplace l'ordre
+Coinbase-d'abord pour les bougies de décision.
+
+- Source de décision : `HYPERLIQUID → DYDX`. Coinbase hors de ce chemin.
+- Mark : `HYPERLIQUID_CANDLE_CLOSE` ou `DYDX_CANDLE_CLOSE`.
+- Les deux sources à terre : `MARKET_SOURCES_EXHAUSTED`, repris par
+  `decision.missed`. Aucune nouvelle transition de machine : l'échec
+  marché existant porte le code.
+- Garde d'exécution : quote Coinbase contre la close de décision, défaut
+  200 bps, configurable. Écart excessif ou quote absente : ordre non
+  envoyé, journal `execution_price_guard`, décision déjà admise.
+- Décalage BTC/ETH : retour à 2 s. Il sépare les quotes d'exécution, pas
+  les bougies de décision.
+
+Aucun secret, aucun déploiement, live inchangé.
