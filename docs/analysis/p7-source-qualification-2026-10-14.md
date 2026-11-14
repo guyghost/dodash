@@ -19,3 +19,5 @@ cd apps/market-source-probe && node --test scripts/coinbase-l2-runtime-smoke.mjs
 ```
 
 The fixture smoke bundles the actual adapter and model into workerd and checks qualification plus rejection with zero outbound calls. This validates offline runtime compatibility; live book access, production cache proof and upstream timestamp reliability remain unverified. No persisted source profile or ledger transition is created.
+
+On 14 November 2026 the package `apps/market-source-probe` was removed. The last two reproduce commands describe the 14 October verification; they are no longer an entrypoint. Normative qualification remains in `models/` (`evaluateP7SourceCandidate`). Archived `market-source-probe-v1` reports stay in `docs/analysis/evidence-cloudflare-market-source-2026-10-13/`.

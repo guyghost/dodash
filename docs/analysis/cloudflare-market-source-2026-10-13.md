@@ -1,5 +1,11 @@
 # Comparaison réelle depuis Cloudflare — 13 octobre 2026
 
+> Retrait du 14 novembre 2026 : le script n'est plus dans le dépôt. La
+> fenêtre ci-dessous est close depuis le 14 octobre 2026 21:04:46.713 UTC.
+> La suppression Cloudflare est la commande opérateur de
+> `docs/operations/market-source-probe.md`. Ce compte rendu reste l'archive
+> du 13 octobre.
+
 ## Résultat provisoire
 
 **Les 429 ne sont pas limités à Coinbase Advanced : Coinbase Exchange en
