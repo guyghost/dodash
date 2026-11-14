@@ -41,6 +41,10 @@ respecte la [limite de taille des lignes SQLite DO](https://developers.cloudflar
 | `git diff --check` | Passe |
 | Preuves utilisateur préexistantes | 17/17 fichiers inchangés, SHA-256 comparés |
 
+Note du 14 novembre 2026 : `npm run test:runtime` ne lance plus les smokes
+du probe retiré. Il ne reste que le runtime paper de `apps/agent`. La ligne
+du tableau décrit l'exécution du 14 octobre.
+
 Turbo réutilise le cache des paquets inchangés ; les nouveaux modèles, le
 collector et les harnais runtime ont été exécutés sur l'intégration. Le lint
 garde ses avertissements préexistants. Seule la capture brute concaténée du

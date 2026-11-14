@@ -1,61 +1,68 @@
-# Diagnostic Cloudflare des sources de marché
+# Retrait du diagnostic Cloudflare des sources de marché
 
-Worker isolé `dodash-market-source-probe-20261013` ; aucun binding au bot,
-aucune clé exchange et aucun ordre. Modèle : `models/market-source-probe.md`.
+Worker `dodash-market-source-probe-20261013`. Modèle :
+`models/market-source-probe.md`. Revue du retrait :
+`models/market-source-probe.review.md`.
 
-## Déploiement borné autorisé
+La fenêtre archivée va du 13 octobre 2026 21:04:46.713 UTC au
+14 octobre 2026 21:04:46.713 UTC (`1791925486713` → `1792011886713`).
+Le code honorait `PROBE_EXPIRES_AT` : après cette échéance, le handler
+planifié retournait sans appel amont. Le cron `11 * * * *` restait
+installé, et la production gardait `PROBE_ENABLED=true`. Le paquet
+`apps/market-source-probe` est retiré du dépôt le 14 novembre 2026.
+Rien ne l'importait. Le merge ne supprime pas la ressource Cloudflare.
 
-Depuis `apps/market-source-probe` :
+Ne pas déployer ce Worker, l'agent, ni aucun autre Worker dans cette
+procédure. Ne pas lancer `wrangler secret`, `wrangler deploy`, ni un
+changement de vars. Ne pas passer `--force` : ce drapeau saute la
+confirmation et autorise la suppression même si un autre Worker en
+dépend. Live reste inchangé.
 
-1. `pnpm build`, `pnpm check`, `pnpm test` ; vérifier le modèle et sa revue.
-   `pnpm test:runtime` vérifie également le bundle sous workerd, sans appels
-   réseau réels grâce à un amont remplacé.
-2. `pnpm exec wrangler deploy` : configuration inactive par défaut.
-3. Générer un token aléatoire distinct (32–256 caractères), puis le transmettre
-   via stdin à `pnpm exec wrangler secret put DIAGNOSTIC_TOKEN`. Ne pas le
-   mettre dans les arguments, les captures, les fichiers ou les journaux.
-4. Déployer avec `--var PROBE_ENABLED:true --var PROBE_STARTED_AT:<epoch-ms>
-   --var PROBE_EXPIRES_AT:<epoch-ms>`, fenêtre ≤ 24 h. Archiver les dates et
-   les IDs de versions, jamais le token. L'autorisation du 13 octobre porte
-   sur une fenêtre de diagnostic, pas sur sa prolongation automatique.
-5. Vérifier `GET /health` et le refus 401 d'un `POST /probe` sans token.
-   Exécuter une seule sonde avec `Authorization: Bearer <token>`, sans corps
-   ni query. Conserver le JSON et son SHA-256.
+## Commande opérateur
 
-Le token de la première capture est éphémère et non archivé. Pour une autre
-capture manuelle, le remplacer via stdin ; ne pas chercher un token du bot.
-Le cron autonome `11 * * * *` ne nécessite pas ce token.
+Depuis la racine d'un checkout qui contient `@dodash/agent`, avec
+Wrangler authentifié sur le compte Cloudflare du sous-domaine
+`guyghost.workers.dev`. Wrangler résolu : `4.125.0`. La commande passe
+par le paquet agent uniquement pour ce binaire. Le nom positionnel
+remplace `name` de n'importe quel `wrangler.jsonc` du répertoire
+courant (`getScriptName` fait `args.name ?? config.name`). Sans ce nom,
+Wrangler prendrait `dodash-agent`.
 
-## Capture des crons et interprétation
+```sh
+pnpm --filter @dodash/agent exec wrangler delete dodash-market-source-probe-20261013
+```
 
-`pnpm exec wrangler tail --format json` permet une capture bornée. Conserver
-uniquement les messages `market_source_probe.completed`, pas les métadonnées
-de requêtes HTTP (qui pourraient contenir des informations sensibles).
-Les logs stockés peuvent aussi être consultés dans Workers Observability.
-Un cron installé n'est pas une preuve d'exécution : vérifier chaque runId.
-Les modifications des Cron Triggers peuvent mettre jusqu'à 15 minutes à
-se propager ; un tail vide pendant ce délai n'est pas une preuve de panne.
+La confirmation doit nommer exactement
+`dodash-market-source-probe-20261013`. Si elle nomme `dodash-agent` ou
+un autre script, répondre non et s'arrêter. Si Wrangler signale qu'un
+autre Worker dépend de celui-ci, s'arrêter aussi : ce n'est pas le cas
+attendu, et il ne faut pas ajouter `--force`.
 
-- `OK` signifie parsing valide ; pour les bougies, vérifier aussi `ready`.
-- `HTTP_ERROR` n'est pas une panne de données tant que la validité des
-  paramètres de requête n'est pas établie (notamment les limites dYdX).
-- `SKIPPED_RATE_LIMIT` n'est pas un HTTP 429 supplémentaire.
-- `latestStart + 86400000` est la clôture amont ; `completedAt` est le fetch.
-- Comparaison de closes à start égal uniquement ; spot/perp non substituables.
-- Les appels sont séquentiels, sans retry ; 15 maximum par lot. Pas de quota
-  durable commun aux invocations : réserver le token à l'opérateur.
-- Colo d'entrée et environnement Cloudflare ne prouvent pas que le bot et
-  cette sonde utilisent la même IP de sortie. Cron décalé pour limiter
-  l'interférence, pas pour contourner un limiteur.
-- Une capture réussie ne prouve ni SLA, ni admission dans le bot, ni rentabilité.
+La suppression retire le script, le cron, les vars et le secret
+`DIAGNOSTIC_TOKEN`. Ne pas afficher ce secret.
 
-## Arrêt / rollback
+## Vérifier ensuite
 
-Depuis `apps/market-source-probe`, `pnpm exec wrangler deploy` sans overrides
-redéploie la configuration inactive. Vérifier `active: false` sur `/health` ;
-les nouveaux lots ne font plus d'appels amont. Un lot déjà commencé peut
-finir ses appels bornés. L'expiration arrête aussi les nouveaux appels ; le
-Worker, le cron et le secret restent installés. Leur suppression est une
-opération distincte qui nécessite l'autorisation de l'opérateur.
+1. La sortie contient `Successfully deleted dodash-market-source-probe-20261013`.
+2. Le health public ne sert plus le diagnostic :
 
-Ne pas déployer l'agent ou le Worker marché paper dans cette procédure.
+```sh
+curl --silent --show-error --output /tmp/dodash-probe-health.txt --write-out '%{http_code}\n' \
+  https://dodash-market-source-probe-20261013.guyghost.workers.dev/health
+grep -q '"service":"market-source-probe"' /tmp/dodash-probe-health.txt && echo 'PROBE ENCORE SERVI' || echo 'probe absent'
+```
+
+Le second message doit être `probe absent`. Un code HTTP 200 dont le
+corps contient `"service":"market-source-probe"` signifie que le Worker
+est encore en place.
+3. Dans le tableau Cloudflare, le script et son déclencheur
+   `11 * * * *` sont absents. Aucun autre Worker n'a changé.
+4. Ne pas redéployer depuis un ancien checkout qui contient encore
+   `apps/market-source-probe`.
+
+## Historique
+
+Le déploiement borné d'octobre 2026 (config inactive, secret via stdin,
+fenêtre ≤ 24 h, une sonde manuelle) est clos. Les captures restent dans
+`docs/analysis/evidence-cloudflare-market-source-2026-10-13/`.
+Le compte rendu est `docs/analysis/cloudflare-market-source-2026-10-13.md`.
