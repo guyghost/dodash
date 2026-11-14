@@ -79,8 +79,10 @@ appel et concentre les `RATE_LIMITED`.
   de la série entière si le basis ≤ 200 bps. Sans recouvrement, sans
   référence, ou au-delà de 8 jours : fail-closed, inchangé.
 - Backoff intra-requête réservé à `RATE_LIMITED` Coinbase : 3 essais,
-  bases 400 ms et 1 200 ms, gigue ±25 % injectée, plafond 1 500 ms,
-  budget 2 500 ms. `Retry-After` plus long → pas d'attente, failover.
+  bases 400 ms et 1 200 ms, gigue ±25 % sur la base seule, plafond
+  1 500 ms, budget 2 500 ms. `Retry-After` est un plancher : la gigue
+  ne le raccourcit pas. Un plancher plus long que le plafond → pas
+  d'attente, failover.
   La machine garde les retries de cycle (60 s / 300 s / 900 s).
 - Décalage de grille : 8 s ±25 % (6–10 s) avant le produit suivant.
   `runNow` et les retries de cycle ne sont pas décalés.

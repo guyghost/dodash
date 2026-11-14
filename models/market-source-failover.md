@@ -98,9 +98,10 @@ La comparaison de closes utilise le même start de bougie, jamais un ticker
 2. L'ordre de failover est figé par déploiement. Hors `RATE_LIMITED`
    Coinbase, une tentative par source et par requête. Sur `RATE_LIMITED`
    Coinbase, au plus `COINBASE_RATE_LIMIT_MAX_ATTEMPTS` essais dans la
-   même requête, délais bornés et gigue injectée ; un `Retry-After` plus
-   long que le plafond abandonne l'essai intra-requête et passe au
-   secours. La machine reste seule propriétaire des re-tentatives de cycle.
+   même requête. La gigue ±25 % s'applique à la base seule ; `Retry-After`
+   est un plancher et n'est jamais raccourci. Un plancher plus long que
+   le plafond abandonne l'essai intra-requête et passe au secours. La
+   machine reste seule propriétaire des re-tentatives de cycle.
 3. Un secours perp n'est servi qu'avec une référence Coinbase d'âge
    ≤ `BASIS_REFERENCE_MAX_AGE_MS` et un basis ≤ `BASIS_MAX_BPS` sur le
    start commun ; sinon source écartée, jamais servie. Le reste de la
@@ -123,7 +124,8 @@ La comparaison de closes utilise le même start de bougie, jamais un ticker
   de la veille (24 h) reste valide ; au-delà de 8 jours, rejet.
 - `planRateLimitBackoff` : 429 sans `Retry-After` → attentes giguées
   400 ms puis 1 200 ms, au plus 3 essais et 2 500 ms ; `Retry-After`
-  au-dessus de 1 500 ms → stop, pas d'attente dans la requête.
+  de 1 000 ms avec gigue minimale → attente 1 000 ms, jamais 750 ms ;
+  `Retry-After` au-dessus de 1 500 ms → stop, pas d'attente dans la requête.
 - Fetchers Hyperliquid/dYdX sur fixtures figées : mapping granularité,
   `toISO` dYdX (bougie en cours exclue), doublons/manquants, prix
   mid/carnet distincts, body trop grand, JSON invalide, timeout.

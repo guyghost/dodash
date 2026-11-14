@@ -181,8 +181,10 @@ const jitterScale = (randomUnit: number): number => {
  * Next in-request wait after a Coinbase RATE_LIMITED, or stop.
  * `attempt` is the 0-based index of the retry about to be scheduled
  * (0 after the first failure). `randomUnit` ∈ [0, 1] is injected so the
- * plan stays pure. A Retry-After longer than the in-request cap stops:
- * the machine retry schedule owns that wait, and this request fails over.
+ * plan stays pure. Jitter applies to the table delay only. `Retry-After`
+ * is a floor: the wait is never shorter than the server cooldown. A floor
+ * above the in-request cap stops instead of being clipped; the machine
+ * retry schedule owns that wait, and this request fails over.
  */
 export const planRateLimitBackoff = (input: {
 	readonly attempt: number;
@@ -207,14 +209,18 @@ export const planRateLimitBackoff = (input: {
 		input.retryAfterMs >= 0
 			? input.retryAfterMs
 			: null;
-	const requested = retryAfter !== null && retryAfter > table ? retryAfter : table;
-	if (requested > COINBASE_RATE_LIMIT_MAX_DELAY_MS) {
-		return Object.freeze({ kind: "stop", reason: "RETRY_AFTER_EXCEEDS_BUDGET" });
-	}
-	const delayMs = Math.min(
-		Math.round(requested * jitterScale(input.randomUnit)),
+	const jitteredBase = Math.min(
+		Math.round(table * jitterScale(input.randomUnit)),
 		COINBASE_RATE_LIMIT_MAX_DELAY_MS,
 	);
+	if (
+		retryAfter !== null &&
+		retryAfter > COINBASE_RATE_LIMIT_MAX_DELAY_MS
+	) {
+		return Object.freeze({ kind: "stop", reason: "RETRY_AFTER_EXCEEDS_BUDGET" });
+	}
+	const delayMs =
+		retryAfter === null ? jitteredBase : Math.max(jitteredBase, retryAfter);
 	if (
 		!Number.isFinite(input.spentMs) ||
 		input.spentMs < 0 ||

@@ -163,6 +163,33 @@ describe("market source failover — recouvrement et backoff (2026-11-14)", () =
 		).toEqual({ kind: "stop", reason: "ATTEMPTS" });
 	});
 
+	it("garde Retry-After comme plancher sous la gigue", () => {
+		expect(
+			planRateLimitBackoff({
+				attempt: 0,
+				retryAfterMs: 1_000,
+				randomUnit: 0,
+				spentMs: 0,
+			}),
+		).toEqual({ kind: "retry", delayMs: 1_000, spentMs: 1_000 });
+		expect(
+			planRateLimitBackoff({
+				attempt: 1,
+				retryAfterMs: 1_000,
+				randomUnit: 0,
+				spentMs: 0,
+			}),
+		).toEqual({ kind: "retry", delayMs: 1_000, spentMs: 1_000 });
+		expect(
+			planRateLimitBackoff({
+				attempt: 0,
+				retryAfterMs: 100,
+				randomUnit: 0,
+				spentMs: 0,
+			}),
+		).toEqual({ kind: "retry", delayMs: 300, spentMs: 300 });
+	});
+
 	it("n'attend pas dans la requête quand Retry-After dépasse le plafond", () => {
 		expect(
 			planRateLimitBackoff({
