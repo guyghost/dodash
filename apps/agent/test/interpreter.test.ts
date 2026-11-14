@@ -475,6 +475,52 @@ describe("runTradingCycle", () => {
     expect(fixture.intents[0]?.quantity).toBe(200);
   });
 
+  it("decides from a Hyperliquid candle mark when that series served the cycle", async () => {
+    const config = configuration();
+    const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+    const valuationMark = {
+      price: 5,
+      source: "HYPERLIQUID_CANDLE_CLOSE" as const,
+      timeframe: config.timeframe,
+      candleClosedAt: 360_000,
+      maxMarketStalenessMs: config.maxMarketStalenessMs,
+    };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 9, 8, 7, 6, 5]),
+        source: "hyperliquid",
+        cached: false,
+        valuationMark,
+      },
+      portfolio,
+    );
+
+    const result = await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine: readyMachine("agent-1", config.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt: 360_000,
+      cycleId: "cycle-hyperliquid-mark",
+      now: () => 360_000,
+      triggerAlarm: true,
+      effects: fixture.effects,
+    });
+
+    expect(result.machine.context.outcome).toBe("ORDER_CONFIRMED");
+    expect(fixture.intents).toHaveLength(1);
+    expect(fixture.checkpoints.at(-1)?.market).toMatchObject({
+      source: "hyperliquid",
+      valuationMark,
+    });
+  });
+
   describe("scheduled market retries (models/market-retry-schedule.md)", () => {
     const rateLimited = (retryAfterMs?: number): WorkflowError => ({
       phase: "market-data",

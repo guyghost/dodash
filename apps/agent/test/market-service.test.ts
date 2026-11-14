@@ -95,6 +95,46 @@ describe("fetchMarketSnapshot", () => {
     });
   });
 
+  it.each([
+    ["hyperliquid", "HYPERLIQUID", "HYPERLIQUID_CANDLE_CLOSE"],
+    ["dydx", "DYDX", "DYDX_CANDLE_CLOSE"],
+  ] as const)(
+    "labels the mark with the %s series that served the decision",
+    async (source, pinned, markSource) => {
+      const fetch = marketFetch(
+        Response.json({
+          productId: "BTC-USD",
+          timeframe: "ONE_MINUTE",
+          candles: [candle(60_000, 10)],
+          source,
+          cached: false,
+        }),
+        Response.json({
+          productId: "BTC-USD",
+          price: 10,
+          observedAt: 120_000,
+          source,
+          cached: false,
+        }),
+      );
+      const result = await fetchMarketSnapshot(
+        { fetch },
+        "x".repeat(32),
+        configuration(),
+        120_000,
+      );
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.source).toBe(source);
+      expect(result.value.valuationMark?.source).toBe(markSource);
+      const tickerInit = fetch.mock.calls[1]?.[1] as RequestInit;
+      expect(JSON.parse(String(tickerInit.body))).toEqual({
+        productId: "BTC-USD",
+        sources: [pinned],
+      });
+    },
+  );
+
   it("fails closed when the internal secret is missing", async () => {
     const fetch = vi.fn();
     const result = await fetchMarketSnapshot(

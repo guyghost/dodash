@@ -127,3 +127,14 @@ or missed candle close, and double20 the admission evaluation instant.
 The original close of `decision.missed` is now observable in AE, independently
 of the mark. Repeated facts are deduplicated by agent/product/close; sampling
 and write failures still forbid treating absence as proof of non-admission.
+
+## Amendment 2026-11-14 — mark source follows the candle series
+
+`valuationPriceSource` (blob9) stays in place. Its closed vocabulary widens
+from `COINBASE_CANDLE_CLOSE | NONE` to
+
+`COINBASE_CANDLE_CLOSE | HYPERLIQUID_CANDLE_CLOSE | DYDX_CANDLE_CLOSE | NONE`.
+
+The label is the source of the candle series that supplied the mark. Schema
+version, blob positions and doubles are unchanged. The field still never
+selects a transition.

@@ -1,5 +1,7 @@
 import {
+  type CandleCloseMarkSource,
   DASHBOARD_REMOTE_PHASES,
+  isCandleCloseMarkSource,
   LIVE_TRADING_POLICY,
   type DashboardDirectCommand,
   type DashboardError,
@@ -96,7 +98,7 @@ export interface PaperValuationView {
   readonly exposureNotional: number | null;
   readonly exposureQuality: "fresh" | "stale" | "unavailable";
   readonly markPrice: number | null;
-  readonly markSource: "COINBASE_CANDLE_CLOSE" | null;
+  readonly markSource: CandleCloseMarkSource | null;
   readonly timeframe: string | null;
   readonly candleClosedAt: number | null;
   readonly ageMs: number | null;
@@ -274,7 +276,7 @@ const parsePaperValuation = (value: unknown): PaperValuationView | null => {
     !(value.exposureNotional === null || isNonNegativeFinite(value.exposureNotional)) ||
     (value.exposureQuality !== "fresh" && value.exposureQuality !== "stale" && value.exposureQuality !== "unavailable") ||
     !(value.markPrice === null || (isFiniteNumber(value.markPrice) && value.markPrice > 0)) ||
-    !(value.markSource === null || value.markSource === "COINBASE_CANDLE_CLOSE") ||
+    !(value.markSource === null || isCandleCloseMarkSource(value.markSource)) ||
     !(value.timeframe === null || (typeof value.timeframe === "string" && value.timeframe.length > 0)) ||
     !(value.candleClosedAt === null || isSafeTime(value.candleClosedAt)) ||
     !(value.ageMs === null || isSafeTime(value.ageMs)) ||

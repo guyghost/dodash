@@ -9,7 +9,11 @@ import {
 	TIMEFRAME_MILLISECONDS,
 	validateMarketDataIntegrity,
 } from "@dodash/domain";
-import { planMarketRetry, type WorkflowError } from "@dodash/models";
+import {
+	candleCloseMarkSource,
+	planMarketRetry,
+	type WorkflowError,
+} from "@dodash/models";
 import { z } from "zod";
 
 import { readBoundedJson } from "./bounded-json.js";
@@ -303,6 +307,17 @@ const fetchMarketSnapshotUnqualified = async (
 		if (!Number.isSafeInteger(candleClosedAt)) {
 			return err(error("INVALID_RESPONSE", false));
 		}
+		const markSource = candleCloseMarkSource(parsed.data.source);
+		console.log(
+			JSON.stringify({
+				event: "market_snapshot_resolved",
+				productId: product.value,
+				source: parsed.data.source,
+				markSource,
+				cached: parsed.data.cached,
+				candleClosedAt,
+			}),
+		);
 		return ok(
 			Object.freeze({
 				productId: product.value,
@@ -312,7 +327,7 @@ const fetchMarketSnapshotUnqualified = async (
 				cached: parsed.data.cached,
 				valuationMark: Object.freeze({
 					price: lastCandle.close,
-					source: "COINBASE_CANDLE_CLOSE" as const,
+					source: markSource,
 					timeframe: parsed.data.timeframe,
 					candleClosedAt,
 					maxMarketStalenessMs: configuration.maxMarketStalenessMs,

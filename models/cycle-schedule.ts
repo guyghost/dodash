@@ -64,8 +64,34 @@ export interface MissedDecisionResolution {
  * A decision candle is missed when a cycle completes after the freshness
  * window without a recorded decision for it, and it has not been reported yet.
  */
-/** Délai avant le produit de rang k ≥ 1 sur un réveil de grille (§4). */
-export const PORTFOLIO_PRODUCT_STAGGER_MS = 2_000;
+/**
+ * Base delay before product rank k ≥ 1 on a grid wake (§4).
+ * 8s clears the previous product's candles, ticker, and the in-request
+ * Coinbase backoff (≤ 2.5s) before the next product calls Coinbase.
+ */
+export const PORTFOLIO_PRODUCT_STAGGER_MS = 8_000;
+/** ±25% around the base delay. Rank 0 waits 0. `randomUnit` is injected. */
+export const PORTFOLIO_PRODUCT_STAGGER_JITTER_RATIO = 0.25;
+
+/**
+ * Wait before the product that already has `executedBefore` siblings run
+ * on this grid wake. The first executed product waits 0. Disabled products
+ * are not counted by the caller.
+ */
+export const planPortfolioProductStaggerMs = (
+  executedBefore: number,
+  randomUnit: number,
+): number => {
+  if (!Number.isSafeInteger(executedBefore) || executedBefore <= 0) return 0;
+  const unit = Number.isFinite(randomUnit)
+    ? Math.min(1, Math.max(0, randomUnit))
+    : 0;
+  const scale =
+    1 -
+    PORTFOLIO_PRODUCT_STAGGER_JITTER_RATIO +
+    2 * PORTFOLIO_PRODUCT_STAGGER_JITTER_RATIO * unit;
+  return Math.round(PORTFOLIO_PRODUCT_STAGGER_MS * scale);
+};
 
 export const resolveMissedDecision = (input: MissedDecisionInput): MissedDecisionResolution => {
   const decisionCandleClosedAt =

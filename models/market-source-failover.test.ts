@@ -3,8 +3,11 @@ import {
 	assessBasisGate,
 	BASIS_MAX_BPS,
 	BASIS_REFERENCE_MAX_AGE_MS,
+	candleCloseMarkSource,
+	findOverlappingBasisCandle,
 	MARKET_SOURCE_ORDER,
 	type MarketSourceId,
+	planRateLimitBackoff,
 	resolveMarketSource,
 } from "./market-source-failover.js";
 
@@ -93,5 +96,100 @@ describe("market source failover — gate de basis (§2)", () => {
 				now: base.referenceFetchedAt + BASIS_REFERENCE_MAX_AGE_MS,
 			}),
 		).toEqual({ ok: true });
+	});
+
+	it("garde une ancre de la décision daily précédente (24 h)", () => {
+		expect(
+			assessBasisGate({
+				...base,
+				now: base.referenceFetchedAt + 24 * 3_600_000,
+			}),
+		).toEqual({ ok: true });
+	});
+});
+
+describe("market source failover — recouvrement et backoff (2026-11-14)", () => {
+	it("retient la bougie au start de la référence, pas la plus récente", () => {
+		const candles = [
+			{ start: 0, close: 100.4 },
+			{ start: 86_400_000, close: 130 },
+		];
+		expect(findOverlappingBasisCandle(candles, 0)).toEqual(candles[0]);
+		expect(findOverlappingBasisCandle(candles, 86_400_000)).toEqual(candles[1]);
+		expect(findOverlappingBasisCandle(candles, 1)).toBeNull();
+		expect(findOverlappingBasisCandle([{ start: 0, close: 0 }], 0)).toBeNull();
+	});
+
+	it("réessaie Coinbase avec une gigue déterministe, puis s'arrête", () => {
+		expect(
+			planRateLimitBackoff({
+				attempt: 0,
+				retryAfterMs: null,
+				randomUnit: 0,
+				spentMs: 0,
+			}),
+		).toEqual({ kind: "retry", delayMs: 300, spentMs: 300 });
+		expect(
+			planRateLimitBackoff({
+				attempt: 0,
+				retryAfterMs: null,
+				randomUnit: 0.5,
+				spentMs: 0,
+			}),
+		).toEqual({ kind: "retry", delayMs: 400, spentMs: 400 });
+		expect(
+			planRateLimitBackoff({
+				attempt: 0,
+				retryAfterMs: null,
+				randomUnit: 1,
+				spentMs: 0,
+			}),
+		).toEqual({ kind: "retry", delayMs: 500, spentMs: 500 });
+		expect(
+			planRateLimitBackoff({
+				attempt: 1,
+				retryAfterMs: null,
+				randomUnit: 0.5,
+				spentMs: 400,
+			}),
+		).toEqual({ kind: "retry", delayMs: 1_200, spentMs: 1_600 });
+		expect(
+			planRateLimitBackoff({
+				attempt: 2,
+				retryAfterMs: null,
+				randomUnit: 0.5,
+				spentMs: 1_600,
+			}),
+		).toEqual({ kind: "stop", reason: "ATTEMPTS" });
+	});
+
+	it("n'attend pas dans la requête quand Retry-After dépasse le plafond", () => {
+		expect(
+			planRateLimitBackoff({
+				attempt: 0,
+				retryAfterMs: 9_000,
+				randomUnit: 0.5,
+				spentMs: 0,
+			}),
+		).toEqual({ kind: "stop", reason: "RETRY_AFTER_EXCEEDS_BUDGET" });
+	});
+
+	it("respecte le budget cumulé", () => {
+		expect(
+			planRateLimitBackoff({
+				attempt: 1,
+				retryAfterMs: 1_500,
+				randomUnit: 0.5,
+				spentMs: 1_500,
+			}),
+		).toEqual({ kind: "stop", reason: "BUDGET" });
+	});
+
+	it("étiquette le mark par la source de la série", () => {
+		expect(candleCloseMarkSource("coinbase")).toBe("COINBASE_CANDLE_CLOSE");
+		expect(candleCloseMarkSource("hyperliquid")).toBe(
+			"HYPERLIQUID_CANDLE_CLOSE",
+		);
+		expect(candleCloseMarkSource("dydx")).toBe("DYDX_CANDLE_CLOSE");
 	});
 });

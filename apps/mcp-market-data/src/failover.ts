@@ -11,6 +11,7 @@ import { TIMEFRAME_MILLISECONDS } from "@dodash/domain";
 import {
 	assessBasisGate,
 	BASIS_REFERENCE_MAX_AGE_MS,
+	findOverlappingBasisCandle,
 	type MarketSourceFailure,
 } from "@dodash/models";
 import type { MarketCache } from "./coinbase.js";
@@ -127,12 +128,17 @@ export const serveBackupCandles = async (
 		request.timeframe,
 	);
 	if (reference === null) {
-		// INV 3 : sans référence Coinbase fraîche, un secours n'est jamais servi.
+		// INV 3 : sans référence Coinbase, un secours n'est jamais servi.
 		return { ok: false, failure: "BASIS_REJECTED" };
 	}
+	// La dernière close du secours est souvent la bougie que Coinbase vient
+	// de refuser. Le basis se mesure sur le start de la référence, qui est
+	// une close plus ancienne encore présente dans la série.
+	const overlap = findOverlappingBasisCandle(fetched.value, reference.candleStart);
+	if (overlap === null) return { ok: false, failure: "BASIS_REJECTED" };
 	const gate = assessBasisGate({
-		backupClose: latest.close,
-		backupCandleStart: latest.start,
+		backupClose: overlap.close,
+		backupCandleStart: overlap.start,
 		referenceClose: reference.close,
 		referenceCandleStart: reference.candleStart,
 		referenceFetchedAt: reference.fetchedAt,
