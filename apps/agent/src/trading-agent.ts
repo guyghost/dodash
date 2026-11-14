@@ -462,12 +462,24 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     `;
 	}
 
-	/** N'écrit la copie durable que pour une session qui passe la restauration. */
+	/**
+	 * N'écrit la copie durable que pour une session qui passe la restauration.
+	 * Un échec SQLite est journalisé : l'état SDK déjà accepté n'est pas annulé.
+	 */
 	private persistValidatedPaperSession(next: TradingAgentState): void {
-		if (next.portfolioRestoreError !== null || next.portfolioSession === null) return;
-		const restored = resolveRestoredPortfolioSession(next.portfolioSession);
-		if (!restored.ok) return;
-		this.persistDurablePaperSession(restored.session);
+		try {
+			if (next.portfolioRestoreError !== null || next.portfolioSession === null) {
+				return;
+			}
+			const restored = resolveRestoredPortfolioSession(next.portfolioSession);
+			if (!restored.ok) return;
+			this.persistDurablePaperSession(restored.session);
+		} catch (error) {
+			console.error(
+				"PAPER_BOOK_PERSIST_FAILED",
+				error instanceof Error ? error.message : "unknown",
+			);
+		}
 	}
 
 	private persistDurablePaperSession(session: PortfolioSessionState): void {
@@ -1640,8 +1652,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			products: [...portfolioProductIds(session)],
 			limits,
 		});
+		orchestrator.send({ type: "PORTFOLIO_STARTED" });
+		for (const productId of portfolioProductIds(session)) {
+			orchestrator.send({ type: "PRODUCT_STOPPED", productId });
+		}
 		const portfolioRecord = orchestrator.record;
 		orchestrator.stop();
+		if (portfolioRecord.value !== "complete") {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
 		this.setState({
 			...this.state,
 			enabled: false,

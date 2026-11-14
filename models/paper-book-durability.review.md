@@ -7,7 +7,7 @@
 | Deploy ou redémarrage DO | book recopié, audit nul (INV-B1) | Couvert |
 | `/start` | book recopié, audit nul (INV-B1) | Couvert |
 | `RESET` sans `explicit` | refus `RESET_NOT_EXPLICIT`, book non réécrit (INV-B2) | Couvert |
-| `RESET` explicite, capital positif | manches à `initialCapital` / quantité 0, audit `portfolio.reset` avant et après (INV-B2) | Couvert |
+| `RESET` explicite, capital positif | manches à `initialCapital` / quantité 0, audit `portfolio.reset` avant et après, orchestrateur `complete` avec statuts `stopped` (INV-B2) | Couvert |
 | Capital de reset non positif | refus `INVALID_BOOK` | Couvert |
 | Blob d'état absent | copie durable, jamais un book synthétique à 10 000 $ (INV-B3) | Couvert |
 | Blob mémoire déjà commis | la mémoire gagne sur une copie durable plus ancienne (INV-B3) | Couvert |

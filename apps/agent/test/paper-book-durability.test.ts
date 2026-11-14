@@ -7,6 +7,7 @@ import {
   createPortfolioMachineSession,
   initialProductRuntime,
   projectDurablePaperBook,
+  projectPortfolioSessionSummary,
   type PortfolioSessionState,
 } from "../src/portfolio-runtime.js";
 import { INITIAL_AGENT_STATE, type TradingAgentState } from "../src/state.js";
@@ -192,6 +193,12 @@ describe("paper book survives deploy and restart", () => {
         { productId: "BTC-USD", cash: 10_000, positionQuantity: 0 },
         { productId: "ETH-USD", cash: 10_000, positionQuantity: 0 },
       ]);
+      expect(agent.state.portfolioSession?.portfolio.value).toBe("complete");
+      expect(agent.state.portfolioSession?.portfolio.context.statuses).toEqual({
+        "BTC-USD": "stopped",
+        "ETH-USD": "stopped",
+      });
+      expect(projectPortfolioSessionSummary(agent.state.portfolioSession).ok).toBe(true);
       expect(agent.state.paperBookUnlocked).toBe(true);
       const line = log.mock.calls.map((call) => String(call[0])).find((entry) => entry.includes("portfolio.reset"));
       expect(line).toBeDefined();
@@ -323,6 +330,26 @@ describe("paper book survives deploy and restart", () => {
     expect(result.ok).toBe(true);
     expect(agent.state.portfolioSession).toBeNull();
     expect(agent.queries.some((query) => query.includes("DELETE"))).toBe(true);
+  });
+
+  it("keeps the accepted state when the durable book write fails", () => {
+    const session = openSession();
+    const agent = shell(
+      { ...INITIAL_AGENT_STATE, portfolioSession: session, enabled: false },
+      () => [],
+    );
+    (agent as unknown as { sql: () => never }).sql = () => {
+      throw new Error("sqlite down");
+    };
+    const persist = (
+      agent as unknown as {
+        persistValidatedPaperSession(next: TradingAgentState): void;
+      }
+    ).persistValidatedPaperSession.bind(agent);
+    expect(() => persist(agent.state)).not.toThrow();
+    expect(agent.state.portfolioSession?.products["BTC-USD"]?.portfolio.positionQuantity).toBe(
+      0.1288,
+    );
   });
 
   it("does not run a grid wake while restoration is refused", async () => {

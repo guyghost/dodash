@@ -95,7 +95,12 @@ remise à zéro.
   tant qu'un reset explicite n'a pas déverrouillé le remplacement.
 - `/reset` exige `canControl`, refuse un portefeuille encore actif, puis
   applique `RESET` explicite, journalise `portfolio.reset` et écrit la
-  ligne d'audit.
+  ligne d'audit. L'orchestrateur qui en résulte est quiescent
+  (`complete`, chaque créneau `stopped`) : la session projette encore un
+  résumé. Elle n'est pas laissée `idle` sans statuts.
+- Une écriture SQLite de la copie durable qui échoue est journalisée.
+  Elle n'annule pas la transition d'état déjà acceptée. La copie se
+  réécrit au prochain `setState` valide.
 - Le mode live n'est pas concerné : `LIVE_TRADING_ENABLED` reste false et
   `resolveLiveStartContinuity` n'est pas élargi.
 
