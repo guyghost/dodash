@@ -11,7 +11,11 @@
 | Capital de reset non positif | refus `INVALID_BOOK` | Couvert |
 | Blob d'état absent | copie durable, jamais un book synthétique à 10 000 $ (INV-B3) | Couvert |
 | Blob mémoire déjà commis | la mémoire gagne sur une copie durable plus ancienne (INV-B3) | Couvert |
-| Charge utile illisible | `null` / `INVALID_BOOK`, pas un book plat (INV-B4) | Couvert |
+| Charge utile illisible | `unreadable` / `INVALID_BOOK`, pas un book plat (INV-B4) | Couvert |
+| Ligne durable absente | `missing`, distinct d'une lecture en échec (INV-B4) | Couvert |
+| Lecture SQL ou JSON de book en échec | `unreadable` ; START refusé, pas de capital initial (INV-B4) | Couvert |
+| Instance mono-produit (`configuration` ou `machine`) et session nulle | pas une reprise de portefeuille (INV-B3) | Couvert |
+| Session non restaurable | désarmement sans réécriture de la copie durable (INV-B4) | Couvert |
 | Fonction pure, sans I/O | le shell applique, il n'invente pas un second reset (INV-B5) | Couvert |
 
 ## Contraintes de mise en œuvre

@@ -118,6 +118,41 @@ export const paperBookAfterRestart = (
 	durable: DurablePaperBook | null,
 ): DurablePaperBook | null => inMemory ?? durable;
 
+/**
+ * Reprise du portefeuille seulement si aucun runtime n'est configuré.
+ * Une instance mono-produit (`configuration` ou `machine` présente,
+ * `portfolioSession` nulle) n'est pas un blob perdu.
+ */
+export const shouldRecoverDurablePortfolio = (state: {
+	readonly portfolioSession: unknown;
+	readonly configuration: unknown;
+	readonly machine: unknown;
+}): boolean =>
+	state.portfolioSession == null &&
+	state.configuration == null &&
+	state.machine == null;
+
+export type DurableBookLoad =
+	| { readonly status: "missing" }
+	| { readonly status: "ready"; readonly book: DurablePaperBook }
+	| { readonly status: "unreadable" };
+
+/**
+ * Une ligne absente est un agent neuf. Une lecture en échec ou un JSON
+ * de book illisible est un refus : ce n'est pas une absence, et START
+ * ne doit pas semer le capital initial par-dessus.
+ */
+export const classifyDurableBookPayload = (
+	outcome: "missing" | "read_failed" | "present",
+	raw: unknown,
+): DurableBookLoad => {
+	if (outcome === "read_failed") return Object.freeze({ status: "unreadable" });
+	if (outcome === "missing") return Object.freeze({ status: "missing" });
+	const book = parseDurablePaperBook(raw);
+	if (book === null) return Object.freeze({ status: "unreadable" });
+	return Object.freeze({ status: "ready", book });
+};
+
 export const applyPaperBookCommand = (
 	book: DurablePaperBook,
 	command: PaperBookCommand,

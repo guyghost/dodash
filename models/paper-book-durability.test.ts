@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
 	applyPaperBookCommand,
+	classifyDurableBookPayload,
 	paperBookAfterRestart,
 	parseDurablePaperBook,
+	shouldRecoverDurablePortfolio,
 	type DurablePaperBook,
 } from "./paper-book-durability.js";
 
@@ -108,5 +110,41 @@ describe("paper book durability", () => {
 				{ type: "RESET", explicit: true, initialCapital: 10_000 },
 			),
 		).toEqual({ ok: false, reason: "INVALID_BOOK" });
+	});
+
+	it("does not treat a configured single-product runtime as a lost portfolio blob", () => {
+		expect(
+			shouldRecoverDurablePortfolio({
+				portfolioSession: null,
+				configuration: null,
+				machine: null,
+			}),
+		).toBe(true);
+		expect(
+			shouldRecoverDurablePortfolio({
+				portfolioSession: null,
+				configuration: { productId: "BTC-USD" },
+				machine: { value: "waiting" },
+			}),
+		).toBe(false);
+		expect(
+			shouldRecoverDurablePortfolio({
+				portfolioSession: { products: {} },
+				configuration: null,
+				machine: null,
+			}),
+		).toBe(false);
+	});
+
+	it("keeps a missing durable row distinct from an unreadable one", () => {
+		const ready = classifyDurableBookPayload("present", openBook());
+		expect(ready.status).toBe("ready");
+		expect(classifyDurableBookPayload("missing", null)).toEqual({ status: "missing" });
+		expect(classifyDurableBookPayload("read_failed", openBook())).toEqual({
+			status: "unreadable",
+		});
+		expect(classifyDurableBookPayload("present", { products: [] })).toEqual({
+			status: "unreadable",
+		});
 	});
 });

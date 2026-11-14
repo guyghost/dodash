@@ -533,9 +533,12 @@ export type {
 } from "./paper-book-durability.js";
 export {
 	applyPaperBookCommand,
+	classifyDurableBookPayload,
 	paperBookAfterRestart,
 	parseDurablePaperBook,
+	shouldRecoverDurablePortfolio,
 } from "./paper-book-durability.js";
+export type { DurableBookLoad } from "./paper-book-durability.js";
 export { perpOrderUiMachine } from "./perp-order-ui.machine.js";
 export type {
 	PerpOrderFormDraft,

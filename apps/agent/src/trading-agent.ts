@@ -13,6 +13,7 @@ import {
 	acceptPaperValuationMark,
 	applyPaperBookCommand,
 	assessLiveTradingAgentIdentity,
+	classifyDurableBookPayload,
 	type ControlPermissions,
 	DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT,
 	DASHBOARD_PNL_HISTORY_MAX_CYCLES,
@@ -35,6 +36,7 @@ import {
 	resolveDailyRiskWindow,
 	resolveMissedDecision,
 	resolveRetryWake,
+	shouldRecoverDurablePortfolio,
 	shouldStartPendingCycle,
 	type TradingCycleEvent,
 	type WorkflowError,
@@ -297,9 +299,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	 */
 	override setState(next: TradingAgentState): void {
 		super.setState(next);
-		if (next.portfolioSession !== null) {
-			this.persistDurablePaperSession(next.portfolioSession);
-		}
+		this.persistValidatedPaperSession(next);
 	}
 
 	private readonly operatorNotificationDeduper =
@@ -462,6 +462,14 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     `;
 	}
 
+	/** N'écrit la copie durable que pour une session qui passe la restauration. */
+	private persistValidatedPaperSession(next: TradingAgentState): void {
+		if (next.portfolioRestoreError !== null || next.portfolioSession === null) return;
+		const restored = resolveRestoredPortfolioSession(next.portfolioSession);
+		if (!restored.ok) return;
+		this.persistDurablePaperSession(restored.session);
+	}
+
 	private persistDurablePaperSession(session: PortfolioSessionState): void {
 		this.ensurePaperBookSchema();
 		const book = projectDurablePaperBook(session);
@@ -476,40 +484,61 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
     `;
 	}
 
-	private readPaperBookRow(): { session_json: string; book_json: string } | null {
+	private retireDurablePaperBook(): void {
+		try {
+			this.ensurePaperBookSchema();
+			this.sql`DELETE FROM dodash_paper_book WHERE id = ${PAPER_BOOK_ROW_ID}`;
+		} catch (error) {
+			console.error(
+				"PAPER_BOOK_RETIRE_FAILED",
+				error instanceof Error ? error.message : "unknown",
+			);
+		}
+	}
+
+	private readPaperBookRow():
+		| { readonly status: "missing" }
+		| { readonly status: "read_failed" }
+		| { readonly status: "present"; readonly sessionJson: string; readonly bookJson: string } {
 		try {
 			this.ensurePaperBookSchema();
 			const rows = this.sql`
         SELECT session_json, book_json FROM dodash_paper_book WHERE id = ${PAPER_BOOK_ROW_ID}
       ` as unknown as readonly { session_json?: string; book_json?: string }[];
 			const row = rows[0];
-			if (row === undefined || typeof row.session_json !== "string") return null;
+			if (row === undefined) return { status: "missing" };
+			if (typeof row.session_json !== "string") return { status: "read_failed" };
 			return {
-				session_json: row.session_json,
-				book_json: typeof row.book_json === "string" ? row.book_json : "",
+				status: "present",
+				sessionJson: row.session_json,
+				bookJson: typeof row.book_json === "string" ? row.book_json : "",
 			};
 		} catch (error) {
 			console.error(
 				"PAPER_BOOK_READ_FAILED",
 				error instanceof Error ? error.message : "unknown",
 			);
-			return null;
+			return { status: "read_failed" };
 		}
 	}
 
 	private readDurablePaperSession(): PortfolioSessionState | null {
 		const row = this.readPaperBookRow();
-		if (row === null) return null;
-		const parsed = parseJson<unknown>(row.session_json);
+		if (row.status !== "present") return null;
+		const parsed = parseJson<unknown>(row.sessionJson);
 		if (parsed === null) return null;
 		const restored = resolveRestoredPortfolioSession(parsed);
 		return restored.ok ? restored.session : null;
 	}
 
-	private readDurablePaperBook(): DurablePaperBook | null {
+	private loadDurablePaperBook():
+		| { readonly status: "missing" }
+		| { readonly status: "unreadable" }
+		| { readonly status: "ready"; readonly book: DurablePaperBook } {
 		const row = this.readPaperBookRow();
-		if (row === null || row.book_json.length === 0) return null;
-		return parseDurablePaperBook(parseJson<unknown>(row.book_json));
+		if (row.status === "missing") return classifyDurableBookPayload("missing", null);
+		if (row.status === "read_failed") return classifyDurableBookPayload("read_failed", null);
+		return classifyDurableBookPayload("present", parseJson<unknown>(row.bookJson));
 	}
 
 	private appendPaperBookAudit(audit: PaperBookResetAudit): void {
@@ -587,7 +616,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 
 	override async onStart(): Promise<void> {
 		this.ensureTradingPersistenceSchema();
-		if (this.state.portfolioSession === null) {
+		if (shouldRecoverDurablePortfolio(this.state)) {
 			const recovered = this.readDurablePaperSession();
 			if (recovered !== null) {
 				this.setState({
@@ -600,9 +629,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			}
 		}
 		this.restorePortfolioSession();
-		if (this.state.portfolioSession !== null) {
-			this.persistDurablePaperSession(this.state.portfolioSession);
-		}
+		this.persistValidatedPaperSession(this.state);
 		const portfolio = this.state.portfolioSession;
 		if (this.state.enabled && portfolio !== null) {
 			await this.ensureIntervalSchedule(
@@ -768,6 +795,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 					: null,
 			updatedAt: Date.now(),
 		});
+		this.retireDurablePaperBook();
 
 		await this.runCurrent(false);
 		return { ok: true, state: this.stateSnapshot() };
@@ -1398,17 +1426,38 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			}
 		}
 		const requestedIds = multi.products.map((slot) => slot.productId);
-		const sameProducts =
-			previous !== null &&
-			samePortfolioProductIds([...portfolioProductIds(previous)], requestedIds);
+		const memorySession =
+			previous !== null && resolveRestoredPortfolioSession(previous).ok
+				? previous
+				: null;
+		const durableLoad =
+			memorySession === null
+				? this.loadDurablePaperBook()
+				: ({ status: "missing" } as const);
+		if (durableLoad.status === "unreadable") {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
 		if (
 			previous !== null &&
+			memorySession === null &&
+			durableLoad.status === "missing"
+		) {
+			return { ok: false, error: { code: "INVALID_STATE" } };
+		}
+		const durableBook = durableLoad.status === "ready" ? durableLoad.book : null;
+		const sameProducts =
+			memorySession !== null &&
+			samePortfolioProductIds(
+				[...portfolioProductIds(memorySession)],
+				requestedIds,
+			);
+		if (
+			memorySession !== null &&
 			!sameProducts &&
 			this.state.paperBookUnlocked !== true
 		) {
 			return { ok: false, error: { code: "INVALID_STATE" } };
 		}
-		const durableBook = previous === null ? this.readDurablePaperBook() : null;
 		if (
 			durableBook !== null &&
 			!samePortfolioProductIds(
@@ -1419,10 +1468,11 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		) {
 			return { ok: false, error: { code: "INVALID_STATE" } };
 		}
-		if (sameProducts && previous !== null) {
-			const carried = applyPaperBookCommand(projectDurablePaperBook(previous), {
-				type: "START",
-			});
+		if (sameProducts && memorySession !== null) {
+			const carried = applyPaperBookCommand(
+				projectDurablePaperBook(memorySession),
+				{ type: "START" },
+			);
 			if (!carried.ok || carried.audit !== null) {
 				return { ok: false, error: { code: "INVALID_STATE" } };
 			}
@@ -1446,7 +1496,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		const products: Record<string, PortfolioProductRuntime> = {};
 		for (const slot of multi.products) {
 			const previousProduct = sameProducts
-				? previous?.products[slot.productId]
+				? memorySession?.products[slot.productId]
 				: undefined;
 			const productSession = createTradingMachineSession({
 				agentId: this.name,

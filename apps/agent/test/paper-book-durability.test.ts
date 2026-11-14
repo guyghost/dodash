@@ -1,7 +1,7 @@
 import type { ControlPermissions } from "@dodash/models";
 import { describe, expect, it, vi } from "vitest";
 
-import { parseMultiProductAgentConfiguration } from "../src/configuration.js";
+import { parseAgentConfiguration, parseMultiProductAgentConfiguration } from "../src/configuration.js";
 import { createTradingMachineSession } from "../src/machine-session.js";
 import {
   createPortfolioMachineSession,
@@ -73,7 +73,12 @@ const startBody = () => ({
 
 type Shell = {
   state: TradingAgentState;
+  queries: string[];
   onStart(): Promise<void>;
+  startAgent(
+    input: unknown,
+    permissions: ControlPermissions,
+  ): Promise<{ ok: boolean; error?: { code: string } }>;
   startPortfolioAgent(
     input: unknown,
     permissions: ControlPermissions,
@@ -91,15 +96,19 @@ const shell = (
   Object.assign(Object.create(TradingAgent.prototype), {
     name: "btc-usd-paper",
     state,
+    queries: [] as string[],
     env: {},
     setState(next: TradingAgentState) {
       this.state = next;
     },
     ensureTradingPersistenceSchema() {},
     sql(strings: TemplateStringsArray) {
-      return strings.join(" ").includes("SELECT") ? rows() : [];
+      const text = strings.join(" ");
+      this.queries.push(text);
+      return text.includes("SELECT") ? rows() : [];
     },
     runPortfolio: async () => undefined,
+    runCurrent: async () => undefined,
     cancelSchedule: async () => undefined,
     ensureIntervalSchedule: async () => ({ id: "schedule", intervalSeconds: 3600 }),
   }) as Shell;
@@ -255,6 +264,65 @@ describe("paper book survives deploy and restart", () => {
     expect(agent.state.enabled).toBe(false);
     expect(agent.state.portfolioSession?.products["ETH-USD"]?.portfolio.positionQuantity).toBe(4.4347);
     expect(agent.state.portfolioSession?.products["BTC-USD"]?.portfolio.positionQuantity).toBe(0.1288);
+    expect(agent.queries.some((query) => query.includes("INSERT"))).toBe(false);
+  });
+
+  it("leaves a configured single-product runtime in place when a portfolio row still exists", async () => {
+    const parsed = parseAgentConfiguration({ productId: "BTC-USD", executionMode: "paper" });
+    if (!parsed.ok) throw new Error(parsed.error.code);
+    const session = openSession();
+    const agent = shell(
+      {
+        ...INITIAL_AGENT_STATE,
+        configuration: parsed.value,
+        machine: stoppedMachine(),
+        portfolioSession: null,
+      },
+      () => [
+        {
+          session_json: JSON.stringify(session),
+          book_json: JSON.stringify(projectDurablePaperBook(session)),
+        },
+      ],
+    );
+    await agent.onStart();
+    expect(agent.state.portfolioSession).toBeNull();
+    expect(agent.state.configuration?.productId).toBe("BTC-USD");
+  });
+
+  it("refuses start when the durable book cannot be read and does not seed initial capital", async () => {
+    const malformed = shell(INITIAL_AGENT_STATE, () => [
+      { session_json: "{}", book_json: "{" },
+    ]);
+    expect(await malformed.startPortfolioAgent(startBody(), permissions)).toEqual({
+      ok: false,
+      error: { code: "INVALID_STATE" },
+    });
+    expect(malformed.state.portfolioSession).toBeNull();
+    expect(malformed.queries.some((query) => query.includes("INSERT"))).toBe(false);
+
+    const failed = shell(INITIAL_AGENT_STATE, () => {
+      throw new Error("sqlite down");
+    });
+    expect(await failed.startPortfolioAgent(startBody(), permissions)).toEqual({
+      ok: false,
+      error: { code: "INVALID_STATE" },
+    });
+    expect(failed.state.portfolioSession).toBeNull();
+  });
+
+  it("retires the portfolio backup when a single-product runtime starts", async () => {
+    const agent = shell(
+      { ...INITIAL_AGENT_STATE, portfolioSession: openSession(), enabled: false },
+      () => [],
+    );
+    const result = await agent.startAgent(
+      { productId: "BTC-USD", executionMode: "paper" },
+      permissions,
+    );
+    expect(result.ok).toBe(true);
+    expect(agent.state.portfolioSession).toBeNull();
+    expect(agent.queries.some((query) => query.includes("DELETE"))).toBe(true);
   });
 
   it("does not run a grid wake while restoration is refused", async () => {

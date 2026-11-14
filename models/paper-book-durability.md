@@ -67,9 +67,16 @@ remise à zéro.
 - **INV-B3** : un blob d'état absent se résout par `paperBookAfterRestart`
   vers la copie durable, jamais vers un book synthétique à 10 000 $. Une
   copie mémoire déjà présente gagne sur la copie durable (un reset déjà
-  commis n'est pas ressuscité).
-- **INV-B4** : une charge utile illisible est un échec fermé (`null` /
-  `INVALID_BOOK`). Elle ne devient pas un book plat.
+  commis n'est pas ressuscité). La reprise n'a lieu que si
+  `shouldRecoverDurablePortfolio` : `portfolioSession`, `configuration` et
+  `machine` sont tous absents. Une instance mono-produit configurée n'est
+  pas un blob perdu.
+- **INV-B4** : une charge utile illisible est un échec fermé
+  (`unreadable` / `INVALID_BOOK`). Elle ne devient pas un book plat.
+  `classifyDurableBookPayload` distingue une ligne absente (`missing`),
+  une lecture ou un JSON en échec (`unreadable`). START sur `unreadable`
+  est refusé. Une session qui ne passe pas la restauration n'est pas
+  réécrite dans la copie durable.
 - **INV-B5** : la décision est une fonction pure. Le shell Durable Object
   l'applique ; il ne décide pas d'une autre remise à zéro. Un LLM n'est
   pas sur ce chemin.
@@ -77,8 +84,10 @@ remise à zéro.
 ## 3. Effets de shell (hors de la fonction pure)
 
 - Le shell persiste la session et le book dans SQLite
-  (`dodash_paper_book`), table qui n'est pas celle du SDK. `onStart` recharge
-  cette copie lorsque `portfolioSession` est nulle.
+  (`dodash_paper_book`), table qui n'est pas celle du SDK, et seulement
+  après `resolveRestoredPortfolioSession`. `onStart` recharge cette copie
+  lorsque `shouldRecoverDurablePortfolio` est vrai. Le passage en
+  mono-produit retire la ligne.
 - Une restauration de session invalide désarme l'agent
   (`portfolioRestoreError`) **sans** effacer la session ni le book.
 - `/start` sur les mêmes créneaux reprend les manches et
