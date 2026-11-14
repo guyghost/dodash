@@ -179,6 +179,51 @@ describe("paper book survives deploy and restart", () => {
     ]);
   });
 
+  it("restores the decision watermark from a durable session when memory cannot", async () => {
+    const session = openSession();
+    const stored = () => [
+      {
+        session_json: JSON.stringify(session),
+        book_json: JSON.stringify(projectDurablePaperBook(session)),
+      },
+    ];
+    const wiped = shell(INITIAL_AGENT_STATE, stored);
+    expect(await wiped.startPortfolioAgent(startBody(), permissions)).toMatchObject({
+      ok: true,
+    });
+    expect(
+      wiped.state.portfolioSession?.products["BTC-USD"]?.machine.context
+        .lastDecisionCandleClosedAt,
+    ).toBe(1_762_560_000_000);
+    expect(quantities(wiped.state)[0]?.positionQuantity).toBe(0.1288);
+
+    const btc = session.products["BTC-USD"];
+    if (btc === undefined) throw new Error("missing BTC sleeve");
+    const broken: PortfolioSessionState = {
+      ...session,
+      products: {
+        ...session.products,
+        "BTC-USD": { ...btc, machine: { ...btc.machine, value: "not-a-phase" } },
+      },
+    };
+    const disarmed = shell(
+      {
+        ...INITIAL_AGENT_STATE,
+        portfolioSession: broken,
+        portfolioRestoreError: "INVALID_PORTFOLIO_SNAPSHOT",
+        enabled: false,
+      },
+      stored,
+    );
+    expect(await disarmed.startPortfolioAgent(startBody(), permissions)).toMatchObject({
+      ok: true,
+    });
+    expect(
+      disarmed.state.portfolioSession?.products["ETH-USD"]?.machine.context
+        .lastDecisionCandleClosedAt,
+    ).toBe(1_762_560_000_000);
+  });
+
   it("resets balances and positions only on the explicit reset command", async () => {
     const session = openSession();
     const agent = shell(

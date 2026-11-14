@@ -91,8 +91,11 @@ remise à zéro.
 - Une restauration de session invalide désarme l'agent
   (`portfolioRestoreError`) **sans** effacer la session ni le book.
 - `/start` sur les mêmes créneaux reprend les manches et
-  `lastDecisionCandleClosedAt`. Un jeu de créneaux différent est refusé
-  tant qu'un reset explicite n'a pas déverrouillé le remplacement.
+  `lastDecisionCandleClosedAt`. Si la session en mémoire est absente ou
+  illisible, la session durable qui se restaure encore est cette source,
+  watermark compris. Le book seul (cash, quantité, prix) ne sert que
+  lorsque cette session est illisible. Un jeu de créneaux différent est
+  refusé tant qu'un reset explicite n'a pas déverrouillé le remplacement.
 - `/reset` exige `canControl`, refuse un portefeuille encore actif, puis
   applique `RESET` explicite, journalise `portfolio.reset` et écrit la
   ligne d'audit. L'orchestrateur qui en résulte est quiescent

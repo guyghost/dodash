@@ -25,7 +25,6 @@ import {
 	type MarketRetryWakePayload,
 	normalizePaperValuationMark,
 	type PaperValuationMark,
-	parseDurablePaperBook,
 	type PaperBookResetAudit,
 	PORTFOLIO_PRODUCT_STAGGER_MS,
 	planCycleWake,
@@ -1442,8 +1441,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			previous !== null && resolveRestoredPortfolioSession(previous).ok
 				? previous
 				: null;
+		// Session mémoire illisible : la copie durable encore valide porte
+		// le watermark de décision, pas seulement le book comptable.
+		const sourceSession =
+			memorySession ??
+			(this.state.paperBookUnlocked === true
+				? null
+				: this.readDurablePaperSession());
 		const durableLoad =
-			memorySession === null
+			sourceSession === null
 				? this.loadDurablePaperBook()
 				: ({ status: "missing" } as const);
 		if (durableLoad.status === "unreadable") {
@@ -1451,20 +1457,20 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		}
 		if (
 			previous !== null &&
-			memorySession === null &&
+			sourceSession === null &&
 			durableLoad.status === "missing"
 		) {
 			return { ok: false, error: { code: "INVALID_STATE" } };
 		}
 		const durableBook = durableLoad.status === "ready" ? durableLoad.book : null;
 		const sameProducts =
-			memorySession !== null &&
+			sourceSession !== null &&
 			samePortfolioProductIds(
-				[...portfolioProductIds(memorySession)],
+				[...portfolioProductIds(sourceSession)],
 				requestedIds,
 			);
 		if (
-			memorySession !== null &&
+			sourceSession !== null &&
 			!sameProducts &&
 			this.state.paperBookUnlocked !== true
 		) {
@@ -1480,9 +1486,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		) {
 			return { ok: false, error: { code: "INVALID_STATE" } };
 		}
-		if (sameProducts && memorySession !== null) {
+		if (sameProducts && sourceSession !== null) {
 			const carried = applyPaperBookCommand(
-				projectDurablePaperBook(memorySession),
+				projectDurablePaperBook(sourceSession),
 				{ type: "START" },
 			);
 			if (!carried.ok || carried.audit !== null) {
@@ -1508,7 +1514,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		const products: Record<string, PortfolioProductRuntime> = {};
 		for (const slot of multi.products) {
 			const previousProduct = sameProducts
-				? memorySession?.products[slot.productId]
+				? sourceSession?.products[slot.productId]
 				: undefined;
 			const productSession = createTradingMachineSession({
 				agentId: this.name,
