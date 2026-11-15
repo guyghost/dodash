@@ -11,8 +11,10 @@ export type { RsiReversionConfig } from "./rsi-reversion.js";
 export { createStrategyRegistry } from "./strategy.js";
 export type {
   Strategy,
+  StrategyConfirmedRegime,
   StrategyContext,
   StrategyError,
+  StrategyPositionSide,
   StrategyRegistry,
 } from "./strategy.js";
 export { withConfidenceCalibration } from "./confidence-calibration.js";

@@ -11,7 +11,26 @@ export interface RsiReversionConfig {
   readonly oversold: number;
   readonly overbought: number;
   readonly baseSize: number;
+  readonly maxTrendStrength?: number;
+  readonly positionAware?: boolean;
 }
+
+const blockedHold = (
+  id: string,
+  productId: StrategyContext["productId"],
+  reasonCode: string,
+) =>
+  strategySignal(
+    id,
+    createSignal({
+      strategyId: id,
+      productId,
+      side: "HOLD",
+      confidence: 0,
+      suggestedSize: 0,
+      reasonCode,
+    }),
+  );
 
 export const createRsiReversionStrategy = (
   config: RsiReversionConfig,
@@ -27,7 +46,10 @@ export const createRsiReversionStrategy = (
         config.oversold <= 0 ||
         config.overbought >= 100 ||
         config.oversold >= config.overbought ||
-        config.baseSize <= 0
+        config.baseSize <= 0 ||
+        (config.maxTrendStrength !== undefined &&
+          (!Number.isFinite(config.maxTrendStrength) ||
+            config.maxTrendStrength <= 0))
       ) {
         return {
           ok: false as const,
@@ -38,6 +60,27 @@ export const createRsiReversionStrategy = (
       const rsi = context.indicators.rsi;
       const side =
         rsi < config.oversold ? "BUY" : rsi > config.overbought ? "SELL" : "HOLD";
+
+      if (config.positionAware === true) {
+        if (side === "BUY" && context.positionSide === "LONG") {
+          return blockedHold(id, context.productId, "RSI_ALREADY_LONG");
+        }
+        if (side === "SELL" && context.positionSide === "FLAT") {
+          return blockedHold(id, context.productId, "RSI_NO_POSITION_TO_SELL");
+        }
+        if (side === "SELL" && context.positionSide === "SHORT") {
+          return blockedHold(id, context.productId, "RSI_ALREADY_SHORT");
+        }
+      }
+
+      if (
+        config.maxTrendStrength !== undefined &&
+        side === "BUY" &&
+        context.indicators.trendStrength > config.maxTrendStrength
+      ) {
+        return blockedHold(id, context.productId, "RSI_TREND_BLOCKED");
+      }
+
       const confidence = Math.min(1, Math.abs(50 - rsi) / 50);
       return strategySignal(
         id,
