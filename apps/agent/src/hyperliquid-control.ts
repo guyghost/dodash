@@ -35,6 +35,8 @@ export const toPerpIntent = ({
     readonly productId: string;
     readonly side: "BUY" | "SELL";
     readonly quantity: number;
+    readonly type?: "MARKET" | "LIMIT";
+    readonly limitPrice?: number | null;
   };
   readonly markPrice: number;
 }): PerpOrderIntent | null => {
@@ -54,6 +56,24 @@ export const toPerpIntent = ({
   const factor = 10 ** decimals;
   const quantity = Math.floor(intent.quantity * factor + 1e-9) / factor;
   if (quantity <= 0) return null;
+  if (intent.type === "LIMIT") {
+    if (
+      intent.limitPrice === undefined ||
+      intent.limitPrice === null ||
+      !Number.isFinite(intent.limitPrice) ||
+      intent.limitPrice <= 0
+    ) {
+      return null;
+    }
+    return Object.freeze({
+      productId,
+      side: intent.side,
+      quantity,
+      markPrice,
+      leverage: 1,
+      limitPrice: intent.limitPrice,
+    });
+  }
   return Object.freeze({
     productId,
     side: intent.side,
@@ -92,13 +112,23 @@ import {
  */
 
 export const perpOrderRequestSchema = z.object({
-  intent: z.object({
-    productId: z.string().min(1).max(40),
-    side: z.enum(["BUY", "SELL"]),
-    quantity: z.number().positive().finite(),
-    markPrice: z.number().positive().finite(),
-    leverage: z.number().int().min(1).max(10),
-  }),
+  intent: z
+    .object({
+      productId: z.string().min(1).max(40),
+      side: z.enum(["BUY", "SELL"]),
+      quantity: z.number().positive().finite(),
+      markPrice: z.number().positive().finite(),
+      leverage: z.number().int().min(1).max(10),
+      limitPrice: z.number().positive().finite().optional(),
+    })
+    .transform((value): PerpOrderIntent => ({
+      productId: value.productId,
+      side: value.side,
+      quantity: value.quantity,
+      markPrice: value.markPrice,
+      leverage: value.leverage,
+      ...(value.limitPrice === undefined ? {} : { limitPrice: value.limitPrice }),
+    })),
   gate: z.object({
     // Champs dérivables du compte réel : s'ils sont omis, la route les
     // lit sur clearinghouseState. dailyPnl n'est jamais inféré.

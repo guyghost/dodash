@@ -1,4 +1,4 @@
-import type { AllocationDecision } from "@dodash/allocator";
+import type { AllocationDecision, OrderBookTop } from "@dodash/allocator";
 import type {
 	Candle,
 	Fill,
@@ -147,6 +147,14 @@ export interface TradingCycleEffects {
 		configuration: AgentConfiguration,
 		candles: readonly Candle[],
 	): Promise<readonly number[] | null>;
+	/**
+	 * Lecture L1 optionnelle pour l'exécution LIMIT_PASSIVE et la garde de spread
+	 * (models/dynamic-risk-limit-exec.md). Retourne null en cas d'indisponibilité
+	 * sans bloquer le repli sur MARKET.
+	 */
+	fetchOrderBook?(
+		configuration: AgentConfiguration,
+	): Promise<OrderBookTop | null>;
 	ensureSchedule(
 		intervalSeconds: number,
 	): Promise<Result<{ readonly nextWakeAt: number }, WorkflowError>>;

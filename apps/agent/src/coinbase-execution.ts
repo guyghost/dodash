@@ -291,6 +291,7 @@ interface FormattedProtectionPlan {
   readonly takeProfitPrice: string;
   readonly baseIncrement: string;
   readonly baseMinimum: string;
+  readonly quoteIncrement: string;
 }
 
 const decimalPlaces = (value: string): number | null => {
@@ -325,12 +326,11 @@ const roundToIncrement = (
   return (units * increment).toFixed(decimals);
 };
 
-const loadFormattedProtection = async (
+const fetchCoinbaseProductRules = async (
   settings: CoinbaseExecutionSettings,
   productId: string,
-  protection: CoinbaseProtectionPlan,
   dependencies: CoinbaseRequestDependencies,
-): Promise<Result<FormattedProtectionPlan, WorkflowError>> => {
+): Promise<Result<z.infer<typeof productTradingRulesSchema>, WorkflowError>> => {
   const path = coinbaseProductPath(productId);
   const authorization = createCoinbaseAuthorization(settings, "GET", path, dependencies);
   if (!authorization.ok) return authorization;
@@ -384,34 +384,46 @@ const loadFormattedProtection = async (
     ) {
       return err(executionError("INVALID_RESPONSE", false));
     }
-    const stopTriggerPrice = roundToIncrement(
-      protection.stopLossPrice,
-      parsed.data.quote_increment,
-      "UP",
-    );
-    const takeProfitPrice = roundToIncrement(
-      protection.takeProfitPrice,
-      parsed.data.quote_increment,
-      "DOWN",
-    );
-    if (
-      stopTriggerPrice === null ||
-      takeProfitPrice === null ||
-      Number(stopTriggerPrice) >= Number(takeProfitPrice)
-    ) {
-      return err(executionError("INVALID_RESPONSE", false));
-    }
-    return ok(
-      Object.freeze({
-        stopTriggerPrice,
-        takeProfitPrice,
-        baseIncrement: parsed.data.base_increment,
-        baseMinimum: parsed.data.base_min_size,
-      }),
-    );
+    return ok(parsed.data);
   } catch {
     return err(executionError("INVALID_RESPONSE", false));
   }
+};
+
+const loadFormattedProtection = async (
+  settings: CoinbaseExecutionSettings,
+  productId: string,
+  protection: CoinbaseProtectionPlan,
+  dependencies: CoinbaseRequestDependencies,
+): Promise<Result<FormattedProtectionPlan, WorkflowError>> => {
+  const rules = await fetchCoinbaseProductRules(settings, productId, dependencies);
+  if (!rules.ok) return rules;
+  const stopTriggerPrice = roundToIncrement(
+    protection.stopLossPrice,
+    rules.value.quote_increment,
+    "UP",
+  );
+  const takeProfitPrice = roundToIncrement(
+    protection.takeProfitPrice,
+    rules.value.quote_increment,
+    "DOWN",
+  );
+  if (
+    stopTriggerPrice === null ||
+    takeProfitPrice === null ||
+    Number(stopTriggerPrice) >= Number(takeProfitPrice)
+  ) {
+    return err(executionError("INVALID_RESPONSE", false));
+  }
+  return ok(
+    Object.freeze({
+      stopTriggerPrice,
+      takeProfitPrice,
+      baseIncrement: rules.value.base_increment,
+      baseMinimum: rules.value.base_min_size,
+      quoteIncrement: rules.value.quote_increment,
+    }),
+  );
 };
 
 export const verifyCoinbaseProductTradingRules = async (
@@ -527,17 +539,65 @@ export const submitCoinbaseOrder = async (
     formattedProtection = formatted.value;
   }
 
+  let formattedLimitPrice: string | undefined;
+  if (intent.type === "LIMIT") {
+    if (
+      intent.limitPrice === null ||
+      !Number.isFinite(intent.limitPrice) ||
+      intent.limitPrice <= 0
+    ) {
+      return {
+        status: "REJECTED",
+        error: executionError("ORDER_REJECTED", false),
+      };
+    }
+    let quoteIncrement = formattedProtection?.quoteIncrement;
+    if (quoteIncrement === undefined) {
+      const rules = await fetchCoinbaseProductRules(
+        settings,
+        intent.productId,
+        dependencies,
+      );
+      if (!rules.ok) {
+        return { status: "REJECTED", error: rules.error };
+      }
+      quoteIncrement = rules.value.quote_increment;
+    }
+    const roundedLimit = roundToIncrement(
+      intent.limitPrice,
+      quoteIncrement,
+      intent.side === "BUY" ? "DOWN" : "UP",
+    );
+    if (roundedLimit === null) {
+      return {
+        status: "REJECTED",
+        error: executionError("ORDER_REJECTED", false),
+      };
+    }
+    formattedLimitPrice = roundedLimit;
+  }
+
   let body: string;
   try {
+    const baseSize = coinbaseBaseSize(intent.productId, intent.quantity);
     body = JSON.stringify({
       client_order_id: intent.clientOrderId,
       product_id: intent.productId,
       side: intent.side,
-      order_configuration: {
-        market_market_ioc: {
-          base_size: coinbaseBaseSize(intent.productId, intent.quantity),
-        },
-      },
+      order_configuration:
+        intent.type === "LIMIT" && formattedLimitPrice !== undefined
+          ? {
+              limit_limit_gtc: {
+                base_size: baseSize,
+                limit_price: formattedLimitPrice,
+                post_only: true,
+              },
+            }
+          : {
+              market_market_ioc: {
+                base_size: baseSize,
+              },
+            },
       ...(formattedProtection === undefined
         ? {}
         : {

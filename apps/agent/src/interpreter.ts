@@ -374,6 +374,12 @@ export const runTradingCycle = async (
             candles: artifacts.market.candles,
             indicators: artifacts.indicators,
             previousIndicators,
+            positionSide:
+              portfolio.positionQuantity > 0
+                ? "LONG"
+                : portfolio.positionQuantity < 0
+                  ? "SHORT"
+                  : "FLAT",
           });
           if (!result.ok) {
             await send({
@@ -404,12 +410,14 @@ export const runTradingCycle = async (
             await send({ type: "ALLOCATION_FAILED", error: missingArtifact("allocation") });
             break;
           }
+          const signals = artifacts.signals;
           const decisionId = `decision:${artifacts.cycleId}`;
           // Politique P7 (models/target-exposure.md §4) : l'ordre vient de la
           // décision d'exposition cible, pas de l'allocateur — qui plafonne
           // aussi les ventes par le cash et bloquerait toute réduction.
+          const policy = input.configuration.sizingPolicy;
           const result =
-            input.configuration.sizingPolicy.type === "TARGET_EXPOSURE"
+            policy.type === "TARGET_EXPOSURE"
               ? targetExposureAllocation({
                   agentId: input.agentId,
                   cycleId: artifacts.cycleId,
@@ -420,17 +428,44 @@ export const runTradingCycle = async (
                   cash: portfolio.cash,
                   feeBps: input.configuration.broker.feeBps,
                   slippageBps: input.configuration.broker.slippageBps,
+                  ...(policy.costAwareRebalance === undefined
+                    ? {}
+                    : { costAwareRebalance: policy.costAwareRebalance }),
+                  ...(policy.costMultiple === undefined
+                    ? {}
+                    : { costMultiple: policy.costMultiple }),
+                  ...(policy.minCostEdgeMultiple === undefined
+                    ? {}
+                    : { minCostEdgeMultiple: policy.minCostEdgeMultiple }),
                 })
-              : allocateSignals({
-                  agentId: input.agentId,
-                  cycleId: artifacts.cycleId,
-                  decisionId,
-                  signals: artifacts.signals,
-                  marketPrices: { [input.configuration.productId]: last.close },
-                  capitalAvailable: Math.max(0, portfolio.cash),
-                  maxDecisionNotional: input.configuration.maxDecisionNotional,
-                  minNetQuantity: input.configuration.minNetQuantity,
-                });
+              : await (async () => {
+                  const needsBook =
+                    input.configuration.executionStyle === "LIMIT_PASSIVE" ||
+                    input.configuration.maxSpreadBps !== undefined;
+                  const book =
+                    needsBook && input.effects.fetchOrderBook !== undefined
+                      ? await input.effects.fetchOrderBook(input.configuration)
+                      : null;
+                  return allocateSignals({
+                    agentId: input.agentId,
+                    cycleId: artifacts.cycleId,
+                    decisionId,
+                    signals,
+                    marketPrices: { [input.configuration.productId]: last.close },
+                    capitalAvailable: Math.max(0, portfolio.cash),
+                    maxDecisionNotional: input.configuration.maxDecisionNotional,
+                    minNetQuantity: input.configuration.minNetQuantity,
+                    ...(input.configuration.executionStyle === undefined
+                      ? {}
+                      : { executionStyle: input.configuration.executionStyle }),
+                    ...(input.configuration.maxSpreadBps === undefined
+                      ? {}
+                      : { maxSpreadBps: input.configuration.maxSpreadBps }),
+                    ...(book === null
+                      ? {}
+                      : { orderBooks: { [input.configuration.productId]: book } }),
+                  });
+                })();
           if (!result.ok) {
             await send({
               type: "ALLOCATION_FAILED",
@@ -481,6 +516,7 @@ export const runTradingCycle = async (
                   decisionCandlePnl(current.market?.candles ?? [], portfolio.positionQuantity),
                 )
               : null;
+          const atr = current.indicators?.atr;
           const result = checkRisk(
             order,
             {
@@ -491,6 +527,7 @@ export const runTradingCycle = async (
               lastTradeAt: input.lastTradeAt,
               now: current.triggeredAt,
               killSwitchActive: session.context.shutdownMode === "kill-switch",
+              ...(atr !== undefined && Number.isFinite(atr) && atr > 0 ? { atr } : {}),
             },
             input.configuration.risk,
           );
@@ -851,6 +888,9 @@ const targetExposureAllocation = (input: {
   readonly cash: number;
   readonly feeBps: number;
   readonly slippageBps: number;
+  readonly costAwareRebalance?: boolean;
+  readonly costMultiple?: number;
+  readonly minCostEdgeMultiple?: number;
 }): Result<AllocationDecision, unknown> => {
   const decision = planTargetExposure({
     candles: input.candles,
@@ -858,6 +898,13 @@ const targetExposureAllocation = (input: {
     cash: input.cash,
     feeBps: input.feeBps,
     slippageBps: input.slippageBps,
+    ...(input.costAwareRebalance === undefined
+      ? {}
+      : { costAwareRebalance: input.costAwareRebalance }),
+    ...(input.costMultiple === undefined ? {} : { costMultiple: input.costMultiple }),
+    ...(input.minCostEdgeMultiple === undefined
+      ? {}
+      : { minCostEdgeMultiple: input.minCostEdgeMultiple }),
   });
   const net = decision.side === "BUY" ? decision.quantity : decision.side === "SELL" ? -decision.quantity : 0;
   if (decision.side === "HOLD") {

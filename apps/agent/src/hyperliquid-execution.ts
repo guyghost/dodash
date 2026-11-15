@@ -91,11 +91,16 @@ const removeTrailingZeros = (value: string): string => {
   return normalized === "-0" ? "0" : normalized;
 };
 
+/** Formate un prix Hyperliquid à 5 chiffres significatifs sans zéros de traîne. */
+export const formatHyperliquidPrice = (price: number): string => {
+  const priced = Number(price.toPrecision(PRICE_SIGNIFICANT_FIGURES));
+  return removeTrailingZeros(priced.toFixed(8));
+};
+
 /** Prix d'agression : marque ± cap de glissement, borné à 5 chiffres significatifs. */
 export const aggressivePrice = (markPrice: number, side: "BUY" | "SELL"): string => {
   const slip = 1 + (side === "BUY" ? 1 : -1) * (MARKET_ORDER_SLIPPAGE_BPS / 10_000);
-  const priced = Number((markPrice * slip).toPrecision(PRICE_SIGNIFICANT_FIGURES));
-  return removeTrailingZeros(priced.toFixed(8));
+  return formatHyperliquidPrice(markPrice * slip);
 };
 
 const wireSize = (productId: string, quantity: number): string => {
@@ -127,6 +132,40 @@ export const hyperliquidMarketIocOrder = (
     grouping: "na" as const,
   });
 };
+
+export const hyperliquidLimitAloOrder = (
+  intent: PerpOrderIntent & { readonly limitPrice: number },
+  assetIndex: number,
+  clientOrderId: string,
+): HyperliquidOrderAction => {
+  const wire = {
+    a: assetIndex,
+    b: intent.side === "BUY",
+    p: formatHyperliquidPrice(intent.limitPrice),
+    s: wireSize(intent.productId, intent.quantity),
+    r: false,
+    t: { limit: { tif: "Alo" as const } },
+    c: hyperliquidCloidFromClientOrderId(clientOrderId),
+  };
+  return Object.freeze({
+    type: "order" as const,
+    orders: Object.freeze([Object.freeze(wire)]),
+    grouping: "na" as const,
+  });
+};
+
+export const hyperliquidOrderAction = (
+  intent: PerpOrderIntent,
+  assetIndex: number,
+  clientOrderId: string,
+): HyperliquidOrderAction =>
+  intent.limitPrice !== undefined
+    ? hyperliquidLimitAloOrder(
+        { ...intent, limitPrice: intent.limitPrice },
+        assetIndex,
+        clientOrderId,
+      )
+    : hyperliquidMarketIocOrder(intent, assetIndex, clientOrderId);
 
 export const assetIndexForCoin = (
   meta: HyperliquidMeta,
@@ -179,7 +218,7 @@ export const signHyperliquidOrder = async (
   dependencies: HyperliquidRequestDependencies = {},
 ): Promise<{ readonly ok: true; readonly value: HyperliquidSubmission } | { readonly ok: false; readonly code: "SIGN_FAILED" | "HYPERLIQUID_MARKET_UNKNOWN" }> => {
   try {
-    const action = hyperliquidMarketIocOrder(intent, assetIndex, clientOrderId);
+    const action = hyperliquidOrderAction(intent, assetIndex, clientOrderId);
     const signer = (dependencies.signer ?? createEthersSignerFactory())(
       settings.agentPrivateKey,
     );
@@ -520,4 +559,39 @@ export const fundingRatesForCandles = (
     rates.push(sum / count);
   }
   return Object.freeze(rates);
+};
+
+export const fetchHyperliquidL1OrderBook = async (
+  settings: HyperliquidExecutionSettings,
+  coin: HyperliquidCoin,
+  dependencies: HyperliquidRequestDependencies = {},
+): Promise<{ readonly bestBid: number; readonly bestAsk: number; readonly spreadBps: number } | null> => {
+  const response = await boundedRequest(
+    dependencies,
+    settings,
+    HYPERLIQUID_INFO_PATH,
+    { type: "l2Book", coin },
+  );
+  if (response === null) return null;
+  const levels = (response as { readonly levels?: unknown }).levels;
+  if (!Array.isArray(levels) || levels.length < 2) return null;
+  const bids = levels[0];
+  const asks = levels[1];
+  if (!Array.isArray(bids) || !Array.isArray(asks)) return null;
+  const topBid = bids[0] as { readonly px?: string } | undefined;
+  const topAsk = asks[0] as { readonly px?: string } | undefined;
+  const bestBid = Number(topBid?.px);
+  const bestAsk = Number(topAsk?.px);
+  if (
+    !Number.isFinite(bestBid) ||
+    bestBid <= 0 ||
+    !Number.isFinite(bestAsk) ||
+    bestAsk < bestBid
+  ) {
+    return null;
+  }
+  const mid = (bestBid + bestAsk) / 2;
+  const spreadBps = ((bestAsk - bestBid) / mid) * 10_000;
+  if (!Number.isFinite(spreadBps) || spreadBps < 0) return null;
+  return Object.freeze({ bestBid, bestAsk, spreadBps });
 };

@@ -3152,6 +3152,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				productId: intent.productId,
 				side: intent.side,
 				quantity: intent.quantity,
+				type: intent.type,
+				limitPrice: intent.limitPrice,
 			},
 			markPrice: marketPrice,
 		});

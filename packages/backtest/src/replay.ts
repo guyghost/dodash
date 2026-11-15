@@ -252,6 +252,9 @@ const validPreparedIndicators = (
   // peut jamais alimenter un replay E1 (et réciproquement) sans rejet.
   prepared.config.signalEmaFastPeriod === config.signalEmaFastPeriod &&
   prepared.config.signalEmaSlowPeriod === config.signalEmaSlowPeriod &&
+  prepared.config.rsiMode === config.rsiMode &&
+  prepared.config.adxWarmupMultiplier === config.adxWarmupMultiplier &&
+  prepared.config.longSmaPeriod === config.longSmaPeriod &&
   prepared.snapshots.length === candles.length &&
   prepared.snapshots.every((snapshot, index) =>
     index < warmup - 1
@@ -710,6 +713,12 @@ export const replayBacktest = async (
       candles: history,
       indicators: indicatorResult.value,
       previousIndicators,
+      positionSide:
+        portfolio.positionQuantity > 0
+          ? "LONG"
+          : portfolio.positionQuantity < 0
+            ? "SHORT"
+            : "FLAT",
     });
     if (!signalResult.ok) {
       return err({ code: "STRATEGY_FAILURE", cause: signalResult.error });
@@ -881,6 +890,7 @@ export const replayBacktest = async (
         spotInexecutableNotional += order.quantity * candle.close;
         continue;
       }
+      const atr = indicatorResult.value.atr;
       const risk = checkRisk(
         order,
         {
@@ -891,6 +901,7 @@ export const replayBacktest = async (
           lastTradeAt,
           now: resolveRiskEvaluationTimestamp(candle.start, lastTradeAt),
           killSwitchActive: false,
+          ...(Number.isFinite(atr) && atr > 0 ? { atr } : {}),
         },
         config.risk,
       );

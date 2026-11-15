@@ -1,3 +1,4 @@
+import type { ExecutionStyle } from "@dodash/allocator";
 import {
   DEFAULT_INDICATOR_CONFIG,
   requiredIndicatorCandles,
@@ -8,6 +9,7 @@ import type { PaperBrokerConfig } from "@dodash/paper-execution";
 import {
   admitHyperliquidPerpConfiguration,
   assessLiveTradingPolicy,
+  FUNDING_TREND_ENTER_THRESHOLD,
   type HyperliquidPerpAdmission,
   LIVE_TRADING_POLICY,
   type LiveTradingAdmission,
@@ -43,6 +45,13 @@ const DEFAULT_STRATEGY_IDS: readonly StrategyId[] = [
   "breakout",
 ];
 
+export interface AgentStrategyOptions {
+  readonly positionAware?: boolean;
+  readonly maxTrendStrength?: number;
+  readonly minRelativeVolume?: number;
+  readonly exitThreshold?: number;
+}
+
 export type AgentSizingPolicy =
   | { readonly type: "NATIVE" }
   | {
@@ -57,12 +66,18 @@ export type AgentSizingPolicy =
       readonly volPeriod: number;
       readonly driftThreshold: number;
       readonly minOrderNotional: number;
+      readonly costAwareRebalance?: boolean;
+      readonly costMultiple?: number;
+      readonly minCostEdgeMultiple?: number;
     };
 
 export interface AgentConfiguration {
   readonly productId: ProductId;
   readonly timeframe: Timeframe;
   readonly strategyIds: readonly StrategyId[];
+  readonly strategyOptions?: AgentStrategyOptions;
+  readonly executionStyle?: ExecutionStyle;
+  readonly maxSpreadBps?: number;
   readonly intervalSeconds: number;
   readonly maxMarketStalenessMs: number;
   /** |Coinbase quote − decision close| / close, in bps. Default 200. */
@@ -108,6 +123,9 @@ export interface MultiProductAgentConfiguration {
   readonly executionMode: "paper";
   readonly timeframe: Timeframe;
   readonly strategyIds: readonly StrategyId[];
+  readonly strategyOptions?: AgentStrategyOptions;
+  readonly executionStyle?: ExecutionStyle;
+  readonly maxSpreadBps?: number;
   readonly intervalSeconds: number;
   readonly maxMarketStalenessMs: number;
   readonly executionPriceMaxDivergenceBps: number;
@@ -184,8 +202,51 @@ const indicatorSchema = z
       .int()
       .positive()
       .default(DEFAULT_INDICATOR_CONFIG.trendStrengthPeriod),
+    signalEmaFastPeriod: z.number().int().positive().optional(),
+    signalEmaSlowPeriod: z.number().int().positive().optional(),
+    rsiMode: z.enum(["CUTLER", "WILDER"]).optional(),
+    adxWarmupMultiplier: z.number().int().min(2).optional(),
+    longSmaPeriod: z.number().int().positive().optional(),
   })
-  .refine((value) => value.emaFastPeriod < value.emaSlowPeriod);
+  .refine(
+    (value) =>
+      value.emaFastPeriod < value.emaSlowPeriod &&
+      ((value.signalEmaFastPeriod === undefined &&
+        value.signalEmaSlowPeriod === undefined) ||
+        (value.signalEmaFastPeriod !== undefined &&
+          value.signalEmaSlowPeriod !== undefined &&
+          value.signalEmaFastPeriod < value.signalEmaSlowPeriod)),
+  )
+  .transform(
+    (value): IndicatorConfig =>
+      Object.freeze({
+        rsiPeriod: value.rsiPeriod,
+        emaFastPeriod: value.emaFastPeriod,
+        emaSlowPeriod: value.emaSlowPeriod,
+        atrPeriod: value.atrPeriod,
+        historicalVolatilityPeriod: value.historicalVolatilityPeriod,
+        momentumPeriod: value.momentumPeriod,
+        returnPeriods: Object.freeze([...value.returnPeriods]),
+        vwapPeriod: value.vwapPeriod,
+        relativeVolumePeriod: value.relativeVolumePeriod,
+        volumeSpikeThreshold: value.volumeSpikeThreshold,
+        volumeTrendPeriod: value.volumeTrendPeriod,
+        trendStrengthPeriod: value.trendStrengthPeriod,
+        ...(value.signalEmaFastPeriod === undefined
+          ? {}
+          : { signalEmaFastPeriod: value.signalEmaFastPeriod }),
+        ...(value.signalEmaSlowPeriod === undefined
+          ? {}
+          : { signalEmaSlowPeriod: value.signalEmaSlowPeriod }),
+        ...(value.rsiMode === undefined ? {} : { rsiMode: value.rsiMode }),
+        ...(value.adxWarmupMultiplier === undefined
+          ? {}
+          : { adxWarmupMultiplier: value.adxWarmupMultiplier }),
+        ...(value.longSmaPeriod === undefined
+          ? {}
+          : { longSmaPeriod: value.longSmaPeriod }),
+      }),
+  );
 
 const RISK_DEFAULTS = {
   maxOrderNotional: 2_000,
@@ -197,15 +258,36 @@ const RISK_DEFAULTS = {
   takeProfitBps: 300,
 };
 
-const riskSchema = z.object({
-  maxOrderNotional: z.number().positive().default(RISK_DEFAULTS.maxOrderNotional),
-  maxPositionNotional: z.number().positive().default(RISK_DEFAULTS.maxPositionNotional),
-  maxGrossExposure: z.number().positive().default(RISK_DEFAULTS.maxGrossExposure),
-  maxDailyLoss: z.number().positive().default(RISK_DEFAULTS.maxDailyLoss),
-  cooldownMs: z.number().int().nonnegative().default(RISK_DEFAULTS.cooldownMs),
-  stopLossBps: z.number().positive().max(9_999).default(RISK_DEFAULTS.stopLossBps),
-  takeProfitBps: z.number().positive().max(99_999).default(RISK_DEFAULTS.takeProfitBps),
-});
+const riskSchema = z
+  .object({
+    maxOrderNotional: z.number().positive().default(RISK_DEFAULTS.maxOrderNotional),
+    maxPositionNotional: z.number().positive().default(RISK_DEFAULTS.maxPositionNotional),
+    maxGrossExposure: z.number().positive().default(RISK_DEFAULTS.maxGrossExposure),
+    maxDailyLoss: z.number().positive().default(RISK_DEFAULTS.maxDailyLoss),
+    cooldownMs: z.number().int().nonnegative().default(RISK_DEFAULTS.cooldownMs),
+    stopLossBps: z.number().positive().max(9_999).default(RISK_DEFAULTS.stopLossBps),
+    takeProfitBps: z.number().positive().max(99_999).default(RISK_DEFAULTS.takeProfitBps),
+    atrStopLossMultiple: z.number().positive().optional(),
+    atrTakeProfitMultiple: z.number().positive().optional(),
+  })
+  .transform(
+    (value): RiskConfig =>
+      Object.freeze({
+        maxOrderNotional: value.maxOrderNotional,
+        maxPositionNotional: value.maxPositionNotional,
+        maxGrossExposure: value.maxGrossExposure,
+        maxDailyLoss: value.maxDailyLoss,
+        cooldownMs: value.cooldownMs,
+        stopLossBps: value.stopLossBps,
+        takeProfitBps: value.takeProfitBps,
+        ...(value.atrStopLossMultiple === undefined
+          ? {}
+          : { atrStopLossMultiple: value.atrStopLossMultiple }),
+        ...(value.atrTakeProfitMultiple === undefined
+          ? {}
+          : { atrTakeProfitMultiple: value.atrTakeProfitMultiple }),
+      }),
+  );
 
 const productSlotSchema = z.object({
   productId: z.string(),
@@ -217,10 +299,44 @@ const portfolioRiskSchema = z.object({
   maxDailyLoss: z.number().positive(),
 });
 
-const brokerSchema = z.object({
-  feeBps: z.number().nonnegative().max(9_999).default(6),
-  slippageBps: z.number().nonnegative().max(9_999).default(2),
-});
+const brokerSchema = z
+  .object({
+    feeBps: z.number().nonnegative().max(9_999).default(6),
+    slippageBps: z.number().nonnegative().max(9_999).default(2),
+    makerFeeBps: z.number().nonnegative().max(9_999).finite().optional(),
+  })
+  .transform(
+    (value): PaperBrokerConfig => ({
+      feeBps: value.feeBps,
+      slippageBps: value.slippageBps,
+      ...(value.makerFeeBps === undefined ? {} : { makerFeeBps: value.makerFeeBps }),
+    }),
+  );
+
+const strategyOptionsSchema = z
+  .object({
+    positionAware: z.boolean().optional(),
+    maxTrendStrength: z.number().positive().finite().optional(),
+    minRelativeVolume: z.number().positive().finite().optional(),
+    exitThreshold: z
+      .number()
+      .nonnegative()
+      .lt(FUNDING_TREND_ENTER_THRESHOLD)
+      .finite()
+      .optional(),
+  })
+  .transform((value): AgentStrategyOptions =>
+    Object.freeze({
+      ...(value.positionAware === undefined ? {} : { positionAware: value.positionAware }),
+      ...(value.maxTrendStrength === undefined
+        ? {}
+        : { maxTrendStrength: value.maxTrendStrength }),
+      ...(value.minRelativeVolume === undefined
+        ? {}
+        : { minRelativeVolume: value.minRelativeVolume }),
+      ...(value.exitThreshold === undefined ? {} : { exitThreshold: value.exitThreshold }),
+    }),
+  );
 
 const sizingPolicySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("NATIVE") }),
@@ -230,22 +346,42 @@ const sizingPolicySchema = z.discriminatedUnion("type", [
     confidenceCalibration: z.literal("POWER_THIRD"),
   }),
   // Constantes figées à l'égalité (models/target-exposure.md §4).
-  z.object({
-    type: z.literal("TARGET_EXPOSURE"),
-    volTarget: z.literal(TARGET_EXPOSURE_POLICY.volTarget),
-    trendSmaPeriod: z.literal(TARGET_EXPOSURE_POLICY.trendSmaPeriod),
-    volPeriod: z.literal(TARGET_EXPOSURE_POLICY.volPeriod),
-    driftThreshold: z.literal(TARGET_EXPOSURE_POLICY.driftThreshold),
-    minOrderNotional: z.literal(TARGET_EXPOSURE_POLICY.minOrderNotional),
-  }),
+  z
+    .object({
+      type: z.literal("TARGET_EXPOSURE"),
+      volTarget: z.literal(TARGET_EXPOSURE_POLICY.volTarget),
+      trendSmaPeriod: z.literal(TARGET_EXPOSURE_POLICY.trendSmaPeriod),
+      volPeriod: z.literal(TARGET_EXPOSURE_POLICY.volPeriod),
+      driftThreshold: z.literal(TARGET_EXPOSURE_POLICY.driftThreshold),
+      minOrderNotional: z.literal(TARGET_EXPOSURE_POLICY.minOrderNotional),
+      costAwareRebalance: z.boolean().optional(),
+      costMultiple: z.number().nonnegative().finite().optional(),
+      minCostEdgeMultiple: z.number().nonnegative().finite().optional(),
+    })
+    .transform((value): AgentSizingPolicy => ({
+      type: value.type,
+      volTarget: value.volTarget,
+      trendSmaPeriod: value.trendSmaPeriod,
+      volPeriod: value.volPeriod,
+      driftThreshold: value.driftThreshold,
+      minOrderNotional: value.minOrderNotional,
+      ...(value.costAwareRebalance === undefined
+        ? {}
+        : { costAwareRebalance: value.costAwareRebalance }),
+      ...(value.costMultiple === undefined ? {} : { costMultiple: value.costMultiple }),
+      ...(value.minCostEdgeMultiple === undefined
+        ? {}
+        : { minCostEdgeMultiple: value.minCostEdgeMultiple }),
+    })),
 ]);
 
 /**
- * Admission de la politique P7 (models/target-exposure.md §4–§5, INV-T5,
- * INV-T6) : paper uniquement, ONE_DAY, stratégie `target-exposure` seule et
- * réservée à cette politique, historique ≥ 240 bougies, plafonds absolus
- * neutralisés (≥ 1e9) et cooldown nul pour qu'aucune réduction ne soit
- * bloquée (INV-T7).
+ * Admission de la politique P7 (models/target-exposure.md §4–§5, INV-T5
+ * amendé 2026-11-15, INV-T6) : paper ou perp uniquement (live spot refusé),
+ * ONE_DAY, stratégie `target-exposure` seule et réservée à cette politique,
+ * historique ≥ 240 bougies, cooldown nul pour qu'aucune réduction ne soit
+ * bloquée (INV-T7) ; plafonds absolus neutralisés (≥ 1e9) exigés en paper,
+ * tandis que perp reste borné par l'enveloppe figée HYPERLIQUID_PERP_POLICY.
  */
 const targetExposureAdmission = (input: {
   readonly executionMode: string;
@@ -261,10 +397,11 @@ const targetExposureAdmission = (input: {
   if (!isPolicy && !usesStrategy) return null;
   if (isPolicy !== usesStrategy) return { code: "INVALID_CONFIGURATION" };
   if (
-    input.executionMode !== "paper" ||
+    (input.executionMode !== "paper" && input.executionMode !== "perp") ||
     input.timeframe !== "ONE_DAY" ||
     new Set(input.strategyIds).size !== 1 ||
-    input.caps.some((cap) => cap < TARGET_EXPOSURE_MIN_ABSOLUTE_CAP) ||
+    (input.executionMode === "paper" &&
+      input.caps.some((cap) => cap < TARGET_EXPOSURE_MIN_ABSOLUTE_CAP)) ||
     input.cooldowns.some((cooldown) => cooldown !== 0)
   ) {
     return { code: "INVALID_CONFIGURATION" };
@@ -292,6 +429,9 @@ const inputSchema = z.object({
     .min(1)
     .max(3)
     .default([...DEFAULT_STRATEGY_IDS]),
+  strategyOptions: strategyOptionsSchema.optional(),
+  executionStyle: z.enum(["MARKET", "LIMIT_PASSIVE"]).optional(),
+  maxSpreadBps: z.number().nonnegative().finite().optional(),
   intervalSeconds: z.number().int().min(10).max(86_400).default(60),
   maxMarketStalenessMs: z.number().int().positive().default(90_000),
   executionPriceMaxDivergenceBps: z
@@ -334,11 +474,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const withPerpPolicyDefaults = (input: unknown): unknown => {
   if (!isRecord(input) || input.executionMode !== "perp") return input;
   const risk = isRecord(input.risk) ? input.risk : {};
+  const isTargetExposure =
+    (isRecord(input.sizingPolicy) && input.sizingPolicy.type === "TARGET_EXPOSURE") ||
+    (Array.isArray(input.strategyIds) && input.strategyIds.includes("target-exposure"));
   return {
     timeframe: HYPERLIQUID_PERP_POLICY.timeframe,
     intervalSeconds: 3_600,
     maxMarketStalenessMs: 90_000,
-    candleLimit: 200,
+    candleLimit: isTargetExposure ? TARGET_EXPOSURE_MIN_CANDLES : 200,
     initialCapital: 10_000,
     maxDecisionNotional: HYPERLIQUID_PERP_POLICY.risk.maxOrderNotional,
     minNetQuantity: 0.000_001,
@@ -409,17 +552,21 @@ const parseSingleAgentConfiguration = (
     return err({ code: "INSUFFICIENT_CANDLE_LIMIT" });
   }
 
+  const { strategyOptions, executionStyle, maxSpreadBps, ...baseData } = parsed.data;
   return ok(
     Object.freeze({
-      ...parsed.data,
+      ...baseData,
       productId: product.value,
-      strategyIds: Object.freeze([...new Set(parsed.data.strategyIds)].sort()) as readonly StrategyId[],
+      strategyIds: Object.freeze([...new Set(baseData.strategyIds)].sort()) as readonly StrategyId[],
+      ...(strategyOptions === undefined ? {} : { strategyOptions }),
+      ...(executionStyle === undefined ? {} : { executionStyle }),
+      ...(maxSpreadBps === undefined ? {} : { maxSpreadBps }),
       indicators: Object.freeze({
-        ...parsed.data.indicators,
-        returnPeriods: Object.freeze([...parsed.data.indicators.returnPeriods]),
+        ...baseData.indicators,
+        returnPeriods: Object.freeze([...baseData.indicators.returnPeriods]),
       }),
-      risk: Object.freeze({ ...parsed.data.risk }),
-      broker: Object.freeze({ ...parsed.data.broker }),
+      risk: Object.freeze({ ...baseData.risk }),
+      broker: Object.freeze({ ...baseData.broker }),
     }),
   );
 };
@@ -437,6 +584,9 @@ const projectedLegacyInput = (
   productId: slot.productId,
   timeframe: multi.timeframe,
   strategyIds: [...multi.strategyIds],
+  ...(multi.strategyOptions === undefined ? {} : { strategyOptions: multi.strategyOptions }),
+  ...(multi.executionStyle === undefined ? {} : { executionStyle: multi.executionStyle }),
+  ...(multi.maxSpreadBps === undefined ? {} : { maxSpreadBps: multi.maxSpreadBps }),
   intervalSeconds: multi.intervalSeconds,
   maxMarketStalenessMs: multi.maxMarketStalenessMs,
   executionPriceMaxDivergenceBps: multi.executionPriceMaxDivergenceBps,
@@ -541,6 +691,15 @@ export const parseMultiProductAgentConfiguration = (
       strategyIds: Object.freeze(
         [...new Set(parsed.data.strategyIds)].sort(),
       ) as readonly StrategyId[],
+      ...(parsed.data.strategyOptions === undefined
+        ? {}
+        : { strategyOptions: parsed.data.strategyOptions }),
+      ...(parsed.data.executionStyle === undefined
+        ? {}
+        : { executionStyle: parsed.data.executionStyle }),
+      ...(parsed.data.maxSpreadBps === undefined
+        ? {}
+        : { maxSpreadBps: parsed.data.maxSpreadBps }),
       intervalSeconds: parsed.data.intervalSeconds,
       maxMarketStalenessMs: parsed.data.maxMarketStalenessMs,
       executionPriceMaxDivergenceBps: parsed.data.executionPriceMaxDivergenceBps,

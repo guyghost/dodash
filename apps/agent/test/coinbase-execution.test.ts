@@ -531,4 +531,82 @@ describe("Coinbase execution adapter", () => {
       },
     });
   });
+
+  it("submits passive limit_limit_gtc post_only orders rounded to quote_increment", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (url) => {
+      if (String(url).includes("/products/BTC-USD")) {
+        return Response.json({
+          product_id: "BTC-USD",
+          base_increment: "0.00000001",
+          quote_increment: "0.01",
+          base_min_size: "0.00000001",
+        });
+      }
+      return Response.json({
+        success: true,
+        success_response: {
+          order_id: "limit-order-1",
+          product_id: "BTC-USD",
+          side: "BUY",
+          client_order_id: intent.clientOrderId,
+        },
+      });
+    });
+
+    const buyLimit: OrderIntent = Object.freeze({
+      ...intent,
+      type: "LIMIT",
+      quantity: 0.1,
+      limitPrice: 50_123.459,
+    });
+    const buyResult = await submitCoinbaseOrder(
+      settings,
+      buyLimit,
+      authorizationFor("POST", COINBASE_CREATE_ORDER_PATH),
+      { fetch: fetchMock, now: () => NOW },
+    );
+    expect(buyResult.status).toBe("UNKNOWN");
+    const buyPostCall = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "https://api.coinbase.com/api/v3/brokerage/orders",
+    );
+    expect(JSON.parse(String(buyPostCall?.[1]?.body))).toMatchObject({
+      side: "BUY",
+      order_configuration: {
+        limit_limit_gtc: {
+          base_size: "0.1",
+          limit_price: "50123.45",
+          post_only: true,
+        },
+      },
+    });
+
+    fetchMock.mockClear();
+    const sellLimit: OrderIntent = Object.freeze({
+      ...intent,
+      side: "SELL",
+      type: "LIMIT",
+      quantity: 0.1,
+      limitPrice: 50_123.451,
+    });
+    const sellResult = await submitCoinbaseOrder(
+      settings,
+      sellLimit,
+      authorizationFor("POST", COINBASE_CREATE_ORDER_PATH),
+      { fetch: fetchMock, now: () => NOW },
+    );
+    expect(sellResult.status).toBe("UNKNOWN");
+    const sellPostCall = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "https://api.coinbase.com/api/v3/brokerage/orders",
+    );
+    expect(JSON.parse(String(sellPostCall?.[1]?.body))).toMatchObject({
+      side: "SELL",
+      order_configuration: {
+        limit_limit_gtc: {
+          base_size: "0.1",
+          limit_price: "50123.46",
+          post_only: true,
+        },
+      },
+    });
+  });
 });

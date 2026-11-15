@@ -29,6 +29,7 @@ import { perpProductForSignal } from "./hyperliquid-control.js";
 import {
 	fetchHyperliquidAccountState,
 	fetchHyperliquidFundingHistory,
+	fetchHyperliquidL1OrderBook,
 	fundingRatesForCandles,
 	hyperliquidCoin,
 } from "./hyperliquid-execution.js";
@@ -219,6 +220,15 @@ export const createTradingCycleEffects = (
 						);
 						if (samples === null) return null;
 						return fundingRatesForCandles(suffix, samples);
+					},
+					fetchOrderBook: async (config: AgentConfiguration) => {
+						const coin = hyperliquidCoin(
+							perpProductForSignal(config.productId) ?? "",
+						);
+						if (coin === null) return null;
+						return fetchHyperliquidL1OrderBook(perpSettings.value, coin, {
+							...(deps.fetch === undefined ? {} : { fetch: deps.fetch }),
+						});
 					},
 				}
 			: {}),

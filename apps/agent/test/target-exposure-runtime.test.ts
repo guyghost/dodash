@@ -9,6 +9,7 @@ import { executePaperOrder, type PaperPortfolio } from "@dodash/paper-execution"
 import { describe, expect, it } from "vitest";
 
 import {
+  admitHyperliquidPerpAgent,
   parseAgentConfiguration,
   parseMultiProductAgentConfiguration,
 } from "../src/configuration.js";
@@ -172,9 +173,32 @@ describe("configuration TARGET_EXPOSURE (INV-T5, INV-T6, §5)", () => {
     expect(parseAgentConfiguration(singleInput()).ok).toBe(true);
   });
 
-  it("refuse la politique hors paper", () => {
+  it("refuse la politique en live spot et l'accepte en perp (INV-T5 amendé)", () => {
     expect(parseAgentConfiguration(singleInput({ executionMode: "live" })).ok).toBe(false);
-    expect(parseAgentConfiguration(singleInput({ executionMode: "perp" })).ok).toBe(false);
+    const perpParsed = parseAgentConfiguration({
+      productId: "BTC-USD",
+      executionMode: "perp",
+      strategyIds: ["target-exposure"],
+      sizingPolicy: POLICY,
+    });
+    expect(perpParsed.ok).toBe(true);
+    if (perpParsed.ok) {
+      expect(perpParsed.value.candleLimit).toBe(240);
+      expect(admitHyperliquidPerpAgent(perpParsed.value)).toEqual({ status: "APPROVED" });
+    }
+    const disallowedProduct = parseAgentConfiguration({
+      productId: "SOL-USD",
+      executionMode: "perp",
+      strategyIds: ["target-exposure"],
+      sizingPolicy: POLICY,
+    });
+    expect(disallowedProduct.ok).toBe(true);
+    if (disallowedProduct.ok) {
+      expect(admitHyperliquidPerpAgent(disallowedProduct.value)).toEqual({
+        status: "REJECTED",
+        reasonCode: "PERP_PRODUCT_NOT_ALLOWED",
+      });
+    }
   });
 
   it("refuse un historique insuffisant", () => {
@@ -316,6 +340,68 @@ describe("interpréteur TARGET_EXPOSURE (§4, INV-T7)", () => {
 
   it("n'exécute aucun cycle quand le kill switch est engagé avant le réveil", async () => {
     const { submitted } = await run({ closes: trendBreak(), portfolio: invested(), dailyPnl: 0, kill: true });
+    expect(submitted).toEqual([]);
+  });
+
+  it("transmet costAwareRebalance depuis sizingPolicy vers planTargetExposure", async () => {
+    // 2025-02-01 est un samedi 1er du mois : sans costAwareRebalance, MONTH_START rééquilibre même sur petit écart ;
+    // avec costAwareRebalance + frais élevés, l'écart reste dans la No-Trade Zone.
+    const parsed = parseAgentConfiguration(
+      singleInput({
+        sizingPolicy: { ...POLICY, costAwareRebalance: true, costMultiple: 5 },
+        broker: { feeBps: 100, slippageBps: 100 },
+      }),
+    );
+    if (!parsed.ok) throw new Error("config invalide");
+    const configuration = parsed.value;
+    const closes = rising(240);
+    const febFirst = Date.UTC(2025, 1, 1);
+    const candles: Candle[] = closes.map((close, index) => ({
+      start: febFirst - (closes.length - index) * DAY,
+      open: close,
+      high: close + 1,
+      low: Math.max(0.01, close - 1),
+      close,
+      volume: 100,
+    }));
+    const lastClose = closes.at(-1) ?? 100;
+    // Exposition actuelle = 0.90 (proche de la cible 1.0 sur série montante très faiblement volatile), sous bande élargie.
+    const portfolio: PaperPortfolio = {
+      cash: 1_000,
+      positionQuantity: 9_000 / lastClose,
+      averagePrice: lastClose,
+    };
+    const submitted: OrderIntent[] = [];
+    const triggeredAt = febFirst + 60_000;
+    const result = await runTradingCycle({
+      agentId: "p7-cost-aware",
+      configuration,
+      machine: machineFor(configuration.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt,
+      now: () => triggeredAt,
+      cycleId: "cycle-p7-cost-aware",
+      triggerAlarm: true,
+      effects: {
+        reconcileAccount: async (p, observedAt) =>
+          ok({ snapshotId: `p7:${observedAt}`, observedAt, portfolio: p, accountEquity: p.cash + p.positionQuantity * lastClose, otherExposureNotional: 0 }),
+        fetchMarketData: async () => ok({ productId: configuration.productId, timeframe: "ONE_DAY", candles, source: "coinbase", cached: false } satisfies MarketSnapshot),
+        ensureSchedule: async () => ok({ nextWakeAt: triggeredAt + 3_600_000 }),
+        checkpoint: async () => ok(undefined),
+        persistMachine: async () => undefined,
+        persistOrderIntent: async (_id, intent) => { submitted.push(intent); return ok(undefined); },
+        authorize: async () => ok({ issuedAt: triggeredAt, expiresAt: triggeredAt + 60_000 }),
+        submitOrder: async () => { throw new Error("unexpected order"); },
+        reconcileOrder: async () => { throw new Error("unexpected reconcile"); },
+        cancelCurrentEffect: async () => ok(undefined),
+        persistCycle: async () => ok(undefined),
+      },
+    });
+    expect(result.machine.context.outcome).toBe("NO_ACTION");
     expect(submitted).toEqual([]);
   });
 });

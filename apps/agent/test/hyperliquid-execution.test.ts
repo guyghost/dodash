@@ -8,10 +8,13 @@ import {
   createEthersSignerFactory,
   derivePerpRiskGate,
   fetchHyperliquidAccountState,
+  fetchHyperliquidL1OrderBook,
   fetchHyperliquidMeta,
   fetchHyperliquidOrderFills,
   hyperliquidCoin,
+  hyperliquidLimitAloOrder,
   hyperliquidMarketIocOrder,
+  hyperliquidOrderAction,
   reconcileHyperliquidOrder,
   signHyperliquidOrder,
   submitHyperliquidOrder,
@@ -602,5 +605,64 @@ describe("lecture des fills /info userFills (dao #31)", () => {
       );
       expect(fills).toBeNull();
     }
+  });
+
+  it("construit et signe un ordre passif Alo lorsque limitPrice est présent", async () => {
+    const limitIntent = Object.freeze({ ...INTENT, limitPrice: 99_850 });
+    const aloAction = hyperliquidLimitAloOrder(
+      limitIntent,
+      0,
+      "perp-alo-0001",
+    );
+    expect(aloAction.orders[0]).toMatchObject({
+      a: 0,
+      b: true,
+      p: "99850",
+      s: "0.005",
+      t: { limit: { tif: "Alo" } },
+    });
+    expect(
+      hyperliquidOrderAction(limitIntent, 0, "perp-alo-0001"),
+    ).toEqual(aloAction);
+
+    const signed = await signHyperliquidOrder(
+      settings,
+      limitIntent,
+      0,
+      "perp-alo-0001",
+    );
+    expect(signed.ok).toBe(true);
+    if (!signed.ok) return;
+    expect(signed.value.action.orders[0]?.t).toEqual({
+      limit: { tif: "Alo" },
+    });
+  });
+
+  it("lit et normalise l2Book Hyperliquid fail-closed", async () => {
+    const book = await fetchHyperliquidL1OrderBook(settings, "BTC", {
+      fetch: (async () =>
+        jsonResponse({
+          levels: [
+            [{ px: "99990", sz: "1.2" }],
+            [{ px: "100010", sz: "0.8" }],
+          ],
+        })) as unknown as typeof fetch,
+    });
+    expect(book).not.toBeNull();
+    if (book === null) return;
+    expect(book.bestBid).toBe(99_990);
+    expect(book.bestAsk).toBe(100_010);
+    expect(book.spreadBps).toBeCloseTo(2);
+
+    const crossed = await fetchHyperliquidL1OrderBook(settings, "BTC", {
+      fetch: (async () =>
+        jsonResponse({
+          levels: [
+            [{ px: "100020", sz: "1" }],
+            [{ px: "100010", sz: "1" }],
+          ],
+        })) as unknown as typeof fetch,
+    });
+    expect(crossed).toBeNull();
   });
 });
