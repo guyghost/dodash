@@ -2,6 +2,9 @@ import type {
   AgentStateView,
   CycleView,
   DashboardGateway,
+  PaperValuationView,
+  PnlHistoryView,
+  PortfolioSummaryView,
   StartConfiguration,
 } from "./dashboard-api.js";
 
@@ -9,6 +12,24 @@ const wait = async (): Promise<void> =>
   new Promise((resolve) => globalThis.setTimeout(resolve, 260));
 
 const startedAt = Date.now();
+const valuation = (
+  asOf: number,
+  equity: number | null,
+  markPrice: number | null,
+  exposureNotional = markPrice === null ? 0 : markPrice,
+  ageMs: number | null = markPrice === null ? null : 60_000,
+): PaperValuationView => ({
+  asOf,
+  equity,
+  exposureNotional,
+  exposureQuality: "fresh",
+  markPrice,
+  markSource: markPrice === null ? null : "COINBASE_CANDLE_CLOSE",
+  timeframe: markPrice === null ? null : "FIVE_MINUTE",
+  candleClosedAt: ageMs === null ? null : asOf - ageMs,
+  ageMs,
+  quality: markPrice === null ? "unavailable" : "fresh",
+});
 let state: AgentStateView = Object.freeze({
   enabled: true,
   phase: "waiting",
@@ -34,6 +55,11 @@ let state: AgentStateView = Object.freeze({
     marketPrice: 63_912.18,
     signalCount: 3,
     completedAt: startedAt - 886_000,
+  }),
+  portfolioSummary: Object.freeze({ kind: "single-product" as const }),
+  paperValuation: Object.freeze({
+    ok: true as const,
+    value: Object.freeze(valuation(startedAt, 9_817.52, 63_912.18, 1_175.98)),
   }),
   indicators: Object.freeze({
     rsi: 61.8,
@@ -68,6 +94,150 @@ let cycles: readonly CycleView[] = Object.freeze([
   },
 ]);
 
+const pnlHistory: PnlHistoryView = Object.freeze({
+  equityCurve: Object.freeze([
+    { t: startedAt - 2_090_000, equity: 9_812.4, valuation: valuation(startedAt - 2_090_000, 9_812.4, 63_400) },
+    { t: startedAt - 1_490_000, equity: 9_774.02, valuation: valuation(startedAt - 1_490_000, 9_774.02, 63_402.11) },
+    { t: startedAt - 1_190_000, equity: 9_869.76, valuation: valuation(startedAt - 1_190_000, 9_869.76, 63_712) },
+    { t: startedAt - 890_000, equity: 9_964.56, valuation: valuation(startedAt - 890_000, 9_964.56, 63_912.18) },
+  ]),
+  cycles: Object.freeze([
+    Object.freeze({
+      cycleId: "cycle-01J6A2J8X7",
+      triggeredAt: startedAt - 890_000,
+      completedAt: startedAt - 886_000,
+      outcome: "ORDER_CONFIRMED",
+      marketPrice: 63_912.18,
+      valuation: valuation(startedAt - 886_000, 9_964.56, 63_912.18),
+      side: "BUY" as const,
+      quantity: 0.0184,
+      fillPrice: 63_924.51,
+      fee: 1.18,
+      realizedPnl: null,
+      slippageBps: 1.93,
+    }),
+    Object.freeze({
+      cycleId: "cycle-01J6A1TB4M",
+      triggeredAt: startedAt - 1_190_000,
+      completedAt: startedAt - 1_187_000,
+      outcome: "NO_ACTION",
+      marketPrice: 63_402.11,
+      valuation: valuation(startedAt - 1_187_000, 9_869.76, 63_402.11),
+      side: null,
+      quantity: null,
+      fillPrice: null,
+      fee: null,
+      realizedPnl: null,
+      slippageBps: null,
+    }),
+    Object.freeze({
+      cycleId: "cycle-01J6A14QPC",
+      triggeredAt: startedAt - 1_490_000,
+      completedAt: startedAt - 1_486_000,
+      outcome: "RISK_REJECTED",
+      marketPrice: 63_118.4,
+      valuation: valuation(startedAt - 1_486_000, 9_774.02, 63_118.4),
+      side: null,
+      quantity: null,
+      fillPrice: null,
+      fee: null,
+      realizedPnl: null,
+      slippageBps: null,
+    }),
+  ]),
+  openPosition: Object.freeze({ quantity: 0.0184, averagePrice: 61_284.42 }),
+  protection: Object.freeze({
+    stopLossPrice: 58_220.2,
+    takeProfitPrice: 67_412.86,
+    protectiveOrderConfirmed: true,
+  }),
+});
+
+const portfolioSummary: PortfolioSummaryView = Object.freeze({
+  kind: "portfolio",
+  phase: "running",
+  killSwitchActive: false,
+  asOf: startedAt,
+  products: Object.freeze([
+    Object.freeze({
+      productId: "BTC-USD",
+      phase: "waiting",
+      status: "running" as const,
+      cash: 5_204.11,
+      positionQuantity: 0.0184,
+      averagePrice: 61_284.42,
+      marketPrice: 63_912.18,
+      valuation: valuation(startedAt, 6_380.09, 63_912.18, 1_175.98),
+      grossExposure: 1_175.98,
+      exposureQuality: "fresh",
+      maxGrossExposure: 12_000,
+      dailyPnl: 96.4,
+      lastCycle: Object.freeze({
+        cycleId: "cycle-01J6A2J8X7",
+        triggeredAt: startedAt - 890_000,
+        completedAt: startedAt - 886_000,
+        outcome: "ORDER_CONFIRMED",
+        marketPrice: 63_912.18,
+      }),
+    }),
+    Object.freeze({
+      productId: "ETH-USD",
+      phase: "scheduling",
+      status: "running" as const,
+      cash: 3_410.02,
+      positionQuantity: 0.31,
+      averagePrice: 3_084.5,
+      marketPrice: 3_121.77,
+      valuation: valuation(startedAt, 4_377.7687, 3_121.77, 967.7487),
+      grossExposure: 967.75,
+      exposureQuality: "fresh",
+      maxGrossExposure: 12_000,
+      dailyPnl: 51.36,
+      lastCycle: Object.freeze({
+        cycleId: "cycle-01J6A2GRQ2",
+        triggeredAt: startedAt - 920_000,
+        completedAt: startedAt - 916_000,
+        outcome: "NO_ACTION",
+        marketPrice: 3_121.77,
+      }),
+    }),
+    // Produit quiescent (INV-P3) : visible avec ses derniers chiffres connus.
+    Object.freeze({
+      productId: "SOL-USD",
+      phase: "halted",
+      status: "halted" as const,
+      cash: 1_028.01,
+      positionQuantity: 2.4,
+      averagePrice: 148.22,
+      marketPrice: 146.9,
+      valuation: valuation(startedAt, 1_380.57, 146.9, 352.56),
+      grossExposure: 352.56,
+      exposureQuality: "fresh",
+      maxGrossExposure: 12_000,
+      dailyPnl: -24.63,
+      lastCycle: Object.freeze({
+        cycleId: "cycle-01J69ZKQ9M",
+        triggeredAt: startedAt - 1_860_000,
+        completedAt: startedAt - 1_856_000,
+        outcome: "FAILED",
+        marketPrice: 146.9,
+      }),
+    }),
+  ]),
+  consolidated: Object.freeze({
+    equity: 12_138.4287,
+    valuationQuality: "fresh",
+    grossExposure: 2_496.29,
+    exposureQuality: "fresh",
+    maxGrossExposure: 30_000,
+    dailyPnl: 123.13,
+    maxDailyLoss: 1_500,
+  }),
+});
+
+// dao #34 : la hiérarchie portefeuille voyage dans le contrat `/state`.
+state = Object.freeze({ ...state, portfolioSummary });
+
 const nextState = (patch: Partial<AgentStateView>): AgentStateView =>
   Object.freeze({ ...state, ...patch, updatedAt: Date.now() });
 
@@ -80,6 +250,21 @@ export const createDemoGateway = (): DashboardGateway =>
     loadCycles: async (_agentName: string) => {
       await wait();
       return cycles;
+    },
+    loadPnlHistory: async (_agentName: string) => {
+      await wait();
+      return pnlHistory;
+    },
+    submitPerpOrder: async (
+      _agentName: string,
+      body: Parameters<DashboardGateway["submitPerpOrder"]>[1],
+    ) => {
+      await wait();
+      return {
+        status: "SETTLED" as const,
+        outcome: "ACCEPTED" as const,
+        clientOrderId: body.clientOrderId,
+      };
     },
     command: async (
       _agentName: string,

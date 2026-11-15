@@ -1,14 +1,31 @@
-import { allocateSignals } from "@dodash/allocator";
-import { computeIndicators } from "@dodash/indicators-prolog";
-import { checkRisk } from "@dodash/risk";
+import { allocateSignals, type AllocationDecision } from "@dodash/allocator";
 import {
+  computeIndicators,
+  FUNDING_AVG_PERIOD,
+} from "@dodash/indicators-prolog";
+import { checkRisk } from "@dodash/risk";
+import { FUNDING_TREND_STRATEGY_ID } from "@dodash/strategies";
+import {
+  planMarketRetry,
+  planCycleWake,
+  decisionCandlePnl,
+  planTargetExposure,
   resolveDailyRiskWindow,
+  targetExposureRiskGate,
   type TradingCycleEvent,
   type WorkflowError,
   type WorkflowErrorCode,
   type WorkflowPhase,
 } from "@dodash/models";
-import type { Timeframe } from "@dodash/domain";
+import {
+  createClientOrderId,
+  createOrderIntent,
+  err,
+  ok,
+  type Candle,
+  type Result,
+  type Timeframe,
+} from "@dodash/domain";
 
 import { createTradingMachineSession } from "./machine-session.js";
 import { createConfiguredStrategyRegistry } from "./strategy-registry.js";
@@ -56,6 +73,38 @@ const missingArtifact = (phase: WorkflowPhase): WorkflowError => {
   return workflowError(phase, code);
 };
 
+/**
+ * Couture funding (models/funding-rate-strategy.md §3) : double porte
+ * (mode perp ∧ funding-trend configuré ∧ effet câblé) puis
+ * pré-validation fail-closed — toute forme hors contrat est traitée
+ * comme une indisponibilité (null), jamais un échec de cycle pour un
+ * input optionnel (C3). Une indisponibilité attendue est télémétrée.
+ */
+const resolveFundingInput = async (
+  input: RunTradingCycleInput,
+  candles: readonly Candle[],
+): Promise<{ readonly rates: readonly number[]; readonly avgPeriod: number } | undefined> => {
+  const { configuration, effects } = input;
+  if (
+    configuration.executionMode !== "perp" ||
+    !configuration.strategyIds.includes(FUNDING_TREND_STRATEGY_ID) ||
+    effects.fetchFundingData === undefined
+  ) {
+    return undefined;
+  }
+  const rates = await effects.fetchFundingData(configuration, candles);
+  const valid =
+    rates !== null &&
+    rates.length >= 1 &&
+    rates.length <= candles.length &&
+    rates.every((rate) => Number.isFinite(rate));
+  if (!valid) {
+    console.warn(JSON.stringify({ event: "funding_data_unavailable" }));
+    return undefined;
+  }
+  return { rates, avgPeriod: FUNDING_AVG_PERIOD };
+};
+
 export const runTradingCycle = async (
   input: RunTradingCycleInput,
 ): Promise<RunTradingCycleResult> => {
@@ -73,10 +122,21 @@ export const runTradingCycle = async (
   let portfolio = input.portfolio;
   let authorization: ExecutionAuthorization | undefined;
   let alarmTriggered = false;
+  const wake = planCycleWake(input.machine.value, input.triggerAlarm);
   let dailyRiskWindow = input.dailyRiskWindow ?? null;
   let dailyPnl = input.dailyPnl;
   let accountEquity: number | null = null;
   let otherExposureNotional = 0;
+
+  // models/daily-risk.md §3 : en paper, la fenêtre journalière est résolue par
+  // le runtime sur le mark daté ; les réconciliations paper (équité au coût)
+  // ne la ré-ancrent jamais. Live et perp gardent leur ancrage réel.
+  const anchorReconciledDailyRisk = (observedAt: number, equity: number): void => {
+    if (input.configuration.executionMode === "paper") return;
+    const dailyRisk = resolveDailyRiskWindow(dailyRiskWindow, observedAt, equity);
+    dailyRiskWindow = dailyRisk.window;
+    dailyPnl = dailyRisk.dailyPnl;
+  };
 
   const currentResult = (): RunTradingCycleResult => ({
     machine: session.record,
@@ -114,7 +174,7 @@ export const runTradingCycle = async (
           return currentResult();
 
         case "waiting":
-          if (!input.triggerAlarm || alarmTriggered) {
+          if (!wake.triggerAlarm || alarmTriggered) {
             return currentResult();
           }
           artifacts = Object.freeze({
@@ -141,8 +201,63 @@ export const runTradingCycle = async (
           break;
         }
 
+        case "retryingMarketData": {
+          // models/market-retry-schedule.md §3 : aucun refetch immédiat. Le
+          // planificateur pur fixe l'échéance ; elle est persistée avant
+          // l'alarme ; RETRY_TIMER_ELAPSED n'est émis qu'à échéance atteinte.
+          const now = (input.now ?? Date.now)();
+          const context = session.context;
+          const checkpointed = artifacts?.marketRetry;
+          if (
+            checkpointed === undefined ||
+            checkpointed.attempt !== context.attempts.marketData
+          ) {
+            // `attempts.marketData` est déjà incrémenté par la machine :
+            // le retry planifié porte l'index 0-based `attempts − 1`.
+            const plan = planMarketRetry({
+              attempt: Math.max(0, context.attempts.marketData - 1),
+              retryLimit: context.retryLimits.marketData,
+              retryable: context.lastError?.retryable ?? true,
+              retryAfterMs: context.lastError?.retryAfterMs ?? null,
+              now,
+              triggeredAt: artifacts?.triggeredAt ?? input.triggeredAt,
+              timeframeMs: timeframeMilliseconds[input.configuration.timeframe],
+              maxMarketStalenessMs: input.configuration.maxMarketStalenessMs,
+            });
+            if (plan.kind === "exhausted") {
+              await send({ type: "RETRY_TIMER_ELAPSED" });
+              break;
+            }
+            const current = artifacts ?? {
+              cycleId: input.cycleId,
+              triggeredAt: input.triggeredAt,
+            };
+            const next = Object.freeze({
+              ...current,
+              marketRetry: {
+                // `attempt` = tentatives déjà consommées, pour rejouer
+                // l'identité `checkpointed.attempt === attempts.marketData`.
+                attempt: context.attempts.marketData,
+                nextRetryAt: plan.nextRetryAt,
+                deadlineAt: plan.deadlineAt,
+                errorCode: context.lastError?.code ?? null,
+              },
+            });
+            // Persistance avant programmation (§3). Un échec de checkpoint
+            // laisse le cycle en attente : le prochain réveil rejouera la
+            // planification ; aucun événement n'est envoyé à la machine.
+            const persisted = await input.effects.checkpoint(next);
+            if (!persisted.ok) return currentResult();
+            artifacts = next;
+            await input.effects.scheduleRetry?.(plan.nextRetryAt, plan.attempt);
+            return currentResult();
+          }
+          if (now < checkpointed.nextRetryAt) return currentResult();
+          await send({ type: "RETRY_TIMER_ELAPSED" });
+          break;
+        }
+
         case "retryingSchedule":
-        case "retryingMarketData":
         case "retryingAuthorization":
         case "retryingExecution":
         case "retryingReconciliation":
@@ -166,13 +281,7 @@ export const runTradingCycle = async (
           portfolio = result.value.portfolio;
           accountEquity = result.value.accountEquity;
           otherExposureNotional = result.value.otherExposureNotional;
-          const dailyRisk = resolveDailyRiskWindow(
-            dailyRiskWindow,
-            result.value.observedAt,
-            result.value.accountEquity,
-          );
-          dailyRiskWindow = dailyRisk.window;
-          dailyPnl = dailyRisk.dailyPnl;
+          anchorReconciledDailyRisk(result.value.observedAt, result.value.accountEquity);
           await send({
             type: "ACCOUNT_RECONCILED",
             snapshotId: result.value.snapshotId,
@@ -215,6 +324,7 @@ export const runTradingCycle = async (
             snapshotId: `market:${result.value.productId}:${last.start}:${result.value.candles.length}`,
             candleClosedAt:
               last.start + timeframeMilliseconds[result.value.timeframe],
+            evaluatedAt: (input.now ?? Date.now)(),
           });
           break;
         }
@@ -224,9 +334,15 @@ export const runTradingCycle = async (
             await send({ type: "INDICATORS_FAILED", error: missingArtifact("indicators") });
             break;
           }
+          const fundingInput = await resolveFundingInput(
+            input,
+            artifacts.market.candles,
+          );
           const result = await computeIndicators(
             artifacts.market.candles,
             input.configuration.indicators,
+            undefined,
+            fundingInput,
           );
           if (!result.ok) {
             await send({
@@ -289,16 +405,32 @@ export const runTradingCycle = async (
             break;
           }
           const decisionId = `decision:${artifacts.cycleId}`;
-          const result = allocateSignals({
-            agentId: input.agentId,
-            cycleId: artifacts.cycleId,
-            decisionId,
-            signals: artifacts.signals,
-            marketPrices: { [input.configuration.productId]: last.close },
-            capitalAvailable: Math.max(0, portfolio.cash),
-            maxDecisionNotional: input.configuration.maxDecisionNotional,
-            minNetQuantity: input.configuration.minNetQuantity,
-          });
+          // Politique P7 (models/target-exposure.md §4) : l'ordre vient de la
+          // décision d'exposition cible, pas de l'allocateur — qui plafonne
+          // aussi les ventes par le cash et bloquerait toute réduction.
+          const result =
+            input.configuration.sizingPolicy.type === "TARGET_EXPOSURE"
+              ? targetExposureAllocation({
+                  agentId: input.agentId,
+                  cycleId: artifacts.cycleId,
+                  decisionId,
+                  productId: input.configuration.productId,
+                  candles: artifacts.market?.candles ?? [],
+                  positionQuantity: portfolio.positionQuantity,
+                  cash: portfolio.cash,
+                  feeBps: input.configuration.broker.feeBps,
+                  slippageBps: input.configuration.broker.slippageBps,
+                })
+              : allocateSignals({
+                  agentId: input.agentId,
+                  cycleId: artifacts.cycleId,
+                  decisionId,
+                  signals: artifacts.signals,
+                  marketPrices: { [input.configuration.productId]: last.close },
+                  capitalAvailable: Math.max(0, portfolio.cash),
+                  maxDecisionNotional: input.configuration.maxDecisionNotional,
+                  minNetQuantity: input.configuration.minNetQuantity,
+                });
           if (!result.ok) {
             await send({
               type: "ALLOCATION_FAILED",
@@ -336,13 +468,26 @@ export const runTradingCycle = async (
             await send({ type: "RISK_FAILED", error: missingArtifact("risk") });
             break;
           }
+          // Porte de risque P7 (models/target-exposure.md §4, INV-T7) : une
+          // réduction n'est bloquée ni par la perte journalière ni par
+          // l'admission portefeuille ; un achat est soumis à la pire perte
+          // entre la fenêtre du runtime (non encore valorisée sur la bougie
+          // de décision en paper) et la variation du créneau sur cette bougie.
+          const targetExposureGate =
+            input.configuration.sizingPolicy.type === "TARGET_EXPOSURE"
+              ? targetExposureRiskGate(
+                  order.side,
+                  dailyPnl,
+                  decisionCandlePnl(current.market?.candles ?? [], portfolio.positionQuantity),
+                )
+              : null;
           const result = checkRisk(
             order,
             {
               marketPrice: price,
               currentPositionQuantity: portfolio.positionQuantity,
               otherExposureNotional,
-              dailyPnl,
+              dailyPnl: targetExposureGate?.dailyPnlForRisk ?? dailyPnl,
               lastTradeAt: input.lastTradeAt,
               now: current.triggeredAt,
               killSwitchActive: session.context.shutdownMode === "kill-switch",
@@ -352,6 +497,27 @@ export const runTradingCycle = async (
           if (!result.ok) {
             await send({ type: "RISK_FAILED", error: workflowError("risk", "RISK_FAILURE") });
             break;
+          }
+          // Couture portefeuille (models/multi-product-portfolio.md §9.3) :
+          // après un checkRisk local approuvé, l'interpréteur du produit
+          // propose l'exposition projetée à l'orchestrateur du §5 et ne
+          // poursuit (RISK_APPROVED) que sur décision `approved` (INV-P5).
+          // Sans couture câblée (mono-produit), comportement strictement
+          // identique (C2). Un refus consolidé ne checkpointe jamais un
+          // risque approuvé (C3) et se consolide en RISK_REJECTED produit.
+          if (
+            result.value.status === "APPROVED" &&
+            input.effects.proposePortfolioRisk !== undefined &&
+            targetExposureGate?.portfolioAdmission !== false
+          ) {
+            const admission = await input.effects.proposePortfolioRisk(
+              input.configuration.productId,
+              result.value.projectedPositionNotional,
+            );
+            if (!admission.approved) {
+              await send({ type: "RISK_REJECTED" });
+              break;
+            }
           }
           const next = Object.freeze({ ...current, risk: result.value });
           if (
@@ -449,13 +615,7 @@ export const runTradingCycle = async (
             ) {
               accountEquity = result.accountEquity;
               otherExposureNotional = result.otherExposureNotional;
-              const dailyRisk = resolveDailyRiskWindow(
-                dailyRiskWindow,
-                result.observedAt,
-                result.accountEquity,
-              );
-              dailyRiskWindow = dailyRisk.window;
-              dailyPnl = dailyRisk.dailyPnl;
+              anchorReconciledDailyRisk(result.observedAt, result.accountEquity);
             }
             const next = Object.freeze({
               ...current,
@@ -485,25 +645,13 @@ export const runTradingCycle = async (
             portfolio = result.portfolio;
             accountEquity = result.accountEquity;
             otherExposureNotional = result.otherExposureNotional;
-            const dailyRisk = resolveDailyRiskWindow(
-              dailyRiskWindow,
-              result.observedAt,
-              result.accountEquity,
-            );
-            dailyRiskWindow = dailyRisk.window;
-            dailyPnl = dailyRisk.dailyPnl;
+            anchorReconciledDailyRisk(result.observedAt, result.accountEquity);
             await send({ type: "ORDER_NO_LONGER_NEEDED" });
           } else if (result.status === "PROTECTION_FAILED") {
             portfolio = result.portfolio;
             accountEquity = result.accountEquity;
             otherExposureNotional = result.otherExposureNotional;
-            const dailyRisk = resolveDailyRiskWindow(
-              dailyRiskWindow,
-              result.observedAt,
-              result.accountEquity,
-            );
-            dailyRiskWindow = dailyRisk.window;
-            dailyPnl = dailyRisk.dailyPnl;
+            anchorReconciledDailyRisk(result.observedAt, result.accountEquity);
             artifacts = Object.freeze({
               ...current,
               ...(result.exchangeOrderId === null
@@ -573,13 +721,7 @@ export const runTradingCycle = async (
             ) {
               accountEquity = result.value.accountEquity;
               otherExposureNotional = result.value.otherExposureNotional;
-              const dailyRisk = resolveDailyRiskWindow(
-                dailyRiskWindow,
-                result.value.observedAt,
-                result.value.accountEquity,
-              );
-              dailyRiskWindow = dailyRisk.window;
-              dailyPnl = dailyRisk.dailyPnl;
+              anchorReconciledDailyRisk(result.value.observedAt, result.value.accountEquity);
             }
             const next = Object.freeze({
               ...artifacts,
@@ -609,25 +751,13 @@ export const runTradingCycle = async (
             portfolio = result.value.portfolio;
             accountEquity = result.value.accountEquity;
             otherExposureNotional = result.value.otherExposureNotional;
-            const dailyRisk = resolveDailyRiskWindow(
-              dailyRiskWindow,
-              result.value.observedAt,
-              result.value.accountEquity,
-            );
-            dailyRiskWindow = dailyRisk.window;
-            dailyPnl = dailyRisk.dailyPnl;
+            anchorReconciledDailyRisk(result.value.observedAt, result.value.accountEquity);
             await send({ type: "ORDER_NO_LONGER_NEEDED" });
           } else if (result.value.status === "PROTECTION_FAILED") {
             portfolio = result.value.portfolio;
             accountEquity = result.value.accountEquity;
             otherExposureNotional = result.value.otherExposureNotional;
-            const dailyRisk = resolveDailyRiskWindow(
-              dailyRiskWindow,
-              result.value.observedAt,
-              result.value.accountEquity,
-            );
-            dailyRiskWindow = dailyRisk.window;
-            dailyPnl = dailyRisk.dailyPnl;
+            anchorReconciledDailyRisk(result.value.observedAt, result.value.accountEquity);
             artifacts = Object.freeze({
               ...artifacts,
               ...(result.value.exchangeOrderId === null
@@ -704,4 +834,61 @@ export const runTradingCycle = async (
   } finally {
     session.stop();
   }
+};
+
+/**
+ * Étape d'allocation de la politique P7 (models/target-exposure.md §3–§4) :
+ * décision pure `planTargetExposure` traduite en au plus une intention
+ * MARKET, avec le schéma d'identifiant de l'allocateur.
+ */
+const targetExposureAllocation = (input: {
+  readonly agentId: string;
+  readonly cycleId: string;
+  readonly decisionId: string;
+  readonly productId: Parameters<typeof createOrderIntent>[0]["productId"];
+  readonly candles: readonly Candle[];
+  readonly positionQuantity: number;
+  readonly cash: number;
+  readonly feeBps: number;
+  readonly slippageBps: number;
+}): Result<AllocationDecision, unknown> => {
+  const decision = planTargetExposure({
+    candles: input.candles,
+    positionQuantity: input.positionQuantity,
+    cash: input.cash,
+    feeBps: input.feeBps,
+    slippageBps: input.slippageBps,
+  });
+  const net = decision.side === "BUY" ? decision.quantity : decision.side === "SELL" ? -decision.quantity : 0;
+  if (decision.side === "HOLD") {
+    return ok(
+      Object.freeze({
+        decisionId: input.decisionId,
+        outcome: "NO_ACTION" as const,
+        orders: Object.freeze([]),
+        netQuantities: Object.freeze({ [input.productId]: net }),
+      }),
+    );
+  }
+  const clientOrderId = createClientOrderId(input.agentId, input.cycleId, input.decisionId, 0);
+  if (!clientOrderId.ok) return err(clientOrderId.error);
+  const intent = createOrderIntent({
+    clientOrderId: clientOrderId.value,
+    decisionId: input.decisionId,
+    strategyIds: ["target-exposure"],
+    productId: input.productId,
+    side: decision.side,
+    type: "MARKET",
+    quantity: decision.quantity,
+    limitPrice: null,
+  });
+  if (!intent.ok) return err(intent.error);
+  return ok(
+    Object.freeze({
+      decisionId: input.decisionId,
+      outcome: "ALLOCATED" as const,
+      orders: Object.freeze([intent.value]),
+      netQuantities: Object.freeze({ [input.productId]: net }),
+    }),
+  );
 };

@@ -1,0 +1,16 @@
+{
+  "post-7-oct": {
+    "cycleRows": 140,
+    "rateLimitedCycleRows": 38,
+    "failedRateLimited": 26,
+    "sampledRows": 0,
+    "missedEvents": 0
+  },
+  "post-10-oct": {
+    "cycleRows": 160,
+    "rateLimitedCycleRows": 62,
+    "failedRateLimited": 46,
+    "sampledRows": 2,
+    "missedEvents": 1
+  }
+}

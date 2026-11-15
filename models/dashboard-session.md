@@ -43,6 +43,7 @@ au service binding Agent. Il ne possède donc pas de machine d'état distincte.
 | `/api/agents/:name/state` | `GET` | `/api/agents/:name/state` | interdit |
 | `/api/agents/:name/cycles` | `GET` | `/api/agents/:name/cycles` | interdit |
 | `/api/agents/:name/start` | `POST` | `/api/agents/:name/start` | JSON borné requis |
+| `/api/agents/:name/perp-order` | `POST` | `/api/agents/:name/perp-order` | JSON borné requis (intention perp + entrées de garde) |
 | `/api/agents/:name/stop` | `POST` | `/api/agents/:name/stop` | interdit |
 | `/api/agents/:name/reset` | `POST` | `/api/agents/:name/reset` | interdit |
 | `/api/agents/:name/tick` | `POST` | `/api/agents/:name/tick` | interdit |
@@ -95,7 +96,8 @@ navigateur
 1. Aucun secret ou Bearer token ne vit dans le contexte XState, l’URL ou le
    stockage persistant du navigateur.
 2. Seule une réponse distante validée peut changer `remotePhase`.
-3. `start` et `tick` exigent `canTrade`; les autres contrôles exigent
+3. `start` et `tick` exigent `canTrade`; `perp-order` exige `canControl`
+   et `canTrade`; les autres contrôles exigent
    `canControl`.
 4. Une requête en vol est représentée par un état explicite.
 5. Une erreur de commande conserve le dernier état distant confirmé.

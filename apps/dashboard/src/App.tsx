@@ -1,14 +1,29 @@
 import {
+  baseWalletSessionMachine,
+  BASE_MAINNET_CHAIN_ID,
   dashboardSessionMachine,
+  HYPERLIQUID_PERP_POLICY,
   LIVE_TRADING_POLICY,
   LIVE_TRADING_PRODUCTS,
+  perpOrderUiMachine,
+  resolvePerpTradingCapability,
   type DashboardDirectCommand,
   type DashboardError,
   type DashboardRemotePhase,
+  type PerpOrderFormDraft,
+  type PerpRefusalCode,
+  type PerpTradingCapability,
 } from "@dodash/models";
 import { createActor, type SnapshotFrom } from "xstate";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
+import {
+  BaseWalletRequestError,
+  connectBaseWallet,
+  findInjectedBaseWalletProvider,
+  parseHexChainId,
+  subscribeBaseWallet,
+} from "./base-wallet.js";
 import {
   DashboardRequestError,
   createStartConfiguration,
@@ -16,6 +31,9 @@ import {
   type AgentStateView,
   type CycleView,
   type DashboardGateway,
+  type PnlHistoryView,
+  type PortfolioProductStatusView,
+  type PortfolioSummaryView,
   type StartConfiguration,
 } from "./dashboard-api.js";
 import { createDemoGateway } from "./demo-gateway.js";
@@ -61,6 +79,44 @@ const outcomeClass = (outcome: string): string => {
   return "neutral";
 };
 
+const signedClass = (value: number): string =>
+  value >= 0 ? "pnl-positive" : "pnl-negative";
+
+const bps = new Intl.NumberFormat("fr-FR", {
+  maximumFractionDigits: 2,
+  minimumFractionDigits: 2,
+});
+
+const portfolioStatusLabel = (status: PortfolioProductStatusView): string =>
+  status === "running"
+    ? "ACTIF"
+    : status === "stopped"
+      ? "ARRÊTÉ"
+      : status === "halted"
+        ? "SUSPENDU"
+        : "EN ÉCHEC";
+
+const equityPath = (points: readonly { readonly t: number; readonly equity: number }[]): string => {
+  if (points.length < 2) return "";
+  const times = points.map((point) => point.t);
+  const equities = points.map((point) => point.equity);
+  const tMin = Math.min(...times);
+  const tMax = Math.max(...times);
+  const eMin = Math.min(...equities);
+  const eMax = Math.max(...equities);
+  const width = 600;
+  const height = 160;
+  const spanT = Math.max(1, tMax - tMin);
+  const spanE = Math.max(Number.EPSILON, eMax - eMin);
+  return points
+    .map((point, index) => {
+      const x = (point.t - tMin) / spanT * width;
+      const y = height - ((point.equity - eMin) / spanE) * (height - 12) - 6;
+      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+};
+
 function SectionHeading({
   index,
   title,
@@ -96,6 +152,96 @@ function Metric({
   );
 }
 
+const capabilityLabel = (capability: PerpTradingCapability): string => {
+  if (capability.status === "APPROVED") {
+    return `PERPÉTUELS OUVERTS · ${capability.venue.toUpperCase()}`;
+  }
+  if (capability.reason === "WALLET_NOT_CONNECTED") return "PERPÉTUELS : WALLET NON CONNECTÉ";
+  if (capability.reason === "WRONG_CHAIN") return "PERPÉTUELS : MAUVAIS RÉSEAU";
+  return "PERPÉTUELS : VERROUILLÉS · ADMISSION FERMÉE";
+};
+
+const shortAddress = (address: string): string =>
+  `${address.slice(0, 6)}…${address.slice(-4)}`;
+
+function BaseWalletCard({
+  snapshot,
+  onConnect,
+  onDisconnect,
+}: {
+  readonly snapshot: SnapshotFrom<typeof baseWalletSessionMachine>;
+  readonly onConnect: () => void;
+  readonly onDisconnect: () => void;
+}) {
+  const { account, lastError } = snapshot.context;
+  const capability = resolvePerpTradingCapability(account);
+  const connectedOnBase =
+    snapshot.value === "connected" && account !== null && account.chainId === BASE_MAINNET_CHAIN_ID;
+  const badge =
+    snapshot.value === "connecting"
+      ? "CONNEXION"
+      : snapshot.value === "connected" && connectedOnBase
+        ? "CONNECTÉ · 8453"
+        : snapshot.value === "wrongChain"
+          ? "MAUVAIS RÉSEAU"
+          : snapshot.value === "failed"
+            ? "ÉCHEC"
+            : "HORS LIGNE";
+  return (
+    <article className="paper-card wallet-card">
+      <div className="card-topline">
+        <span className="card-label blue-bg">WALLET BASE</span>
+        <span
+          className={`phase-badge ${connectedOnBase ? "online" : "offline"}`}
+        >
+          {badge}
+        </span>
+      </div>
+      <h2>Session wallet</h2>
+      {account === null ? (
+        <p>
+          Connecter le wallet Base pour signer sur `eip155:8453`. La clé reste
+          dans le wallet ; la machine ne voit que l’adresse et la chaîne.
+        </p>
+      ) : (
+        <p className="agent-meta">
+          <code>{shortAddress(account.address)}</code> ·{" "}
+          {account.chainId === BASE_MAINNET_CHAIN_ID
+            ? "Base mainnet"
+            : `Chaîne ${account.chainId}`}
+        </p>
+      )}
+      <p className="next-wake" aria-live="polite">
+        {capabilityLabel(capability)}
+      </p>
+      {lastError !== null && (
+        <p className="error-note" role="alert">
+          {lastError.code}
+        </p>
+      )}
+      {snapshot.value === "failed" || snapshot.value === "disconnected" ? (
+        <div className="button-row">
+          <button
+            className="button primary"
+            type="button"
+            onClick={onConnect}
+          >
+            {snapshot.value === "failed"
+              ? "Réessayer la connexion"
+              : "Connecter le wallet"}
+          </button>
+        </div>
+      ) : (
+        <div className="button-row">
+          <button className="text-button" type="button" onClick={onDisconnect}>
+            Déconnecter le wallet
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
 export interface AppGateways {
   readonly createHttp: typeof createHttpGateway;
   readonly createDemo: typeof createDemoGateway;
@@ -111,6 +257,32 @@ export function App({
 }: {
   readonly gateways?: AppGateways;
 }) {
+  const walletActor = useMemo(
+    () => createActor(baseWalletSessionMachine, { input: {} }),
+    [],
+  );
+  const [wallet, setWallet] = useState<
+    SnapshotFrom<typeof baseWalletSessionMachine>
+  >(walletActor.getSnapshot());
+  const unsubscribeWalletRef = useRef<(() => void) | null>(null);
+
+  const perpUiActor = useMemo(
+    () => createActor(perpOrderUiMachine, { input: {} }),
+    [],
+  );
+  const [perpUi, setPerpUi] = useState<
+    SnapshotFrom<typeof perpOrderUiMachine>
+  >(perpUiActor.getSnapshot());
+  const [perpDraft, setPerpDraft] = useState<PerpOrderFormDraft>({
+    productId: "BTC-PERP",
+    side: "BUY",
+    quantity: 0.005,
+    markPrice: 100_000,
+    leverage: 1,
+    dailyPnl: 0,
+  });
+  const inFlightPerpRef = useRef(false);
+
   const actor = useMemo(
     () =>
       createActor(dashboardSessionMachine, {
@@ -123,6 +295,8 @@ export function App({
   >(actor.getSnapshot());
   const [agent, setAgent] = useState<AgentStateView | null>(null);
   const [cycles, setCycles] = useState<readonly CycleView[]>([]);
+  const [pnlHistory, setPnlHistory] = useState<PnlHistoryView | null>(null);
+  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummaryView | null>(null);
   const [agentName, setAgentName] = useState("btc-usd--multi");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [token, setToken] = useState("");
@@ -148,6 +322,23 @@ export function App({
   }, [actor]);
 
   useEffect(() => {
+    walletActor.start();
+    const walletSubscription = walletActor.subscribe(setWallet);
+    return () => {
+      walletSubscription.unsubscribe();
+      unsubscribeWalletRef.current?.();
+    };
+  }, [walletActor]);
+
+  useEffect(() => {
+    perpUiActor.start();
+    const perpSubscription = perpUiActor.subscribe(setPerpUi);
+    return () => {
+      perpSubscription.unsubscribe();
+    };
+  }, [perpUiActor]);
+
+  useEffect(() => {
     const state = String(snapshot.value);
     if (state === "ready" || state === "disconnected" || state === "error") {
       inFlightRef.current = null;
@@ -164,8 +355,14 @@ export function App({
       actor.send({ type: "REQUEST_FAILED", error: toDashboardError(error) });
     };
     if (state === "loading" || state === "refreshing") {
-      void Promise.all([gateway.loadState(target), gateway.loadCycles(target)])
-        .then(([nextAgent, nextCycles]) => {
+      // dao #34 : la hiérarchie portefeuille est portée par le contrat
+      // `/state` — plus aucune lecture `/portfolio` séparée.
+      void Promise.all([
+        gateway.loadState(target),
+        gateway.loadCycles(target),
+        gateway.loadPnlHistory(target),
+      ])
+        .then(([nextAgent, nextCycles, nextPnl]) => {
           actor.send({
             type: "STATE_LOADED",
             remotePhase: nextAgent.phase,
@@ -174,6 +371,8 @@ export function App({
           if (String(actor.getSnapshot().value) === "ready") {
             setAgent(nextAgent);
             setCycles(nextCycles);
+            setPnlHistory(nextPnl);
+            setPortfolioSummary(nextAgent.portfolioSummary);
           }
         })
         .catch(fail);
@@ -188,7 +387,10 @@ export function App({
           command === "start" ? pendingStartRef.current : undefined,
         )
         .then(async (nextAgent) => {
-          const nextCycles = await gateway.loadCycles(target);
+          const [nextCycles, nextPnl] = await Promise.all([
+            gateway.loadCycles(target),
+            gateway.loadPnlHistory(target),
+          ]);
           actor.send({
             type: "COMMAND_SUCCEEDED",
             remotePhase: nextAgent.phase,
@@ -197,6 +399,8 @@ export function App({
           if (String(actor.getSnapshot().value) === "ready") {
             setAgent(nextAgent);
             setCycles(nextCycles);
+            setPnlHistory(nextPnl);
+            setPortfolioSummary(nextAgent.portfolioSummary);
           }
           pendingStartRef.current = undefined;
         })
@@ -264,6 +468,163 @@ export function App({
     }
   };
 
+  const connectWallet = () => {
+    const provider = findInjectedBaseWalletProvider();
+    walletActor.send({
+      type: "CONNECT_REQUESTED",
+      providerPresent: provider !== null,
+    });
+    if (provider === null) return;
+    void connectBaseWallet(provider)
+      .then((account) => {
+        walletActor.send({
+          type: "WALLET_CONNECTED",
+          address: account.address,
+          chainId: account.chainId,
+        });
+        unsubscribeWalletRef.current?.();
+        unsubscribeWalletRef.current = subscribeBaseWallet(provider, {
+          onAccountsChanged: (accounts) => {
+            const first = Array.isArray(accounts) ? accounts[0] : undefined;
+            if (first === undefined) {
+              walletActor.send({ type: "WALLET_ACCOUNT_CHANGED", address: null });
+              return;
+            }
+            if (typeof first !== "string") {
+              walletActor.send({
+                type: "CONNECTION_FAILED",
+                error: { code: "WALLET_INVALID_RESPONSE", retryable: true },
+              });
+              return;
+            }
+            walletActor.send({
+              type: "WALLET_ACCOUNT_CHANGED",
+              address: first.trim().toLowerCase(),
+            });
+          },
+          onChainChanged: (chainId) => {
+            const parsed = parseHexChainId(chainId);
+            if (parsed === null) {
+              walletActor.send({
+                type: "CONNECTION_FAILED",
+                error: { code: "WALLET_INVALID_RESPONSE", retryable: true },
+              });
+              return;
+            }
+            walletActor.send({ type: "WALLET_CHAIN_CHANGED", chainId: parsed });
+          },
+        });
+      })
+      .catch((error: unknown) => {
+        walletActor.send({
+          type: "CONNECTION_FAILED",
+          error:
+            error instanceof BaseWalletRequestError
+              ? error.walletError
+              : { code: "WALLET_INVALID_RESPONSE", retryable: true },
+        });
+      });
+  };
+
+  const disconnectWallet = () => {
+    unsubscribeWalletRef.current?.();
+    unsubscribeWalletRef.current = null;
+    walletActor.send({ type: "DISCONNECT_REQUESTED" });
+  };
+
+  useEffect(() => {
+    if (perpUi.value !== "submitting" || inFlightPerpRef.current) return;
+    const gateway = gatewayRef.current;
+    const target = snapshot.context.agentName;
+    const draft = perpUi.context.draft;
+    const clientOrderId = perpUi.context.clientOrderId;
+    if (gateway === null || target === null || draft === null || clientOrderId === null) {
+      perpUiActor.send({
+        type: "SUBMISSION_FAILED",
+        error: { code: "REQUEST_FAILED", retryable: false },
+      });
+      return;
+    }
+    inFlightPerpRef.current = true;
+    gateway
+      .submitPerpOrder(target, {
+        intent: {
+          productId: draft.productId,
+          side: draft.side,
+          quantity: draft.quantity,
+          markPrice: draft.markPrice,
+          leverage: draft.leverage,
+        },
+        gate: { dailyPnl: draft.dailyPnl },
+        clientOrderId,
+      })
+      .then((view) => {
+        inFlightPerpRef.current = false;
+        if (view.status === "FAILED") {
+          perpUiActor.send({
+            type: "SUBMISSION_FAILED",
+            error: { code: "REQUEST_FAILED", retryable: true },
+          });
+          return;
+        }
+        if (view.status === "REFUSED" && typeof view.reasonCode === "string") {
+          perpUiActor.send({
+            type: "SUBMISSION_SUCCEEDED",
+            result: {
+              status: "REFUSED",
+              reasonCode: view.reasonCode as PerpRefusalCode,
+            },
+          });
+          return;
+        }
+        if (
+          view.status === "SETTLED" &&
+          (view.outcome === "ACCEPTED" || view.outcome === "REJECTED")
+        ) {
+          perpUiActor.send({
+            type: "SUBMISSION_SUCCEEDED",
+            result: {
+              status: "SETTLED",
+              outcome: view.outcome,
+              clientOrderId: view.clientOrderId ?? clientOrderId,
+            },
+          });
+          return;
+        }
+        perpUiActor.send({
+          type: "SUBMISSION_FAILED",
+          error: { code: "REQUEST_FAILED", retryable: false },
+        });
+      })
+      .catch(() => {
+        inFlightPerpRef.current = false;
+        perpUiActor.send({
+          type: "SUBMISSION_FAILED",
+          error: { code: "REQUEST_FAILED", retryable: true },
+        });
+      });
+  }, [perpUi, perpUiActor, snapshot.context.agentName]);
+
+  const preparePerpOrder = () => {
+    perpUiActor.send({
+      type: "SUBMISSION_PREPARED",
+      draft: perpDraft,
+      permissions,
+    });
+  };
+
+  const confirmPerpOrder = () => {
+    perpUiActor.send({
+      type: "PERP_ORDER_CONFIRMED",
+      permissions,
+      clientOrderId: `perp-${Date.now().toString(36)}`,
+    });
+  };
+
+  const cancelPerpOrder = () => {
+    perpUiActor.send({ type: "PERP_ORDER_CANCELLED" });
+  };
+
   const busy =
     snapshot.value === "loading" ||
     snapshot.value === "refreshing" ||
@@ -275,13 +636,26 @@ export function App({
     snapshot.value === "refreshing";
   const activePipeline = PIPELINE.findIndex((item) => item.phase === agent?.phase);
   const liveStartBlocked = executionMode === "live" && liveConfirmation !== "LIVE";
-  const markPrice = agent?.lastCycle?.marketPrice ?? null;
+  const paperValuation = agent?.paperValuation?.ok
+    ? agent.paperValuation.value
+    : null;
   const equity =
-    agent === null
-      ? null
-      : agent.portfolio.cash +
-        agent.portfolio.positionQuantity *
-          (markPrice ?? agent.portfolio.averagePrice);
+    paperValuation?.equity ??
+    (agent?.portfolioSummary.kind === "portfolio"
+      ? agent.portfolioSummary.consolidated.equity
+      : null);
+  const exposure =
+    paperValuation?.exposureNotional ??
+    (agent?.portfolioSummary.kind === "portfolio"
+      ? agent.portfolioSummary.consolidated.grossExposure
+      : null);
+  const equityQuality = paperValuation?.quality ??
+    (agent?.paperValuation?.ok === false ? "unavailable" : null);
+  const equityAge = paperValuation?.ageMs ?? null;
+  const plottedEquityCurve =
+    pnlHistory?.equityCurve.filter(
+      (point): point is typeof point & { readonly equity: number } => point.equity !== null,
+    ) ?? [];
 
   return (
     <main className="dashboard-shell">
@@ -318,6 +692,19 @@ export function App({
           <span><i className="blue" />Persistance</span>
         </div>
       </header>
+
+      <section>
+        <SectionHeading
+          index="00"
+          title="WALLET BASE"
+          detail="SIGNATURE LOCALE · EIP-155:8453"
+        />
+        <BaseWalletCard
+          snapshot={wallet}
+          onConnect={connectWallet}
+          onDisconnect={disconnectWallet}
+        />
+      </section>
 
       {!ready ? (
         <section className="access-section">
@@ -429,6 +816,11 @@ export function App({
                     accent="blue-text"
                   />
                   <Metric
+                    label="EXPOSITION"
+                    value={exposure === null ? "INDISPONIBLE" : money.format(exposure)}
+                    accent="blue-text"
+                  />
+                  <Metric
                     label="PNL JOUR"
                     value={money.format(agent.dailyPnl)}
                     accent={agent.dailyPnl >= 0 ? "green-text" : "red-text"}
@@ -442,6 +834,15 @@ export function App({
                     value={money.format(agent.portfolio.averagePrice)}
                   />
                 </div>
+                {agent.configuration?.executionMode === "paper" && (
+                  <p className="next-wake" aria-live="polite">
+                    Mark {equityQuality === "fresh" ? "frais" : equityQuality === "stale" ? "périmé" : "indisponible"}
+                    {equityAge === null ? "" : ` · âge ${Math.round(equityAge / 1_000)} s`}
+                    {paperValuation?.markPrice === null || paperValuation?.markPrice === undefined
+                      ? " · aucun close daté"
+                      : ` · close ${money.format(paperValuation.markPrice)}`}
+                  </p>
+                )}
               </article>
 
               <article className="paper-card control-card">
@@ -716,6 +1117,411 @@ export function App({
                 <p className="empty-state">Aucun cycle persisté.</p>
               )}
             </div>
+          </section>
+
+          <section>
+            <SectionHeading
+              index="07"
+              title="PERFORMANCE"
+              detail="PROJECTION SQLITE · LECTURE SEULE"
+            />
+            {pnlHistory === null ? null : (
+              <>
+                <article className="paper-card equity-card">
+                  <div className="card-topline">
+                    <span className="card-label blue-bg">COURBE D’ÉQUITÉ</span>
+                    <span className="sync-time">
+                      {pnlHistory.equityCurve.length} POINTS
+                    </span>
+                  </div>
+                  {plottedEquityCurve.length < 2 ? (
+                    <p className="empty-state">Aucun point d’équité.</p>
+                  ) : (
+                    <svg
+                      className="equity-chart"
+                      viewBox="0 0 600 160"
+                      preserveAspectRatio="none"
+                      role="img"
+                      aria-label="Courbe d’équité"
+                    >
+                      <path d={equityPath(plottedEquityCurve)} />
+                    </svg>
+                  )}
+                  {/* biome-ignore lint/a11y/useSemanticElements: groupe de badges de présentation */}
+                  <div
+                    className="protection-badges"
+                    role="group"
+                    aria-label="Position et protections"
+                  >
+                    {pnlHistory.openPosition === null ? (
+                      <span className="outcome neutral">PLAT</span>
+                    ) : (
+                      <>
+                        <span className="outcome neutral">
+                          POSITION {quantity.format(pnlHistory.openPosition.quantity)}
+                        </span>
+                        {pnlHistory.protection === null ? (
+                          <span className="outcome negative">NON PROTÉGÉ</span>
+                        ) : (
+                          <>
+                            <span className="outcome negative">
+                              STOP {money.format(pnlHistory.protection.stopLossPrice)}
+                            </span>
+                            <span className="outcome positive">
+                              TAKE-PROFIT {money.format(pnlHistory.protection.takeProfitPrice)}
+                            </span>
+                            <span
+                              className={`outcome ${
+                                pnlHistory.protection.protectiveOrderConfirmed
+                                  ? "positive"
+                                  : "neutral"
+                              }`}
+                            >
+                              {pnlHistory.protection.protectiveOrderConfirmed
+                                ? "PROTECTION CONFIRMÉE"
+                                : "PROTECTION NON CONFIRMÉE"}
+                            </span>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </article>
+                <div className="paper-card table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Cycle</th>
+                        <th>Déclenché</th>
+                        <th>Issue</th>
+                        <th>Sens</th>
+                        <th>Quantité</th>
+                        <th>Prix exec.</th>
+                        <th>PnL réalisé</th>
+                        <th>Frais</th>
+                        <th>Slippage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pnlHistory.cycles.map((cycle) => (
+                        <tr key={cycle.cycleId}>
+                          <td><code>{cycle.cycleId}</code></td>
+                          <td>{compactDate.format(cycle.triggeredAt)}</td>
+                          <td>
+                            <span className={`outcome ${outcomeClass(cycle.outcome)}`}>
+                              {cycle.outcome}
+                            </span>
+                          </td>
+                          <td>{cycle.side ?? "—"}</td>
+                          <td>{cycle.quantity === null ? "—" : quantity.format(cycle.quantity)}</td>
+                          <td>{cycle.fillPrice === null ? "—" : money.format(cycle.fillPrice)}</td>
+                          <td>
+                            {cycle.realizedPnl === null ? (
+                              "—"
+                            ) : (
+                              <span className={signedClass(cycle.realizedPnl)}>
+                                {money.format(cycle.realizedPnl)}
+                              </span>
+                            )}
+                          </td>
+                          <td>{cycle.fee === null ? "—" : money.format(cycle.fee)}</td>
+                          <td>
+                            {cycle.slippageBps === null ? (
+                              "—"
+                            ) : (
+                              <span className={signedClass(-cycle.slippageBps)}>
+                                {cycle.slippageBps >= 0 ? "+" : ""}
+                                {bps.format(cycle.slippageBps)} bps
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {pnlHistory.cycles.length === 0 && (
+                    <p className="empty-state">Aucun cycle dans la fenêtre.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </section>
+
+          {portfolioSummary?.kind === "portfolio" && (
+            <section>
+              <SectionHeading
+                index="08"
+                title="PORTEFEUILLE"
+                detail="VUE MULTI-PRODUITS · LECTURE SEULE"
+              />
+              <div className="portfolio-grid">
+                {portfolioSummary.products.map((product) => (
+                  <article className="paper-card product-card" key={product.productId}>
+                    <div className="card-topline">
+                      <span className="card-label teal-bg">{product.productId}</span>
+                      <span
+                        className={`phase-badge ${
+                          product.status === "running" ? "online" : "offline"
+                        }`}
+                      >
+                        {portfolioStatusLabel(product.status)}
+                      </span>
+                    </div>
+                    <h2>{phaseLabel(product.phase as DashboardRemotePhase)}</h2>
+                    <div className="metric-grid">
+                      <Metric
+                        label="EXPOSITION"
+                        value={product.grossExposure === null ? "INDISPONIBLE" : money.format(product.grossExposure)}
+                        accent="blue-text"
+                      />
+                      <Metric
+                        label="PLAFOND PRODUIT"
+                        value={money.format(product.maxGrossExposure)}
+                      />
+                      <Metric
+                        label="PNL JOUR"
+                        value={money.format(product.dailyPnl)}
+                        accent={product.dailyPnl >= 0 ? "green-text" : "red-text"}
+                      />
+                      <Metric
+                        label="POSITION"
+                        value={quantity.format(product.positionQuantity)}
+                      />
+                    </div>
+                    <p className="next-wake">
+                      Valorisation {product.valuation.quality} · exposition {product.exposureQuality}
+                      {product.valuation.ageMs === null ? "" : ` · mark âgé de ${Math.round(product.valuation.ageMs / 1_000)} s`}
+                    </p>
+                    <p className="next-wake">
+                      Dernier cycle :{" "}
+                      {product.lastCycle === null
+                        ? "aucun"
+                        : `${product.lastCycle.outcome} · ${compactDate.format(product.lastCycle.completedAt)}`}
+                    </p>
+                  </article>
+                ))}
+                <article className="paper-card consolidated-card">
+                  <div className="card-topline">
+                    <span className="card-label orange-bg">CONSOLIDÉ</span>
+                    <span
+                      className={`phase-badge ${
+                        portfolioSummary.killSwitchActive ? "offline" : "online"
+                      }`}
+                    >
+                      {portfolioSummary.killSwitchActive
+                        ? "KILL SWITCH ENGAGÉ"
+                        : phaseLabel(portfolioSummary.phase as DashboardRemotePhase)}
+                    </span>
+                  </div>
+                  <h2>Garde-fous du portefeuille</h2>
+                  <div className="metric-grid">
+                    <Metric
+                      label="EXPOSITION CONSOLIDÉE"
+                      value={portfolioSummary.consolidated.grossExposure === null ? "INDISPONIBLE" : money.format(portfolioSummary.consolidated.grossExposure)}
+                      accent="blue-text"
+                    />
+                    <Metric
+                      label="ÉQUITÉ CONSOLIDÉE"
+                      value={portfolioSummary.consolidated.equity === null ? "INDISPONIBLE" : money.format(portfolioSummary.consolidated.equity)}
+                    />
+                    <Metric
+                      label="PLAFOND PORTEFEUILLE"
+                      value={money.format(portfolioSummary.consolidated.maxGrossExposure)}
+                    />
+                    <Metric
+                      label="PNL JOUR CONSOLIDÉ"
+                      value={money.format(portfolioSummary.consolidated.dailyPnl)}
+                      accent={
+                        portfolioSummary.consolidated.dailyPnl >= 0 ? "green-text" : "red-text"
+                      }
+                    />
+                    <Metric
+                      label="PLAFOND PERTE JOUR"
+                      value={money.format(portfolioSummary.consolidated.maxDailyLoss)}
+                    />
+                  </div>
+                  <p className="next-wake">
+                    {portfolioSummary.products.length} produits · lecture seule, aucune décision
+                    automatique · valuation {portfolioSummary.consolidated.valuationQuality} · exposition {portfolioSummary.consolidated.exposureQuality}
+                  </p>
+                </article>
+              </div>
+            </section>
+          )}
+
+          <section>
+            <SectionHeading
+              index="09"
+              title="PERPÉTUELS · HYPERLIQUID"
+              detail="ORDRE OPÉRATEUR · GARDES SERVEUR"
+            />
+            <article className="paper-card perp-card">
+              <div className="card-topline">
+                <span className="card-label blue-bg">INTENTION PERP</span>
+                <span className="phase-badge offline">
+                  {perpUi.value === "submitting" ? "SOUMISSION" : "MANUEL"}
+                </span>
+              </div>
+              <h2>Ordre manuel sur l'enveloppe figée</h2>
+              <p>
+                Marchés BTC-PERP et ETH-PERP, levier ≤{" "}
+                {HYPERLIQUID_PERP_POLICY.maxLeverage}x. Position et exposition
+                sont lues sur le compte ; le PnL journalier reste votre entrée.
+              </p>
+              {perpUi.context.lastRefusal !== null && (
+                <p className="error-note" role="alert">
+                  {perpUi.context.lastRefusal}
+                </p>
+              )}
+              {perpUi.value === "result" && (
+                <p className="next-wake" aria-live="polite">
+                  {perpUi.context.result?.status === "SETTLED"
+                    ? `ORDRE ${perpUi.context.result.outcome} · ${perpUi.context.result.clientOrderId}`
+                    : perpUi.context.result?.status === "REFUSED"
+                      ? `REFUSÉ · ${perpUi.context.result.reasonCode}`
+                      : perpUi.context.result?.status === "FAILED"
+                        ? `ÉCHEC · ${perpUi.context.result.errorCode}`
+                        : perpUi.context.lastError?.code ?? "—"}
+                </p>
+              )}
+              {perpUi.value === "form" && (
+                <div className="start-fields">
+                  <label>
+                    Marché
+                    <select
+                      value={perpDraft.productId}
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          productId: event.target.value as PerpOrderFormDraft["productId"],
+                        }))
+                      }
+                    >
+                      {HYPERLIQUID_PERP_POLICY.products.map((product) => (
+                        <option key={product} value={product}>{product}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Sens
+                    <select
+                      value={perpDraft.side}
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          side: event.target.value as PerpOrderFormDraft["side"],
+                        }))
+                      }
+                    >
+                      <option value="BUY">Achat (long)</option>
+                      <option value="SELL">Vente (short)</option>
+                    </select>
+                  </label>
+                  <label>
+                    Quantité
+                    <input
+                      value={perpDraft.quantity}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          quantity: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Prix de marque
+                    <input
+                      value={perpDraft.markPrice}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          markPrice: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Levier (×{HYPERLIQUID_PERP_POLICY.maxLeverage} max)
+                    <select
+                      value={perpDraft.leverage}
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          leverage: Number(event.target.value),
+                        }))
+                      }
+                    >
+                      {Array.from(
+                        { length: HYPERLIQUID_PERP_POLICY.maxLeverage },
+                        (_, index) => index + 1,
+                      ).map((value) => (
+                        <option key={value} value={value}>{value}x</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    PnL journalier (USD)
+                    <input
+                      value={perpDraft.dailyPnl}
+                      inputMode="decimal"
+                      onChange={(event) =>
+                        setPerpDraft((current) => ({
+                          ...current,
+                          dailyPnl: Number(event.target.value),
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+              )}
+              <div className="button-row">
+                {perpUi.value === "form" && (
+                  <button
+                    className="button primary"
+                    type="button"
+                    onClick={preparePerpOrder}
+                    disabled={busy}
+                  >
+                    Préparer l'ordre
+                  </button>
+                )}
+                {perpUi.value === "confirming" && (
+                  <>
+                    <button
+                      className="button danger"
+                      type="button"
+                      onClick={confirmPerpOrder}
+                      disabled={busy}
+                    >
+                      Confirmer {perpUi.context.draft?.side} {" "}
+                      {perpUi.context.draft?.quantity} {" "}
+                      {perpUi.context.draft?.productId}
+                    </button>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      onClick={cancelPerpOrder}
+                    >
+                      Annuler
+                    </button>
+                  </>
+                )}
+                {perpUi.value === "result" && (
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={() =>
+                      perpUiActor.send({ type: "SUBMISSION_DISMISSED" })
+                    }
+                  >
+                    Nouvel ordre
+                  </button>
+                )}
+              </div>
+            </article>
           </section>
         </>
       )}

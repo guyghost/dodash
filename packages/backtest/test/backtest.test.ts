@@ -230,6 +230,7 @@ describe("replayBacktest", () => {
       runId: "run-1",
       agentId: "agent-1",
       productId: product.value,
+      intervalMs: 60_000,
       initialCapital: 10_000,
       maxDecisionNotional: 5_000,
       minNetQuantity: 0.0001,
@@ -510,6 +511,7 @@ const backtestConfig = (strategies: StrategyRegistry) => ({
   runId: "test-run",
   agentId: "test-agent",
   productId: product.value,
+  intervalMs: 60_000,
   initialCapital: 10_000,
   maxDecisionNotional: 5_000,
   minNetQuantity: 0.0001,
@@ -525,4 +527,105 @@ const backtestConfig = (strategies: StrategyRegistry) => ({
     takeProfitBps: 200,
   },
   broker: { feeBps: 0, slippageBps: 0 },
+});
+
+describe("replayBacktest — intégrité des données (models/market-data-integrity.md)", () => {
+  const holdStrategy = (): Strategy => ({
+    id: "hold-probe",
+    evaluate: (context) => {
+      const result = createSignal({
+        strategyId: "hold-probe",
+        productId: context.productId,
+        side: "HOLD",
+        confidence: 0,
+        suggestedSize: 0,
+        reasonCode: "TEST_HOLD",
+      });
+      return result.ok
+        ? result
+        : {
+            ok: false as const,
+            error: {
+              code: "INVALID_STRATEGY_SIGNAL" as const,
+              strategyId: "hold-probe",
+              cause: result.error,
+            },
+          };
+    },
+  });
+
+  const series = (): Candle[] =>
+    [100, 101, 102, 103, 104, 105, 106].map((close, index) => ({
+      start: index * 60_000,
+      open: close,
+      high: close + 1,
+      low: close - 1,
+      close,
+      volume: 10,
+    }));
+
+  it("rejette une série de décision trouée avec l'index fautif (INV-I1, INV-I5)", async () => {
+    const registry = createStrategyRegistry([holdStrategy()]);
+    if (!registry.ok) throw new Error("invalid registry fixture");
+    const gappy = series().filter((candle) => candle.start !== 180_000);
+
+    // Rejet fermé avant toute évaluation : aucun indicateur, aucun ordre.
+    const result = await replayBacktest(gappy, {
+      ...backtestConfig(registry.value),
+      runId: "integrity-gap-run",
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "INVALID_CANDLES",
+        cause: { code: "CANDLE_GAP", index: 3, expectedIntervalMs: 60_000 },
+      },
+    });
+
+    // INV-I6 : la même série rendue conforme se rejoue sans erreur.
+    const compliant = await replayBacktest(series(), {
+      ...backtestConfig(registry.value),
+      runId: "integrity-compliant-run",
+    });
+    expect(compliant.ok).toBe(true);
+  });
+
+  it("rejette une série d'exécution trouée (INV-I7)", async () => {
+    const registry = createStrategyRegistry([holdStrategy()]);
+    if (!registry.ok) throw new Error("invalid registry fixture");
+    const gappy = series().filter((candle) => candle.start !== 240_000);
+
+    const result = await replayBacktest(
+      series(),
+      { ...backtestConfig(registry.value), runId: "integrity-exec-run" },
+      undefined,
+      { executionCandles: gappy, executionIntervalMs: 60_000 },
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "INVALID_EXECUTION_CANDLES",
+        cause: { code: "CANDLE_GAP", index: 4, expectedIntervalMs: 60_000 },
+      },
+    });
+  });
+
+  it("rejette des bougies d'exécution sans cadence déclarée (fail-closed)", async () => {
+    const registry = createStrategyRegistry([holdStrategy()]);
+    if (!registry.ok) throw new Error("invalid registry fixture");
+
+    const result = await replayBacktest(
+      series(),
+      { ...backtestConfig(registry.value), runId: "integrity-no-interval-run" },
+      undefined,
+      { executionCandles: series() },
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "INVALID_EXECUTION_CANDLES",
+        cause: { code: "INVALID_INTERVAL" },
+      },
+    });
+  });
 });

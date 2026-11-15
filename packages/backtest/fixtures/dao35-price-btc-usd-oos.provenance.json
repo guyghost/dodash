@@ -1,0 +1,15 @@
+{
+  "dataset": "dao35-price-btc-usd-oos",
+  "endpoint": "https://api.coinbase.com/api/v3/brokerage/market/products/BTC-USD/candles",
+  "productId": "BTC-USD",
+  "timeframe": "ONE_DAY",
+  "window": {
+    "startAt": 1788220800000,
+    "endAt": 1791504000000
+  },
+  "collectedAt": "2026-10-09T09:41:50.942Z",
+  "candleCount": 38,
+  "loaderDatasetSha256": "fdedf8131b14248ab2aecdc78aefad8df0c8af9fe7a86f68c6cc0ec4fcb73514",
+  "protocol": "models/funding-edge-campaign.md §B (v2, DAO #35)",
+  "sha256": "27b2567aa6deba3fb7170e23dd1f737b4479f524cde3ba552ff5601df44f3c8b"
+}

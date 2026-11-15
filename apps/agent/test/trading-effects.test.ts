@@ -8,16 +8,31 @@ import type { TradingEffectsDependencies } from "../src/trading-effects.js";
 
 const paperConfiguration: AgentConfiguration = {
   executionMode: "paper",
+  productId: "BTC-USD",
+  executionPriceMaxDivergenceBps: 200,
 } as AgentConfiguration;
 
 const liveConfiguration: AgentConfiguration = {
   executionMode: "live",
+  productId: "BTC-USD",
+  executionPriceMaxDivergenceBps: 200,
 } as AgentConfiguration;
 
 const baseEnv = {
-  INTERNAL_SERVICE_TOKEN: "internal-token",
+  INTERNAL_SERVICE_TOKEN: "x".repeat(32),
   CONTROL_API_TOKEN: "control-token",
-} as TradingEffectsDependencies["env"];
+  MARKET_DATA: {
+    fetch: vi.fn(async () =>
+      Response.json({
+        productId: "BTC-USD",
+        price: 100,
+        observedAt: 1,
+        source: "coinbase",
+        cached: false,
+      }),
+    ),
+  },
+} as unknown as TradingEffectsDependencies["env"];
 
 const makeDependencies = (
   overrides: Partial<TradingEffectsDependencies> = {},
@@ -32,6 +47,15 @@ const makeDependencies = (
   persistOrderIntent: vi.fn(async () => ok(undefined)),
   submitPaperOrder: vi.fn(async () => ({ status: "CONFIRMED" }) as OrderSubmission),
   submitLiveOrder: vi.fn(async () => ({ status: "CONFIRMED" }) as OrderSubmission),
+  submitPerpOrder: vi.fn(async () => ({ status: "CONFIRMED" }) as OrderSubmission),
+  reconcilePerpOrder: vi.fn(async () =>
+    ok({
+      status: "CONFIRMED",
+      exchangeOrderId: "perp-x",
+      portfolio: { cash: 1000, positionQuantity: 2, averagePrice: 50 },
+      fill: null,
+    } as OrderSubmission),
+  ),
   reconcilePaperOrder: vi.fn(async () => ok({ status: "CONFIRMED" } as OrderSubmission)),
   reconcileLiveOrder: vi.fn(async () => ok({ status: "CONFIRMED" } as OrderSubmission)),
   persistCycle: vi.fn(async () => ok(undefined)),
@@ -39,6 +63,89 @@ const makeDependencies = (
   getKillContext: vi.fn(() => null),
   applyKilledAccount: vi.fn(),
   ...overrides,
+});
+
+describe("perp reconciliation", () => {
+  const jsonResponse = (body: unknown): Response =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  const perpDependencies = (
+    fetchMock: ReturnType<typeof vi.fn<(...args: unknown[]) => Promise<Response>>>,
+  ) => {
+    const deps = makeDependencies() as TradingEffectsDependencies;
+    return {
+      deps: {
+        ...deps,
+        configuration: {
+          ...deps.configuration,
+          executionMode: "perp" as const,
+          productId: "BTC-USD",
+        },
+      } as TradingEffectsDependencies,
+      fetchMock,
+    };
+  };
+
+  const perpEnv = {
+    HYPERLIQUID_PERP_TRADING_ENABLED: "true",
+    HYPERLIQUID_AGENT_PRIVATE_KEY:
+      "0x1111111111111111111111111111111111111111111111111111111111111111",
+    HYPERLIQUID_WALLET_ADDRESS: "0x2222222222222222222222222222222222222222",
+  };
+
+  it("carries the real accountValue into the daily anchor", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        assetPositions: [
+          { position: { coin: "BTC", szi: "0.01", unrealizedPnl: "-30" } },
+        ],
+        marginSummary: { accountValue: "9500", totalRawUsd: "1000" },
+      }),
+    );
+    const { deps } = perpDependencies(fetchMock);
+    Object.assign(deps, { fetch: fetchMock as unknown as typeof fetch });
+    Object.assign(deps.env as object, perpEnv);
+    const effects = createTradingCycleEffects(deps);
+
+    const reconciliation = await effects.reconcileAccount(
+      { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+      42,
+    );
+
+    expect(reconciliation).toEqual({
+      ok: true,
+      value: {
+        snapshotId: "perp:test-agent:42",
+        observedAt: 42,
+        portfolio: { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+        accountEquity: 9500,
+        otherExposureNotional: 1000,
+      },
+    });
+  });
+
+  it("fails closed without retry when the account is unreadable", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ assetPositions: "nope" }),
+    );
+    const { deps } = perpDependencies(fetchMock);
+    Object.assign(deps, { fetch: fetchMock as unknown as typeof fetch });
+    Object.assign(deps.env as object, perpEnv);
+    const effects = createTradingCycleEffects(deps);
+
+    const reconciliation = await effects.reconcileAccount(
+      { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+      42,
+    );
+
+    expect(reconciliation.ok).toBe(false);
+    if (!reconciliation.ok) {
+      expect(reconciliation.error.retryable).toBe(false);
+    }
+  });
 });
 
 describe("createTradingCycleEffects", () => {

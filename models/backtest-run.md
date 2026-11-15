@@ -118,6 +118,67 @@ la validation des deux datasets demandés.
    d’exécution. Toute erreur de l’un ou l’autre devient un échec de chargement ;
    le CLI n’invente aucune bougie et ne dégrade pas silencieusement la résolution.
 
+## Préparation incrémentale des indicateurs (DAO #37)
+
+La phase `replaying` consomme des snapshots d’indicateurs préparés une fois
+par run (`prepareBacktestIndicators`). La mécanique d’exécution de cette
+préparation est amendée sans toucher aux maths :
+
+### Cause racine mesurée (profil CPU, dataset BTC-USD ONE_DAY 365 j, 2026-09-04)
+
+Sur 338 snapshots (82,7 s de préparation) : > 90 % du temps est passé dans le
+moteur Tau-Prolog (`Term.search` 43 %, substitutions ~13 %, GC 9 %, parsing
+~4 %), le code JS de l’engine pesant 0,1 %. Micro-mesures :
+
+- chaque but Prolog coûte un plancher de ~1,2–1,5 ms (machinerie
+  query/answer) et la résolution de `trend_strength` (fenêtre 2P) ~30 ms ;
+- les buts `ema`, `macd` et `atr` reçoivent le préfixe complet : leur coût
+  croît avec l’index (13,9 ms à n = 365 contre 2,5 ms à n = 28) — coût
+  quadratique global ;
+- une session Tau-Prolog est créée et le programme consulté pour CHAQUE
+  bougie : 16,3 ms × 338 ≈ 5,5 s de gaspillage pur ;
+- le batching conjonctif ne réduit pas le coût (6 buts séparés ≈ 1 but
+  conjonctif 6 variables) : c’est la réévaluation par bougie qui coûte ;
+- sur la fenêtre 1 829 j, la latence mesurée par snapshot croît de 673 ms
+  (index 576) à 1 061 ms (index 776) : ~1,94 ms par élément de préfixe — le
+  run 5 ans ne peut pas tenir dans une timebox de 300 s.
+
+### Stratégie de correction (mécanique d’exécution uniquement)
+
+1. Une session Prolog et un `consult` uniques par préparation (au lieu
+   d’un couple par bougie) — les prédicats consultés sont purs, les
+   résultats de requêtes successives sont inchangés.
+2. Les indicateurs à accumulation sur préfixe complet (`emaFast`,
+   `emaSlow`, `macd`, `atr` et la paire de signal E0/E1) sont poursuivis
+   incrémentalement par les prédicats d’accumulation EXISTANTS
+   (`ema_acc`, `atr_continue`, `adx_continue`...) : la continuation
+   applique au seul suffixe nouveau exactement la même chaîne
+   d’opérations flottantes que le fold complet — IEEE 754, même ordre,
+   donc valeurs bit-identiques par construction.
+3. Les indicateurs à fenêtre glissante bornée (`rsi`, `trend_strength`,
+   `historical_volatility`, `momentum`, `periodic_return`, `ohlcv_vwap`,
+   `relative_volume`, `volume_trend`...) restent réévalués par bougie
+   avec les mêmes buts Prolog que l’implémentation de référence : aucune
+   recette glissante (différence de tête) n’est admise, elle ne serait
+   pas bit-exacte.
+4. `snapshotId` reste le hachage du préfixe complet sérialisé : code de
+   hachage inchangé.
+5. L’API publique `computeIndicators` (runtime live, repli du replay)
+   reste inchangée ; la préparation incrémentale est une entrée séparée
+   consommée uniquement par `prepareBacktestIndicators`.
+
+### Invariant « valeurs identiques » (INV-27)
+
+Pour toute série de bougies et toute configuration valides, les snapshots
+produits par la préparation incrémentale sont strictement identiques —
+tous champs, `snapshotId` compris — à ceux produits par l’implémentation
+de référence (`computeIndicators` sur chaque préfixe). Un test
+différentiel (série pseudo-aléatoire déterministe, configs avec et sans
+paire de signal) verrouille cet invariant dans la suite de tests. Aucune
+approximation, aucun cache memoïsant sensible à la config : la clé
+implicite est la session elle-même, construite pour une configuration
+donnée et jetée avec elle.
+
 ## Invariants
 
 1. Un run nécessite la permission `canRunBacktest`.
@@ -173,3 +234,7 @@ la validation des deux datasets demandés.
     position terminale est non nulle, de PnL égal au PnL latent au dernier
     close ; il est égal au win rate par fills lorsque la position terminale est
     nulle, et ne remplace ni le win rate ni le profit factor existants.
+27. Les snapshots préparés par la boucle incrémentale sont strictement
+    identiques (tous champs, `snapshotId` compris) aux snapshots de
+    référence recalculés par préfixe ; toute divergence fait échouer la
+    préparation plutôt que d’alimenter le replay (INV-27).

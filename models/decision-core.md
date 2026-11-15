@@ -54,3 +54,17 @@ Le premier refus gagne et retourne un `RiskReasonCode`. Une approbation fournit 
    dépendent de frontières fonctionnelles communes.
 7. L'exécution paper est un adaptateur déterministe distinct du cœur de
    décision ; elle ne contient ni I/O ni transition d'état.
+
+## Amendement 2026-10-30 — portée de l'invariant 5
+
+Un signal dérivé d'un LLM (`AiTrendSignal`, `models/ai-trend-signal.md`)
+peut **moduler** la confiance des signaux de stratégie, dans une plage
+bornée strictement positive `[1, maxFactor]`, via un décorateur
+déterministe de la frontière stratégique. Il ne crée jamais de signal,
+n'inverse jamais une direction et ne pilote aucune transition : les
+stratégies déterministes restent les seules origines de signaux. Le cœur
+pur ne consomme que le type enregistré (persisté avant consommation,
+pattern `clientOrderId`) ; le backtest rejoue les signaux enregistrés avec
+exactement les mêmes fonctions (INV 8 inchangé de fait). Activation
+`SHADOW → PAPER` uniquement après rapport de calibration accepté ; `LIVE`
+interdit sans nouvel amendement approuvé par l'opérateur.

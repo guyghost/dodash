@@ -9,6 +9,8 @@ import {
   type AgentStateView,
   type CycleView,
   type DashboardGateway,
+  type PnlHistoryView,
+  type PortfolioSummaryView,
   type StartConfiguration,
 } from "../src/dashboard-api.js";
 
@@ -22,14 +24,100 @@ const stoppedAgent = (): AgentStateView => ({
   nextWakeAt: null,
   lastTradeAt: null,
   lastCycle: null,
+  portfolioSummary: singleProductSummary(),
+  paperValuation: null,
   indicators: null,
 });
+
+const testValuation = (
+  asOf: number,
+  equity: number | null,
+  markPrice: number | null,
+  exposureNotional = markPrice === null ? 0 : markPrice,
+) => ({
+  asOf,
+  equity,
+  exposureNotional,
+  exposureQuality: "fresh" as const,
+  markPrice,
+  markSource: markPrice === null ? null : "COINBASE_CANDLE_CLOSE" as const,
+  timeframe: markPrice === null ? null : "FIVE_MINUTE",
+  candleClosedAt: markPrice === null ? null : asOf - 1_000,
+  ageMs: markPrice === null ? null : 1_000,
+  quality: markPrice === null ? "unavailable" as const : "fresh" as const,
+});
+
+const emptyPnlHistory = (): PnlHistoryView => ({
+  equityCurve: [],
+  cycles: [],
+  openPosition: null,
+  protection: null,
+});
+
+const singleProductSummary = (): PortfolioSummaryView =>
+  Object.freeze({ kind: "single-product" });
+
+const portfolioSummary = (): PortfolioSummaryView =>
+  Object.freeze({
+    kind: "portfolio",
+    phase: "running",
+    killSwitchActive: false,
+    asOf: Date.UTC(2026, 7, 26, 12),
+    products: [
+      Object.freeze({
+        productId: "BTC-USD",
+        phase: "waiting",
+        status: "running" as const,
+        cash: 5_000,
+        positionQuantity: 0.1,
+        averagePrice: 60_000,
+        marketPrice: 62_000,
+        valuation: testValuation(Date.UTC(2026, 7, 26, 12), 11_200, 62_000, 6_200),
+        grossExposure: 6_200,
+        exposureQuality: "fresh" as const,
+        maxGrossExposure: 20_000,
+        dailyPnl: 42.5,
+        lastCycle: Object.freeze({
+          cycleId: "cycle-1",
+          triggeredAt: Date.UTC(2026, 7, 26, 11),
+          completedAt: Date.UTC(2026, 7, 26, 11, 1),
+          outcome: "ORDER_CONFIRMED",
+          marketPrice: 62_000,
+        }),
+      }),
+      Object.freeze({
+        productId: "ETH-USD",
+        phase: "halted",
+        status: "halted" as const,
+        cash: 1_000,
+        positionQuantity: 0,
+        averagePrice: 0,
+        marketPrice: null,
+        valuation: testValuation(Date.UTC(2026, 7, 26, 12), 1_000, null),
+        grossExposure: 0,
+        exposureQuality: "fresh" as const,
+        maxGrossExposure: 12_000,
+        dailyPnl: -10,
+        lastCycle: null,
+      }),
+    ],
+    consolidated: Object.freeze({
+      equity: 12_200,
+      valuationQuality: "unavailable" as const,
+      grossExposure: 6_200,
+      exposureQuality: "fresh" as const,
+      maxGrossExposure: 30_000,
+      dailyPnl: 32.5,
+      maxDailyLoss: 1_500,
+    }),
+  });
 
 const createGateway = (
   overrides: Partial<DashboardGateway> = {},
 ): DashboardGateway => ({
   loadState: async () => stoppedAgent(),
   loadCycles: async (): Promise<readonly CycleView[]> => [],
+  loadPnlHistory: async () => emptyPnlHistory(),
   command: async () => stoppedAgent(),
   ...overrides,
 });
@@ -42,6 +130,7 @@ const gateways = (gateway: DashboardGateway): AppGateways => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  delete (globalThis as { ethereum?: unknown }).ethereum;
 });
 
 describe("dashboard journey", () => {
@@ -123,6 +212,161 @@ describe("dashboard journey", () => {
     });
   });
 
+  it("renders the read-only pnl projection with protection badges", async () => {
+    const startedAt = Date.UTC(2026, 7, 26, 12);
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+    };
+    const pnlHistory: PnlHistoryView = {
+      equityCurve: [
+        { t: startedAt - 600_000, equity: 6_401.5, valuation: testValuation(startedAt - 600_000, 6_401.5, 60_000) },
+        { t: startedAt - 300_000, equity: 6_501.5, valuation: testValuation(startedAt - 300_000, 6_501.5, 61_000) },
+        { t: startedAt, equity: 6_611.5, valuation: testValuation(startedAt, 6_611.5, 62_000) },
+      ],
+      cycles: [
+        {
+          cycleId: "cycle-buy",
+          triggeredAt: startedAt - 300_000,
+          completedAt: startedAt - 296_000,
+          outcome: "ORDER_CONFIRMED",
+          marketPrice: 60_000,
+          valuation: testValuation(startedAt - 296_000, 6_501.5, 60_000),
+          side: "BUY",
+          quantity: 0.1,
+          fillPrice: 60_060,
+          fee: 1.5,
+          realizedPnl: null,
+          slippageBps: 10,
+        },
+        {
+          cycleId: "cycle-hold",
+          triggeredAt: startedAt,
+          completedAt: null,
+          outcome: "NO_ACTION",
+          marketPrice: 61_000,
+          valuation: testValuation(startedAt, 6_611.5, 61_000),
+          side: null,
+          quantity: null,
+          fillPrice: null,
+          fee: null,
+          realizedPnl: null,
+          slippageBps: null,
+        },
+      ],
+      openPosition: { quantity: 0.1, averagePrice: 60_098.5 },
+      protection: {
+        stopLossPrice: 58_000,
+        takeProfitPrice: 63_000,
+        protectiveOrderConfirmed: true,
+      },
+    };
+    render(
+      <App
+        gateways={gateways(
+          createGateway({
+            loadState: async () => active,
+            loadPnlHistory: async () => pnlHistory,
+          }),
+        )}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.getByText("PERFORMANCE")).toBeTruthy();
+    expect(
+      screen.getByRole("group", { name: "Position et protections" }).textContent,
+    ).toContain("STOP 58\u202f000,00\u00a0$US");
+    expect(
+      screen.getByRole("group", { name: "Position et protections" }).textContent,
+    ).toContain("TAKE-PROFIT 63\u202f000,00\u00a0$US");
+    expect(screen.getByRole("img", { name: "Courbe d’équité" })).toBeTruthy();
+    expect(screen.getByText("cycle-buy")).toBeTruthy();
+    expect(screen.getByText("Slippage")).toBeTruthy();
+    expect(screen.getByText("+10,00 bps")).toBeTruthy();
+  });
+
+  it("shows an unprotected open position as fail-closed", async () => {
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+    };
+    const pnlHistory: PnlHistoryView = {
+      equityCurve: [],
+      cycles: [],
+      openPosition: { quantity: 0.1, averagePrice: 60_098.5 },
+      protection: null,
+    };
+    render(
+      <App
+        gateways={gateways(
+          createGateway({
+            loadState: async () => active,
+            loadPnlHistory: async () => pnlHistory,
+          }),
+        )}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.getByText("NON PROTÉGÉ")).toBeTruthy();
+    expect(screen.getByText("Aucun point d’équité.")).toBeTruthy();
+  });
+
+  it("renders the read-only portfolio view with quiescent products visible", async () => {
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+      // dao #34 : la hiérarchie portefeuille est portée par l'état `/state`.
+      portfolioSummary: portfolioSummary(),
+    };
+    render(
+      <App gateways={gateways(createGateway({ loadState: async () => active }))} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.getByText("PORTEFEUILLE")).toBeTruthy();
+    // Produit actif : phase machine et exposition vs plafond affichées.
+    expect(screen.getByText("BTC-USD")).toBeTruthy();
+    expect(screen.getByText("ACTIF")).toBeTruthy();
+    expect(screen.getAllByText("EXPOSITION").length).toBe(3);
+    // Produit quiescent (INV-P3) : visible, jamais masqué.
+    expect(screen.getByText("ETH-USD")).toBeTruthy();
+    expect(screen.getByText("SUSPENDU")).toBeTruthy();
+    // Agrégat consolidé : garde-fous côte à côte, kill switch au repos.
+    expect(screen.getByText("Garde-fous du portefeuille")).toBeTruthy();
+    expect(screen.getByText("EXPOSITION CONSOLIDÉE")).toBeTruthy();
+    expect(screen.getByText("PLAFOND PERTE JOUR")).toBeTruthy();
+    expect(screen.queryByText("KILL SWITCH ENGAGÉ")).toBeNull();
+    expect(screen.getAllByText(/Dernier cycle :/).length).toBe(2);
+  });
+
+  it("keeps the mono-product screen unchanged for a single-product answer", async () => {
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+    };
+    render(
+      <App gateways={gateways(createGateway({ loadState: async () => active }))} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.queryByText("PORTEFEUILLE")).toBeNull();
+    expect(screen.queryByText("Garde-fous du portefeuille")).toBeNull();
+  });
+
   it("requires confirmation before exposing the kill command", async () => {
     const command = vi.fn<DashboardGateway["command"]>(async () => stoppedAgent());
     const active = {
@@ -146,5 +390,165 @@ describe("dashboard journey", () => {
     await userEvent.click(screen.getByRole("button", { name: "Annuler" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(command).not.toHaveBeenCalled();
+  });
+});
+
+type WalletRequest = { readonly method: string };
+
+const installWalletProvider = (
+  responses: Partial<Record<"eth_requestAccounts" | "eth_chainId", unknown>> = {},
+  reject?: { code: number },
+): { readonly events: Map<string, Set<(payload: unknown) => void>> } => {
+  const events = new Map<string, Set<(payload: unknown) => void>>();
+  const provider = {
+    request: async (args: WalletRequest) => {
+      if (reject !== undefined && args.method === "eth_requestAccounts") {
+        const rejection = new Error("user rejected") as { code: number };
+        rejection.code = reject.code;
+        throw rejection;
+      }
+      return responses[args.method as "eth_requestAccounts"] ?? (args.method === "eth_chainId" ? "0x2105" : []);
+    },
+    on: (name: string, listener: (payload: unknown) => void) => {
+      const set = events.get(name) ?? new Set();
+      set.add(listener);
+      events.set(name, set);
+    },
+    removeListener: (name: string, listener: (payload: unknown) => void) => {
+      events.get(name)?.delete(listener);
+    },
+  };
+  (globalThis as { ethereum?: unknown }).ethereum = provider;
+  return { events };
+};
+
+const ADDRESS = "0x1111111111111111111111111111111111111111";
+
+describe("wallet base", () => {
+  it("signale l'absence de provider sans lever d'exception", async () => {
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+
+    expect(screen.getByText("WALLET_PROVIDER_UNAVAILABLE")).toBeTruthy();
+  });
+
+  it("connecte le wallet sur Base et verrouille les perpétuels", async () => {
+    installWalletProvider({
+      eth_requestAccounts: ["0x1111111111111111111111111111111111111111"],
+      eth_chainId: "0x2105",
+    });
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("CONNECTÉ · 8453")).toBeTruthy(),
+    );
+    expect(screen.getByText("0x1111…1111")).toBeTruthy();
+    expect(
+      screen.getByText("PERPÉTUELS : VERROUILLÉS · ADMISSION FERMÉE"),
+    ).toBeTruthy();
+  });
+
+  it("affiche un mauvais réseau quand la chaîne n'est pas Base", async () => {
+    installWalletProvider({
+      eth_requestAccounts: ["0x1111111111111111111111111111111111111111"],
+      eth_chainId: "0x1",
+    });
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText("MAUVAIS RÉSEAU")).toBeTruthy(),
+    );
+    expect(screen.getByText("PERPÉTUELS : MAUVAIS RÉSEAU")).toBeTruthy();
+  });
+
+  it("convertit un refus utilisateur en erreur typée retryable", async () => {
+    installWalletProvider({}, { code: 4001 });
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+
+    expect(await screen.findByText("WALLET_REQUEST_REJECTED")).toBeTruthy();
+  });
+
+  it("revient à hors ligne sur la révocation des comptes", async () => {
+    const { events } = installWalletProvider({
+      eth_requestAccounts: [ADDRESS],
+      eth_chainId: "0x2105",
+    });
+    render(<App gateways={gateways(createGateway())} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connecter le wallet" }),
+    );
+    await screen.findByText("CONNECTÉ · 8453");
+
+    for (const listener of events.get("accountsChanged") ?? []) {
+      listener([]);
+    }
+
+    await waitFor(() =>
+      expect(screen.getByText("PERPÉTUELS : WALLET NON CONNECTÉ")).toBeTruthy(),
+    );
+    expect(screen.getByRole("button", { name: "Connecter le wallet" })).toBeTruthy();
+  });
+});
+
+describe("perp order form", () => {
+  it("prépare, confirme et affiche l'issue de l'ordre perp", async () => {
+    const submitPerpOrder = vi.fn(async (
+      _agentName: string,
+      body: { readonly clientOrderId: string },
+    ) => ({
+      status: "SETTLED" as const,
+      outcome: "ACCEPTED" as const,
+      clientOrderId: body.clientOrderId,
+    }));
+    const gateway = {
+      ...createGateway(),
+      submitPerpOrder,
+    };
+    render(
+      <App gateways={{ createHttp: () => gateway, createDemo: () => gateway }} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Préparer l'ordre" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: /Confirmer BUY/ }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/ORDRE ACCEPTED/)).toBeTruthy(),
+    );
+    expect(submitPerpOrder).toHaveBeenCalledOnce();
+    const call = submitPerpOrder.mock.calls[0] as unknown as [
+      string,
+      { intent: { productId: string; leverage: number }; gate: { dailyPnl: number } },
+    ];
+    expect(call[1].intent.productId).toBe("BTC-PERP");
+    expect(call[1].intent.leverage).toBe(1);
+    expect(call[1].gate).toEqual({ dailyPnl: 0 });
+
+    await userEvent.click(screen.getByRole("button", { name: "Nouvel ordre" }));
+    expect(
+      screen.getByRole("button", { name: "Préparer l'ordre" }),
+    ).toBeTruthy();
   });
 });

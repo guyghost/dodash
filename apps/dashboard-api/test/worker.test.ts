@@ -137,6 +137,130 @@ describe("dashboard Agent proxy", () => {
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
+  it("forwards a bounded perp-order intent to the Agent", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.url).toBe(
+        "https://dodash-agent.internal/api/agents/btc-usd--multi/perp-order",
+      );
+      expect(upstream.method).toBe("POST");
+      const body = (await upstream.json()) as {
+        intent: { productId: string };
+        gate: { dailyPnl: number };
+      };
+      expect(body.intent.productId).toBe("BTC-PERP");
+      expect(body.gate.dailyPnl).toBe(0);
+      return Response.json({
+        ok: true,
+        result: { status: "SETTLED", outcome: "ACCEPTED" },
+      });
+    });
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc-usd--multi/perp-order", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          intent: {
+            productId: "BTC-PERP",
+            side: "BUY",
+            quantity: 0.005,
+            markPrice: 100_000,
+            leverage: 1,
+          },
+          gate: {
+            positionQuantity: 0,
+            dailyPnl: 0,
+            otherGrossExposureNotional: 0,
+          },
+          clientOrderId: "perp-2026-08-28-a",
+        }),
+      }),
+      createEnv(fetcher),
+    );
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("forwards a bounded pnl read to the Agent", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.method).toBe("GET");
+      expect(upstream.url).toBe(
+        "https://dodash-agent.internal/api/agents/btc/pnl?limit=30",
+      );
+      expect(upstream.headers.get("authorization")).toBe(`Bearer ${controlToken}`);
+      return Response.json({
+        ok: true,
+        value: { equityCurve: [], cycles: [], openPosition: null, protection: null },
+      });
+    });
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc/pnl?limit=30"),
+      createEnv(fetcher),
+    );
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("rejects pnl writes and out-of-envelope queries before the Agent", async () => {
+    const env = createEnv();
+    const responses = await Promise.all([
+      handleDashboardApiRequest(request("/api/agents/btc/pnl", { method: "POST" }), env),
+      handleDashboardApiRequest(request("/api/agents/btc/pnl?limit=51"), env),
+      handleDashboardApiRequest(request("/api/agents/btc/pnl?limit=30&extra=1"), env),
+      handleDashboardApiRequest(request("/api/agents/btc/pnl?limit=30", { method: "POST", body: "{}" }), env),
+    ]);
+    expect(responses.map(({ status }) => status)).toEqual([405, 404, 404, 405]);
+    expect(env.AGENT_SERVICE.fetch).not.toHaveBeenCalled();
+  });
+
+  it("forwards a bounded portfolio snapshot read without any query to the Agent", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.method).toBe("GET");
+      expect(upstream.url).toBe(
+        "https://dodash-agent.internal/api/agents/btc/portfolio",
+      );
+      expect(upstream.headers.get("authorization")).toBe(`Bearer ${controlToken}`);
+      return Response.json({
+        ok: true,
+        value: { kind: "single-product" },
+      });
+    });
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc/portfolio"),
+      createEnv(fetcher),
+    );
+    expect(response.status).toBe(200);
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  it("rejects portfolio writes and any query before the Agent", async () => {
+    const env = createEnv();
+    const responses = await Promise.all([
+      handleDashboardApiRequest(request("/api/agents/btc/portfolio", { method: "POST" }), env),
+      handleDashboardApiRequest(request("/api/agents/btc/portfolio?limit=30"), env),
+      handleDashboardApiRequest(request("/api/agents/btc/portfolio?anything=1"), env),
+      handleDashboardApiRequest(
+        new Request("https://dashboard.example/api/agents/btc/portfolio"),
+        env,
+      ),
+    ]);
+    expect(responses.map(({ status }) => status)).toEqual([405, 404, 404, 401]);
+    expect(env.AGENT_SERVICE.fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects an oversized perp-order body before the Agent", async () => {
+    const env = createEnv();
+    const response = await handleDashboardApiRequest(
+      request("/api/agents/btc/perp-order", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pad: "x".repeat(20_000) }),
+      }),
+      env,
+    );
+    expect([400, 413]).toContain(response.status);
+    expect(env.AGENT_SERVICE.fetch).not.toHaveBeenCalled();
+  });
+
   it("accepts an explicitly streamed but empty command body", async () => {
     const fetcher = vi.fn(async (upstream: Request) => {
       expect(upstream.method).toBe("POST");

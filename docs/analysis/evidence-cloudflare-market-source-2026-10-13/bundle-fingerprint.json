@@ -1,0 +1,5 @@
+{
+  "path": "apps/market-source-probe/dist/index.js",
+  "sha256": "a750b2759c877db07c8b436b039744736f2d88e420e9b141c8bc0b497c4726b5",
+  "description": "Local dry-run bundle after final code corrections; remote deployment identified separately by version ID."
+}

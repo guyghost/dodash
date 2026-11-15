@@ -113,3 +113,36 @@ symétriquement — laisser un win rate de 100 % masquer une position terminale
 fortement perdante. L’égalité avec le win rate par fills lorsque la position
 terminale est nulle est posée en invariant ; aucune métrique, liquidative ou
 non, n’autorise le live.
+
+## Revue de l’amendement « préparation incrémentale » (DAO #37)
+
+La revue porte sur la mécanique d’exécution, pas sur les maths : les valeurs
+d’indicateurs restent produites par les prédicats Prolog existants, et
+l’amendement n’introduit ni nouvelle formule ni nouvelle source de vérité. Trois
+risques ont été examinés et couverts :
+
+1. **Réutilisation de session** : les prédicats consultés sont purs (aucun
+   `assert`/`retract` en cours de run) ; réutiliser une session consultée une
+   fois ne peut pas faire dépendre une requête d’une requête précédente. Le
+   comportement d’erreur reste fail-closed : tout but qui échoue pendant la
+   préparation échoue le run comme avant.
+2. **Continuation incrémentale** : `ema_acc`, `atr_continue` et les
+   accumulateurs ADX calculent un fold gauche ; reprendre le fold au dernier
+   accumulateur connu avec le seul suffixe nouveau applique exactement la même
+   séquence d’opérations flottantes que le recalcul complet (IEEE 754,
+   même ordre) — la valeur est bit-identique, pas « proche ». Les buts à
+   fenêtre glissante ne sont PAS poursuivis incrémentalement : une recette
+   glissante par différence de tête changerait les bits et est explicitement
+   interdite (INV-27).
+3. **Invariant verrouillé par un test** : le test différentiel compare, pour
+   chaque index, tous les champs du snapshot (valeurs, `snapshotId` compris)
+   entre la boucle incrémentale et l’implémentation de référence ; une seule
+   divergence fait échouer la préparation. La non-régression de bout en bout
+   reste vérifiée par la comparaison bit-à-bit des artefacts de run (PnL,
+   trades, diagnostics) avant/après amendement.
+
+Le profilage a précédé la correction (cause mesurée : réévaluations Prolog par
+bougie, coût quadratique des buts sur préfixe complet, consult par bougie) et
+la correction attaque exactement ces trois coûts sans toucher au reste. Le
+plancher par but (fenêtres bornées réévaluées) reste assumé : c’est le prix de
+la bit-exactitude, documenté dans le modèle.

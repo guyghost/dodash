@@ -1,0 +1,164 @@
+# Sources de marché de secours — Hyperliquid et dYdX (failover figé)
+
+Statut : normatif (2026-10-31). Qualification des sources :
+`models/market-source-probe.md` (worker diagnostic, sémantiques déjà
+observées). Amende le chemin de données de `market-data-integrity.md`
+(gardes inchangées) ; aucun état, seuil ni stratégie ne change.
+
+## 1. Constat
+
+Le chemin marché du bot est mono-source : `apps/mcp-market-data` ne sert
+que Coinbase. Le 2026-10-30, un throttling Coinbase (429) a mis le paper à
+terre pendant des heures (`RATE_LIMITED`/`STALE_MARKET_DATA` en cascade) —
+cycles, valorisation et collecte de signaux bloqués, sans alternative. Le
+comparateur de sources a déjà qualifié deux secours publics : Hyperliquid
+perp (`candleSnapshot` + `allMids`) et dYdX perp (candles + carnet), avec
+leurs sémantiques strictes (probe §Sondes figées) : ce sont des venues
+**perp**, leurs prix portent un basis variable ; ticker, mid et carnet
+sont des mesures distinctes ; seules les bougies closes comptent.
+
+## 2. Décision — résolution pure
+
+Ordre de décision figé (amendement chairman 2026-11-14) :
+`HYPERLIQUID → DYDX`. Coinbase n'est pas une source de bougies de
+décision. Une requête explicite `sources: ["COINBASE"]` ne sert que la
+quote d'exécution.
+
+```ts
+type MarketSourceId = "COINBASE" | "HYPERLIQUID" | "DYDX";
+
+type MarketSourceFailure =
+  | "RATE_LIMITED" | "NETWORK_UNAVAILABLE" | "INVALID_RESPONSE"
+  | "STALE_SERIES" | "BASIS_REJECTED";
+
+/** Une tentative par source et par requête ; l'ordre ne négocie pas. */
+resolveMarketSource(
+  order: readonly MarketSourceId[],
+  failures: Readonly<Record<MarketSourceId, MarketSourceFailure | null>>,
+): { source: MarketSourceId } | { exhausted: true };
+```
+
+- Le service marché (`apps/mcp-market-data`) essaie les sources dans
+  l'ordre. Hors `RATE_LIMITED` Coinbase, **une seule tentative** par source.
+  Sur `RATE_LIMITED` Coinbase seulement, la requête peut réessayer Coinbase
+  selon `planRateLimitBackoff` avant de passer à la source suivante
+  (amendement 2026-11-14). Les retries de cycle restent la propriété
+  exclusive de la machine (`market-retry-schedule.md`), inchangés.
+- La réponse porte la source utilisée et le statut des sources écartées ;
+  l'agent qualifie l'échec total avec les codes fermés existants
+  (`RATE_LIMITED`, `STALE_MARKET_DATA`…). Aucun nouveau code machine.
+  Le worker journalise `market_source_resolved` (source retenue ou
+  épuisement, tentatives). Ce journal ne choisit aucune transition.
+
+### Gate de basis (perp ≠ spot)
+
+Les secours étant des venues perp, leur série ne peut entrer dans un cycle
+sans contrôle. La paire comparée est la bougie du secours dont le **start
+égale** celui de la dernière close Coinbase en cache
+(`findOverlappingBasisCandle`), pas forcément la dernière bougie du secours :
+celle-ci est souvent la bougie que Coinbase vient de refuser. Ensuite
+`basisBps = |close_secours − close_coinbase| / close_coinbase` sur ce start
+commun. Rejet `BASIS_REJECTED` (source écartée, source suivante essayée)
+au-delà de `BASIS_MAX_BPS`, si aucune bougie ne partage le start, ou si la
+référence a plus de `BASIS_REFERENCE_MAX_AGE_MS` (8 jours, borne inclusive).
+Sans référence Coinbase, un secours n'est **jamais** servi : fail-closed.
+La comparaison de closes utilise le même start de bougie, jamais un ticker
+(probe).
+
+## 3. Sémantiques transport (du probe, normatives ici)
+
+- **Hyperliquid** : bougies via `candleSnapshot` (granularité mappée sur la
+  grille du produit) ; prix via `allMids` (mid, ou dernier trade si carnet
+  vide). BTC et ETH seulement dans le plan initial.
+- **dYdX** : bougies avec `toISO` fixé à la clôture de fenêtre (borne de
+  start exclusive) ; bougie en cours toujours exclue ; prix = moyenne du
+  meilleur bid/ask non croisé.
+- OHLCV validés (`createCandle`), starts attendus exactement une fois
+  (manquants/doublons comptés), alignement UTC. User-Agent diagnostic
+  fixe et transparent ; aucune rotation d'identité, aucun contournement
+  de limiteur ; réponse ≤ 2 MiB ; timeout ≤ 10 s ; redirects refusés.
+- Aucun secret : endpoints publics uniquement.
+
+## 4. Mécanique shell et étiquetage
+
+- `MarketSnapshot.source` s'élargit à `MarketSourceId` (les consommateurs
+  lisent un libellé, jamais une stratégie de source). La télémétrie du
+  cycle porte la source (champ existant `valuationPriceSource` complété
+  d'un `marketSource`) ; les collecteurs de signaux héritent du failover
+  sans changement.
+- La gate de cohérence ticker↔close de `market-data-integrity.md` reste
+  **intra-source** : le ticker du snapshot est comparé à la close de la
+  même série, jamais à celle d'une autre venue.
+- Les indicateurs et stratégies ne changent pas : le cœur pur consomme
+  des `Candle` typés, indifférents à la provenance (INV 8 de
+  `README.md`).
+
+## 5. Invariants
+
+1. Une série de bougies ne mélange jamais deux sources ; le snapshot
+   porte sa source, unique pour tout le cycle (décision, valorisation,
+   risk).
+2. L'ordre de failover est figé par déploiement. Hors `RATE_LIMITED`
+   Coinbase, une tentative par source et par requête. Sur `RATE_LIMITED`
+   Coinbase, au plus `COINBASE_RATE_LIMIT_MAX_ATTEMPTS` essais dans la
+   même requête. La gigue ±25 % s'applique à la base seule ; `Retry-After`
+   est un plancher et n'est jamais raccourci. Un plancher plus long que
+   le plafond abandonne l'essai intra-requête et passe au secours. La
+   machine reste seule propriétaire des re-tentatives de cycle.
+3. Un secours perp n'est servi qu'avec une référence Coinbase d'âge
+   ≤ `BASIS_REFERENCE_MAX_AGE_MS` et un basis ≤ `BASIS_MAX_BPS` sur le
+   start commun ; sinon source écartée, jamais servie. Le reste de la
+   série du secours, y compris une close plus récente, peut alors être
+   servi. L'étiquette du mark est celle de cette source.
+4. Bougies closes uniquement ; ticker/mid/carnet = mesures distinctes,
+   jamais interchangeables ; cohérence ticker intra-source.
+5. Échec de toutes les sources ⇒ codes fermés existants, fail-closed ;
+   aucune donnée périmée ou non validée n'atteint les indicateurs.
+6. Aucun secret, aucun endpoint privé ; User-Agent transparent.
+7. Aucune transition, garde ou seuil de `tradingCycleMachine` ne change.
+
+## 6. Vérification requise
+
+- `resolveMarketSource` : ordre respecté, échec total fermé, source
+  primaire saine jamais contournée.
+- Gate basis : rejet au-delà de la borne ; sans référence Coinbase →
+  secours jamais servi ; comparaison au même start de bougie, y compris
+  quand ce start n'est pas la dernière bougie du secours ; une référence
+  de la veille (24 h) reste valide ; au-delà de 8 jours, rejet.
+- `planRateLimitBackoff` : 429 sans `Retry-After` → attentes giguées
+  400 ms puis 1 200 ms, au plus 3 essais et 2 500 ms ; `Retry-After`
+  de 1 000 ms avec gigue minimale → attente 1 000 ms, jamais 750 ms ;
+  `Retry-After` au-dessus de 1 500 ms → stop, pas d'attente dans la requête.
+- Fetchers Hyperliquid/dYdX sur fixtures figées : mapping granularité,
+  `toISO` dYdX (bougie en cours exclue), doublons/manquants, prix
+  mid/carnet distincts, body trop grand, JSON invalide, timeout.
+- Étiquetage : snapshot + télémétrie portent la source ; aucun mélange
+  de série (test d'architecture) ; un cycle entier servi par une seule
+  source.
+
+## 7. Amendement chairman 2026-11-14 — décision perp, exécution Coinbase
+
+Les bougies et le mark de décision viennent d'Hyperliquid, puis de dYdX
+si Hyperliquid ne sert pas une série utilisable (transport, ticker ou
+intégrité). Coinbase n'est pas appelé sur ce chemin : un `RATE_LIMITED`
+Coinbase ne peut plus produire `decision.missed`.
+
+Les deux sources épuisées donnent `MARKET_SOURCES_EXHAUSTED` (phase
+`market-data`, retryable tant que la fenêtre de fraîcheur le permet).
+Passé l'échéance, le cycle clos porte ce code et `decision.missed` le
+reprend tel quel.
+
+Avant toute soumission d'ordre (paper, live ou perp), le shell lit la
+quote Coinbase et appelle `assessExecutionPriceDivergence`. Seuil par
+défaut `EXECUTION_PRICE_MAX_DIVERGENCE_BPS = 200`, champ de
+configuration `executionPriceMaxDivergenceBps` (]0, 10 000], défaut 200).
+Au-delà, l'ordre n'est pas envoyé : `ORDER_REJECTED` non retryable,
+détail `EXECUTION_PRICE_DIVERGENCE`, journal `execution_price_guard`
+avec `outcome: "BLOCKED"`. Quote indisponible, y compris `RATE_LIMITED` :
+même refus avec le détail `EXECUTION_QUOTE_UNAVAILABLE`. La décision
+(bougie admise) reste enregistrée. Le prix paper, s'il est exécuté,
+reste la close de décision.
+
+La gate de basis sur les bougies n'autorise plus ni ne bloque la série
+de décision. Le contrôle de divergence est celui de la quote d'exécution.
+- Aucune modification de machine (diff des transitions/gardes).

@@ -1,19 +1,41 @@
 import type { PaperPortfolio } from "@dodash/paper-execution";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 import {
-  resolveDailyRiskWindow,
+  projectPaperValuation,
+  resolvePaperDailyRisk,
   type CycleOutcome,
+  type CycleScheduleResolution,
   type DailyRiskWindow,
+  type DashboardPortfolioSummaryResult,
+  type PaperValuationMark,
+  type PaperValuationResult,
   type WorkflowError,
 } from "@dodash/models";
 
 import type { AgentConfiguration } from "./configuration.js";
 import type { PersistedTradingMachine } from "./machine-session.js";
+import {
+  portfolioProductIds,
+  type PortfolioProductRuntime,
+  type PortfolioSessionState,
+} from "./portfolio-runtime.js";
 
 export interface AgentScheduleState {
   readonly id: string;
   readonly intervalSeconds: number;
+  /** models/cycle-schedule.md §2 ; absent sur un état legacy ⇒ `interval`. */
+  readonly kind?: "cron" | "interval";
+  readonly expression?: string;
 }
+
+/** Vrai si la planification persistée correspond déjà à la résolution voulue. */
+export const scheduleMatches = (
+  current: AgentScheduleState,
+  resolution: CycleScheduleResolution,
+): boolean =>
+  current.intervalSeconds === resolution.intervalSeconds &&
+  (current.kind ?? "interval") === resolution.kind &&
+  (resolution.kind === "interval" || current.expression === resolution.expression);
 
 export interface CycleSummary {
   readonly cycleId: string;
@@ -21,6 +43,8 @@ export interface CycleSummary {
   readonly completedAt: number;
   readonly outcome: CycleOutcome;
   readonly marketPrice: number | null;
+  /** Mark accepted during this cycle; null for legacy or marketless cycles. */
+  readonly valuationMark: PaperValuationMark | null;
   readonly signalCount: number;
   readonly clientOrderId: string | null;
   readonly exchangeOrderId: string | null;
@@ -34,11 +58,22 @@ export interface TradingAgentState {
   readonly enabled: boolean;
   readonly schedule: AgentScheduleState | null;
   readonly portfolio: PaperPortfolio;
+  readonly lastPaperMark: PaperValuationMark | null;
   readonly dailyRiskWindow: DailyRiskWindow | null;
   readonly dailyPnl: number;
   readonly lastTradeAt: number | null;
   readonly previousIndicators: IndicatorSnapshot | null;
   readonly lastCycle: CycleSummary | null;
+  /** Dernière bougie de décision signalée manquée (models/cycle-schedule.md §3). */
+  readonly lastMissedDecisionCandleClosedAt: number | null;
+  /**
+   * Session portefeuille multi-produits (models/multi-product-portfolio.md
+   * §9.1, §9.7) : configuration figée du §7, orchestrateur du §5 et état
+   * par produit. Null en mono-produit ; une restauration invalide est
+   * refusée fermement via `portfolioRestoreError` (C3).
+   */
+  readonly portfolioSession: PortfolioSessionState | null;
+  readonly portfolioRestoreError: "INVALID_PORTFOLIO_SNAPSHOT" | null;
   readonly updatedAt: number;
 }
 
@@ -53,13 +88,67 @@ export const INITIAL_AGENT_STATE: TradingAgentState = Object.freeze({
     positionQuantity: 0,
     averagePrice: 0,
   }),
+  lastPaperMark: null,
   dailyRiskWindow: null,
   dailyPnl: 0,
   lastTradeAt: null,
   previousIndicators: null,
   lastCycle: null,
+  lastMissedDecisionCandleClosedAt: null,
+  portfolioSession: null,
+  portfolioRestoreError: null,
   updatedAt: 0,
 });
+
+export type { PortfolioProductRuntime, PortfolioSessionState };
+
+/**
+ * Réponse du contrat `/state` (dao #34, models/state-portfolio-contract.md)
+ * : l'état synchronisé figé (C1 — champs préexistants inchangés) plus la
+ * hiérarchie portefeuille `portfolioSummary`, projection pure calculée à la
+ * lecture et jamais persistée — aucune normalisation de restauration
+ * supplémentaire (ST6). Sur échec local fermé, `portfolioSummary` vaut
+ * `{ ok: false, error: { code } }` (ST4), jamais une hiérarchie partielle.
+ */
+export interface AgentStateSnapshot extends TradingAgentState {
+  readonly portfolioSummary: DashboardPortfolioSummaryResult;
+  /** Current read-time paper mark projection; null outside paper mode. */
+  readonly paperValuation: PaperValuationResult | null;
+}
+
+export const toAgentStateSnapshot = (
+  state: TradingAgentState,
+  portfolioSummary: DashboardPortfolioSummaryResult,
+  asOf = Date.now(),
+): AgentStateSnapshot => {
+  const paperValuation =
+    state.configuration?.executionMode === "paper"
+      ? resolvePaperValuation(state, asOf)
+      : null;
+  return Object.freeze({ ...state, portfolioSummary, paperValuation });
+};
+
+const resolvePaperValuation = (
+  state: TradingAgentState,
+  asOf: number,
+): PaperValuationResult =>
+  projectPaperValuation({
+    cash: state.portfolio.cash,
+    positionQuantity: state.portfolio.positionQuantity,
+    mark: state.lastPaperMark,
+    asOf,
+  });
+
+/**
+ * INV-P3 (quiescence) : le portefeuille reste actif tant qu'au moins un
+ * créneau n'est pas terminal — l'arrêt d'un produit ne désactive jamais
+ * les autres.
+ */
+export const portfolioIsEnabled = (session: PortfolioSessionState): boolean =>
+  portfolioProductIds(session).some((productId) => {
+    const product = session.products[productId];
+    return product !== undefined && machineIsEnabled(product.machine.value);
+  });
 
 export interface LiveStartContinuity {
   readonly portfolio: PaperPortfolio;
@@ -125,34 +214,58 @@ export interface CycleDailyRiskState {
   readonly dailyPnl: number;
 }
 
+/**
+ * Fenêtre de risque journalier au début et à la fin d'un cycle
+ * (models/daily-risk.md §3, amendement 2026-09-28). En paper, l'équité
+ * marquée est la valorisation datée sur le dernier mark accepté ; une
+ * valorisation indisponible porte la fenêtre inchangée. Live et perp gardent
+ * leur fenêtre réconciliée (aucune équité locale n'est utilisée).
+ */
 export const resolveCycleDailyRiskStart = (
   executionMode: AgentConfiguration["executionMode"],
   currentWindow: DailyRiskWindow | null,
   currentDailyPnl: number,
   triggeredAt: number,
-  localMarkedEquity: number,
+  paperValuation: PaperValuationResult | null,
 ): CycleDailyRiskState =>
-  executionMode === "live"
+  executionMode === "live" || executionMode === "perp" || paperValuation === null
     ? Object.freeze({ window: currentWindow, dailyPnl: currentDailyPnl })
-    : resolveDailyRiskWindow(currentWindow, triggeredAt, localMarkedEquity);
+    : resolvePaperDailyRisk(currentWindow, currentDailyPnl, triggeredAt, paperValuation);
 
 export const resolveCycleDailyRiskCompletion = (
   executionMode: AgentConfiguration["executionMode"],
   reconciledWindow: DailyRiskWindow | null,
   reconciledDailyPnl: number,
   triggeredAt: number,
-  localMarkedEquity: number,
+  paperValuation: PaperValuationResult | null,
 ): CycleDailyRiskState =>
-  executionMode === "live"
+  executionMode === "live" || executionMode === "perp" || paperValuation === null
     ? Object.freeze({
         window: reconciledWindow,
         dailyPnl: reconciledDailyPnl,
       })
-    : resolveDailyRiskWindow(
+    : resolvePaperDailyRisk(
         reconciledWindow,
+        reconciledDailyPnl,
         triggeredAt,
-        localMarkedEquity,
+        paperValuation,
       );
+
+/** Valorisation paper d'un portefeuille sur un mark accepté, à `asOf`. */
+export const paperValuationFor = (
+  executionMode: AgentConfiguration["executionMode"],
+  portfolio: PaperPortfolio,
+  mark: PaperValuationMark | null,
+  asOf: number,
+): PaperValuationResult | null =>
+  executionMode === "paper"
+    ? projectPaperValuation({
+        cash: portfolio.cash,
+        positionQuantity: portfolio.positionQuantity,
+        mark,
+        asOf,
+      })
+    : null;
 
 export interface CycleInvocationIdentity {
   readonly loadCycleId: string | null;

@@ -18,7 +18,11 @@ import {
   withTargetSignalNotional,
   type BacktestConfig,
 } from "@dodash/backtest";
-import { createProductId, type Strategy } from "@dodash/domain";
+import {
+  TIMEFRAME_MILLISECONDS,
+  createProductId,
+  type Strategy,
+} from "@dodash/domain";
 import { DEFAULT_INDICATOR_CONFIG } from "@dodash/indicators-prolog";
 import {
   createBreakoutStrategy,
@@ -262,6 +266,7 @@ const replayWindow = async (productId: string, year: number): Promise<WindowOutc
   const prepared = await prepareBacktestIndicators(candles, DEFAULT_INDICATOR_CONFIG);
   if (!prepared.ok) throw new Error(JSON.stringify(prepared.error));
   const config: BacktestConfig = {
+    intervalMs: TIMEFRAME_MILLISECONDS["ONE_DAY"],
     runId: `hd1-${productId.replace("-", "").toLowerCase()}-${year}`,
     agentId: "dodash-backtest",
     productId: product.value,

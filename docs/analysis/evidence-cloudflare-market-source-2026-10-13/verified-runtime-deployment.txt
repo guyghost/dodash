@@ -1,0 +1,16 @@
+
+ ⛅️ wrangler 4.125.0 (update available 4.150.0)
+───────────────────────────────────────────────
+Total Upload: 853.15 KiB / gzip: 136.04 KiB
+Worker Startup Time: 28 ms
+Your Worker has access to the following bindings:
+Binding                                Resource                  
+env.PROBE_ENABLED ("(hidden)")         Environment Variable      
+env.PROBE_STARTED_AT ("(hidden)")      Environment Variable      
+env.PROBE_EXPIRES_AT ("(hidden)")      Environment Variable      
+
+Uploaded dodash-market-source-probe-20261013 (3.49 sec)
+Deployed dodash-market-source-probe-20261013 triggers (1.42 sec)
+  https://dodash-market-source-probe-20261013.guyghost.workers.dev
+  schedule: 11 * * * *
+Current Version ID: 5cb37742-6542-46f7-990f-678ca7956670

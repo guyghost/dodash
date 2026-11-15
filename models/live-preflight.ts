@@ -14,6 +14,9 @@ export const assessLivePreflight = (
   if (!evidence.liveTradingDisabled) return rejected("LIVE_MUST_BE_DISABLED");
   if (!evidence.credentialsConfigured) return rejected("CREDENTIALS_MISSING");
   if (!evidence.telemetryConfigured) return rejected("TELEMETRY_MISSING");
+  if (!evidence.operatorNotificationsConfigured) {
+    return rejected("OPERATOR_NOTIFICATIONS_MISSING");
+  }
   if (
     !evidence.keyCanView ||
     !evidence.keyCanTrade ||

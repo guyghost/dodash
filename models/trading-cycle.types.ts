@@ -35,6 +35,7 @@ export type WorkflowErrorCode =
   | "DUPLICATE_ALARM"
   | "STALE_MARKET_DATA"
   | "RATE_LIMITED"
+  | "MARKET_SOURCES_EXHAUSTED"
   | "NETWORK_UNAVAILABLE"
   | "INVALID_RESPONSE"
   | "INVALID_INDICATORS"
@@ -55,6 +56,23 @@ export interface WorkflowError {
   readonly phase: WorkflowPhase;
   readonly code: WorkflowErrorCode;
   readonly retryable: boolean;
+  /**
+   * Code fin optionnel du refus quand `code` vaut `ORDER_REJECTED` :
+   * vocabulaire fermé de l'adaptateur d'exécution paper
+   * (`packages/paper-execution`) — `INSUFFICIENT_CASH`,
+   * `INSUFFICIENT_POSITION`, `INVALID_BROKER_CONFIG`,
+   * `INVALID_MARKET_PRICE`, `INVALID_FILL_RESULT`. Absent pour tout
+   * autre code ou adaptateur sans code fin (dao #47 — projection
+   * télémétrie blob7). Champ de diagnostic uniquement : il ne pilote
+   * aucune garde, transition ou décision.
+   */
+  readonly detail?: string;
+  /**
+   * Délai `Retry-After` amont en millisecondes (amendement effects.md
+   * 2026-09-28). Champ de diagnostic consommé par le planificateur pur
+   * `planMarketRetry` ; aucune garde ni transition ne le lit.
+   */
+  readonly retryAfterMs?: number;
 }
 
 export interface ControlPermissions {
@@ -88,6 +106,12 @@ export interface TradingCycleInput {
   readonly retryLimits?: Partial<RetryLimits>;
 }
 
+export interface MarketAdmission {
+  readonly cycleId: string;
+  readonly candleClosedAt: number;
+  readonly evaluatedAt: number;
+}
+
 export interface TradingCycleContext {
   readonly agentId: string;
   readonly strategyIds: readonly string[];
@@ -98,6 +122,7 @@ export interface TradingCycleContext {
   readonly marketSnapshotId: string | null;
   readonly accountSnapshotId: string | null;
   readonly lastDecisionCandleClosedAt: number | null;
+  readonly marketAdmission: MarketAdmission | null;
   readonly indicatorsId: string | null;
   readonly signalsId: string | null;
   readonly decisionId: string | null;
@@ -143,6 +168,8 @@ export type TradingCycleEvent =
       readonly type: "MARKET_DATA_READY";
       readonly snapshotId: string;
       readonly candleClosedAt: number;
+      /** Horloge du shell après fetch et checkpoint, avant admission du snapshot. */
+      readonly evaluatedAt: number;
     }
   | {
       readonly type: "ACCOUNT_RECONCILED";

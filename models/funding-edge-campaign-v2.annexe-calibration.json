@@ -1,0 +1,2595 @@
+{
+  "protocole": "models/funding-edge-campaign.md §A (v2, DAO #35)",
+  "phase": "A — calibration in-sample (dataset campagne-1 exclusivement)",
+  "dataset": {
+    "funding": {
+      "fichier": "packages/backtest/fixtures/dao30-funding-btc.json",
+      "sha256": "00b05215f314830d6aebd34c23d621bf7beeb8c0be8f76a68700202fc31e1a6a"
+    },
+    "prix": {
+      "fichier": "packages/backtest/fixtures/dao30-price-btc-usd.json",
+      "sha256": "8c7fa43a370781505ab6dda2665168f7059cbaa217805aa42ba43ad1038541cd"
+    },
+    "fenetre": {
+      "startAt": 1756684800000,
+      "endAt": 1788220800000
+    }
+  },
+  "regleCalibration": {
+    "quantite": "|fundingAvg| — SMA 72 jours causale (FUNDING_AVG_PERIOD, suffixe aligné bougies)",
+    "joursDeDecision": 294,
+    "methode": "rang le plus proche : h = ceil(p/100 × N), valeur au rang h de la série triée, sans interpolation",
+    "quantile": 90
+  },
+  "seuilEntree": {
+    "valeur": 0.000010120617245370372,
+    "joursTraverses": 30,
+    "joursLongCarry": 0,
+    "joursShortCrowding": 30
+  },
+  "distributionAbsFundingAvg": {
+    "min": 2.1748061342592643e-7,
+    "p50": 0.000006643681481481478,
+    "p75": 0.0000088750099537037,
+    "p90": 0.000010120617245370372,
+    "p95": 0.000011427339930555564,
+    "p99": 0.000011796785590277787,
+    "max": 0.000011796785590277789
+  },
+  "distributionSignaux": {
+    "SELL": 29,
+    "HOLD": 265
+  },
+  "distributionDecision": [
+    {
+      "date": "2025-11-11",
+      "fundingAvg": 0.00001172953906250001,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-12",
+      "fundingAvg": 0.000011729539062500008,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-13",
+      "fundingAvg": 0.00001172452806712964,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-14",
+      "fundingAvg": 0.000011724528067129642,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-15",
+      "fundingAvg": 0.000011725934664351863,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-16",
+      "fundingAvg": 0.000011725934664351863,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-17",
+      "fundingAvg": 0.000011746843981481491,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-18",
+      "fundingAvg": 0.000011777173958333343,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-19",
+      "fundingAvg": 0.000011796785590277789,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-20",
+      "fundingAvg": 0.000011796785590277787,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-21",
+      "fundingAvg": 0.000011796785590277789,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-22",
+      "fundingAvg": 0.000011771300810185193,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-23",
+      "fundingAvg": 0.00001174703130787038,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-24",
+      "fundingAvg": 0.000011592742071759266,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-25",
+      "fundingAvg": 0.000011427339930555564,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-26",
+      "fundingAvg": 0.000011355271296296303,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-27",
+      "fundingAvg": 0.000011244317071759266,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-28",
+      "fundingAvg": 0.000011233761689814819,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-29",
+      "fundingAvg": 0.000011124040798611116,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-11-30",
+      "fundingAvg": 0.00001110052899305556,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-01",
+      "fundingAvg": 0.000010988019097222226,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-02",
+      "fundingAvg": 0.000010695363020833336,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-03",
+      "fundingAvg": 0.000010642515972222226,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-04",
+      "fundingAvg": 0.000010552256655092595,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-05",
+      "fundingAvg": 0.00001047256359953704,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-06",
+      "fundingAvg": 0.000010387174537037039,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-07",
+      "fundingAvg": 0.00001018455746527778,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-08",
+      "fundingAvg": 0.000010097322916666668,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-09",
+      "fundingAvg": 0.000010085585995370373,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-10",
+      "fundingAvg": 0.000010125393113425927,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-11",
+      "fundingAvg": 0.000010120617245370372,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-12",
+      "fundingAvg": 0.000010118099189814814,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-13",
+      "fundingAvg": 0.000010136723958333333,
+      "signal": "SELL",
+      "raison": "FUNDING_SHORT_CROWDING",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-14",
+      "fundingAvg": 0.00001007842997685185,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-15",
+      "fundingAvg": 0.000009980275752314814,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-16",
+      "fundingAvg": 0.00000976287673611111,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-17",
+      "fundingAvg": 0.000009421207118055556,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-18",
+      "fundingAvg": 0.0000093387146412037,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-19",
+      "fundingAvg": 0.000009222991493055551,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-20",
+      "fundingAvg": 0.000009006041030092589,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-21",
+      "fundingAvg": 0.000008930976388888885,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-22",
+      "fundingAvg": 0.0000088750099537037,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-23",
+      "fundingAvg": 0.000008862128587962961,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-24",
+      "fundingAvg": 0.00000887907864583333,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-25",
+      "fundingAvg": 0.000009017053530092589,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-26",
+      "fundingAvg": 0.000009002499305555553,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-27",
+      "fundingAvg": 0.000009005954456018518,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-28",
+      "fundingAvg": 0.000008993248321759257,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-29",
+      "fundingAvg": 0.000008979453761574073,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-30",
+      "fundingAvg": 0.000009063203356481481,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2025-12-31",
+      "fundingAvg": 0.000009128420775462961,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-01",
+      "fundingAvg": 0.00000926769722222222,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-02",
+      "fundingAvg": 0.000009223842824074073,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-03",
+      "fundingAvg": 0.000009173843518518518,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-04",
+      "fundingAvg": 0.000009115210127314816,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-05",
+      "fundingAvg": 0.000009067508159722222,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-06",
+      "fundingAvg": 0.000009058523958333337,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-07",
+      "fundingAvg": 0.000009113516319444446,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-08",
+      "fundingAvg": 0.000009113516319444446,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-09",
+      "fundingAvg": 0.000009110634837962964,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-10",
+      "fundingAvg": 0.000009096558622685187,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-11",
+      "fundingAvg": 0.000009087505497685187,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-12",
+      "fundingAvg": 0.000009034321180555556,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-13",
+      "fundingAvg": 0.000008981622453703704,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-14",
+      "fundingAvg": 0.000008949605381944446,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-15",
+      "fundingAvg": 0.000008988282638888889,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-16",
+      "fundingAvg": 0.000008988282638888889,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-17",
+      "fundingAvg": 0.000009004175289351851,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-18",
+      "fundingAvg": 0.000009025588599537036,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-19",
+      "fundingAvg": 0.000009040281944444445,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-20",
+      "fundingAvg": 0.000008810388368055557,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-21",
+      "fundingAvg": 0.000008663354571759262,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-22",
+      "fundingAvg": 0.00000849429791666667,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-23",
+      "fundingAvg": 0.000008209719502314818,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-24",
+      "fundingAvg": 0.000008017496238425929,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-25",
+      "fundingAvg": 0.000007914891550925926,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-26",
+      "fundingAvg": 0.0000078279884837963,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-27",
+      "fundingAvg": 0.000007804063946759262,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-28",
+      "fundingAvg": 0.00000779072447916667,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-29",
+      "fundingAvg": 0.00000776522152777778,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-30",
+      "fundingAvg": 0.000007663897858796298,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-01-31",
+      "fundingAvg": 0.00000764254369212963,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-01",
+      "fundingAvg": 0.000007598643055555553,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-02",
+      "fundingAvg": 0.000007304970717592588,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-03",
+      "fundingAvg": 0.000007159344618055551,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-04",
+      "fundingAvg": 0.000007299788483796291,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-05",
+      "fundingAvg": 0.0000074599592013888875,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-06",
+      "fundingAvg": 0.0000071348162037037,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-07",
+      "fundingAvg": 0.0000068312197337962925,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-08",
+      "fundingAvg": 0.000006675753819444442,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-09",
+      "fundingAvg": 0.000006611593692129626,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-10",
+      "fundingAvg": 0.000006509514293981479,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-11",
+      "fundingAvg": 0.000006468273032407403,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-12",
+      "fundingAvg": 0.000006596313310185183,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-13",
+      "fundingAvg": 0.000006560268692129626,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-14",
+      "fundingAvg": 0.000006643681481481478,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-15",
+      "fundingAvg": 0.0000066788193287037016,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-16",
+      "fundingAvg": 0.0000067077147569444425,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-17",
+      "fundingAvg": 0.000006870212615740738,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-18",
+      "fundingAvg": 0.000006934881423611109,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-19",
+      "fundingAvg": 0.00000701693466435185,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-20",
+      "fundingAvg": 0.000006996832233796296,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-21",
+      "fundingAvg": 0.000006822150347222222,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-22",
+      "fundingAvg": 0.000006671959374999998,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-23",
+      "fundingAvg": 0.000006557860821759259,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-24",
+      "fundingAvg": 0.00000654682054398148,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-25",
+      "fundingAvg": 0.000006500568692129629,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-26",
+      "fundingAvg": 0.0000065081992476851846,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-27",
+      "fundingAvg": 0.000006547306886574074,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-02-28",
+      "fundingAvg": 0.0000062779296875000004,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-01",
+      "fundingAvg": 0.000006202850636574074,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-02",
+      "fundingAvg": 0.000006208631655092592,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-03",
+      "fundingAvg": 0.000006171389409722222,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-04",
+      "fundingAvg": 0.0000059593759259259255,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-05",
+      "fundingAvg": 0.000005858406886574074,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-06",
+      "fundingAvg": 0.00000581673773148148,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-07",
+      "fundingAvg": 0.000005713512615740741,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-08",
+      "fundingAvg": 0.000005587853877314814,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-09",
+      "fundingAvg": 0.000005380840914351853,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-10",
+      "fundingAvg": 0.000005134331828703706,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-11",
+      "fundingAvg": 0.000004824272048611113,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-12",
+      "fundingAvg": 0.000004478095659722224,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-13",
+      "fundingAvg": 0.00000443479988425926,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-14",
+      "fundingAvg": 0.000004203508449074075,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-15",
+      "fundingAvg": 0.000004102485879629631,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-16",
+      "fundingAvg": 0.000004047944097222224,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-17",
+      "fundingAvg": 0.000003982614409722223,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-18",
+      "fundingAvg": 0.000003873592418981483,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-19",
+      "fundingAvg": 0.0000036615670138888902,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-20",
+      "fundingAvg": 0.000003507111400462964,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-21",
+      "fundingAvg": 0.0000033524869791666673,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-22",
+      "fundingAvg": 0.0000030128501157407413,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-23",
+      "fundingAvg": 0.000002850969791666667,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-24",
+      "fundingAvg": 0.000002771420891203704,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-25",
+      "fundingAvg": 0.0000028039477430555557,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-26",
+      "fundingAvg": 0.000002773205729166667,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-27",
+      "fundingAvg": 0.0000027804118055555562,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-28",
+      "fundingAvg": 0.0000027752212384259266,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-29",
+      "fundingAvg": 0.0000027174655671296307,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-30",
+      "fundingAvg": 0.0000024751484953703716,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-03-31",
+      "fundingAvg": 0.0000022254934606481493,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-01",
+      "fundingAvg": 0.000002033696354166667,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-02",
+      "fundingAvg": 0.0000019754514467592602,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-03",
+      "fundingAvg": 0.0000019295925347222226,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-04",
+      "fundingAvg": 0.000001811105092592593,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-05",
+      "fundingAvg": 0.0000016833529513888901,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-06",
+      "fundingAvg": 0.0000016982177662037044,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-07",
+      "fundingAvg": 0.0000016713185185185201,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-08",
+      "fundingAvg": 0.0000017236128472222225,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-09",
+      "fundingAvg": 0.0000016116809027777784,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-10",
+      "fundingAvg": 0.0000015638442708333341,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-11",
+      "fundingAvg": 0.0000015660692708333344,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-12",
+      "fundingAvg": 0.0000015295645833333342,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-13",
+      "fundingAvg": 0.0000013910752314814825,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-14",
+      "fundingAvg": 0.000001151220023148149,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-15",
+      "fundingAvg": 0.0000011854656828703712,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-16",
+      "fundingAvg": 0.0000011611658564814821,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-17",
+      "fundingAvg": 9.280116898148154e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-18",
+      "fundingAvg": 6.178449652777784e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-19",
+      "fundingAvg": 7.554673611111118e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-20",
+      "fundingAvg": 9.965064236111123e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-21",
+      "fundingAvg": 0.0000010232174768518526,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-22",
+      "fundingAvg": 9.505371527777788e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-23",
+      "fundingAvg": 9.7683113425926e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-24",
+      "fundingAvg": 0.0000011049962962962973,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-25",
+      "fundingAvg": 0.0000012063252314814825,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-26",
+      "fundingAvg": 0.0000011673582754629638,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-27",
+      "fundingAvg": 0.0000010633298032407412,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-28",
+      "fundingAvg": 8.997215277777785e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-29",
+      "fundingAvg": 7.828200231481488e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-04-30",
+      "fundingAvg": 6.166824074074081e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-01",
+      "fundingAvg": 4.2395451388888913e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-02",
+      "fundingAvg": 2.7154097222222273e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-03",
+      "fundingAvg": 2.3186556712963014e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-04",
+      "fundingAvg": 2.1748061342592643e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-05",
+      "fundingAvg": 2.4090428240740793e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-06",
+      "fundingAvg": 3.082671875000005e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-07",
+      "fundingAvg": 2.9996793981481535e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-08",
+      "fundingAvg": 4.1902013888888937e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-09",
+      "fundingAvg": 3.696006944444448e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-10",
+      "fundingAvg": 3.643887731481486e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-11",
+      "fundingAvg": 5.449084490740744e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-12",
+      "fundingAvg": 6.677859375000004e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-13",
+      "fundingAvg": 8.122254629629635e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-14",
+      "fundingAvg": 7.200855902777782e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-15",
+      "fundingAvg": 8.515149884259263e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-16",
+      "fundingAvg": 7.55009780092593e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-17",
+      "fundingAvg": 6.403654513888894e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-18",
+      "fundingAvg": 6.884220486111117e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-19",
+      "fundingAvg": 8.286350115740746e-7,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-20",
+      "fundingAvg": 0.0000010356479745370378,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-21",
+      "fundingAvg": 0.0000012616533564814822,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-22",
+      "fundingAvg": 0.0000015225831018518522,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-23",
+      "fundingAvg": 0.000001659910243055556,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-24",
+      "fundingAvg": 0.0000014383100115740745,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-25",
+      "fundingAvg": 0.000001400213020833334,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-26",
+      "fundingAvg": 0.0000013269482638888897,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-27",
+      "fundingAvg": 0.0000012489858217592597,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-28",
+      "fundingAvg": 0.0000013288550925925932,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-29",
+      "fundingAvg": 0.0000014175559606481489,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-30",
+      "fundingAvg": 0.0000015503065393518525,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-05-31",
+      "fundingAvg": 0.0000015852442708333343,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-01",
+      "fundingAvg": 0.0000017398686921296303,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-02",
+      "fundingAvg": 0.0000020782665509259265,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-03",
+      "fundingAvg": 0.000002190025173611112,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-04",
+      "fundingAvg": 0.0000021822470486111123,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-05",
+      "fundingAvg": 0.00000212494363425926,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-06",
+      "fundingAvg": 0.0000021236498842592603,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-07",
+      "fundingAvg": 0.000002142528414351853,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-08",
+      "fundingAvg": 0.00000212048894675926,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-09",
+      "fundingAvg": 0.0000021402248842592593,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-10",
+      "fundingAvg": 0.000002279899479166667,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-11",
+      "fundingAvg": 0.000002433114236111112,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-12",
+      "fundingAvg": 0.0000026127789351851857,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-13",
+      "fundingAvg": 0.000002969060127314815,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-14",
+      "fundingAvg": 0.0000031493677083333333,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-15",
+      "fundingAvg": 0.0000033839159722222227,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-16",
+      "fundingAvg": 0.000003723155208333334,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-17",
+      "fundingAvg": 0.000003837761458333333,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-18",
+      "fundingAvg": 0.000003804149421296297,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-19",
+      "fundingAvg": 0.0000038129342592592592,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-20",
+      "fundingAvg": 0.000003894924016203704,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-21",
+      "fundingAvg": 0.000003770750810185186,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-22",
+      "fundingAvg": 0.000003701951562500001,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-23",
+      "fundingAvg": 0.0000037541112268518526,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-24",
+      "fundingAvg": 0.000003812300925925927,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-25",
+      "fundingAvg": 0.0000038723262731481495,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-26",
+      "fundingAvg": 0.000003949329803240741,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-27",
+      "fundingAvg": 0.0000040080327546296305,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-28",
+      "fundingAvg": 0.000004106942418981482,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-29",
+      "fundingAvg": 0.000004329808449074074,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-06-30",
+      "fundingAvg": 0.000004530815393518519,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-01",
+      "fundingAvg": 0.000004637701157407408,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-02",
+      "fundingAvg": 0.000004823233043981481,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-03",
+      "fundingAvg": 0.000005073508564814814,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-04",
+      "fundingAvg": 0.000005172805787037037,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-05",
+      "fundingAvg": 0.000005198391782407406,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-06",
+      "fundingAvg": 0.0000052616786458333325,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-07",
+      "fundingAvg": 0.000005389537268518517,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-08",
+      "fundingAvg": 0.000005500412268518517,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-09",
+      "fundingAvg": 0.000005708575752314813,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-10",
+      "fundingAvg": 0.000005921732002314812,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-11",
+      "fundingAvg": 0.000006158770543981478,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-12",
+      "fundingAvg": 0.000006424497974537034,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-13",
+      "fundingAvg": 0.000006607523611111107,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-14",
+      "fundingAvg": 0.000006687864004629626,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-15",
+      "fundingAvg": 0.000006903650405092588,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-16",
+      "fundingAvg": 0.000007033720833333329,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-17",
+      "fundingAvg": 0.00000708377864583333,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-18",
+      "fundingAvg": 0.000007161412152777776,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-19",
+      "fundingAvg": 0.00000718676603009259,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-20",
+      "fundingAvg": 0.000007268332465277777,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-21",
+      "fundingAvg": 0.000007277703877314812,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-22",
+      "fundingAvg": 0.000007365035706018515,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-23",
+      "fundingAvg": 0.0000073715281249999965,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-24",
+      "fundingAvg": 0.000007430868344907405,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-25",
+      "fundingAvg": 0.000007595268518518517,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-26",
+      "fundingAvg": 0.000007698399189814813,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-27",
+      "fundingAvg": 0.000007872882928240738,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-28",
+      "fundingAvg": 0.000008015568576388886,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-29",
+      "fundingAvg": 0.000008021534317129629,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-30",
+      "fundingAvg": 0.00000792874739583333,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-07-31",
+      "fundingAvg": 0.000007866473553240738,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-01",
+      "fundingAvg": 0.000007804672974537034,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-02",
+      "fundingAvg": 0.000007863842939814811,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-03",
+      "fundingAvg": 0.000008035121817129626,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-04",
+      "fundingAvg": 0.000008199931018518514,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-05",
+      "fundingAvg": 0.00000832819751157407,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-06",
+      "fundingAvg": 0.000008456868344907404,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-07",
+      "fundingAvg": 0.000008496043634259256,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-08",
+      "fundingAvg": 0.000008422375694444442,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-09",
+      "fundingAvg": 0.000008394639293981478,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-10",
+      "fundingAvg": 0.000008462546817129626,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-11",
+      "fundingAvg": 0.000008437153124999997,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-12",
+      "fundingAvg": 0.000008392561979166665,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-13",
+      "fundingAvg": 0.00000836825821759259,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-14",
+      "fundingAvg": 0.000008418379918981479,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-15",
+      "fundingAvg": 0.00000851198466435185,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-16",
+      "fundingAvg": 0.000008577557523148146,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-17",
+      "fundingAvg": 0.00000848873778935185,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-18",
+      "fundingAvg": 0.000008296152662037036,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-19",
+      "fundingAvg": 0.000008234216898148147,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-20",
+      "fundingAvg": 0.000008269550057870368,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-21",
+      "fundingAvg": 0.000008371645196759258,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-22",
+      "fundingAvg": 0.000008534066435185185,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-23",
+      "fundingAvg": 0.00000866967042824074,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-24",
+      "fundingAvg": 0.000008743375578703704,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-25",
+      "fundingAvg": 0.000008755960706018519,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-26",
+      "fundingAvg": 0.00000880693414351852,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-27",
+      "fundingAvg": 0.000008878696643518519,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-28",
+      "fundingAvg": 0.000008934469907407407,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-29",
+      "fundingAvg": 0.00000908808605324074,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-30",
+      "fundingAvg": 0.000009112503356481483,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    },
+    {
+      "date": "2026-08-31",
+      "fundingAvg": 0.00000916637008101852,
+      "signal": "HOLD",
+      "raison": "FUNDING_NO_SIGNAL",
+      "rendement": 0,
+      "equite": 10000
+    }
+  ],
+  "rejeuInSample": {
+    "config": {
+      "produit": "BTC-USD",
+      "timeframe": "ONE_DAY",
+      "capitalInitial": 10000,
+      "notionalSignal": 1000,
+      "risque": {
+        "maxOrderNotional": 2000,
+        "maxPositionNotional": 10000,
+        "maxGrossExposure": 20000,
+        "maxDailyLoss": 1000,
+        "cooldownMs": 0,
+        "stopLossBps": 150,
+        "takeProfitBps": 300
+      },
+      "broker": {
+        "feeBps": 6,
+        "slippageBps": 2
+      },
+      "indicators": "DEFAULT_INDICATOR_CONFIG",
+      "protectiveExit": "NONE",
+      "regimeFilter": "absent",
+      "calibration": "IDENTITY"
+    },
+    "runs": [
+      {
+        "id": "funding-trend",
+        "h12": {
+          "sharpe": 0,
+          "maxDrawdown": 0,
+          "trades": 0,
+          "fundingPaid": 0,
+          "pnl": 0,
+          "totalReturn": 0,
+          "turnover": 0
+        },
+        "segments": {
+          "F1": {
+            "sharpe": 0,
+            "maxDrawdown": 0,
+            "trades": 0
+          },
+          "F2": {
+            "sharpe": 0,
+            "maxDrawdown": 0,
+            "trades": 0
+          },
+          "F3": {
+            "sharpe": 0,
+            "maxDrawdown": 0,
+            "trades": 0
+          },
+          "F4": {
+            "sharpe": 0,
+            "maxDrawdown": 0,
+            "trades": 0
+          },
+          "R30": {
+            "sharpe": 0,
+            "maxDrawdown": 0,
+            "trades": 0
+          }
+        }
+      },
+      {
+        "id": "rsi-reversion",
+        "h12": {
+          "sharpe": -0.07832553942500504,
+          "maxDrawdown": 0.3506170252983268,
+          "trades": 30,
+          "fundingPaid": 12.778019123874127,
+          "pnl": -1037.6388601233575,
+          "totalReturn": -0.10376388601233576,
+          "turnover": 1.4919391046860442
+        },
+        "segments": {
+          "F1": {
+            "sharpe": -0.8873698355505364,
+            "maxDrawdown": 0.08342775021233634,
+            "trades": 16
+          },
+          "F2": {
+            "sharpe": -1.3595166178650027,
+            "maxDrawdown": 0.30296897585357635,
+            "trades": 14
+          },
+          "F3": {
+            "sharpe": 0.9590184452343086,
+            "maxDrawdown": 0.11929891017589547,
+            "trades": 0
+          },
+          "F4": {
+            "sharpe": 0.6894054928514929,
+            "maxDrawdown": 0.17956062434288153,
+            "trades": 0
+          },
+          "R30": {
+            "sharpe": 5.4159139860386,
+            "maxDrawdown": 0.03257730161270971,
+            "trades": 0
+          }
+        }
+      },
+      {
+        "id": "ema-cross",
+        "h12": {
+          "sharpe": 0.2414955573870709,
+          "maxDrawdown": 0.00017749001135118907,
+          "trades": 13,
+          "fundingPaid": 0.007047435656010056,
+          "pnl": 0.48236002646081033,
+          "totalReturn": 0.00004823600264608103,
+          "turnover": 0.002002415984013286
+        },
+        "segments": {
+          "F1": {
+            "sharpe": -2.0654317158202025,
+            "maxDrawdown": 0.00002033337969065498,
+            "trades": 1
+          },
+          "F2": {
+            "sharpe": -2.288605389520144,
+            "maxDrawdown": 0.00008091004592121576,
+            "trades": 2
+          },
+          "F3": {
+            "sharpe": 0.4077830069373198,
+            "maxDrawdown": 0.00007014738738664025,
+            "trades": 6
+          },
+          "F4": {
+            "sharpe": 1.1898015141099907,
+            "maxDrawdown": 0.00009250655309007421,
+            "trades": 4
+          },
+          "R30": {
+            "sharpe": 4.642361375147733,
+            "maxDrawdown": 0.000039058060829836154,
+            "trades": 3
+          }
+        }
+      },
+      {
+        "id": "breakout",
+        "h12": {
+          "sharpe": -0.211173936364349,
+          "maxDrawdown": 0.002086161840265759,
+          "trades": 28,
+          "fundingPaid": 0.06463007481539827,
+          "pnl": -4.637336976022198,
+          "totalReturn": -0.0004637336976022198,
+          "turnover": 0.04392637489138874
+        },
+        "segments": {
+          "F1": {
+            "sharpe": -2.312522792252687,
+            "maxDrawdown": 0.000620306860177517,
+            "trades": 5
+          },
+          "F2": {
+            "sharpe": -2.691074164887328,
+            "maxDrawdown": 0.0009720202735255225,
+            "trades": 6
+          },
+          "F3": {
+            "sharpe": 0.04373776107319935,
+            "maxDrawdown": 0.0008809681822464616,
+            "trades": 8
+          },
+          "F4": {
+            "sharpe": 0.919048736619794,
+            "maxDrawdown": 0.0006670217897370256,
+            "trades": 9
+          },
+          "R30": {
+            "sharpe": 3.2806555847020014,
+            "maxDrawdown": 0.0006670217897370256,
+            "trades": 3
+          }
+        }
+      }
+    ],
+    "benchmarkBuyAndHold": {
+      "totalReturn": -0.2748136972986561
+    }
+  },
+  "constantesPhaseB": {
+    "oosStartAt": 1788220800000,
+    "oosMinDays": 90,
+    "warmupPrefixDays": 90,
+    "grille": {
+      "A1": "sharpeOOS(funding-trend) >= max(sharpeOOS legacy) + 0.25",
+      "A2": "tradesOOS(funding-trend) >= ceil(30 × joursOOS / 365)",
+      "A3": "drawdownOOS(funding-trend) <= max(drawdownOOS legacy) + 0.05",
+      "A4": "sharpeOOS(funding-trend) >= 0",
+      "verdict": "A1 ∧ A2 ∧ A3 ∧ A4 (évalué uniquement si A0 — fenêtre OOS >= 90 jours)"
+    }
+  }
+}

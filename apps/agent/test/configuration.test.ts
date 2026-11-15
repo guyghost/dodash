@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { LIVE_TRADING_POLICY } from "@dodash/models";
+
 import * as configurationModule from "../src/configuration.js";
 import type { AgentConfiguration } from "../src/configuration.js";
 
@@ -20,6 +22,17 @@ const admit = (input: unknown) => {
 };
 
 describe("parseAgentConfiguration", () => {
+  it("defaults to the legacy strategy set without funding-trend (dao #27, opt-in)", () => {
+    const result = parseAgentConfiguration({ productId: "BTC-USD" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.strategyIds).toEqual([
+      "breakout",
+      "ema-cross",
+      "rsi-reversion",
+    ]);
+  });
+
   it("normalizes a valid paper configuration", () => {
     const result = parseAgentConfiguration({
       productId: "btc-usd",
@@ -122,6 +135,22 @@ describe("parseAgentConfiguration", () => {
     expect(result.value.risk.maxDailyLoss).toBe(1_000);
   });
 
+  it("admet funding-trend dans l'enum des stratégies (dao #27)", () => {
+    const result = parseAgentConfiguration({
+      productId: "BTC-USD",
+      strategyIds: ["funding-trend"],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.strategyIds).toEqual(["funding-trend"]);
+  });
+
+  it("rejette une configuration live spot contenant funding-trend (C3)", () => {
+    expect(
+      admit({ productId: "GRT-USD", executionMode: "live", strategyIds: ["funding-trend"] }),
+    ).toEqual({ status: "REJECTED", reasonCode: "LIVE_POLICY_MISMATCH" });
+  });
+
   it("admits paper configurations without applying the live envelope", () => {
     expect(admit({ productId: "BTC-USD" })).toEqual({ status: "APPROVED" });
   });
@@ -144,5 +173,239 @@ describe("parseAgentConfiguration", () => {
       status: "REJECTED",
       reasonCode: "LIVE_POLICY_MISMATCH",
     });
+  });
+});
+
+describe("configuration multi-produits (dao #24)", () => {
+  it("normalise products[] à un élément vers la forme legacy strictement identique (INV-P6)", () => {
+    const legacy = parseAgentConfiguration({
+      productId: "btc-usd",
+      strategyIds: ["rsi-reversion"],
+      risk: { maxOrderNotional: 500 },
+    });
+    const fromProducts = parseAgentConfiguration({
+      products: [{ productId: "BTC-USD", risk: { maxOrderNotional: 500 } }],
+      strategyIds: ["rsi-reversion"],
+    });
+    expect(legacy.ok).toBe(true);
+    expect(fromProducts.ok).toBe(true);
+    if (!legacy.ok || !fromProducts.ok) return;
+    expect(fromProducts.value).toEqual(legacy.value);
+    expect(JSON.stringify(fromProducts.value)).toBe(
+      JSON.stringify(legacy.value),
+    );
+    expect(Object.keys(fromProducts.value)).not.toContain("products");
+    expect(Object.keys(fromProducts.value)).not.toContain("portfolioRisk");
+  });
+
+  it("ne modifie aucune clé de la forme legacy sans products[]", () => {
+    const result = parseAgentConfiguration({ productId: "BTC-USD" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Object.keys(result.value)).toEqual([
+      "productId",
+      "timeframe",
+      "strategyIds",
+      "intervalSeconds",
+      "maxMarketStalenessMs",
+      "executionPriceMaxDivergenceBps",
+      "candleLimit",
+      "initialCapital",
+      "maxDecisionNotional",
+      "minNetQuantity",
+      "executionMode",
+      "sizingPolicy",
+      "indicators",
+      "risk",
+      "broker",
+    ]);
+  });
+
+  it("produit une configuration multi-produits triée, figée et paper (N ≥ 2)", () => {
+    const result = configurationModule.parseMultiProductAgentConfiguration({
+      executionMode: "paper",
+      strategyIds: ["ema-cross"],
+      portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+      products: [
+        { productId: "eth-usd", risk: { maxOrderNotional: 1_000 } },
+        { productId: "BTC-USD" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.executionMode).toBe("paper");
+    expect(result.value.products.map((slot) => slot.productId)).toEqual([
+      "BTC-USD",
+      "ETH-USD",
+    ]);
+    expect(result.value.products[0]?.risk).toMatchObject({
+      maxOrderNotional: 2_000,
+      maxPositionNotional: 10_000,
+    });
+    expect(result.value.products[1]?.risk.maxOrderNotional).toBe(1_000);
+    expect(result.value.sizingPolicy).toEqual({
+      type: "TARGET_SIGNAL_NOTIONAL",
+      targetSignalNotional: 1_000,
+      confidenceCalibration: "POWER_THIRD",
+    });
+    expect(Object.isFrozen(result.value)).toBe(true);
+    expect(Object.isFrozen(result.value.products)).toBe(true);
+    expect(Object.isFrozen(result.value.portfolioRisk)).toBe(true);
+    expect(Object.isFrozen(result.value.products[0])).toBe(true);
+  });
+
+  it("accepte N = 1 sans plafonds consolidés via l'entrée multi (plafonds inutiles à un produit)", () => {
+    const result = configurationModule.parseMultiProductAgentConfiguration({
+      products: [{ productId: "BTC-USD" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.products).toHaveLength(1);
+    expect("portfolioRisk" in result.value).toBe(false);
+  });
+
+  it("définit le sizing notional par défaut des instances portefeuille (dao #49, INV-P9)", () => {
+    const result = configurationModule.parseMultiProductAgentConfiguration({
+      strategyIds: ["ema-cross"],
+      portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+      products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sizingPolicy).toEqual(
+      LIVE_TRADING_POLICY.sizingPolicy,
+    );
+  });
+
+  it("préserve un sizingPolicy explicite au-dessus du défaut notional (dao #49)", () => {
+    const result = configurationModule.parseMultiProductAgentConfiguration({
+      strategyIds: ["ema-cross"],
+      sizingPolicy: {
+        type: "TARGET_SIGNAL_NOTIONAL",
+        targetSignalNotional: 500,
+        confidenceCalibration: "POWER_THIRD",
+      },
+      portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+      products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sizingPolicy).toEqual({
+      type: "TARGET_SIGNAL_NOTIONAL",
+      targetSignalNotional: 500,
+      confidenceCalibration: "POWER_THIRD",
+    });
+  });
+
+  it("refuse fail-closed le multi-produits à la porte runtime (N ≥ 2)", () => {
+    const result = parseAgentConfiguration({
+      products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+      portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "MULTI_PRODUCT_UNSUPPORTED" },
+    });
+  });
+
+  it("refuse le multi-produits hors paper (INV-P7)", () => {
+    const portfolioRisk = { maxGrossExposure: 30_000, maxDailyLoss: 2_000 };
+    expect(
+      parseAgentConfiguration({
+        products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+        portfolioRisk,
+        executionMode: "live",
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "MULTI_PRODUCT_LIVE_UNSUPPORTED" },
+    });
+    expect(
+      configurationModule.parseMultiProductAgentConfiguration({
+        products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+        portfolioRisk,
+        executionMode: "perp",
+      }),
+    ).toEqual({
+      ok: false,
+      error: { code: "MULTI_PRODUCT_LIVE_UNSUPPORTED" },
+    });
+  });
+
+  it("refuse products[] avec productId, vide, dupliqué, trop nombreux ou sans plafonds consolidés", () => {
+    const portfolioRisk = { maxGrossExposure: 30_000, maxDailyLoss: 2_000 };
+    expect(
+      parseAgentConfiguration({
+        products: [{ productId: "BTC-USD" }],
+        productId: "ETH-USD",
+      }),
+    ).toEqual({ ok: false, error: { code: "INVALID_CONFIGURATION" } });
+    expect(
+      configurationModule.parseMultiProductAgentConfiguration({
+        products: [],
+        portfolioRisk,
+      }),
+    ).toEqual({ ok: false, error: { code: "INVALID_CONFIGURATION" } });
+    expect(
+      configurationModule.parseMultiProductAgentConfiguration({
+        products: [
+          { productId: "BTC-USD" },
+          { productId: "BTC-USD", risk: { maxOrderNotional: 100 } },
+        ],
+        portfolioRisk,
+      }),
+    ).toEqual({ ok: false, error: { code: "INVALID_CONFIGURATION" } });
+    expect(
+      configurationModule.parseMultiProductAgentConfiguration({
+        products: Array.from(
+          { length: configurationModule.MAX_AGENT_PRODUCTS + 1 },
+          (_, index) => ({
+            productId: `P${index}-USD`,
+          }),
+        ),
+        portfolioRisk,
+      }),
+    ).toEqual({ ok: false, error: { code: "INVALID_CONFIGURATION" } });
+    expect(
+      configurationModule.parseMultiProductAgentConfiguration({
+        products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+      }),
+    ).toEqual({ ok: false, error: { code: "INVALID_CONFIGURATION" } });
+  });
+
+  it("refuse le risk top-level en multi-produits (budget par produit uniquement)", () => {
+    expect(
+      configurationModule.parseMultiProductAgentConfiguration({
+        products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+        portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+        risk: { maxOrderNotional: 100 },
+      }),
+    ).toEqual({ ok: false, error: { code: "INVALID_CONFIGURATION" } });
+  });
+
+  it("refuse un identifiant de produit invalide et un candleLimit insuffisant en multi-produits", () => {
+    expect(
+      configurationModule.parseMultiProductAgentConfiguration({
+        products: [{ productId: "not-a-product" }],
+        portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+      }),
+    ).toEqual({ ok: false, error: { code: "INVALID_PRODUCT_ID" } });
+    expect(
+      configurationModule.parseMultiProductAgentConfiguration({
+        products: [{ productId: "BTC-USD" }, { productId: "ETH-USD" }],
+        portfolioRisk: { maxGrossExposure: 30_000, maxDailyLoss: 2_000 },
+        candleLimit: 5,
+        strategyIds: ["breakout"],
+      }),
+    ).toEqual({ ok: false, error: { code: "INSUFFICIENT_CANDLE_LIMIT" } });
+  });
+
+  it("admet en paper une configuration mono-produit normalisée depuis products[]", () => {
+    const result = parseAgentConfiguration({
+      products: [{ productId: "BTC-USD" }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(admit(result.value)).toEqual({ status: "APPROVED" });
   });
 });

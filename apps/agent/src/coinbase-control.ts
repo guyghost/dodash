@@ -1038,7 +1038,6 @@ export const executeCoinbaseProtectedSell = async (
           error: { ...error, retryable: false },
         };
       }
-      case "idle":
       default:
         actor.stop();
         return {

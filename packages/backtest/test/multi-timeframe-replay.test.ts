@@ -59,6 +59,7 @@ const config: BacktestConfig = {
   runId: "multi-timeframe-test",
   agentId: "multi-timeframe-agent",
   productId: product.value,
+  intervalMs: 240_000,
   initialCapital: 10_000,
   maxDecisionNotional: 5_000,
   minNetQuantity: 0.0001,
@@ -162,6 +163,7 @@ describe("multi-timeframe protective replay", () => {
     const daily = await replayBacktest(primaryCandles, config, prepared);
     const fine = await replayBacktest(primaryCandles, config, prepared, {
       executionCandles,
+      executionIntervalMs: 60_000,
     });
 
     expect(daily.ok).toBe(true);
@@ -186,6 +188,7 @@ describe("multi-timeframe protective replay", () => {
     const daily = await replayBacktest(primaryCandles, noneConfig, prepared);
     const fine = await replayBacktest(primaryCandles, noneConfig, prepared, {
       executionCandles,
+      executionIntervalMs: 60_000,
     });
 
     expect(fine).toEqual(daily);
@@ -222,7 +225,7 @@ describe("multi-timeframe protective replay", () => {
       primaryCandles,
       { ...config, strategies: everyCloseRegistry.value },
       prepared,
-      { executionCandles },
+      { executionCandles, executionIntervalMs: 60_000 },
     );
 
     expect(result.ok).toBe(true);
@@ -236,6 +239,7 @@ describe("multi-timeframe protective replay", () => {
   it("refuse une série fine incomplète avant le replay", async () => {
     const result = await replayBacktest(primaryCandles, config, prepared, {
       executionCandles: executionCandles.slice(0, -1),
+      executionIntervalMs: 60_000,
     });
 
     expect(result).toEqual({

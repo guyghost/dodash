@@ -1,0 +1,12 @@
+{
+  "health": {
+    "service": "market-source-probe",
+    "active": false,
+    "expiresAt": 0
+  },
+  "unauthenticatedStatus": 401,
+  "unauthenticatedBody": {
+    "error": "UNAUTHORIZED"
+  },
+  "initialVersion": "f265ea9e-10d0-4538-8d30-bf6643f64280"
+}

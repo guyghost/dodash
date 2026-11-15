@@ -10,6 +10,7 @@ import { z } from "zod";
 import { readBoundedJson } from "./bounded-json.js";
 import { reconcileCoinbaseAccount } from "./coinbase-account.js";
 import { listCoinbaseOpenProductOrderIds } from "./coinbase-control.js";
+import { resolveOperatorNotificationSettings } from "./operator-notifications.js";
 import {
   createCoinbaseAuthorization,
   resolveCoinbasePreflightSettings,
@@ -66,6 +67,8 @@ export const preflightCoinbaseLive = async (
     liveTradingDisabled: input.LIVE_TRADING_ENABLED !== "true",
     credentialsConfigured: false,
     telemetryConfigured: input.TRADING_TELEMETRY !== undefined,
+    operatorNotificationsConfigured:
+      resolveOperatorNotificationSettings(input).ok,
     keyCanView: false,
     keyCanTrade: false,
     keyCanTransfer: false,

@@ -20,7 +20,9 @@
 | Kill switch | arrêt contrôlé vers `halted` | Couvert |
 | Permission révoquée | plus de nouvel ordre, puis `halted` | Couvert |
 | Persistance indisponible | retry borné ; aucun rescheduling avant succès | Couvert |
-| Retry épuisé | état stable `failed` | Couvert |
+| Retry épuisé de `scheduling`, `reconcilingOrder` ou `persisting` | état stable `failed` | Couvert |
+| Échec non retryable ou retry épuisé d’une opération de cycle (`reconcilingAccount`, `authorizing`, `fetchingMarketData`) | issue `FAILED` enregistrée puis persistée, retour à `scheduling` — l’agent n’est pas arrêté | Couvert |
+| Retry épuisé sur données périmées (`fetchingMarketData`) | persistance `NO_ACTION`, retour à `scheduling`, aucun calcul ni ordre | Couvert |
 | Reprise opérateur | `RESET → stopped` uniquement | Couvert |
 
 ## Contraintes de mise en œuvre
@@ -32,6 +34,15 @@
   même après un reset ou un redémarrage live.
 - La réconciliation interroge Coinbase par identifiant client avant toute nouvelle tentative.
 - `failed` et `halted` n’ont aucune transition automatique.
+- Une panne d’inspection de compte (échec non retryable ou budget de retries
+  épuisé) n’atteint jamais l’état `failed` : aucun ordre n’est en vol, donc
+  poursuivre est sûr. La garde `shouldFailAfterPersistence` ne s’ouvre que sur
+  `terminalFailure` (défaut de protection, échec d’annulation) ; l’issue
+  `FAILED` du cycle est persistée puis replanifiée. Seuls l’épuisement des
+  retries de `scheduling`, `reconcilingOrder` ou `persisting` — et les
+  défaillances terminales — rejoignent l’état stable `failed`, car y continuer
+  est impossible (`scheduling`, `persisting`) ou dangereux (ordre inconnu en
+  vol).
 
 ## Avis de revue
 

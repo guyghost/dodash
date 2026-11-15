@@ -1,0 +1,121 @@
+{
+  "worker": "dodash-paper-dashboard-api",
+  "fetchedAt": "2026-09-26T08:51:11.696805+00:00",
+  "health": {
+    "httpStatus": 403
+  },
+  "deployments": {
+    "result": {
+      "deployments": [
+        {
+          "id": "d2443c06-1aea-4de2-9dd5-09ff1658e491",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "author_email": "guyghost@gmail.com",
+          "annotations": {
+            "workers/triggered_by": "secret"
+          },
+          "versions": [
+            {
+              "version_id": "2911320e-e637-47c1-b961-31b198cde92f",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-09-19T15:54:08.873138Z"
+        },
+        {
+          "id": "fbfa0a95-856b-45c8-b95f-a7edab5a230b",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "author_email": "guyghost@gmail.com",
+          "annotations": {
+            "workers/triggered_by": "secret"
+          },
+          "versions": [
+            {
+              "version_id": "31461772-6123-4f8c-869c-92b63ad4c09b",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-09-04T16:40:31.884228Z"
+        },
+        {
+          "id": "1c81087c-35ea-43de-a830-78c43f7f4c1f",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "author_email": "guyghost@gmail.com",
+          "annotations": {
+            "workers/triggered_by": "secret"
+          },
+          "versions": [
+            {
+              "version_id": "e3354f9d-0ec9-451f-860e-442e98911182",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-09-04T16:40:29.047585Z"
+        },
+        {
+          "id": "4c63e206-bfa5-4081-bae3-96b815d8905b",
+          "source": "wrangler",
+          "strategy": "percentage",
+          "author_email": "guyghost@gmail.com",
+          "annotations": {
+            "workers/message": "Automatic deployment on upload.",
+            "workers/triggered_by": "upload"
+          },
+          "versions": [
+            {
+              "version_id": "f21a03b1-c468-42a9-9000-27dbaea4d2fe",
+              "percentage": 100
+            }
+          ],
+          "created_on": "2026-09-04T16:40:21.778045Z"
+        }
+      ]
+    },
+    "success": true,
+    "errors": [],
+    "messages": [],
+    "result_info": {
+      "page": 1,
+      "per_page": 10,
+      "count": 4,
+      "total_count": 4,
+      "total_pages": 1
+    }
+  },
+  "settings": {
+    "bindings": [
+      {
+        "name": "AGENT_SERVICE",
+        "type": "service",
+        "service": "dodash-paper-agent"
+      },
+      {
+        "name": "CONTROL_API_TOKEN",
+        "type": "secret_text"
+      },
+      {
+        "name": "DASHBOARD_ACCESS_TOKEN",
+        "type": "secret_text"
+      }
+    ],
+    "observability": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "redact_query_string": false,
+      "logs": {
+        "enabled": true,
+        "head_sampling_rate": 1,
+        "persist": true,
+        "invocation_logs": true
+      },
+      "traces": {
+        "enabled": false,
+        "persist": true,
+        "head_sampling_rate": 1
+      }
+    }
+  }
+}

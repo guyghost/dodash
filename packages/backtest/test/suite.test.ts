@@ -248,6 +248,7 @@ describe("backtest suite", () => {
       {
         ...config,
         productId: dataset.productId,
+        intervalMs: 86_400_000,
         indicators: {
           ...config.indicators,
           volumeSpikeThreshold: config.indicators.volumeSpikeThreshold + 1,
@@ -373,7 +374,10 @@ describe("backtest suite", () => {
         (scenario) => scenario.diagnosticSamples === null,
       ),
     ).toBe(true);
-  });
+    // Timeout explicite : deux exécutions complètes de suite (8 replays
+    // Prolog) frôlent les 5 s par défaut — le runner CI plus lent bascule
+    // (échec observé sur 53e36ed après le bump vitest 4.1.11).
+  }, 30_000);
 
   it("capture les échantillons diagnostiques uniquement sur demande", async () => {
     const { dataset, config } = suiteFixture();

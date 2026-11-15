@@ -1,0 +1,18 @@
+{
+  "aligned-cycles-2026-09-28.json": "9c476c164ac35c621d06a59c59ce050435f44196027cd1a7965adc838e48fba9",
+  "campaign-cycles.json": "13b689636853a68226336bb86c64914ef605fb02bc518a85e6261b78a71c348b",
+  "coinbase-daily-candles.json": "4973b23e527b57581a7095d0583eed9a3664162aaa4c00fb0c857f8e12f7b94f",
+  "coinbase-hourly-candles.json": "88c7a3373027dae1ef4eacc7cb466725608e0ad1c8881622dca83065d710217e",
+  "dataset-totals.json": "978488f54ddedfcbefc201be51af070667836ee488a009250f8e2ef5ab091e8c",
+  "deploy-2026-09-28.json": "1127896008d7e0833657695829c5830af82df6a625a42fc15f5289b1b8092db7",
+  "deployed-source-provenance.json": "f7d850e68eaae5cbbfb4b5fb3c22e5ef3e4f8cebfbe68bfd47715de8b28d0fb2",
+  "dodash-paper-agent.json": "38968549029d5243feda532bddbc783a27c56fd80bd4146ffbc917e0a6f27ed3",
+  "dodash-paper-dashboard-api.json": "baf0a4b4001ed5777760e024c9d4eb52d32fdeef982d8c75d076fbeeef488b62",
+  "dodash-paper-dashboard.json": "5f7e2e9027160596cea105a041c36ed16661b0a51b84933b0b4d58976e3dc449",
+  "dodash-paper-mcp-market-data.json": "5790c26bdab9c7aa6e8d7af4aa27b58faba62c2efdb1a994aa9c8e41afcb1cab",
+  "first-aligned-cycle-2026-09-28.json": "fec76820376c2a3eaf86275a6a02ed70c6878f8c7053b56ed90e37aa0770660e",
+  "first-wake-tail-2026-09-28.json": "df8624766d868ba31762eb46edba2323efd99878823fc9f22e0460e2c12b7159",
+  "mtm-estimate.json": "22db0cdb65f57dd28b7efaae4f1741ec97379501cf49c9a75944e3793f6d6b6b",
+  "non-cycle-events.json": "3f4404063398eeeab1f88388f9f8a7b938aa7dd44e6d717668cc307f71b0e849",
+  "summary.json": "e4f9ff3e8ce0ba7d4ecb6fc63c611a29be694fbd69065799822d714fba2de85c"
+}

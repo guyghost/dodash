@@ -52,3 +52,27 @@ notionnel demandé.
 Cette donnée supplémentaire reste une intention calculée au close primaire. Sa
 présence n'autorise aucune transition live et ne doit pas être activée dans les
 artefacts généraux pour lesquels les distributions agrégées suffisent.
+
+## Revue de l'évaluation v2
+
+La distinction primaire/contextuel répond à un biais observé : un excess
+positif dans un benchmark baissier a été lu comme une performance alors qu'il
+mesure une sous-exposition. La rétrogradation empêche la régression : tout
+rapport qui présente l'excess sans le régime calculé est invalide.
+
+Le seuil de régime à zéro est volontairement minimal : il sépare un
+benchmark qui gagne d'un benchmark qui perd sur la fenêtre, sans introduire
+une convention de marché discutable (±10 %, moyennes mobiles). Un élargissement
+ultérieur du régime (range, sévérité) reste possible mais doit être un nouvel
+amendement du modèle, pas un paramètre du lecteur.
+
+Le win rate liquidatif garde la définition INV-26 de `backtest-run.md` : une
+seule position terminale synthétique, marquée au dernier close, avant coûts de
+sortie. La lecture legacy (`null`) n'approxime jamais la valeur absente par le
+win rate par fills — les deux dénominateurs diffèrent précisément sur les
+positions latentes qui ont motivé INV-26.
+
+Le recalcul du régime depuis le benchmark de l'artefact évite deux pièges :
+un régime déclaré à la main dans un rapport, et une valeur héritée d'un champ
+que l'artefact ne porte pas. Si l'artefact ne porte pas de benchmark, la
+relecture échoue explicitement au lieu de produire un excess sans régime.

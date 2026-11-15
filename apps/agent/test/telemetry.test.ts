@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  brokerRejectionCodeOf,
   emitTradingTelemetry,
+  projectMissedDecisionTelemetry,
   type TradingTelemetryEvent,
 } from "../src/telemetry.js";
 
 const event = (): TradingTelemetryEvent => ({
-  schemaVersion: 1,
+  schemaVersion: 3,
   type: "cycle.completed",
   timestamp: 100,
   agentId: "grt-usd--multi",
@@ -15,16 +17,48 @@ const event = (): TradingTelemetryEvent => ({
   phase: "waiting",
   outcome: "ORDER_CONFIRMED",
   errorCode: null,
+  brokerRejectionCode: null,
   latencyMs: 25,
   dailyPnl: -10,
   accountEquity: 990,
   positionQuantity: 5,
   otherExposureNotional: 0,
+  valuationQuality: "not_applicable",
+  valuationPriceSource: "NONE",
+  valuationPrice: null,
+  valuationObservedAt: null,
+  valuationAgeMs: null,
+  consolidatedExposureNotional: null,
+  exposureQuality: "not_applicable",
   executionObserved: true,
   openOrderCount: null,
 });
 
 describe("trading telemetry", () => {
+  it("appends admission identity and timestamps within the 20-double limit", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    emitTradingTelemetry(sink, {
+      ...event(), schemaVersion: 4, cycleId: "cycle-a", triggeredAt: 100,
+      decisionAdmissionStatus: "ADMITTED", decisionCandleClosedAt: 90, decisionEvaluatedAt: 105,
+    }, logger);
+    const point = sink.writeDataPoint.mock.calls[0]?.[0];
+    expect(point.blobs.slice(10)).toEqual(["cycle-a", "100", "ADMITTED"]);
+    expect(point.doubles.slice(18)).toEqual([90, 105]);
+    expect(point.doubles).toHaveLength(20);
+  });
+
+  it("attributes a missed decision to its original close across midnight", () => {
+    const missed = projectMissedDecisionTelemetry({
+      ...event(), schemaVersion: 4, cycleId: "cycle-old", triggeredAt: 100,
+      decisionAdmissionStatus: "UNOBSERVED", decisionCandleClosedAt: null, decisionEvaluatedAt: null,
+    }, 86_400_100, 0);
+    expect(missed.decisionCandleClosedAt).toBe(0);
+    expect(missed.triggeredAt).toBe(100);
+    expect(missed.decisionEvaluatedAt).toBeNull();
+    expect(missed.decisionAdmissionStatus).toBe("MISSED");
+  });
+
   it("writes one structured log and one fixed Analytics Engine point", () => {
     const sink = { writeDataPoint: vi.fn() };
     const logger = { log: vi.fn(), error: vi.fn() };
@@ -44,9 +78,107 @@ describe("trading telemetry", () => {
         "waiting",
         "ORDER_CONFIRMED",
         "NONE",
+        "NONE",
+        "not_applicable",
+        "NONE",
+        "not_applicable",
       ],
-      doubles: [100, 25, -10, 990, 5, 0, 1, 0, 1, 1],
+      doubles: [100, 25, -10, 990, 5, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
     });
+  });
+
+  it("projette le code fin des refus broker en blob7 sans surcharger blob6 (dao #47)", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    emitTradingTelemetry(
+      sink,
+      {
+        ...event(),
+        outcome: "ORDER_REJECTED",
+        errorCode: "ORDER_REJECTED",
+        brokerRejectionCode: "INSUFFICIENT_CASH",
+      },
+      logger,
+    );
+
+    expect(sink.writeDataPoint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blobs: expect.arrayContaining([
+          "cycle.completed",
+          "GRT-USD",
+          "live",
+          "waiting",
+          "ORDER_REJECTED",
+          "ORDER_REJECTED",
+          "INSUFFICIENT_CASH",
+        ]),
+      }),
+    );
+  });
+
+  it("ajoute les marques paper après les positions Analytics Engine figées", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    emitTradingTelemetry(
+      sink,
+      {
+        ...event(),
+        executionMode: "paper",
+        valuationQuality: "fresh",
+        valuationPriceSource: "COINBASE_CANDLE_CLOSE",
+        valuationPrice: 62_000,
+        valuationObservedAt: 90,
+        valuationAgeMs: 10,
+        consolidatedExposureNotional: 61_000,
+        exposureQuality: "fresh",
+      },
+      logger,
+    );
+    const point = sink.writeDataPoint.mock.calls[0]?.[0];
+    expect(point?.blobs.slice(0, 7)).toEqual([
+      "cycle.completed",
+      "GRT-USD",
+      "paper",
+      "waiting",
+      "ORDER_CONFIRMED",
+      "NONE",
+      "NONE",
+    ]);
+    expect(point?.blobs.slice(7)).toEqual([
+      "fresh",
+      "COINBASE_CANDLE_CLOSE",
+      "fresh",
+    ]);
+    expect(point?.doubles).toEqual([
+      100, 25, -10, 990, 5, 0, 1, 0, 1, 1,
+      62_000, 90, 10, 61_000, 1, 1, 1, 1,
+    ]);
+  });
+
+  it("n'extrait le code fin que d'un refus ORDER_REJECTED porteur d'un détail (dao #47)", () => {
+    expect(
+      brokerRejectionCodeOf({
+        phase: "execution",
+        code: "ORDER_REJECTED",
+        retryable: false,
+        detail: "INSUFFICIENT_POSITION",
+      }),
+    ).toBe("INSUFFICIENT_POSITION");
+    expect(
+      brokerRejectionCodeOf({
+        phase: "execution",
+        code: "ORDER_REJECTED",
+        retryable: false,
+      }),
+    ).toBeNull();
+    expect(
+      brokerRejectionCodeOf({
+        phase: "market-data",
+        code: "RATE_LIMITED",
+        retryable: true,
+      }),
+    ).toBeNull();
+    expect(brokerRejectionCodeOf(null)).toBeNull();
   });
 
   it("logs sink failure without throwing into the trading workflow", () => {
@@ -63,5 +195,69 @@ describe("trading telemetry", () => {
       ),
     ).not.toThrow();
     expect(logger.error).toHaveBeenCalledOnce();
+  });
+
+  it.each(["unavailable", "fresh"] as const)(
+    "preserves %s valuation metadata and AE presence when projecting a missed decision",
+    (quality) => {
+      const cycleEvent: TradingTelemetryEvent = {
+        ...event(),
+        executionMode: "paper",
+        valuationQuality: quality,
+        valuationPriceSource: quality === "fresh" ? "COINBASE_CANDLE_CLOSE" : "NONE",
+        valuationPrice: quality === "fresh" ? 12 : null,
+        valuationObservedAt: quality === "fresh" ? 90 : null,
+        valuationAgeMs: quality === "fresh" ? 10 : null,
+      };
+      const missed = projectMissedDecisionTelemetry(cycleEvent, 200, 0);
+      expect(missed).toEqual({
+        ...cycleEvent,
+        type: "decision.missed",
+        timestamp: 200,
+        outcome: "DECISION_WINDOW_MISSED",
+      });
+      const sink = { writeDataPoint: vi.fn() };
+      const logger = { log: vi.fn(), error: vi.fn() };
+      emitTradingTelemetry(sink, cycleEvent, logger);
+      emitTradingTelemetry(sink, missed, logger);
+      const points = sink.writeDataPoint.mock.calls.map(([point]) => point);
+      expect(points[1].doubles.slice(1)).toEqual(points[0].doubles.slice(1));
+    },
+  );
+
+  it("projects decision.missed on the same positional layout (amendment 2026-09-28)", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    const logger = { log: vi.fn(), error: vi.fn() };
+    emitTradingTelemetry(
+      sink,
+      { ...event(), type: "decision.missed", outcome: "DECISION_WINDOW_MISSED", errorCode: "RATE_LIMITED" },
+      logger,
+    );
+    const point = sink.writeDataPoint.mock.calls[0]?.[0] as { blobs: readonly string[] };
+    expect(point.blobs.slice(0, 6)).toEqual([
+      "decision.missed",
+      "GRT-USD",
+      "live",
+      "waiting",
+      "DECISION_WINDOW_MISSED",
+      "RATE_LIMITED",
+    ]);
+  });
+
+  it("projects decision.missed with MARKET_SOURCES_EXHAUSTED when both venues are down", () => {
+    const sink = { writeDataPoint: vi.fn() };
+    emitTradingTelemetry(
+      sink,
+      {
+        ...event(),
+        type: "decision.missed",
+        outcome: "DECISION_WINDOW_MISSED",
+        errorCode: "MARKET_SOURCES_EXHAUSTED",
+      },
+    );
+    const point = sink.writeDataPoint.mock.calls[0]?.[0] as { blobs: readonly string[] };
+    expect(point.blobs[0]).toBe("decision.missed");
+    expect(point.blobs[4]).toBe("DECISION_WINDOW_MISSED");
+    expect(point.blobs[5]).toBe("MARKET_SOURCES_EXHAUSTED");
   });
 });

@@ -1,0 +1,1840 @@
+{
+  "fetchedAt": "2026-09-26T08:51:11.696805+00:00",
+  "sql": "SELECT timestamp, blob1 AS event, blob2 AS product, blob5 AS outcome, double1 AS ts, double4 AS equity, double5 AS position FROM dodash_paper_trading WHERE index1 = 'btc-usd-paper' AND double1 >= 1789776000000 AND double1 < 1789866000000 ORDER BY ts DESC LIMIT 200",
+  "result": {
+    "meta": [
+      {
+        "name": "timestamp",
+        "type": "DateTime"
+      },
+      {
+        "name": "event",
+        "type": "String"
+      },
+      {
+        "name": "product",
+        "type": "String"
+      },
+      {
+        "name": "outcome",
+        "type": "String"
+      },
+      {
+        "name": "ts",
+        "type": "Float64"
+      },
+      {
+        "name": "equity",
+        "type": "Float64"
+      },
+      {
+        "name": "position",
+        "type": "Float64"
+      }
+    ],
+    "data": [
+      {
+        "timestamp": "2026-09-20 00:55:27",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789865726595,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-20 00:55:25",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789865725838,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 23:55:25",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789862125866,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 23:55:25",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789862125344,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 22:55:24",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789858524452,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 22:55:23",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789858523832,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 21:55:24",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789854923993,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 21:55:23",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789854923306,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 20:55:22",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789851322816,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 20:55:22",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789851322239,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 19:55:19",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789847719471,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 19:55:18",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789847718670,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 18:55:17",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789844117546,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 18:55:16",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789844116782,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 17:55:01",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "ts": 1789840501445,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 17:55:00",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789840500625,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 16:54:59",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "ts": 1789836899123,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 16:54:58",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "ts": 1789836898495,
+        "equity": 10000,
+        "position": 0
+      },
+      {
+        "timestamp": "2026-09-19 15:54:46",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "CANCELLED",
+        "ts": 1789833286138,
+        "equity": 0,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:54:46",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "CANCELLED",
+        "ts": 1789833286138,
+        "equity": 0,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:54:27",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833266433,
+        "equity": 10077.698468330145,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:54:25",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833265374,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:53:26",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833205637,
+        "equity": 10077.698468330145,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:53:24",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833204413,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:52:25",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833144196,
+        "equity": 10077.698468330145,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:52:23",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833143275,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:51:24",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833083751,
+        "equity": 10077.698468330145,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:51:22",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833082476,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:50:22",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833022309,
+        "equity": 10077.698468330145,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:50:21",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789833021333,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:49:22",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832961373,
+        "equity": 10077.698468330145,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:49:20",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832960377,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:48:20",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832900381,
+        "equity": 10077.698468330145,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:48:19",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832899340,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:47:20",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789832839801,
+        "equity": 10077.445098797964,
+        "position": 0.146344598046789
+      },
+      {
+        "timestamp": "2026-09-19 15:47:18",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832838382,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:46:18",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "ts": 1789832778115,
+        "equity": 10077.445098797964,
+        "position": 0.150829070096479
+      },
+      {
+        "timestamp": "2026-09-19 15:46:17",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "ts": 1789832777578,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:45:18",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789832717610,
+        "equity": 10077.049465347714,
+        "position": 0.150829070096479
+      },
+      {
+        "timestamp": "2026-09-19 15:45:16",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789832716379,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:44:18",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789832656661,
+        "equity": 10076.640671150017,
+        "position": 0.15743875670616586
+      },
+      {
+        "timestamp": "2026-09-19 15:44:15",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789832655542,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:43:16",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789832595502,
+        "equity": 10076.162398232578,
+        "position": 0.16436778896423074
+      },
+      {
+        "timestamp": "2026-09-19 15:43:14",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789832594354,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:42:14",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789832534286,
+        "equity": 10075.845708409655,
+        "position": 0.17235010439309834
+      },
+      {
+        "timestamp": "2026-09-19 15:42:13",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789832533312,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:41:15",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789832473412,
+        "equity": 10075.845708409655,
+        "position": 0.1777453870725889
+      },
+      {
+        "timestamp": "2026-09-19 15:41:12",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789832472298,
+        "equity": 9328.647552040218,
+        "position": 0.00012934884269536991
+      },
+      {
+        "timestamp": "2026-09-19 15:40:12",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832412205,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:40:11",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832410300,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:39:12",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832350671,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:39:09",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832349481,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:38:10",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832289328,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:38:08",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832288286,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:37:08",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832228463,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:37:07",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832227305,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:36:09",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832167455,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:36:06",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832166395,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:35:08",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832106677,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:35:05",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832105383,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:34:07",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832045524,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:34:04",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789832044291,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:33:04",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831984116,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:33:03",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831982252,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:32:04",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831922589,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:32:01",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831921379,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:31:01",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "ts": 1789831861272,
+        "equity": 10075.845708409655,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:31:00",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "ts": 1789831860657,
+        "equity": 9328.647552040218,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:30:02",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789831800730,
+        "equity": 10075.845412014689,
+        "position": 0.17774286940557188
+      },
+      {
+        "timestamp": "2026-09-19 15:29:59",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789831799385,
+        "equity": 9328.646461210168,
+        "position": 0.00012461388924696755
+      },
+      {
+        "timestamp": "2026-09-19 15:29:00",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831739284,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:28:58",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831738266,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:27:59",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831678522,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:27:57",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831677326,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:26:59",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831617552,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:26:56",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831616366,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:25:57",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831556474,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:25:55",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831555393,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:24:56",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831495338,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:24:54",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831494396,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:23:56",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831434426,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:23:53",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831433317,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:22:55",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831373697,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:22:52",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831372419,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:21:53",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831312226,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:21:51",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831310308,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:20:52",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831250402,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:20:49",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831249352,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:19:51",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831189210,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:19:48",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831188357,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:18:49",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831128149,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:18:47",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831127329,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:17:49",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831067556,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:17:46",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831066389,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:16:48",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831006697,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:16:46",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789831005397,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:15:45",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "ts": 1789830945133,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:15:44",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "ts": 1789830944580,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:14:46",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830884446,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:14:43",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830883345,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:13:45",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830823656,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:13:42",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830822430,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:12:45",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830762796,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:12:42",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830760502,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:11:42",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830700252,
+        "equity": 10075.845412014689,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:11:39",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830699321,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:10:39",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789830639415,
+        "equity": 10075.531739678874,
+        "position": 0.1777490089087269
+      },
+      {
+        "timestamp": "2026-09-19 15:10:38",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830637462,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:09:39",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789830577384,
+        "equity": 10075.206020897283,
+        "position": 0.18346030597985752
+      },
+      {
+        "timestamp": "2026-09-19 15:09:36",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830576404,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:08:38",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789830516643,
+        "equity": 10074.948695711828,
+        "position": 0.18948743776280422
+      },
+      {
+        "timestamp": "2026-09-19 15:08:35",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830515286,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:07:37",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789830455675,
+        "equity": 10074.682078130669,
+        "position": 0.19417618683902838
+      },
+      {
+        "timestamp": "2026-09-19 15:07:34",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830454387,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:06:36",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789830394931,
+        "equity": 10074.41214035299,
+        "position": 0.19908249007582574
+      },
+      {
+        "timestamp": "2026-09-19 15:06:33",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830393372,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:05:36",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830333961,
+        "equity": 10074.41214035299,
+        "position": 0.20406363011122167
+      },
+      {
+        "timestamp": "2026-09-19 15:05:33",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830332312,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:04:32",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789830272214,
+        "equity": 10074.41214035299,
+        "position": 0.20406363011122167
+      },
+      {
+        "timestamp": "2026-09-19 15:04:31",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789830271275,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:03:32",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830211541,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 15:03:30",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830210265,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:02:31",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830150984,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 15:02:30",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789830149406,
+        "equity": 9328.646461210168,
+        "position": 0.0001299318082119603
+      },
+      {
+        "timestamp": "2026-09-19 15:01:31",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830089477,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 15:01:28",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830088283,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 15:00:28",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "ts": 1789830028797,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 15:00:27",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789830027366,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:59:27",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829967302,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:59:26",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829966382,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:58:26",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829906200,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:58:25",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829905355,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:57:26",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829845589,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:57:24",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829844383,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:56:25",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829784932,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:56:24",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829783318,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:55:25",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829723672,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:55:22",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829722385,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:54:23",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829662357,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:54:21",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829661385,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:53:22",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829601523,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:53:20",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829600352,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:52:22",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829540499,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:52:19",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829539445,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:51:20",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829479423,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:51:18",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829478299,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:50:18",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "ts": 1789829418907,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:50:17",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829417367,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:49:18",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829357775,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:49:17",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829356361,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:48:19",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829296415,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:48:15",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829295390,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:47:16",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829235504,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:47:14",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829234384,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:46:15",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829174756,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:46:14",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829173366,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:45:15",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829113679,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:45:12",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829112403,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:44:13",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829052740,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:44:11",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789829051350,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:43:12",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828991778,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:43:11",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828990359,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:42:11",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828930339,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:42:09",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828929355,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:41:11",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828869642,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:41:08",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828868320,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:40:08",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828808553,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:40:07",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828807373,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:39:07",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789828747094,
+        "equity": 10074.41214035299,
+        "position": 0.20405904884292972
+      },
+      {
+        "timestamp": "2026-09-19 14:39:06",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828746299,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:38:06",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828686314,
+        "equity": 10074.41214035299,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:38:05",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828685427,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:37:05",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828625266,
+        "equity": 10074.41214035299,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:37:04",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828624330,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:36:04",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828564234,
+        "equity": 10074.41214035299,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:36:03",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "ts": 1789828563617,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:35:03",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828503172,
+        "equity": 10074.41214035299,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:35:02",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "ts": 1789828502600,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:34:04",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828442658,
+        "equity": 10074.41214035299,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:34:01",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828441454,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:33:02",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828381930,
+        "equity": 10074.41214035299,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:33:01",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789828380373,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:32:03",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828320675,
+        "equity": 10074.41214035299,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:31:59",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828319367,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:30:59",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "ts": 1789828259355,
+        "equity": 10074.41214035299,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:30:58",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "ts": 1789828258716,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:29:59",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789828198276,
+        "equity": 10074.118782001826,
+        "position": 0.19981965607644905
+      },
+      {
+        "timestamp": "2026-09-19 14:29:57",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789828197313,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:28:57",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789828137454,
+        "equity": 10073.815688557528,
+        "position": 0.20522991248670538
+      },
+      {
+        "timestamp": "2026-09-19 14:28:56",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789828136400,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:27:57",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789828076443,
+        "equity": 10073.464499269547,
+        "position": 0.21083727444989547
+      },
+      {
+        "timestamp": "2026-09-19 14:27:55",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "ts": 1789828075372,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:26:57",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828015891,
+        "equity": 10073.464499269547,
+        "position": 0.21730097468408785
+      },
+      {
+        "timestamp": "2026-09-19 14:26:55",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789828014358,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:25:55",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789827954382,
+        "equity": 10073.464499269547,
+        "position": 0.21730097468408785
+      },
+      {
+        "timestamp": "2026-09-19 14:25:53",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789827953416,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:24:53",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "ts": 1789827893259,
+        "equity": 10073.232407671503,
+        "position": 0.21730097468408785
+      },
+      {
+        "timestamp": "2026-09-19 14:24:52",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789827892350,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      },
+      {
+        "timestamp": "2026-09-19 14:23:54",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789827832368,
+        "equity": 10073.232407671503,
+        "position": 0.22155311143622455
+      },
+      {
+        "timestamp": "2026-09-19 14:23:51",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "ts": 1789827831260,
+        "equity": 9328.646461210168,
+        "position": 0.00012888523868671582
+      }
+    ],
+    "rows": 200,
+    "rows_before_limit_at_least": 1902
+  }
+}

@@ -22,6 +22,7 @@ describe("Agent Worker live preflight route", () => {
           liveTradingDisabled: true,
           credentialsConfigured: true,
           telemetryConfigured: true,
+          operatorNotificationsConfigured: true,
           keyCanView: true,
           keyCanTrade: true,
           keyCanTransfer: false,
@@ -60,6 +61,164 @@ describe("Agent Worker live preflight route", () => {
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
       report: { assessment: { status: "APPROVED" } },
+    });
+  });
+
+  it("routes an authenticated portfolio summary read and fails closed on projection error", async () => {
+    const summary = {
+      ok: true as const,
+      value: {
+        kind: "portfolio" as const,
+        phase: "running",
+        killSwitchActive: false,
+        products: [
+          {
+            productId: "BTC-USD",
+            phase: "waiting",
+            status: "running",
+            cash: 9_800,
+            positionQuantity: 0.1,
+            averagePrice: 60_000,
+            marketPrice: 62_000,
+            grossExposure: 6_200,
+            maxGrossExposure: 20_000,
+            dailyPnl: 42.5,
+            lastCycle: null,
+          },
+        ],
+        consolidated: {
+          grossExposure: 6_200,
+          maxGrossExposure: 30_000,
+          dailyPnl: 42.5,
+          maxDailyLoss: 1_500,
+        },
+      },
+    };
+    const getPortfolioSummary = vi.fn(() => summary);
+    const env = {
+      CONTROL_API_TOKEN: token,
+      TRADING_AGENT: { getByName: () => ({ getPortfolioSummary }) },
+    } as unknown as TradingEnv;
+    const response = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/portfolio", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(getPortfolioSummary).toHaveBeenCalledOnce();
+    await expect(response.json()).resolves.toEqual(summary);
+
+    const failing = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/portfolio", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      {
+        ...env,
+        TRADING_AGENT: {
+          getByName: () => ({
+            getPortfolioSummary: () => ({
+              ok: false as const,
+              error: { code: "INVALID_PORTFOLIO_SESSION" },
+            }),
+          }),
+        },
+      } as unknown as TradingEnv,
+    );
+    expect(failing.status).toBe(500);
+    await expect(failing.json()).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_PORTFOLIO_SESSION" },
+    });
+  });
+
+  it("routes an authenticated state read carrying the portfolio hierarchy", async () => {
+    const portfolioSummary = {
+      ok: true as const,
+      value: { kind: "single-product" as const },
+    };
+    const getAgentState = vi.fn(() => ({
+      version: 1 as const,
+      enabled: false,
+      updatedAt: 0,
+      portfolioSummary,
+    }));
+    const env = {
+      CONTROL_API_TOKEN: token,
+      TRADING_AGENT: { getByName: () => ({ getAgentState }) },
+    } as unknown as TradingEnv;
+    const response = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/state", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(getAgentState).toHaveBeenCalledOnce();
+    await expect(response.json()).resolves.toMatchObject({
+      portfolioSummary: { ok: true, value: { kind: "single-product" } },
+    });
+  });
+
+  it("rejects an unauthenticated portfolio read before touching the Agent", async () => {
+    const getPortfolioSummary = vi.fn();
+    const env = {
+      CONTROL_API_TOKEN: token,
+      TRADING_AGENT: { getByName: () => ({ getPortfolioSummary }) },
+    } as unknown as TradingEnv;
+    const response = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/portfolio"),
+      env,
+    );
+    expect(response.status).toBe(401);
+    expect(getPortfolioSummary).not.toHaveBeenCalled();
+  });
+
+  it("routes an authenticated pnl read and fails closed on projection error", async () => {
+    const history = {
+      ok: true as const,
+      value: {
+        equityCurve: [],
+        cycles: [],
+        openPosition: null,
+        protection: null,
+      },
+    };
+    const getPnlHistory = vi.fn(() => history);
+    const env = {
+      CONTROL_API_TOKEN: token,
+      TRADING_AGENT: { getByName: () => ({ getPnlHistory }) },
+    } as unknown as TradingEnv;
+    const response = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/pnl?limit=30", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    );
+    expect(response.status).toBe(200);
+    expect(getPnlHistory).toHaveBeenCalledWith(30);
+    await expect(response.json()).resolves.toEqual(history);
+
+    const failing = await handleWorkerRequest(
+      new Request("https://agent.test/api/agents/btc-usd--multi/pnl?limit=30", {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      {
+        ...env,
+        TRADING_AGENT: {
+          getByName: () => ({
+            getPnlHistory: () => ({
+              ok: false as const,
+              error: { code: "INVALID_ARTIFACTS_JSON" },
+            }),
+          }),
+        },
+      } as unknown as TradingEnv,
+    );
+    expect(failing.status).toBe(500);
+    await expect(failing.json()).resolves.toMatchObject({
+      ok: false,
+      error: { code: "INVALID_ARTIFACTS_JSON" },
     });
   });
 

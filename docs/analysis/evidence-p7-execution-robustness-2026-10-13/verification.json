@@ -1,0 +1,11 @@
+{
+  "deterministicScenarios": 6,
+  "identicalTrajectoryBytes": true,
+  "summaryIdenticalExceptCreatedAt": true,
+  "originalSha256Verified": true,
+  "feeSlippageSumsVerified": true,
+  "causalFillDatesVerified": true,
+  "uniqueIntentPerProductDayVerified": true,
+  "nonnegativeFinalPortfoliosVerified": true,
+  "referenceMatchesExistingCoherenceTest": true
+}

@@ -1,0 +1,86 @@
+{
+  "expectedProductWindows": 12,
+  "compatibleObserved": 12,
+  "observationRate": 1.0,
+  "windows": [
+    {
+      "product": "BTC-USD",
+      "closeUtc": "2026-10-08T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "ETH-USD",
+      "closeUtc": "2026-10-08T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "BTC-USD",
+      "closeUtc": "2026-10-09T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "ETH-USD",
+      "closeUtc": "2026-10-09T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "BTC-USD",
+      "closeUtc": "2026-10-10T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "ETH-USD",
+      "closeUtc": "2026-10-10T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "BTC-USD",
+      "closeUtc": "2026-10-11T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "ETH-USD",
+      "closeUtc": "2026-10-11T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "BTC-USD",
+      "closeUtc": "2026-10-12T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "ETH-USD",
+      "closeUtc": "2026-10-12T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "BTC-USD",
+      "closeUtc": "2026-10-13T00:00:00+00:00",
+      "status": "compatible-observed"
+    },
+    {
+      "product": "ETH-USD",
+      "closeUtc": "2026-10-13T00:00:00+00:00",
+      "status": "compatible-observed"
+    }
+  ],
+  "sampledRows": 2,
+  "decisionMissedEvents": 1,
+  "cycleOutcomes": {
+    "BTC-USD:FAILED:RATE_LIMITED": 25,
+    "ETH-USD:FAILED:RATE_LIMITED": 47,
+    "BTC-USD:RUNNING:RATE_LIMITED": 7,
+    "ETH-USD:RUNNING:RATE_LIMITED": 10,
+    "BTC-USD:NO_ACTION:RATE_LIMITED": 4,
+    "ETH-USD:NO_ACTION:RATE_LIMITED": 2,
+    "BTC-USD:NO_ACTION:NONE": 72,
+    "ETH-USD:NO_ACTION:NONE": 55,
+    "ETH-USD:FAILED:STALE_MARKET_DATA": 32,
+    "BTC-USD:FAILED:STALE_MARKET_DATA": 38,
+    "ETH-USD:ORDER_CONFIRMED:RATE_LIMITED": 4,
+    "BTC-USD:CANCELLED:RATE_LIMITED": 1,
+    "ETH-USD:CANCELLED:NONE": 1,
+    "BTC-USD:NO_ACTION:STALE_MARKET_DATA": 1,
+    "BTC-USD:ORDER_CONFIRMED:NONE": 1
+  }
+}

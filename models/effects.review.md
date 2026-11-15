@@ -2,7 +2,7 @@
 
 | Effet | Nominal | Erreur | Annulation / retry |
 | --- | --- | --- | --- |
-| MCP marché | réponse validée | rate-limit, réseau, schéma | retry borné par la machine |
+| MCP marché | réponse validée | rate-limit, réseau, schéma, refus d'auth (401/403) | retry borné par la machine ; auth non retryable |
 | JWT | token court en mémoire | clé/claim invalide | régénération bornée |
 | Ordre Coinbase | confirmation explicite | rejet ou issue inconnue | même id client ; réconciliation obligatoire |
 | SQLite Agent | état/issue persisté | échec de stockage | bloque le rescheduling |
@@ -21,6 +21,7 @@
 | Série absente ou mal formée | erreur typée ; aucun calcul métier | Couvert, fermé |
 | Réponse trop ancienne ou future malgré la borne | la machine refuse la fraîcheur et borne les retries | Couvert |
 | `429` ou panne réseau | `MARKET_DATA_FAILED`, retry selon le code typé | Couvert |
+| Secret partagé incorrect (`401`/`403` du binding) ou secret interne trop court | `AUTHENTICATION_FAILURE` non retryable, jamais `NETWORK_UNAVAILABLE` | Couvert |
 | Stop, kill ou permission révoquée pendant l'effet | la machine dirige vers annulation/persistance | Inchangé, couvert par `tradingCycleMachine` |
 | Retry épuisé ou état terminal | persistance puis `NO_ACTION`/`failed`, aucune transition implicite | Inchangé, couvert |
 
@@ -28,3 +29,17 @@ Avis : la borne inclusive est déterministe pour chaque timeframe, ne dépend
 d'aucun texte libre et ne déplace aucune décision d'état hors de la machine.
 
 Les secrets ne figurent ni dans la configuration versionnée, ni dans les logs. Les bindings sont générés par Wrangler. Aucun adapter ne contient de logique de stratégie, allocation, risque ou transition d’état.
+
+## Revue — amendement 2026-09-28
+
+Verdict : **APPROUVÉ**. Le TTL long ne concerne que des données immuables
+identifiées par leurs bornes ; le ticker garde son TTL court. `Retry-After` est
+un champ diagnostic au même titre que `detail`. La qualification de
+retryabilité reste dans l'adapter et s'appuie sur le planificateur pur.
+
+## Revue de l'amendement du 2026-10-07 (journal par requête marché)
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**. Log structuré
+`coinbase_market_request` de diagnostic uniquement (API publique, sans clé ni
+secret) ; aucune garde, aucun cache ni retry ne le lit. `retryAfterRaw` est
+borné à 64 caractères.

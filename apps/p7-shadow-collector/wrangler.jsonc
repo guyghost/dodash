@@ -1,0 +1,17 @@
+{
+	"name": "p7-shadow-collector-local-preparation",
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-08-20",
+	"workers_dev": false,
+	"preview_urls": false,
+	"vars": { "LOCAL_FIXTURES_ENABLED": "false", "PROSPECTIVE_ENABLED": "false" },
+	"durable_objects": {
+		"bindings": [{ "name": "CAMPAIGNS", "class_name": "P7Campaign" }]
+	},
+	"migrations": [
+		{ "tag": "v1-local-preparation", "new_sqlite_classes": ["P7Campaign"] }
+	],
+	"r2_buckets": [
+		{ "binding": "ARCHIVE", "bucket_name": "p7-shadow-not-provisioned" }
+	]
+}

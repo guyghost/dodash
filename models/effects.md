@@ -9,7 +9,16 @@ Entrée fermée : produit, timeframe, limite. Sortie : chandelles ou ticker vali
 - La réponse Coinbase est bornée (`limit ≤ 350`) avant lecture JSON.
 - Le cache utilise une clé déterministe et un TTL inférieur à la granularité.
 - Toute réponse non conforme devient `INVALID_RESPONSE`.
-- `429` devient `RATE_LIMITED`, les pannes réseau `NETWORK_UNAVAILABLE`.
+- `429` devient `RATE_LIMITED`, les pannes réseau `NETWORK_UNAVAILABLE`
+  (retryable uniquement si le statut est ≥ 500).
+- Les bougies de décision (amendement chairman 2026-11-14) sont lues chez
+  Hyperliquid puis dYdX. Coinbase n'est appelé que pour la quote
+  d'exécution, avant l'ordre. Les deux sources de décision épuisées
+  deviennent `MARKET_SOURCES_EXHAUSTED`.
+- Un refus d'authentification du worker marché (`401`/`403`) ainsi qu'un
+  secret interne absent ou trop court deviennent `AUTHENTICATION_FAILURE`
+  (non retryable) : un secret partagé incorrect n'est jamais une panne
+  réseau et n'appelle aucun retry.
 
 ### Fenêtre de chandelles d'un cycle
 
@@ -61,3 +70,26 @@ L’Agent conserve un état synchronisé compact. Les cycles, intentions, ordres
 - `scheduleEvery` est idempotent par instance `(paire × stratégie)`.
 - Le kill switch et les permissions passent par des méthodes RPC typées, qui envoient ensuite un événement au modèle.
 - Les clients ne modifient jamais directement l’état synchronisé de la machine.
+
+## Amendement 2026-09-28 — cache immuable, `Retry-After`, retryabilité à l'échéance
+
+- **Cache des chandelles closes.** Quand la fenêtre demandée est entièrement
+  close (`(end + D) ≤ now`), le snapshot est immuable : TTL
+  `CLOSED_WINDOW_CACHE_TTL_SECONDS = 21 600`. La règle « TTL inférieur à la
+  granularité » ne s'applique qu'aux fenêtres contenant la chandelle en cours.
+  La clé contient toujours les bornes : aucun mélange de fenêtres.
+- **`Retry-After`.** Le Worker marché journalise `coinbase_rate_limited`
+  (`kind`, `productId`, `retryAfterSeconds`) et renvoie l'en-tête `Retry-After`
+  sur ses réponses 429 internes quand Coinbase l'a fourni. L'agent le porte
+  dans `WorkflowError.retryAfterMs` (diagnostic optionnel ; aucune garde ne le lit).
+- **Journal par requête marché (amendement 2026-10-07).** Chaque lecture
+  `getCandles`/`getTicker` du Worker marché émet un log structuré
+  `coinbase_market_request` : `kind`, `productId`, `cached` (succès servi par
+  le cache), `status` (statut HTTP amont, `null` si cache ou erreur réseau),
+  `outcome` (`OK` ou code `MarketDataError`), `retryAfterRaw` (en-tête brut,
+  tronqué à 64 caractères, `null` si absent) et `latencyMs`. Diagnostic
+  uniquement : aucune garde, aucun cache ni retry ne le lit ; aucune donnée
+  sensible (API publique, sans clé).
+- **Retryabilité à l'échéance.** L'effet marché qualifie `retryable: false`
+  toute erreur retryable dont le premier retry planifié (`market-retry-schedule.md`)
+  ne pourrait aboutir avant `deadlineAt` : classification d'adapter, pas décision.

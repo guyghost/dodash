@@ -6,7 +6,29 @@ import {
   createHttpGateway,
   parseAgentState,
   parseCycles,
+  parsePnlHistory,
+  parsePortfolioSummary,
+  type PnlHistoryView,
+  type PortfolioSummaryView,
 } from "../src/dashboard-api.js";
+
+const markValuation = (
+  asOf: number,
+  equity: number | null,
+  markPrice: number | null,
+  exposureNotional = markPrice === null ? 0 : markPrice,
+) => ({
+  asOf,
+  equity,
+  exposureNotional,
+  exposureQuality: markPrice === null ? "fresh" : "fresh",
+  markPrice,
+  markSource: markPrice === null ? null : "COINBASE_CANDLE_CLOSE",
+  timeframe: markPrice === null ? null : "FIVE_MINUTE",
+  candleClosedAt: markPrice === null ? null : asOf - 10_000,
+  ageMs: markPrice === null ? null : 10_000,
+  quality: markPrice === null ? "unavailable" : "fresh",
+});
 
 const state = {
   version: 1,
@@ -33,6 +55,11 @@ const state = {
     signalCount: 1,
     completedAt: 1_700_000_000_000,
   },
+  portfolioSummary: { ok: true, value: { kind: "single-product" } },
+  paperValuation: {
+    ok: true,
+    value: markValuation(1_700_000_000_000, 9_620, 62_000, 620),
+  },
   previousIndicators: {
     snapshotId: "indicators-1",
     candleClosedAt: 1_700_000_000_000,
@@ -43,6 +70,255 @@ const state = {
     atr: 800,
   },
 };
+
+const pnlHistory = {
+  equityCurve: [
+    { t: 1_700_000_000_000, equity: 6_401.5, valuation: markValuation(1_700_000_000_000, 6_401.5, 60_000) },
+    { t: 1_700_000_300_000, equity: 6_501.5, valuation: markValuation(1_700_000_300_000, 6_501.5, 61_000) },
+  ],
+  cycles: [
+    {
+      cycleId: "cycle-2",
+      triggeredAt: 1_700_000_300_000,
+      completedAt: 1_700_000_304_000,
+      outcome: "ORDER_CONFIRMED",
+      marketPrice: 62_000,
+      valuation: markValuation(1_700_000_304_000, 1_619.5, 62_000),
+      side: "SELL",
+      quantity: 0.1,
+      fillPrice: 62_010,
+      fee: 2,
+      realizedPnl: 190.95,
+      slippageBps: 1.61,
+    },
+    {
+      cycleId: "cycle-1",
+      triggeredAt: 1_700_000_000_000,
+      completedAt: 1_700_000_004_000,
+      outcome: "ORDER_CONFIRMED",
+      marketPrice: 60_000,
+      valuation: markValuation(1_700_000_004_000, 6_401.5, 60_000),
+      side: "BUY",
+      quantity: 0.1,
+      fillPrice: 60_060,
+      fee: 1.5,
+      realizedPnl: null,
+      slippageBps: 10,
+    },
+  ],
+  openPosition: { quantity: 0.1, averagePrice: 60_098.5 },
+  protection: {
+    stopLossPrice: 58_000,
+    takeProfitPrice: 63_000,
+    protectiveOrderConfirmed: true,
+  },
+};
+
+const portfolioValue = {
+  kind: "portfolio",
+  phase: "running",
+  killSwitchActive: false,
+  asOf: 1_700_000_100_000,
+  products: [
+    {
+      productId: "BTC-USD",
+      phase: "waiting",
+      status: "running",
+      cash: 5_000,
+      positionQuantity: 0.1,
+      averagePrice: 60_000,
+      marketPrice: 62_000,
+      valuation: markValuation(1_700_000_100_000, 11_200, 62_000, 6_200),
+      grossExposure: 6_200,
+      exposureQuality: "fresh",
+      maxGrossExposure: 20_000,
+      dailyPnl: 42.5,
+      lastCycle: {
+        cycleId: "cycle-1",
+        triggeredAt: 1_700_000_000_000,
+        completedAt: 1_700_000_004_000,
+        outcome: "ORDER_CONFIRMED",
+        marketPrice: 62_000,
+      },
+    },
+    {
+      productId: "SOL-USD",
+      phase: "halted",
+      status: "halted",
+      cash: 1_000,
+      positionQuantity: 0,
+      averagePrice: 0,
+      marketPrice: null,
+      valuation: markValuation(1_700_000_100_000, 1_000, null),
+      grossExposure: 0,
+      exposureQuality: "fresh",
+      maxGrossExposure: 5_000,
+      dailyPnl: -10,
+      lastCycle: null,
+    },
+  ],
+  consolidated: {
+    equity: 12_200,
+    valuationQuality: "unavailable",
+    grossExposure: 6_200,
+    exposureQuality: "fresh",
+    maxGrossExposure: 30_000,
+    dailyPnl: 32.5,
+    maxDailyLoss: 1_500,
+  },
+};
+
+describe("portfolio summary boundary", () => {
+  it("projects a validated portfolio summary with a quiescent product", () => {
+    const view: PortfolioSummaryView = parsePortfolioSummary(portfolioValue);
+    expect(view.kind).toBe("portfolio");
+    if (view.kind !== "portfolio") return;
+    expect(view.products).toHaveLength(2);
+    expect(view.products[0]).toMatchObject({
+      productId: "BTC-USD",
+      grossExposure: 6_200,
+      lastCycle: { cycleId: "cycle-1", outcome: "ORDER_CONFIRMED" },
+    });
+    expect(view.products[1]).toMatchObject({ status: "halted", lastCycle: null });
+    expect(view.consolidated).toEqual({
+      equity: 12_200,
+      valuationQuality: "unavailable",
+      grossExposure: 6_200,
+      exposureQuality: "fresh",
+      maxGrossExposure: 30_000,
+      dailyPnl: 32.5,
+      maxDailyLoss: 1_500,
+    });
+  });
+
+  it("accepts a single-product answer for a mono-product agent", () => {
+    expect(parsePortfolioSummary({ kind: "single-product" })).toEqual({
+      kind: "single-product",
+    });
+  });
+
+  it("normalizes legacy portfolio summaries without provenance to unavailable marks", () => {
+    const { asOf: _asOf, ...legacyValue } = portfolioValue;
+    const parsed = parsePortfolioSummary({
+      ...legacyValue,
+      products: portfolioValue.products.map(({ valuation: _valuation, exposureQuality: _quality, ...product }) => product),
+      consolidated: {
+        grossExposure: portfolioValue.consolidated.grossExposure,
+        maxGrossExposure: portfolioValue.consolidated.maxGrossExposure,
+        dailyPnl: portfolioValue.consolidated.dailyPnl,
+        maxDailyLoss: portfolioValue.consolidated.maxDailyLoss,
+      },
+    });
+    if (parsed.kind !== "portfolio") throw new Error("expected portfolio");
+    expect(parsed.asOf).toBe(0);
+    expect(parsed.products[0]).toMatchObject({
+      marketPrice: null,
+      grossExposure: null,
+      exposureQuality: "unavailable",
+      valuation: { equity: null, quality: "unavailable" },
+    });
+    expect(parsed.consolidated).toMatchObject({
+      equity: null,
+      grossExposure: null,
+      valuationQuality: "unavailable",
+      exposureQuality: "unavailable",
+    });
+  });
+
+  it("rejects malformed portfolio records", () => {
+    expect(() => parsePortfolioSummary({ kind: "whatever" })).toThrow(
+      DashboardRequestError,
+    );
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        products: [
+          { ...portfolioValue.products[0], phase: "waitingHard" },
+        ],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        products: [{ ...portfolioValue.products[0], status: "paused" }],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        products: [{ ...portfolioValue.products[0], positionQuantity: -0.1 }],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        products: [{ ...portfolioValue.products[0], lastCycle: { cycleId: "c" } }],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePortfolioSummary({
+        ...portfolioValue,
+        consolidated: { ...portfolioValue.consolidated, maxDailyLoss: 0 },
+      }),
+    ).toThrow(DashboardRequestError);
+  });
+
+  it("caps the products array at the admissible slot count", () => {
+    const padded = parsePortfolioSummary({
+      ...portfolioValue,
+      products: Array.from({ length: 12 }, (_, index) => ({
+        ...portfolioValue.products[0],
+        productId: `P-${index}`,
+      })),
+    });
+    expect(padded.kind === "portfolio" && padded.products).toHaveLength(8);
+  });
+});
+
+describe("state portfolio contract (dao #34)", () => {
+  it("carries the portfolio hierarchy on the /state contract", async () => {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        ...state,
+        portfolioSummary: { ok: true, value: portfolioValue },
+      }),
+    );
+    const gateway = createHttpGateway("https://dashboard-api.example", "secret", request);
+    const view = await gateway.loadState("btc agent");
+
+    // Une seule lecture : la hiérarchie voyage dans `/state`, aucun appel
+    // `/portfolio` séparé.
+    const [url] = request.mock.calls[0] ?? [];
+    expect(url).toBe("https://dashboard-api.example/api/agents/btc%20agent/state");
+    expect(String(url)).not.toContain("portfolio");
+    // Cohérence : chiffres identiques à la projection #32 revalidée.
+    expect(view.portfolioSummary).toEqual(parsePortfolioSummary(portfolioValue));
+    expect(view.portfolioSummary.kind).toBe("portfolio");
+  });
+
+  it("rejects a failed, missing or shapeless embedded envelope", async () => {
+    expect(() =>
+      parseAgentState({
+        ...state,
+        portfolioSummary: { ok: false, error: { code: "INVALID_PORTFOLIO_SESSION" } },
+      }),
+    ).toThrow(DashboardRequestError);
+    const { portfolioSummary: _omitted, ...withoutField } = state;
+    expect(() => parseAgentState(withoutField)).toThrow(DashboardRequestError);
+    expect(() =>
+      parseAgentState({
+        ...state,
+        portfolioSummary: { ok: true, value: { kind: "whatever" } },
+      }),
+    ).toThrow(DashboardRequestError);
+  });
+
+  it("keeps a mono-product state valid with the single-product answer", () => {
+    expect(parseAgentState(state).portfolioSummary).toEqual({
+      kind: "single-product",
+    });
+  });
+});
 
 describe("dashboard API boundary", () => {
   it("freezes a live start to the confirmed daily strategy envelope", () => {
@@ -69,6 +345,20 @@ describe("dashboard API boundary", () => {
       executionMode: "paper" as const,
     };
     expect(createStartConfiguration(paper)).toEqual(paper);
+  });
+
+  it("accepts a Hyperliquid candle mark and rejects an unknown source", () => {
+    const hyperliquid = structuredClone(state);
+    const valuation = hyperliquid.paperValuation as {
+      value: { markSource: string };
+    };
+    valuation.value.markSource = "HYPERLIQUID_CANDLE_CLOSE";
+    expect(parseAgentState(hyperliquid).paperValuation).toMatchObject({
+      ok: true,
+      value: { markSource: "HYPERLIQUID_CANDLE_CLOSE" },
+    });
+    valuation.value.markSource = "HYPERLIQUID_MID";
+    expect(() => parseAgentState(hyperliquid)).toThrow(DashboardRequestError);
   });
 
   it("projects a validated Agent state", () => {
@@ -119,5 +409,95 @@ describe("dashboard API boundary", () => {
     expect(url).toBe("https://dashboard-api.example/api/agents/btc%20agent/state");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer secret");
     expect(String(url)).not.toContain("secret");
+  });
+});
+
+describe("pnl history boundary", () => {
+  it("projects a validated pnl history", () => {
+    const view: PnlHistoryView = parsePnlHistory(pnlHistory);
+    expect(view.equityCurve).toHaveLength(2);
+    expect(view.cycles[0]).toMatchObject({ cycleId: "cycle-2", realizedPnl: 190.95 });
+    expect(view.openPosition).toEqual({ quantity: 0.1, averagePrice: 60_098.5 });
+    expect(view.protection).toMatchObject({ protectiveOrderConfirmed: true });
+  });
+
+  it("accepts trade-less cycles with null fields", () => {
+    const view = parsePnlHistory({
+      ...pnlHistory,
+      cycles: [
+        {
+          cycleId: "cycle-3",
+          triggeredAt: 1_700_000_600_000,
+          completedAt: null,
+          outcome: "NO_ACTION",
+          marketPrice: null,
+          side: null,
+          quantity: null,
+          fillPrice: null,
+          fee: null,
+          realizedPnl: null,
+          slippageBps: null,
+        },
+      ],
+      openPosition: null,
+      protection: null,
+    });
+    expect(view.cycles[0]).toMatchObject({ side: null, fee: null });
+    expect(view.protection).toBeNull();
+  });
+
+  it("does not preserve unproven equity values from legacy PnL responses", () => {
+    const legacy = parsePnlHistory({
+      ...pnlHistory,
+      equityCurve: pnlHistory.equityCurve.map(({ t, equity }) => ({ t, equity })),
+      cycles: pnlHistory.cycles.map(({ valuation: _valuation, ...cycle }) => cycle),
+    });
+    expect(legacy.equityCurve.every((point) => point.equity === null)).toBe(true);
+    expect(legacy.equityCurve.every((point) => point.valuation.quality === "unavailable")).toBe(true);
+    expect(legacy.cycles.every((cycle) => cycle.valuation === null)).toBe(true);
+  });
+
+  it("caps the pnl window like the Agent envelope", () => {
+    const rows = Array.from({ length: 60 }, (_, index) => ({
+      ...pnlHistory.cycles[0],
+      cycleId: `cycle-${index}`,
+    }));
+    expect(parsePnlHistory({ ...pnlHistory, cycles: rows }).cycles).toHaveLength(50);
+  });
+
+  it("rejects malformed pnl records", () => {
+    expect(() =>
+      parsePnlHistory({
+        ...pnlHistory,
+        cycles: [{ ...pnlHistory.cycles[0], triggeredAt: "now" }],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePnlHistory({
+        ...pnlHistory,
+        equityCurve: [{ t: 1, equity: "high" }],
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() =>
+      parsePnlHistory({
+        ...pnlHistory,
+        protection: { ...pnlHistory.protection, protectiveOrderConfirmed: "yes" },
+      }),
+    ).toThrow(DashboardRequestError);
+    expect(() => parsePnlHistory({ ...pnlHistory, openPosition: {} })).toThrow(
+      DashboardRequestError,
+    );
+  });
+
+  it("keeps the pnl read on the authenticated proxy route", async () => {
+    const request = vi.fn<typeof fetch>(async () => Response.json(pnlHistory));
+    const gateway = createHttpGateway("https://dashboard-api.example", "secret", request);
+    const view = await gateway.loadPnlHistory("btc agent");
+
+    const [url] = request.mock.calls[0] ?? [];
+    expect(url).toBe(
+      "https://dashboard-api.example/api/agents/btc%20agent/pnl?limit=30",
+    );
+    expect(view.cycles).toHaveLength(2);
   });
 });

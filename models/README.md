@@ -38,3 +38,11 @@ Les erreurs et refus sont des codes fermés. Aucun texte libre ne pilote une tra
 8. Le cœur fonctionnel est pur et le backtest réutilise exactement ses fonctions.
 9. Un LLM ne peut produire que des signaux typés ; il ne déclenche aucune transition directement.
 
+**Amendement 2026-10-30.** L'invariant 9 est réaffirmé et précisé : un
+AI Worker (`models/ai-trend-signal.md`) produit le signal typé
+`AiTrendSignal`, persisté avant consommation ; il ne fait que **moduler**
+la confiance des signaux des stratégies déterministes, dans une plage
+bornée strictement positive. L'invariant 8 est inchangé de fait : le
+backtest rejoue les signaux enregistrés et réutilise exactement les mêmes
+fonctions de modulation que le runtime.
+

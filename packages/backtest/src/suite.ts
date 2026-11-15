@@ -1,4 +1,4 @@
-import { createOrderIntent, err, ok, type Result } from "@dodash/domain";
+import { createOrderIntent, err, ok, TIMEFRAME_MILLISECONDS, type Result } from "@dodash/domain";
 import type { IndicatorConfig } from "@dodash/indicators-prolog";
 import {
   isConfidenceCalibrationProfile,
@@ -286,6 +286,7 @@ export const runBacktestSuite = async (
     const replay = await replayBacktest(
       dataset.candles,
       {
+        intervalMs: TIMEFRAME_MILLISECONDS[dataset.timeframe],
         runId: `${config.runId}:${definition.id}`,
         agentId: config.agentId,
         productId: dataset.productId,
@@ -313,7 +314,11 @@ export const runBacktestSuite = async (
       {
         ...(options?.executionDataset === undefined
           ? {}
-          : { executionCandles: options.executionDataset.candles }),
+          : {
+              executionCandles: options.executionDataset.candles,
+              executionIntervalMs:
+                TIMEFRAME_MILLISECONDS[options.executionDataset.timeframe],
+            }),
         includeDiagnosticSamples: options?.includeDiagnosticSamples === true,
       },
     );

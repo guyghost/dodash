@@ -25,11 +25,22 @@ Les phases `retrying*` ne déclenchent aucun effet immédiatement. Un réveil
 ultérieur émet `RETRY_TIMER_ELAPSED`; les compteurs et limites restent dans le
 contexte de la machine.
 
+Amendement du 13 octobre 2026 : `MARKET_DATA_READY.evaluatedAt` est lu via
+l'horloge injectée après le fetch et son checkpoint, juste avant l'événement.
+La garde juge la fraîcheur à cet instant, jamais à l'heure du déclenchement
+original d'un cycle repris. Contrat : `market-data-freshness.md`.
+
+Amendement du 13 octobre 2026 : un réveil de grille pendant un cycle reprend
+d'abord celui-ci sans `ALARM_FIRED`. Le shell publie son issue et ses alertes,
+puis consulte `cycle-wake.md` pour lancer une seule nouvelle invocation si
+l'état courant est `waiting`. Son identité est nouvelle ; une alarme ponctuelle
+de retry ou une commande de contrôle ne lance jamais cette suite.
+
 ## État durable
 
 - L’état synchronisé contient uniquement la configuration validée, la phase et
-  le contexte XState, un résumé du dernier cycle, le portefeuille paper et le
-  dernier snapshot d’indicateurs.
+  le contexte XState, un résumé du dernier cycle, le portefeuille paper, le
+  dernier `lastPaperMark` accepté et le dernier snapshot d’indicateurs.
 - SQLite contient les cycles, intentions, statuts d’ordre, fills et erreurs.
 - L’état XState est persisté avant tout effet pouvant soumettre un ordre.
 - Une intention `SUBMITTING` retrouvée au réveil ne peut pas être soumise une
@@ -44,6 +55,43 @@ contexte de la machine.
 - `EFFECT_CANCEL_FAILED` marque une défaillance terminale puis passe par
   `persisting`. Après `PERSIST_SUCCEEDED`, cette défaillance est prioritaire sur
   stop, kill et scheduling et atteint uniquement `failed`.
+- La réponse `/state` (et les réponses de commande qui transportent l'état)
+  expose en supplément `portfolioSummary`, projection pure de la hiérarchie
+  portefeuille calculée à la lecture et jamais persistée — contrat et
+  invariants dans `models/state-portfolio-contract.md` (dao #34). La forme
+  mono-produit de la réponse est figée : champs additionnels uniquement.
+
+## Amendement DAO #62 — mark paper et mesure exposée
+
+`lastPaperMark` est une donnée de mesure distincte du portefeuille comptable et
+du contexte de la machine. Sa forme est celle de
+`PaperValuationMark` (`price`, `source` fermée `*_CANDLE_CLOSE`, `timeframe`,
+`candleClosedAt`, `maxMarketStalenessMs`). Le runtime la remplace uniquement après un snapshot marché
+accepté, en dérivant `candleClosedAt` depuis le début de bougie et la table
+canonique `TIMEFRAME_MILLISECONDS`. Un échec marché conserve le dernier mark
+sans en rafraîchir la date. Le mark et sa date sont restaurés ensemble; un état
+legacy ou incohérent se normalise vers `null` et produit `unavailable`.
+Avant toute persistance, le mark candidat est validé puis copié et gelé par le
+modèle `normalizePaperValuationMark`. Un candidat absent ou invalide conserve
+uniquement le précédent mark s’il est lui aussi valide; une ancienne valeur
+invalide se normalise à `null`. La même règle s’applique aux sessions
+multi-produits et à leur restauration; elle ne choisit aucun effet ou
+événement XState.
+
+Pour un cycle paper, `accountEquity` de la télémétrie et de l’API est la
+projection de `portfolio.cash + portfolio.positionQuantity * mark.price`,
+après fill, via `projectPaperValuation`. L’heure de mesure est l’heure de fin
+du cycle; la qualité est recalculée sur cette heure et
+la politique de péremption capturée avec le mark. Le risque continue à recevoir ses
+entrées actuelles dans `RunTradingCycleResult`; le nouveau champ de télémétrie
+ne retourne pas vers l’interpréteur ni vers `checkRisk`.
+
+Dans une session multi-produits, `PortfolioProductRuntime` porte un
+`lastPaperMark` par produit. Le `portfolioSummary` API projette les valeurs et
+expositions depuis ces faits, à un `asOf` fourni, et qualifie l’agrégat. Les
+valeurs de l’orchestrateur utilisées par l’admission restent inchangées dans
+#62. À la restauration d’un snapshot pré-amendement, les marques manquantes
+restent indisponibles; elles ne sont pas reconstruites depuis `averagePrice`.
 
 ## Contrôle et permissions
 
@@ -94,3 +142,38 @@ les statuts intermédiaires restent retryables. Pour le kill, un nouvel
 identifiant de liquidation n'est permis après recovery qu'après annulation
 confirmée des ordres précédents et un nouveau snapshot de compte prouvant le
 résiduel.
+
+## Amendement 2026-09-28 — retries planifiés, équité paper, grille et décision manquée
+
+Source : `docs/analysis/analyse-paper-session-2026-09-28.md` ;
+modèles `market-retry-schedule.md`, `daily-risk.md`, `cycle-schedule.md`.
+
+1. **Retries marché.** La règle « les phases `retrying*` ne déclenchent aucun
+   effet immédiatement » est désormais outillée : en `retryingMarketData`,
+   l'interpréteur consulte `artifacts.marketRetry` et `planMarketRetry`,
+   persiste l'échéance (checkpoint) avant de programmer une alarme ponctuelle
+   `retryTick`, et n'émet `RETRY_TIMER_ELAPSED` qu'à `now ≥ nextRetryAt`. Les
+   autres phases `retrying*` gardent leur comportement actuel (réémission au
+   même passage) : hors périmètre de cet amendement.
+2. **Équité paper du risque journalier.** `resolveCycleDailyRiskStart/Completion`
+   paper reçoivent la valorisation `projectPaperValuation` sur le dernier mark
+   accepté et délèguent à `resolvePaperDailyRisk` ; l'interpréteur ne ré-ancre
+   plus la fenêtre paper sur l'équité de réconciliation au coût.
+3. **Planification.** `ensureSchedule` résout `resolveCycleSchedule` : cron
+   aligné quand l'intervalle le permet, sinon intervalle ; l'état de
+   planification persisté porte `kind` et `expression`.
+4. **Décision manquée.** Après chaque cycle terminé, le runtime évalue la règle
+   de `cycle-schedule.md §3` et émet `decision.missed` au plus une fois par
+   bougie ; `lastMissedDecisionCandleClosedAt` est persisté (mono-produit et par
+   produit) et normalisé à `null` à la restauration.
+
+## Amendement 2026-10-10 — politique d'exposition cible P7 (paper)
+
+Source normative : `models/target-exposure.md` (revu). Sous la variante de
+sizing `TARGET_EXPOSURE`, la phase `allocating` produit l'ordre à partir de
+`planTargetExposure` (au plus une intention MARKET, identifiant de
+l'allocateur) au lieu d'`allocateSignals` ; la phase `checkingRisk` applique
+`targetExposureRiskGate` (une réduction n'est bloquée ni par la perte
+journalière ni par l'admission portefeuille, INV-T7). Aucune phase, aucun
+événement ni aucune transition de `trading-cycle.machine.ts` ne change ; la
+garde « une décision par bougie » est inchangée.

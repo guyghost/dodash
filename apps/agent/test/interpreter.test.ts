@@ -1,7 +1,7 @@
 import { executePaperOrder, type PaperPortfolio } from "@dodash/paper-execution";
 import { err, ok, type Candle, type OrderIntent } from "@dodash/domain";
 import type { WorkflowError } from "@dodash/models";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { parseAgentConfiguration } from "../src/configuration.js";
 import { runTradingCycle } from "../src/interpreter.js";
@@ -194,6 +194,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-cancel-failed",
+      now: () => 360_000,
       triggerAlarm: false,
       effects: {
         ...fixture.effects,
@@ -236,6 +237,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-1",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
@@ -274,6 +276,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-protection-failed",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: {
         ...fixture.effects,
@@ -309,11 +312,47 @@ describe("runTradingCycle", () => {
     expect(result.machine.context.terminalFailure).toBe(true);
     expect(result.machine.context.outcome).toBe("FAILED");
     expect(result.portfolio).toEqual(flattened);
-    expect(result.dailyPnl).toBe(-50);
+    // models/daily-risk.md §3 : en paper, la réconciliation (équité au coût)
+    // ne ré-ancre jamais la fenêtre journalière — le runtime la résout sur
+    // le mark daté. Le PnL fourni en entrée est donc porté inchangé.
+    expect(result.dailyPnl).toBe(0);
     expect(result.artifacts?.execution).toMatchObject({
       exchangeOrderId: "parent-order-1",
       protectiveOrderId: "protective-order-1",
     });
+  });
+
+  it("keeps the runtime dailyPnl through paper account reconciliation (daily-risk.md §3)", async () => {
+    const config = configuration();
+    const portfolio = { cash: 9_000, positionQuantity: 0.01, averagePrice: 100_000 };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 9, 8, 7, 6, 5]),
+        source: "coinbase",
+        cached: false,
+      },
+      portfolio,
+    );
+    const result = await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine: readyMachine("agent-1", config.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: -25,
+      dailyRiskWindow: { utcDayStart: 0, openingEquity: 9_925 },
+      lastTradeAt: null,
+      triggeredAt: 360_000,
+      cycleId: "cycle-paper-daily-pnl",
+      now: () => 360_000,
+      triggerAlarm: true,
+      effects: fixture.effects,
+    });
+    expect(result.dailyPnl).toBe(-25);
+    expect(result.dailyRiskWindow).toEqual({ utcDayStart: 0, openingEquity: 9_925 });
   });
 
   it("persists NO_ACTION without creating an order", async () => {
@@ -340,6 +379,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-2",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
@@ -382,6 +422,7 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 420_000,
       cycleId: "cycle-duplicate-candle",
+      now: () => 420_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
@@ -425,11 +466,352 @@ describe("runTradingCycle", () => {
       lastTradeAt: null,
       triggeredAt: 360_000,
       cycleId: "cycle-target-sized",
+      now: () => 360_000,
       triggerAlarm: true,
       effects: fixture.effects,
     });
 
     expect(fixture.intents).toHaveLength(1);
     expect(fixture.intents[0]?.quantity).toBe(200);
+  });
+
+  it("decides from a Hyperliquid candle mark when that series served the cycle", async () => {
+    const config = configuration();
+    const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+    const valuationMark = {
+      price: 5,
+      source: "HYPERLIQUID_CANDLE_CLOSE" as const,
+      timeframe: config.timeframe,
+      candleClosedAt: 360_000,
+      maxMarketStalenessMs: config.maxMarketStalenessMs,
+    };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 9, 8, 7, 6, 5]),
+        source: "hyperliquid",
+        cached: false,
+        valuationMark,
+      },
+      portfolio,
+    );
+
+    const result = await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine: readyMachine("agent-1", config.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt: 360_000,
+      cycleId: "cycle-hyperliquid-mark",
+      now: () => 360_000,
+      triggerAlarm: true,
+      effects: fixture.effects,
+    });
+
+    expect(result.machine.context.outcome).toBe("ORDER_CONFIRMED");
+    expect(fixture.intents).toHaveLength(1);
+    expect(fixture.checkpoints.at(-1)?.market).toMatchObject({
+      source: "hyperliquid",
+      valuationMark,
+    });
+  });
+
+  it("fails the cycle when Hyperliquid and dYdX are both down", async () => {
+    const config = configuration();
+    const portfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+    const fixture = effectsFor(
+      {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles: candlesFromCloses([10, 9, 8, 7, 6, 5]),
+        source: "hyperliquid",
+        cached: false,
+      },
+      portfolio,
+    );
+    const result = await runTradingCycle({
+      agentId: "agent-1",
+      configuration: config,
+      machine: readyMachine("agent-1", config.strategyIds),
+      artifacts: null,
+      previousIndicators: null,
+      portfolio,
+      dailyPnl: 0,
+      lastTradeAt: null,
+      triggeredAt: 360_000,
+      cycleId: "cycle-sources-exhausted",
+      now: () => 360_000,
+      triggerAlarm: true,
+      effects: {
+        ...fixture.effects,
+        fetchMarketData: async () =>
+          err({
+            phase: "market-data",
+            code: "MARKET_SOURCES_EXHAUSTED",
+            retryable: false,
+          }),
+      },
+    });
+    expect(result.machine.context.outcome).toBe("FAILED");
+    expect(result.machine.context.lastError).toMatchObject({
+      code: "MARKET_SOURCES_EXHAUSTED",
+    });
+    expect(fixture.intents).toHaveLength(0);
+  });
+
+  describe("scheduled market retries (models/market-retry-schedule.md)", () => {
+    const rateLimited = (retryAfterMs?: number): WorkflowError => ({
+      phase: "market-data",
+      code: "RATE_LIMITED",
+      retryable: true,
+      ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+    });
+    const market = (config: ReturnType<typeof configuration>): MarketSnapshot => ({
+      productId: config.productId,
+      timeframe: config.timeframe,
+      candles: candlesFromCloses([10, 10, 10, 10, 10, 10]),
+      source: "coinbase",
+      cached: false,
+    });
+    const run = (
+      fixture: ReturnType<typeof effectsFor>,
+      machine: ReturnType<typeof readyMachine>,
+      overrides: Partial<Omit<Parameters<typeof runTradingCycle>[0], "now">> & {
+        readonly fetches: readonly (WorkflowError | "ok")[];
+        readonly scheduled: number[];
+        readonly clock: number;
+      },
+    ) => {
+      const config = configuration();
+      const queue = [...overrides.fetches];
+      const fetchMarketData = vi.fn(async () => {
+        const next = queue.shift();
+        return next === "ok" || next === undefined ? ok(market(config)) : err(next);
+      });
+      return runTradingCycle({
+        agentId: "agent-1",
+        configuration: config,
+        machine,
+        artifacts: null,
+        previousIndicators: null,
+        portfolio: fixture.initialPortfolio,
+        dailyPnl: 0,
+        lastTradeAt: null,
+        triggeredAt: 360_000,
+        cycleId: "cycle-retry",
+        triggerAlarm: true,
+        now: () => overrides.clock,
+        effects: {
+          ...fixture.effects,
+          fetchMarketData,
+          scheduleRetry: async (at) => {
+            overrides.scheduled.push(at);
+          },
+        },
+        ...(overrides.artifacts === undefined ? {} : { artifacts: overrides.artifacts }),
+        ...(overrides.triggerAlarm === undefined ? {} : { triggerAlarm: overrides.triggerAlarm }),
+      }).then((result) => ({ result, fetchMarketData }));
+    };
+
+    it("persists the retry deadline, schedules one alarm and does not refetch immediately", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const { result, fetchMarketData } = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited(9_000)],
+        scheduled,
+        clock: 360_500,
+      });
+      expect(fetchMarketData).toHaveBeenCalledTimes(1);
+      expect(result.machine.value).toBe("retryingMarketData");
+      expect(result.machine.context.attempts.marketData).toBe(1);
+      expect(result.artifacts?.marketRetry).toEqual({
+        attempt: 1,
+        // Échéance alignée sur la seconde (amendement 2026-10-07).
+        nextRetryAt: 421_000,
+        deadlineAt: 360_000 + 90_000,
+        errorCode: "RATE_LIMITED",
+      });
+      expect(scheduled).toEqual([421_000]);
+      expect(fixture.persistedCycles).toBe(0);
+      // Le checkpoint de l'échéance précède la programmation de l'alarme.
+      expect(fixture.checkpoints.at(-1)?.marketRetry?.nextRetryAt).toBe(421_000);
+    });
+
+    it("waits without any effect before the persisted deadline", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()],
+        scheduled,
+        clock: 360_500,
+      });
+      const resumed = await run(fixture, first.result.machine, {
+        fetches: ["ok"],
+        scheduled,
+        clock: 400_000,
+        artifacts: first.result.artifacts,
+        triggerAlarm: false,
+      });
+      expect(resumed.fetchMarketData).not.toHaveBeenCalled();
+      expect(resumed.result.machine.value).toBe("retryingMarketData");
+      expect(scheduled).toEqual([421_000]);
+    });
+
+    it("refetches once the deadline is reached and completes the cycle", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()],
+        scheduled,
+        clock: 360_500,
+      });
+      const resumed = await run(fixture, first.result.machine, {
+        fetches: ["ok"],
+        scheduled,
+        clock: 421_000,
+        artifacts: first.result.artifacts,
+        triggerAlarm: false,
+      });
+      expect(resumed.fetchMarketData).toHaveBeenCalledTimes(1);
+      expect(resumed.result.machine.value).toBe("waiting");
+      expect(resumed.result.machine.context.outcome).toBe("NO_ACTION");
+      expect(fixture.persistedCycles).toBe(1);
+    });
+
+    it("rejects a successful refetch received after the original decision window", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()], scheduled, clock: 360_500,
+      });
+      const resumed = await run(fixture, first.result.machine, {
+        fetches: ["ok"], scheduled, clock: 450_001,
+        artifacts: first.result.artifacts, triggerAlarm: false,
+      });
+      expect(resumed.result.artifacts?.indicators).toBeUndefined();
+      expect(resumed.result.artifacts?.signals).toBeUndefined();
+      expect(fixture.intents).toEqual([]);
+      expect(resumed.result.machine.context.lastDecisionCandleClosedAt).toBeNull();
+      expect(resumed.result.machine.context.lastError?.code).toBe("STALE_MARKET_DATA");
+      expect(resumed.result.machine.context.outcome).toBe("NO_ACTION");
+      expect(fixture.persistedCycles).toBe(1);
+    });
+
+    it("closes a resumed cycle without replaying the grid alarm with its old identity", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()], scheduled, clock: 360_500,
+      });
+      const resumed = await run(fixture, first.result.machine, {
+        fetches: ["ok"], scheduled, clock: 421_000,
+        artifacts: first.result.artifacts, triggerAlarm: true,
+      });
+      expect(resumed.result.machine.value).toBe("waiting");
+      expect(resumed.result.machine.context.lastError?.code).not.toBe("DUPLICATE_ALARM");
+      expect(resumed.result.artifacts?.cycleId).toBe("cycle-retry");
+      expect(fixture.persistedCycles).toBe(1);
+    });
+
+    it.each(["fetch", "checkpoint"])("reads freshness after a slow %s crosses the deadline", async (slowEffect) => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const submitOrder = vi.fn(fixture.effects.submitOrder);
+      let clock = 360_000;
+      const result = await runTradingCycle({
+        agentId: "agent-1", configuration: config,
+        machine: readyMachine("agent-1", config.strategyIds),
+        artifacts: null, previousIndicators: null,
+        portfolio: fixture.initialPortfolio, dailyPnl: 0, lastTradeAt: null,
+        triggeredAt: 360_000, cycleId: "cycle-slow-market", triggerAlarm: true,
+        now: () => clock,
+        effects: {
+          ...fixture.effects,
+          fetchMarketData: async () => {
+            if (slowEffect === "fetch") clock = 450_001;
+            return ok(market(config));
+          },
+          checkpoint: async (artifacts) => {
+            if (slowEffect === "checkpoint" && artifacts.market !== undefined) clock = 450_001;
+            return fixture.effects.checkpoint(artifacts);
+          },
+          submitOrder,
+        },
+      });
+      expect(result.artifacts?.indicators).toBeUndefined();
+      expect(result.artifacts?.signals).toBeUndefined();
+      expect(result.machine.context.outcome).toBe("NO_ACTION");
+      expect(result.machine.context.lastError?.code).toBe("STALE_MARKET_DATA");
+      expect(submitOrder).not.toHaveBeenCalled();
+    });
+
+    it("keeps stop priority while a market retry is pending", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()], scheduled, clock: 360_500,
+      });
+      const session = createTradingMachineSession({ agentId: "agent-1", strategyIds: config.strategyIds }, first.result.machine);
+      session.send({ type: "STOP_REQUESTED", permissions: { canControl: true, canTrade: true } });
+      const stopped = session.record;
+      session.stop();
+      const resumed = await run(fixture, stopped, {
+        fetches: ["ok"], scheduled, clock: 450_001,
+        artifacts: first.result.artifacts, triggerAlarm: false,
+      });
+      expect(resumed.fetchMarketData).not.toHaveBeenCalled();
+      expect(resumed.result.machine.value).toBe("stopped");
+      expect(fixture.intents).toEqual([]);
+    });
+
+    it("refetches when the second-granular alarm fires for an unaligned first attempt (constat AE 2026-10-07)", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const first = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited()],
+        scheduled,
+        clock: 360_368,
+      });
+      // Alarme ponctuelle du SDK agents : stockée en secondes entières
+      // (floor), déclenchée dès floor(maintenant) ≥ time.
+      const alarmFiresAt = Math.floor((scheduled[0] ?? 0) / 1_000) * 1_000;
+      const resumed = await run(fixture, first.result.machine, {
+        fetches: ["ok"],
+        scheduled,
+        clock: alarmFiresAt,
+        artifacts: first.result.artifacts,
+        triggerAlarm: false,
+      });
+      expect(resumed.fetchMarketData).toHaveBeenCalledTimes(1);
+      expect(resumed.result.machine.value).toBe("waiting");
+      expect(resumed.result.machine.context.outcome).toBe("NO_ACTION");
+    });
+
+    it("fails in a single refetch when the decision deadline is already past", async () => {
+      const config = configuration();
+      const fixture = effectsFor(market(config), { cash: 10_000, positionQuantity: 0, averagePrice: 0 });
+      const scheduled: number[] = [];
+      const { result, fetchMarketData } = await run(fixture, readyMachine("agent-1", config.strategyIds), {
+        fetches: [rateLimited(), rateLimited(), rateLimited(), rateLimited()],
+        scheduled,
+        clock: 445_000, // échéance 450 000 : aucun délai ≥ 60 s ne tient
+      });
+      expect(scheduled).toEqual([]);
+      expect(fetchMarketData).toHaveBeenCalledTimes(4);
+      expect(result.machine.context.outcome).toBe("FAILED");
+      expect(fixture.persistedCycles).toBe(1);
+    });
   });
 });

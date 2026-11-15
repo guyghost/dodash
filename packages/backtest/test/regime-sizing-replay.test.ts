@@ -144,6 +144,7 @@ const config = (
   runId: "regime-sizing-test",
   agentId: "regime-sizing-agent",
   productId: product.value,
+  intervalMs: 60_000,
   initialCapital: 10_000,
   maxDecisionNotional: 5_000,
   minNetQuantity: 0.0001,

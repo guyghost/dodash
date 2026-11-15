@@ -1,0 +1,6 @@
+{
+  "statuses": [
+    200
+  ],
+  "retryOnlyOn401": true
+}

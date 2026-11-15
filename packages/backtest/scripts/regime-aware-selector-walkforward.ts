@@ -18,7 +18,11 @@ import {
   withTargetSignalNotional,
   type BacktestConfig,
 } from "@dodash/backtest";
-import { createProductId, type Candle } from "@dodash/domain";
+import {
+  TIMEFRAME_MILLISECONDS,
+  createProductId,
+  type Candle,
+} from "@dodash/domain";
 import { DEFAULT_INDICATOR_CONFIG } from "@dodash/indicators-prolog";
 import {
   regimeFilterMachine,
@@ -163,6 +167,7 @@ const replayConfigFor = (
   const registry = createStrategyRegistry(ensembleStrategies(config));
   if (!registry.ok) throw new Error(JSON.stringify(registry.error));
   return {
+    intervalMs: TIMEFRAME_MILLISECONDS["ONE_DAY"],
     runId: `${config.runId}:ensemble`,
     agentId: config.agentId,
     productId: product.value,

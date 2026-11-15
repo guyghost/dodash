@@ -1,0 +1,192 @@
+{
+  "windowEnd": "2026-09-26T08:51:11.696805+00:00",
+  "cycles": 320,
+  "products": {
+    "BTC-USD": {
+      "cycles": 160,
+      "outcomes": {
+        "FAILED": 49,
+        "NO_ACTION": 108,
+        "ORDER_CONFIRMED": 1,
+        "RISK_REJECTED": 2
+      },
+      "errors": {
+        "STALE_MARKET_DATA": 46,
+        "NONE": 87,
+        "RATE_LIMITED": 27
+      },
+      "failed_by_error": {
+        "STALE_MARKET_DATA": 39,
+        "RATE_LIMITED": 10
+      },
+      "first": {
+        "timestamp": "2026-09-19 16:54:58",
+        "weight": 1,
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "mode": "paper",
+        "phase": "waiting",
+        "outcome": "FAILED",
+        "error": "STALE_MARKET_DATA",
+        "broker_code": "NONE",
+        "ts": 1789836898495,
+        "latency_ms": 995,
+        "daily_pnl": 0,
+        "equity": 10000,
+        "position": 0,
+        "other_exposure": 0,
+        "execution": 0,
+        "has_pnl": 1,
+        "has_equity": 1
+      },
+      "last": {
+        "timestamp": "2026-09-26 08:00:24",
+        "weight": 1,
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "mode": "paper",
+        "phase": "waiting",
+        "outcome": "FAILED",
+        "error": "RATE_LIMITED",
+        "broker_code": "NONE",
+        "ts": 1790409624386,
+        "latency_ms": 861,
+        "daily_pnl": -1.2632861500114814,
+        "equity": 10000,
+        "position": 0.004321438613934857,
+        "other_exposure": 0,
+        "execution": 0,
+        "has_pnl": 1,
+        "has_equity": 1
+      },
+      "equity_unique": [
+        10000
+      ],
+      "latency_mean_ms": 826.06875,
+      "max_gap_minutes": 60.269283333333334,
+      "fills": [
+        {
+          "timestamp": "2026-09-22 00:56:39",
+          "weight": 1,
+          "agent": "btc-usd-paper",
+          "event": "cycle.completed",
+          "product": "BTC-USD",
+          "mode": "paper",
+          "phase": "waiting",
+          "outcome": "ORDER_CONFIRMED",
+          "error": "RATE_LIMITED",
+          "broker_code": "NONE",
+          "ts": 1790038599250,
+          "latency_ms": 906,
+          "daily_pnl": -0.2994166797561775,
+          "equity": 10000,
+          "position": 0.004321438613934857,
+          "other_exposure": 0,
+          "execution": 1,
+          "has_pnl": 1,
+          "has_equity": 1
+        }
+      ]
+    },
+    "ETH-USD": {
+      "cycles": 160,
+      "outcomes": {
+        "FAILED": 72,
+        "NO_ACTION": 87,
+        "ORDER_CONFIRMED": 1
+      },
+      "errors": {
+        "STALE_MARKET_DATA": 63,
+        "RATE_LIMITED": 29,
+        "NONE": 68
+      },
+      "failed_by_error": {
+        "STALE_MARKET_DATA": 57,
+        "RATE_LIMITED": 15
+      },
+      "first": {
+        "timestamp": "2026-09-19 16:54:59",
+        "weight": 1,
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "mode": "paper",
+        "phase": "waiting",
+        "outcome": "FAILED",
+        "error": "STALE_MARKET_DATA",
+        "broker_code": "NONE",
+        "ts": 1789836899123,
+        "latency_ms": 628,
+        "daily_pnl": 0,
+        "equity": 10000,
+        "position": 0,
+        "other_exposure": 0,
+        "execution": 0,
+        "has_pnl": 1,
+        "has_equity": 1
+      },
+      "last": {
+        "timestamp": "2026-09-26 08:00:24",
+        "weight": 1,
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "mode": "paper",
+        "phase": "waiting",
+        "outcome": "FAILED",
+        "error": "RATE_LIMITED",
+        "broker_code": "NONE",
+        "ts": 1790409624961,
+        "latency_ms": 575,
+        "daily_pnl": 11.200388997262053,
+        "equity": 10000,
+        "position": 0.12373277036713244,
+        "other_exposure": 0,
+        "execution": 0,
+        "has_pnl": 1,
+        "has_equity": 1
+      },
+      "equity_unique": [
+        10000
+      ],
+      "latency_mean_ms": 573.8875,
+      "max_gap_minutes": 60.26835,
+      "fills": [
+        {
+          "timestamp": "2026-09-22 00:56:40",
+          "weight": 1,
+          "agent": "btc-usd-paper",
+          "event": "cycle.completed",
+          "product": "ETH-USD",
+          "mode": "paper",
+          "phase": "waiting",
+          "outcome": "ORDER_CONFIRMED",
+          "error": "NONE",
+          "broker_code": "NONE",
+          "ts": 1790038600035,
+          "latency_ms": 785,
+          "daily_pnl": -0.2747853738437698,
+          "equity": 10000,
+          "position": 0.12373277036713244,
+          "other_exposure": 0,
+          "execution": 1,
+          "has_pnl": 1,
+          "has_equity": 1
+        }
+      ]
+    }
+  },
+  "recent_window": {
+    "start": "2026-09-25T08:51:11.696805+00:00",
+    "end": "2026-09-26T08:51:11.696805+00:00",
+    "cycles": 48,
+    "outcomes_and_errors": {
+      "NO_ACTION:NONE": 23,
+      "FAILED:STALE_MARKET_DATA": 2,
+      "FAILED:RATE_LIMITED": 13,
+      "NO_ACTION:RATE_LIMITED": 10
+    }
+  }
+}

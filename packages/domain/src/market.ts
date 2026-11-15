@@ -33,6 +33,37 @@ export type MarketValidationError =
   | { readonly code: "UNSORTED_CANDLE_SERIES"; readonly index: number }
   | { readonly code: "DUPLICATE_CANDLE"; readonly index: number };
 
+// INV-I2 (models/market-data-integrity.md) : table canonique des durées,
+// source unique — aucune constante divergente ailleurs dans le code.
+export const TIMEFRAME_MILLISECONDS: Readonly<Record<Timeframe, number>> =
+  Object.freeze({
+    ONE_MINUTE: 60_000,
+    FIVE_MINUTE: 300_000,
+    FIFTEEN_MINUTE: 900_000,
+    ONE_HOUR: 3_600_000,
+    SIX_HOUR: 21_600_000,
+    ONE_DAY: 86_400_000,
+  });
+
+// INV-I2 (models/market-data-integrity.md §3) : tolérance de cohérence
+// ticker figée par le modèle — valeur unique, jamais recalée localement.
+export const MAX_TICKER_DIVERGENCE_BPS = 100;
+
+export type MarketDataIntegrityError =
+  | { readonly code: "INVALID_INTERVAL" }
+  | { readonly code: "INVALID_SERIES"; readonly cause: MarketValidationError }
+  | {
+      readonly code: "CANDLE_GAP";
+      readonly index: number;
+      readonly expectedIntervalMs: number;
+    }
+  | { readonly code: "TICKER_INVALID_PRICE" }
+  | {
+      readonly code: "TICKER_INCOHERENT";
+      readonly divergenceBps: number;
+      readonly maxDivergenceBps: number;
+    };
+
 const assetPattern = /^[A-Z0-9]{2,15}$/;
 
 export const createProductId = (
@@ -104,5 +135,58 @@ export const validateCandleSeries = (
   }
 
   return ok(Object.freeze(validated));
+};
+
+// INV-I3/INV-I5 (models/market-data-integrity.md) : validation pure et
+// déterministe, ordre figé intervalle → structure → continuité → ticker,
+// premier échec gagnant avec index de la bougie fautive. Aucune bougie
+// synthétique ni interpolation (INV-I1) : toute série douteuse est
+// rejetée. `ticker: null` n'est licite qu'au rejeu (INV-I7).
+export const validateMarketDataIntegrity = (
+  candles: readonly Candle[],
+  intervalMs: number,
+  ticker: { readonly price: number } | null,
+): Result<readonly Candle[], MarketDataIntegrityError> => {
+  if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0) {
+    return err({ code: "INVALID_INTERVAL" });
+  }
+
+  const series = validateCandleSeries(candles);
+  if (!series.ok) return err({ code: "INVALID_SERIES", cause: series.error });
+
+  let previous: Candle | undefined;
+  let index = 0;
+  for (const candle of series.value) {
+    if (
+      previous !== undefined &&
+      candle.start - previous.start !== intervalMs
+    ) {
+      return err({
+        code: "CANDLE_GAP",
+        index,
+        expectedIntervalMs: intervalMs,
+      });
+    }
+    previous = candle;
+    index += 1;
+  }
+
+  const last = series.value.at(-1);
+  if (ticker !== null && last !== undefined) {
+    if (!Number.isFinite(ticker.price) || ticker.price <= 0) {
+      return err({ code: "TICKER_INVALID_PRICE" });
+    }
+    const divergenceBps =
+      (Math.abs(ticker.price - last.close) / last.close) * 10_000;
+    if (divergenceBps > MAX_TICKER_DIVERGENCE_BPS) {
+      return err({
+        code: "TICKER_INCOHERENT",
+        divergenceBps,
+        maxDivergenceBps: MAX_TICKER_DIVERGENCE_BPS,
+      });
+    }
+  }
+
+  return series;
 };
 

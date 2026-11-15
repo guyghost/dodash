@@ -17,13 +17,17 @@ import {
   withTargetSignalNotional,
   type BacktestConfig,
 } from "@dodash/backtest";
-import { createProductId, type Candle, type Strategy } from "@dodash/domain";
+import {
+  TIMEFRAME_MILLISECONDS,
+  createProductId,
+} from "@dodash/domain";
 import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from "@dodash/indicators-prolog";
 import {
   createBreakoutStrategy,
   createEmaCrossStrategy,
   createRsiReversionStrategy,
   createStrategyRegistry,
+  type Strategy,
 } from "@dodash/strategies";
 
 const product = createProductId("BTC-USD");
@@ -84,13 +88,13 @@ const baseConfig = (year: number) => ({
     bearish: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
     range: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
     warmUp: { mode: "FIXED_BPS", stopLossBps: 300, takeProfitBps: 600 },
-  },
+  } as const,
   regimeFilter: {
     mode: "EMA_THRESHOLD",
     thresholdBps: 100,
     minObservations: 5,
     confirmationCount: 3,
-  },
+  } as const,
 });
 
 type BaseConfig = ReturnType<typeof baseConfig>;
@@ -132,6 +136,7 @@ const replayConfigFor = (
   const registry = createStrategyRegistry(strategies);
   if (!registry.ok) throw new Error(JSON.stringify(registry.error));
   return {
+    intervalMs: TIMEFRAME_MILLISECONDS["ONE_DAY"],
     runId: `${config.runId}:${suffix}`,
     agentId: config.agentId,
     productId: product.value,

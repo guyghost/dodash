@@ -1,0 +1,304 @@
+{
+  "fetchedAt": "2026-09-28T06:29:44.604466+00:00",
+  "sql": "SELECT index1 AS agent, blob1 AS event, blob2 AS product, blob5 AS outcome, blob6 AS error, min(double1) AS first_ts, max(double1) AS last_ts, sum(_sample_interval) AS n FROM dodash_paper_trading GROUP BY agent, event, product, outcome, error ORDER BY agent, event, product, outcome, error",
+  "result": {
+    "meta": [
+      {
+        "name": "agent",
+        "type": "String"
+      },
+      {
+        "name": "event",
+        "type": "String"
+      },
+      {
+        "name": "product",
+        "type": "String"
+      },
+      {
+        "name": "outcome",
+        "type": "String"
+      },
+      {
+        "name": "error",
+        "type": "String"
+      },
+      {
+        "name": "first_ts",
+        "type": "Float64"
+      },
+      {
+        "name": "last_ts",
+        "type": "Float64"
+      },
+      {
+        "name": "n",
+        "type": "UInt64"
+      }
+    ],
+    "data": [
+      {
+        "agent": "btc-usd-paper",
+        "event": "control.completed",
+        "product": "BTC-USD",
+        "outcome": "CANCELLED",
+        "error": "NONE",
+        "first_ts": 1788541272972,
+        "last_ts": 1788541272972,
+        "n": "1"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "CANCELLED",
+        "error": "NONE",
+        "first_ts": 1789833286138,
+        "last_ts": 1789833286138,
+        "n": "1"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "error": "RATE_LIMITED",
+        "first_ts": 1788540314568,
+        "last_ts": 1790524867309,
+        "n": "1573"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "FAILED",
+        "error": "STALE_MARKET_DATA",
+        "first_ts": 1789836898495,
+        "last_ts": 1790575314319,
+        "n": "44"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "error": "DUPLICATE_ALARM",
+        "first_ts": 1789597981095,
+        "last_ts": 1789597981095,
+        "n": "1"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "error": "NETWORK_UNAVAILABLE",
+        "first_ts": 1788846439408,
+        "last_ts": 1788846439408,
+        "n": "1"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "error": "NONE",
+        "first_ts": 1788540434301,
+        "last_ts": 1790557300937,
+        "n": "13523"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "error": "RATE_LIMITED",
+        "first_ts": 1788634228509,
+        "last_ts": 1790535676239,
+        "n": "120"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "NO_ACTION",
+        "error": "STALE_MARKET_DATA",
+        "first_ts": 1789480704089,
+        "last_ts": 1789862125344,
+        "n": "1335"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "error": "NONE",
+        "first_ts": 1788541395216,
+        "last_ts": 1789832472298,
+        "n": "3636"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "error": "RATE_LIMITED",
+        "first_ts": 1788686403493,
+        "last_ts": 1790038599250,
+        "n": "26"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "ORDER_REJECTED",
+        "error": "ORDER_REJECTED",
+        "first_ts": 1788684295302,
+        "last_ts": 1789792973274,
+        "n": "504"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "error": "NONE",
+        "first_ts": 1788540194548,
+        "last_ts": 1790553695896,
+        "n": "675"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "outcome": "RISK_REJECTED",
+        "error": "RATE_LIMITED",
+        "first_ts": 1788809743448,
+        "last_ts": 1789176055547,
+        "n": "3"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "CANCELLED",
+        "error": "NONE",
+        "first_ts": 1789833286138,
+        "last_ts": 1789833286138,
+        "n": "1"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "error": "RATE_LIMITED",
+        "first_ts": 1788543929249,
+        "last_ts": 1790532071956,
+        "n": "1116"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "FAILED",
+        "error": "STALE_MARKET_DATA",
+        "first_ts": 1789836899123,
+        "last_ts": 1790575314874,
+        "n": "62"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "error": "DUPLICATE_ALARM",
+        "first_ts": 1789026467287,
+        "last_ts": 1789026467287,
+        "n": "1"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "error": "NETWORK_UNAVAILABLE",
+        "first_ts": 1789334868481,
+        "last_ts": 1789334868481,
+        "n": "1"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "error": "NONE",
+        "first_ts": 1788542843906,
+        "last_ts": 1790557301371,
+        "n": "12469"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "error": "RATE_LIMITED",
+        "first_ts": 1788545734217,
+        "last_ts": 1790449241281,
+        "n": "1621"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "NO_ACTION",
+        "error": "STALE_MARKET_DATA",
+        "first_ts": 1789480704864,
+        "last_ts": 1790550095293,
+        "n": "1399"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "error": "NONE",
+        "first_ts": 1788541335955,
+        "last_ts": 1790038600035,
+        "n": "3885"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "ORDER_CONFIRMED",
+        "error": "RATE_LIMITED",
+        "first_ts": 1788542119226,
+        "last_ts": 1789832595502,
+        "n": "528"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "RISK_REJECTED",
+        "error": "NONE",
+        "first_ts": 1788541395775,
+        "last_ts": 1789799011963,
+        "n": "307"
+      },
+      {
+        "agent": "btc-usd-paper",
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "outcome": "RISK_REJECTED",
+        "error": "RATE_LIMITED",
+        "first_ts": 1788562296022,
+        "last_ts": 1789257137927,
+        "n": "30"
+      }
+    ],
+    "rows": 26,
+    "rows_before_limit_at_least": 42845
+  }
+}

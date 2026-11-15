@@ -57,8 +57,14 @@ export const tradingCycleMachine = setup({
     isFreshMarketData: ({ context, event }) =>
       event.type === "MARKET_DATA_READY" &&
       context.triggeredAt !== null &&
+      Number.isSafeInteger(context.triggeredAt) &&
+      context.triggeredAt >= 0 &&
+      Number.isSafeInteger(event.candleClosedAt) &&
+      event.candleClosedAt >= 0 &&
+      Number.isSafeInteger(event.evaluatedAt) &&
+      event.evaluatedAt >= context.triggeredAt &&
       event.candleClosedAt <= context.triggeredAt &&
-      context.triggeredAt - event.candleClosedAt <= context.maxMarketStalenessMs,
+      event.evaluatedAt - event.candleClosedAt <= context.maxMarketStalenessMs,
     hasAllocatedOrders: ({ event }) =>
       event.type === "ALLOCATION_COMPLETED" && event.orderCount > 0,
     hasTradePermission: ({ context }) => context.permissions.canTrade,
@@ -114,6 +120,7 @@ export const tradingCycleMachine = setup({
       if (event.type !== "START_REQUESTED") return {};
       return {
         permissions: event.permissions,
+        marketAdmission: null,
         shutdownMode: "none" as const,
         killCompleted: false,
         outcome: "IDLE" as const,
@@ -154,6 +161,7 @@ export const tradingCycleMachine = setup({
         ? {
             cycleId: event.cycleId,
             triggeredAt: event.triggeredAt,
+            marketAdmission: null,
             nextWakeAt: null,
             marketSnapshotId: null,
             accountSnapshotId: null,
@@ -183,6 +191,11 @@ export const tradingCycleMachine = setup({
       event.type === "MARKET_DATA_READY"
         ? {
             marketSnapshotId: event.snapshotId,
+            marketAdmission: {
+              cycleId: context.cycleId ?? "",
+              candleClosedAt: event.candleClosedAt,
+              evaluatedAt: event.evaluatedAt,
+            },
             lastDecisionCandleClosedAt: event.candleClosedAt,
             attempts: { ...context.attempts, marketData: 0 },
           }
@@ -367,6 +380,7 @@ export const tradingCycleMachine = setup({
       triggeredAt: null,
       nextWakeAt: null,
       marketSnapshotId: null,
+      marketAdmission: null,
       accountSnapshotId: null,
       indicatorsId: null,
       signalsId: null,
@@ -395,6 +409,7 @@ export const tradingCycleMachine = setup({
     triggeredAt: null,
     nextWakeAt: null,
     marketSnapshotId: null,
+    marketAdmission: null,
     accountSnapshotId: null,
     lastDecisionCandleClosedAt: input.lastDecisionCandleClosedAt ?? null,
     indicatorsId: null,

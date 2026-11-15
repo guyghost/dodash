@@ -1,4 +1,7 @@
 CONTROL_API_TOKEN=replace-with-at-least-32-random-characters
+# Secret partagé : copier la valeur exacte de INTERNAL_SERVICE_TOKEN depuis
+# apps/mcp-market-data/.dev.vars — jamais un token généré à part (sinon le
+# worker marché répond 401 et le cycle échoue en AUTHENTICATION_FAILURE).
 INTERNAL_SERVICE_TOKEN=replace-with-the-market-worker-internal-token
 LIVE_TRADING_ENABLED=false
 COINBASE_API_KEY_ID=organizations/replace/apiKeys/replace
@@ -6,3 +9,7 @@ COINBASE_PORTFOLIO_ID=replace-with-the-dedicated-portfolio-uuid
 COINBASE_API_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----
 replace-with-the-exact-multiline-es256-private-key
 -----END EC PRIVATE KEY-----"
+HYPERLIQUID_PERP_TRADING_ENABLED=false
+HYPERLIQUID_AGENT_PRIVATE_KEY=replace-with-agent-wallet-key-0x-plus-64-hex
+HYPERLIQUID_WALLET_ADDRESS=replace-with-master-wallet-address-0x-plus-40-hex
+HYPERLIQUID_TESTNET=false

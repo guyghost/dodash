@@ -1,0 +1,72 @@
+Code déployé : lignes 67237-67237
+67237: var MAX_TICKER_DIVERGENCE_BPS = 100;
+
+Code déployé : lignes 80070-80085
+80070: var reconciliationError2 = /* @__PURE__ */ __name((retryable = true) => reconciliationWorkflowError("RECONCILIATION_FAILURE", retryable), "reconciliationError");
+80071: var createTradingCycleEffects = /* @__PURE__ */ __name((deps) => {
+80072:   const liveSettings = deps.configuration.executionMode === "live" ? resolveCoinbaseSettings(deps.env) : null;
+80073:   const perpSettings = deps.configuration.executionMode === "perp" ? resolveHyperliquidSettings(deps.env) : null;
+80074:   return {
+80075:     reconcileAccount: /* @__PURE__ */ __name(async (portfolio, observedAt) => {
+80076:       if (deps.configuration.executionMode === "paper") {
+80077:         return ok2({
+80078:           snapshotId: `paper:${deps.agentName}:${observedAt}`,
+80079:           observedAt,
+80080:           portfolio,
+80081:           accountEquity: portfolio.cash + portfolio.positionQuantity * portfolio.averagePrice,
+80082:           otherExposureNotional: 0
+80083:         });
+80084:       }
+80085:       if (deps.configuration.executionMode === "perp") {
+
+Code déployé : lignes 80830-80840
+80830:         }
+80831:         case "retryingSchedule":
+80832:         case "retryingMarketData":
+80833:         case "retryingAuthorization":
+80834:         case "retryingExecution":
+80835:         case "retryingReconciliation":
+80836:         case "retryingAccountReconciliation":
+80837:         case "retryingPersistence":
+80838:           await send({ type: "RETRY_TIMER_ELAPSED" });
+80839:           break;
+80840:         case "reconcilingAccount": {
+
+Code déployé : lignes 82613-82623
+82613:     const lastPrice = result.artifacts?.market?.candles.at(-1)?.close ?? null;
+82614:     const equity = lastPrice === null ? startingEquity : result.portfolio.cash + result.portfolio.positionQuantity * lastPrice;
+82615:     const dailyRisk = resolveCycleDailyRiskCompletion(
+82616:       configuration.executionMode,
+82617:       result.dailyRiskWindow,
+82618:       result.dailyPnl,
+82619:       identity.triggeredAt,
+82620:       equity
+82621:     );
+82622:     const executed = result.artifacts?.execution !== void 0;
+82623:     const lastCycle = this.toCycleSummary(result.artifacts, result.machine);
+
+Code déployé : lignes 82651-82674
+82651:     }
+82652:     if (result.artifacts !== null) {
+82653:       const cycleEvent = {
+82654:         schemaVersion: 2,
+82655:         type: "cycle.completed",
+82656:         timestamp: Date.now(),
+82657:         agentId: this.name,
+82658:         productId,
+82659:         executionMode: configuration.executionMode,
+82660:         phase: result.machine.value,
+82661:         outcome: result.machine.context.outcome,
+82662:         errorCode: result.machine.context.lastError?.code ?? null,
+82663:         brokerRejectionCode: brokerRejectionCodeOf(
+82664:           result.machine.context.lastError
+82665:         ),
+82666:         latencyMs: Math.max(0, Date.now() - startedAt),
+82667:         dailyPnl: dailyRisk.dailyPnl,
+82668:         accountEquity: result.accountEquity,
+82669:         positionQuantity: result.portfolio.positionQuantity,
+82670:         otherExposureNotional: result.otherExposureNotional,
+82671:         executionObserved: executed,
+82672:         openOrderCount: null
+82673:       };
+82674:       emitTradingTelemetry(this.env.TRADING_TELEMETRY, cycleEvent);

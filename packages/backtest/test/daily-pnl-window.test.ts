@@ -116,6 +116,7 @@ const config: BacktestConfig = {
   runId: "daily-pnl-window-test",
   agentId: "daily-pnl-window-agent",
   productId: product.value,
+  intervalMs: 86_400_000,
   initialCapital: 10_000,
   maxDecisionNotional: 5_000,
   minNetQuantity: 0.0001,

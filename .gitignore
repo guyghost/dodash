@@ -11,3 +11,11 @@ coverage/
 !.env.example
 *.log
 .DS_Store
+
+# outillage agent local
+.agents/
+.claude/
+skills-lock.json
+
+# état DAO local (journaux, snapshots, décisions — mémoire opérationnelle de la boucle)
+.dao/

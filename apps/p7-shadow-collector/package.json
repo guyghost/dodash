@@ -1,0 +1,24 @@
+{
+	"name": "@dodash/p7-shadow-collector",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "node build.mjs",
+		"check": "tsc -p tsconfig.json --noEmit",
+		"test": "node --test test/*.test.mjs"
+	},
+	"dependencies": {
+		"@dodash/paper-execution": "workspace:*",
+		"xstate": "5.32.5",
+		"@dodash/risk": "workspace:*",
+		"@dodash/domain": "workspace:*",
+		"@dodash/models": "workspace:*"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "5.20260823.1",
+		"esbuild": "0.28.1",
+		"miniflare": "5.20260820.0-alpha",
+		"typescript": "^7.0.2"
+	}
+}

@@ -1,26 +1,65 @@
+import type { CandleCloseMarkSource, WorkflowError } from "@dodash/models";
+
 export type TradingTelemetryEventType =
   | "cycle.completed"
   | "control.completed"
-  | "preflight.completed";
+  | "preflight.completed"
+  /** models/trading-telemetry.md, amendement 2026-09-28 : bougie de décision manquée. */
+  | "decision.missed";
 
 export interface TradingTelemetryEvent {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 3 | 4;
   readonly type: TradingTelemetryEventType;
   readonly timestamp: number;
   readonly agentId: string;
   readonly productId: string;
-  readonly executionMode: "paper" | "live";
+  readonly executionMode: "paper" | "live" | "perp";
   readonly phase: string;
   readonly outcome: string;
   readonly errorCode: string | null;
+  /**
+   * Code fin du refus broker (dao #47) : vocabulaire fermé de
+   * `packages/paper-execution`, uniquement quand `errorCode` vaut
+   * `ORDER_REJECTED` ; `null` sinon (et pour control/preflight).
+   */
+  readonly brokerRejectionCode: string | null;
   readonly latencyMs: number;
   readonly dailyPnl: number | null;
   readonly accountEquity: number | null;
   readonly positionQuantity: number | null;
   readonly otherExposureNotional: number | null;
+  readonly valuationQuality: "fresh" | "stale" | "unavailable" | "not_applicable";
+  readonly valuationPriceSource: CandleCloseMarkSource | "NONE";
+  readonly valuationPrice: number | null;
+  readonly valuationObservedAt: number | null;
+  readonly valuationAgeMs: number | null;
+  readonly consolidatedExposureNotional: number | null;
+  readonly exposureQuality: "fresh" | "stale" | "unavailable" | "not_applicable";
   readonly executionObserved: boolean;
   readonly openOrderCount: number | null;
+  readonly cycleId?: string | null;
+  readonly triggeredAt?: number | null;
+  readonly decisionAdmissionStatus?: "ADMITTED" | "UNOBSERVED" | "MISSED";
+  readonly decisionCandleClosedAt?: number | null;
+  readonly decisionEvaluatedAt?: number | null;
 }
+
+/** models/trading-telemetry.md: preserve the originating cycle's valuation metadata. */
+export const projectMissedDecisionTelemetry = (
+  cycleEvent: TradingTelemetryEvent,
+  timestamp: number,
+  decisionCandleClosedAt: number,
+): TradingTelemetryEvent => ({
+  ...cycleEvent,
+  type: "decision.missed",
+  timestamp,
+  outcome: "DECISION_WINDOW_MISSED",
+  ...(cycleEvent.schemaVersion === 4 ? {
+    decisionAdmissionStatus: "MISSED" as const,
+    decisionCandleClosedAt,
+    decisionEvaluatedAt: null,
+  } : {}),
+});
 
 export interface TradingTelemetrySink {
   writeDataPoint(point: {
@@ -35,6 +74,18 @@ export interface TradingTelemetryLogger {
   error(message: string): void;
 }
 
+/**
+ * Extraction du code fin depuis l'erreur terminale d'un cycle : le détail
+ * n'est lu que sur `ORDER_REJECTED` (blob6 reste le code WorkflowError,
+ * jamais surchargé).
+ */
+export const brokerRejectionCodeOf = (
+  error: WorkflowError | null | undefined,
+): string | null =>
+  error !== null && error !== undefined && error.code === "ORDER_REJECTED"
+    ? error.detail ?? null
+    : null;
+
 const finiteOrZero = (value: number | null): number =>
   value !== null && Number.isFinite(value) ? value : 0;
 
@@ -48,6 +99,9 @@ export const emitTradingTelemetry = (
   try {
     sink.writeDataPoint({
       indexes: [event.agentId],
+      // Projection positionnelle Analytics Engine (models/trading-telemetry.md,
+      // § Amendement dao #62) : blobs 1–7 restent figés (blob7 code broker).
+      // blob8 qualité valuation · blob9 provenance · blob10 qualité exposition.
       blobs: [
         event.type,
         event.productId,
@@ -55,6 +109,15 @@ export const emitTradingTelemetry = (
         event.phase,
         event.outcome,
         event.errorCode ?? "NONE",
+        event.brokerRejectionCode ?? "NONE",
+        event.valuationQuality,
+        event.valuationPriceSource,
+        event.exposureQuality,
+        ...(event.schemaVersion === 4 ? [
+          event.cycleId ?? "NONE",
+          event.triggeredAt === null || event.triggeredAt === undefined ? "NONE" : String(event.triggeredAt),
+          event.decisionAdmissionStatus ?? "UNOBSERVED",
+        ] : []),
       ],
       doubles: [
         event.timestamp,
@@ -67,6 +130,18 @@ export const emitTradingTelemetry = (
         finiteOrZero(event.openOrderCount),
         event.dailyPnl === null ? 0 : 1,
         event.accountEquity === null ? 0 : 1,
+        finiteOrZero(event.valuationPrice),
+        finiteOrZero(event.valuationObservedAt),
+        finiteOrZero(event.valuationAgeMs),
+        finiteOrZero(event.consolidatedExposureNotional),
+        event.valuationPrice === null ? 0 : 1,
+        event.valuationObservedAt === null ? 0 : 1,
+        event.valuationAgeMs === null ? 0 : 1,
+        event.consolidatedExposureNotional === null ? 0 : 1,
+        ...(event.schemaVersion === 4 ? [
+          finiteOrZero(event.decisionCandleClosedAt ?? null),
+          finiteOrZero(event.decisionEvaluatedAt ?? null),
+        ] : []),
       ],
     });
   } catch {

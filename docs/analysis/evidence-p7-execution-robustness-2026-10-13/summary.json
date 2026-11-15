@@ -1,0 +1,566 @@
+{
+  "protocol": "models/p7-execution-robustness.md",
+  "protocolCommit": "64806af",
+  "codeCommit": "07e729120e56ba02c65333b934d63274aad4b3b7",
+  "createdAt": "2026-10-13T21:43:58.352Z",
+  "researchOnly": true,
+  "observation": "KNOWN_HISTORY_NOT_OOS",
+  "inheritedFilledCandles": {
+    "BTC-USD": 0,
+    "ETH-USD": 2
+  },
+  "inheritedFilledDatesIdentifiable": false,
+  "newlyFilledCandles": 0,
+  "period": {
+    "firstStart": 1437436800000,
+    "lastStart": 1790726400000,
+    "btcCandles": 4090,
+    "ethCandles": 3787
+  },
+  "assessment": {
+    "verdict": "SENSITIVE_TO_ASSUMPTIONS",
+    "scenarios": [
+      {
+        "id": "C0",
+        "verdict": "WITHIN_CONSTRAINT"
+      },
+      {
+        "id": "O0",
+        "verdict": "WITHIN_CONSTRAINT"
+      },
+      {
+        "id": "O1",
+        "verdict": "WITHIN_CONSTRAINT"
+      },
+      {
+        "id": "O2",
+        "verdict": "WITHIN_CONSTRAINT"
+      },
+      {
+        "id": "O3",
+        "verdict": "OUTSIDE_CONSTRAINT"
+      },
+      {
+        "id": "O4",
+        "verdict": "OUTSIDE_CONSTRAINT"
+      }
+    ]
+  },
+  "sourceHashes": {
+    "docs/analysis/evidence-backtest-daily-long-2026-10-09/job--BTC-USD.json": "233ded0cc0d1db2ceebc9ceb635ad92e54c016ad43fc231a0a72a797af99890b",
+    "docs/analysis/evidence-backtest-daily-long-2026-10-09/job--ETH-USD.json": "560e32c3307bfd8efe23e65676cb84582dea80221f03b232fe11e2566698f43a",
+    "models/p7-execution-robustness.md": "abf05688ade58429c88a2a6a54ca36007db2abbeb7a81a4c06e04bb6b6dd3eac",
+    "models/p7-execution-robustness.ts": "70d7b63c45e91761daf227ad5076637e06e781e6c68216922e7b95b1cf56376a",
+    "models/target-exposure.ts": "9158dffe688120238149e992808efd96a2ea2522bcfc636caffb72e05f153802",
+    "docs/analysis/p7-execution-robustness-core.mjs": "a22c7b59aa5d6b62189983e9271e50b0b3a7ef4282bcf12083cc116afb3eac82",
+    "docs/analysis/p7-execution-robustness-2026-10-13.mjs": "8470c735fa2081076a39419fecc720d2cc0adf12d53afa17942beedc06bdb196",
+    "docs/operations/paper-p7-start.json": "595ce4b712ed92c839492a00dca74242f1711ebceb2219a750fd56f94cd13206",
+    "packages/paper-execution/src/index.ts": "19340eacf8c1820c133321572b40c90208b5b8cfcbed036c277dd351e887d2b2",
+    "packages/risk/src/risk.ts": "88bbea04669595562231325f112e4bb7402dbe69f4620380a1751eee423b3015",
+    "pnpm-lock.yaml": "c73e40fc9753ff3643bc12b790ad13e1e818e6ef728395aacff89a27456cf19c",
+    "models/dist/p7-execution-robustness.js": "cb50743d8c38cabb9866a66d81717508bebe4f210ce83015db1d5e9f05c57a6f",
+    "models/dist/target-exposure.js": "24b8fa8687381e66287f74b6305fedef77e56dbc72fa36bc6f15567bb532685f",
+    "packages/paper-execution/dist/index.js": "1cf6f9c68b68156dde33018536324269cc265ff7caa061c0ecb493c04ae8a9fa",
+    "packages/risk/dist/risk.js": "17706cace4892f7b2b6d50a8cd285d19ac64d4f141e69e60367f84bce4ff54a8"
+  },
+  "results": [
+    {
+      "id": "C0",
+      "execution": "DECISION_CLOSE",
+      "feeBps": 60,
+      "slippageBps": 2,
+      "finalEquity": 1929659.8601833857,
+      "netReturn": 95.48299300916928,
+      "cagr": 0.504045938328318,
+      "maxDrawdown": 0.47167367159161067,
+      "counters": {
+        "filled": 624,
+        "blockedBuys": 80,
+        "rejectedSells": 0,
+        "brokerRejected": 0,
+        "unexecutedFinal": 0
+      },
+      "fees": 325337.54574656463,
+      "slippageCost": 10844.597505503927,
+      "minCash": 2.6798282704021403e-8,
+      "minQuantity": 0,
+      "sleeves": {
+        "BTC-USD": {
+          "cash": 0.0005094551597721875,
+          "positionQuantity": 7.3061375717607175,
+          "averagePrice": 69729.75322201199
+        },
+        "ETH-USD": {
+          "cash": 0.0004314269754104316,
+          "positionQuantity": 491.51326802010664,
+          "averagePrice": 2434.7020180441864
+        }
+      },
+      "windows": [
+        {
+          "id": "W1",
+          "from": "2015-07-21",
+          "to": "2018-01-01",
+          "cagr": 1.8199004532132106,
+          "maxDrawdown": 0.2697365834203347
+        },
+        {
+          "id": "W2",
+          "from": "2018-01-01",
+          "to": "2020-01-01",
+          "cagr": -0.04459301781504599,
+          "maxDrawdown": 0.35198187338718867
+        },
+        {
+          "id": "W3",
+          "from": "2020-01-01",
+          "to": "2022-01-01",
+          "cagr": 0.892230190098745,
+          "maxDrawdown": 0.3178398291387088
+        },
+        {
+          "id": "W4",
+          "from": "2022-01-01",
+          "to": "2024-01-01",
+          "cagr": 0.17348331808410866,
+          "maxDrawdown": 0.20753506023958357
+        },
+        {
+          "id": "W5",
+          "from": "2024-01-01",
+          "to": "2026-10-01",
+          "cagr": 0.21005893901287997,
+          "maxDrawdown": 0.27686451514518196
+        }
+      ],
+      "windowDrawdowns": [
+        0.2697365834203347,
+        0.35198187338718867,
+        0.3178398291387088,
+        0.20753506023958357,
+        0.27686451514518196
+      ],
+      "brokerReasons": {
+        "INSUFFICIENT_CASH": 0,
+        "INSUFFICIENT_POSITION": 0
+      },
+      "deltaCagr": 0,
+      "deltaDrawdown": 0
+    },
+    {
+      "id": "O0",
+      "execution": "NEXT_OPEN",
+      "feeBps": 60,
+      "slippageBps": 2,
+      "finalEquity": 1953272.8417721228,
+      "netReturn": 96.66364208860614,
+      "cagr": 0.5056808581714369,
+      "maxDrawdown": 0.47137490642770363,
+      "counters": {
+        "filled": 624,
+        "blockedBuys": 88,
+        "rejectedSells": 0,
+        "brokerRejected": 19,
+        "unexecutedFinal": 0
+      },
+      "fees": 328580.19209461805,
+      "slippageCost": 10952.68585169726,
+      "minCash": 9.585615998730646e-7,
+      "minQuantity": 0,
+      "sleeves": {
+        "BTC-USD": {
+          "cash": 0.0005238297744654119,
+          "positionQuantity": 7.512285151847146,
+          "averagePrice": 69729.75322201199
+        },
+        "ETH-USD": {
+          "cash": 14.05729689670261,
+          "positionQuantity": 493.8881543422276,
+          "averagePrice": 2434.6588407907375
+        }
+      },
+      "windows": [
+        {
+          "id": "W1",
+          "from": "2015-07-21",
+          "to": "2018-01-01",
+          "cagr": 1.8191578342855048,
+          "maxDrawdown": 0.26986518682204286
+        },
+        {
+          "id": "W2",
+          "from": "2018-01-01",
+          "to": "2020-01-01",
+          "cagr": -0.04432468888407348,
+          "maxDrawdown": 0.3516436832631472
+        },
+        {
+          "id": "W3",
+          "from": "2020-01-01",
+          "to": "2022-01-01",
+          "cagr": 0.8988035674391881,
+          "maxDrawdown": 0.31808676742727493
+        },
+        {
+          "id": "W4",
+          "from": "2022-01-01",
+          "to": "2024-01-01",
+          "cagr": 0.1764383390684079,
+          "maxDrawdown": 0.20363542671106027
+        },
+        {
+          "id": "W5",
+          "from": "2024-01-01",
+          "to": "2026-10-01",
+          "cagr": 0.21018208607178424,
+          "maxDrawdown": 0.2739349676604744
+        }
+      ],
+      "windowDrawdowns": [
+        0.26986518682204286,
+        0.3516436832631472,
+        0.31808676742727493,
+        0.20363542671106027,
+        0.2739349676604744
+      ],
+      "brokerReasons": {
+        "INSUFFICIENT_CASH": 19,
+        "INSUFFICIENT_POSITION": 0
+      },
+      "deltaCagr": 0.0016349198431189205,
+      "deltaDrawdown": -0.0002987651639070332
+    },
+    {
+      "id": "O1",
+      "execution": "NEXT_OPEN",
+      "feeBps": 60,
+      "slippageBps": 10,
+      "finalEquity": 1853547.308360152,
+      "netReturn": 91.6773654180076,
+      "cagr": 0.4986491095767849,
+      "maxDrawdown": 0.4753249876738661,
+      "counters": {
+        "filled": 625,
+        "blockedBuys": 87,
+        "rejectedSells": 0,
+        "brokerRejected": 19,
+        "unexecutedFinal": 0
+      },
+      "fees": 316484.35852338886,
+      "slippageCost": 52747.74233270068,
+      "minCash": 9.570296697347658e-7,
+      "minQuantity": 0,
+      "sleeves": {
+        "BTC-USD": {
+          "cash": 0.0004953019670210779,
+          "positionQuantity": 7.097489643910612,
+          "averagePrice": 69785.52587005998
+        },
+        "ETH-USD": {
+          "cash": 13.37044745858293,
+          "positionQuantity": 469.64529592137137,
+          "averagePrice": 2436.50421839691
+        }
+      },
+      "windows": [
+        {
+          "id": "W1",
+          "from": "2015-07-21",
+          "to": "2018-01-01",
+          "cagr": 1.8099229225717766,
+          "maxDrawdown": 0.26996577557763923
+        },
+        {
+          "id": "W2",
+          "from": "2018-01-01",
+          "to": "2020-01-01",
+          "cagr": -0.04758036363263629,
+          "maxDrawdown": 0.35362805480685877
+        },
+        {
+          "id": "W3",
+          "from": "2020-01-01",
+          "to": "2022-01-01",
+          "cagr": 0.8859995861886503,
+          "maxDrawdown": 0.3203896042890081
+        },
+        {
+          "id": "W4",
+          "from": "2022-01-01",
+          "to": "2024-01-01",
+          "cagr": 0.17266520756231762,
+          "maxDrawdown": 0.20382922137030812
+        },
+        {
+          "id": "W5",
+          "from": "2024-01-01",
+          "to": "2026-10-01",
+          "cagr": 0.2024657317418519,
+          "maxDrawdown": 0.27718335909701
+        }
+      ],
+      "windowDrawdowns": [
+        0.26996577557763923,
+        0.35362805480685877,
+        0.3203896042890081,
+        0.20382922137030812,
+        0.27718335909701
+      ],
+      "brokerReasons": {
+        "INSUFFICIENT_CASH": 19,
+        "INSUFFICIENT_POSITION": 0
+      },
+      "deltaCagr": -0.005396828751533134,
+      "deltaDrawdown": 0.0036513160822554402
+    },
+    {
+      "id": "O2",
+      "execution": "NEXT_OPEN",
+      "feeBps": 60,
+      "slippageBps": 50,
+      "finalEquity": 1441164.8930575112,
+      "netReturn": 71.05824465287556,
+      "cagr": 0.465337380920251,
+      "maxDrawdown": 0.4943122646738961,
+      "counters": {
+        "filled": 630,
+        "blockedBuys": 78,
+        "rejectedSells": 0,
+        "brokerRejected": 20,
+        "unexecutedFinal": 0
+      },
+      "fees": 265753.7779677807,
+      "slippageCost": 221473.16257693674,
+      "minCash": 9.51306105889671e-7,
+      "minQuantity": 0,
+      "sleeves": {
+        "BTC-USD": {
+          "cash": 0.0003759096725843847,
+          "positionQuantity": 5.3652031548723205,
+          "averagePrice": 70064.38911029999
+        },
+        "ETH-USD": {
+          "cash": 10.543952870357316,
+          "positionQuantity": 369.9271899012932,
+          "averagePrice": 2445.728478020123
+        }
+      },
+      "windows": [
+        {
+          "id": "W1",
+          "from": "2015-07-21",
+          "to": "2018-01-01",
+          "cagr": 1.779348147398828,
+          "maxDrawdown": 0.27047142407702385
+        },
+        {
+          "id": "W2",
+          "from": "2018-01-01",
+          "to": "2020-01-01",
+          "cagr": -0.06391693684452615,
+          "maxDrawdown": 0.3631921783694366
+        },
+        {
+          "id": "W3",
+          "from": "2020-01-01",
+          "to": "2022-01-01",
+          "cagr": 0.8236463896485555,
+          "maxDrawdown": 0.3325515825828348
+        },
+        {
+          "id": "W4",
+          "from": "2022-01-01",
+          "to": "2024-01-01",
+          "cagr": 0.1535419903135593,
+          "maxDrawdown": 0.20494832498882265
+        },
+        {
+          "id": "W5",
+          "from": "2024-01-01",
+          "to": "2026-10-01",
+          "cagr": 0.1636843392222853,
+          "maxDrawdown": 0.2932692083690901
+        }
+      ],
+      "windowDrawdowns": [
+        0.27047142407702385,
+        0.3631921783694366,
+        0.3325515825828348,
+        0.20494832498882265,
+        0.2932692083690901
+      ],
+      "brokerReasons": {
+        "INSUFFICIENT_CASH": 20,
+        "INSUFFICIENT_POSITION": 0
+      },
+      "deltaCagr": -0.038708557408067,
+      "deltaDrawdown": 0.02263859308228544
+    },
+    {
+      "id": "O3",
+      "execution": "NEXT_OPEN",
+      "feeBps": 120,
+      "slippageBps": 10,
+      "finalEquity": 1276514.361906108,
+      "netReturn": 62.8257180953054,
+      "cagr": 0.4495435736016118,
+      "maxDrawdown": 0.5035718974702523,
+      "counters": {
+        "filled": 630,
+        "blockedBuys": 77,
+        "rejectedSells": 0,
+        "brokerRejected": 19,
+        "unexecutedFinal": 0
+      },
+      "fees": 488961.6489030735,
+      "slippageCost": 40747.31379364968,
+      "minCash": 3.6551739412971074e-7,
+      "minQuantity": 0,
+      "sleeves": {
+        "BTC-USD": {
+          "cash": 0.00032667029881849885,
+          "positionQuantity": 4.653307093790585,
+          "averagePrice": 70201.74173011997
+        },
+        "ETH-USD": {
+          "cash": 9.432533498911653,
+          "positionQuantity": 330.74355517997094,
+          "averagePrice": 2450.26931085036
+        }
+      },
+      "windows": [
+        {
+          "id": "W1",
+          "from": "2015-07-21",
+          "to": "2018-01-01",
+          "cagr": 1.7635571947451316,
+          "maxDrawdown": 0.2707215855552825
+        },
+        {
+          "id": "W2",
+          "from": "2018-01-01",
+          "to": "2020-01-01",
+          "cagr": -0.07200514141155157,
+          "maxDrawdown": 0.3679367537207173
+        },
+        {
+          "id": "W3",
+          "from": "2020-01-01",
+          "to": "2022-01-01",
+          "cagr": 0.7972647546150591,
+          "maxDrawdown": 0.3386073551327219
+        },
+        {
+          "id": "W4",
+          "from": "2022-01-01",
+          "to": "2024-01-01",
+          "cagr": 0.14360726627497167,
+          "maxDrawdown": 0.20614010617616962
+        },
+        {
+          "id": "W5",
+          "from": "2024-01-01",
+          "to": "2026-10-01",
+          "cagr": 0.14538840116244178,
+          "maxDrawdown": 0.3012619531150881
+        }
+      ],
+      "windowDrawdowns": [
+        0.2707215855552825,
+        0.3679367537207173,
+        0.3386073551327219,
+        0.20614010617616962,
+        0.3012619531150881
+      ],
+      "brokerReasons": {
+        "INSUFFICIENT_CASH": 19,
+        "INSUFFICIENT_POSITION": 0
+      },
+      "deltaCagr": -0.05450236472670622,
+      "deltaDrawdown": 0.03189822587864166
+    },
+    {
+      "id": "O4",
+      "execution": "NEXT_OPEN",
+      "feeBps": 120,
+      "slippageBps": 50,
+      "finalEquity": 1001263.6806201885,
+      "netReturn": 49.06318403100942,
+      "cagr": 0.41843525898211764,
+      "maxDrawdown": 0.5219167632840398,
+      "counters": {
+        "filled": 629,
+        "blockedBuys": 74,
+        "rejectedSells": 0,
+        "brokerRejected": 20,
+        "unexecutedFinal": 0
+      },
+      "fees": 414561.791196175,
+      "slippageCost": 172748.26260505017,
+      "minCash": 1.993888361084828e-7,
+      "minQuantity": 0,
+      "sleeves": {
+        "BTC-USD": {
+          "cash": 0.0002463269920554012,
+          "positionQuantity": 3.4948789043965287,
+          "averagePrice": 70482.26817059999
+        },
+        "ETH-USD": {
+          "cash": 7.545114414853742,
+          "positionQuantity": 264.25336884368954,
+          "averagePrice": 2459.5426276320445
+        }
+      },
+      "windows": [
+        {
+          "id": "W1",
+          "from": "2015-07-21",
+          "to": "2018-01-01",
+          "cagr": 1.7322596960293914,
+          "maxDrawdown": 0.2712279503509548
+        },
+        {
+          "id": "W2",
+          "from": "2018-01-01",
+          "to": "2020-01-01",
+          "cagr": -0.08799871605282816,
+          "maxDrawdown": 0.37731482851047227
+        },
+        {
+          "id": "W3",
+          "from": "2020-01-01",
+          "to": "2022-01-01",
+          "cagr": 0.7455049317520346,
+          "maxDrawdown": 0.35094958997912196
+        },
+        {
+          "id": "W4",
+          "from": "2022-01-01",
+          "to": "2024-01-01",
+          "cagr": 0.12385830657154773,
+          "maxDrawdown": 0.21312334767269037
+        },
+        {
+          "id": "W5",
+          "from": "2024-01-01",
+          "to": "2026-10-01",
+          "cagr": 0.1097384729869415,
+          "maxDrawdown": 0.33688944216090955
+        }
+      ],
+      "windowDrawdowns": [
+        0.2712279503509548,
+        0.37731482851047227,
+        0.35094958997912196,
+        0.21312334767269037,
+        0.33688944216090955
+      ],
+      "brokerReasons": {
+        "INSUFFICIENT_CASH": 20,
+        "INSUFFICIENT_POSITION": 0
+      },
+      "deltaCagr": -0.08561067934620037,
+      "deltaDrawdown": 0.05024309169242913
+    }
+  ]
+}

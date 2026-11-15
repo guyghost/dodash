@@ -1,0 +1,149 @@
+{
+  "fetchedAt": "2026-09-28T09:04:25.475013+00:00",
+  "windowStartMs": 1790586000000,
+  "sql": "SELECT timestamp, _sample_interval AS weight, blob1 AS event, blob2 AS product, blob4 AS phase, blob5 AS outcome, blob6 AS error, blob8 AS val_quality, blob9 AS val_source, blob10 AS expo_quality, double1 AS ts, double2 AS latency_ms, double3 AS daily_pnl, double4 AS equity, double5 AS position, double7 AS execution, double10 AS has_equity, double11 AS val_price, double12 AS val_observed_at, double13 AS val_age_ms, double14 AS consolidated_exposure, double15 AS has_val_price FROM dodash_paper_trading WHERE index1 = 'btc-usd-paper' AND double1 >= 1790586000000 ORDER BY ts ASC LIMIT 100",
+  "result": {
+    "meta": [
+      {
+        "name": "timestamp",
+        "type": "DateTime"
+      },
+      {
+        "name": "weight",
+        "type": "UInt32"
+      },
+      {
+        "name": "event",
+        "type": "String"
+      },
+      {
+        "name": "product",
+        "type": "String"
+      },
+      {
+        "name": "phase",
+        "type": "String"
+      },
+      {
+        "name": "outcome",
+        "type": "String"
+      },
+      {
+        "name": "error",
+        "type": "String"
+      },
+      {
+        "name": "val_quality",
+        "type": "String"
+      },
+      {
+        "name": "val_source",
+        "type": "String"
+      },
+      {
+        "name": "expo_quality",
+        "type": "String"
+      },
+      {
+        "name": "ts",
+        "type": "Float64"
+      },
+      {
+        "name": "latency_ms",
+        "type": "Float64"
+      },
+      {
+        "name": "daily_pnl",
+        "type": "Float64"
+      },
+      {
+        "name": "equity",
+        "type": "Float64"
+      },
+      {
+        "name": "position",
+        "type": "Float64"
+      },
+      {
+        "name": "execution",
+        "type": "Float64"
+      },
+      {
+        "name": "has_equity",
+        "type": "Float64"
+      },
+      {
+        "name": "val_price",
+        "type": "Float64"
+      },
+      {
+        "name": "val_observed_at",
+        "type": "Float64"
+      },
+      {
+        "name": "val_age_ms",
+        "type": "Float64"
+      },
+      {
+        "name": "consolidated_exposure",
+        "type": "Float64"
+      },
+      {
+        "name": "has_val_price",
+        "type": "Float64"
+      }
+    ],
+    "data": [
+      {
+        "timestamp": "2026-09-28 09:01:00",
+        "weight": 1,
+        "event": "cycle.completed",
+        "product": "BTC-USD",
+        "phase": "waiting",
+        "outcome": "FAILED",
+        "error": "RATE_LIMITED",
+        "val_quality": "unavailable",
+        "val_source": "NONE",
+        "expo_quality": "unavailable",
+        "ts": 1790586060794,
+        "latency_ms": 435,
+        "daily_pnl": 9.712763198103858,
+        "equity": 0,
+        "position": 0.004321438613934857,
+        "execution": 0,
+        "has_equity": 0,
+        "val_price": 0,
+        "val_observed_at": 0,
+        "val_age_ms": 0,
+        "consolidated_exposure": 0,
+        "has_val_price": 0
+      },
+      {
+        "timestamp": "2026-09-28 09:01:01",
+        "weight": 1,
+        "event": "cycle.completed",
+        "product": "ETH-USD",
+        "phase": "waiting",
+        "outcome": "FAILED",
+        "error": "STALE_MARKET_DATA",
+        "val_quality": "unavailable",
+        "val_source": "NONE",
+        "expo_quality": "unavailable",
+        "ts": 1790586061728,
+        "latency_ms": 934,
+        "daily_pnl": 10.179593641732936,
+        "equity": 0,
+        "position": 0.12373277036713244,
+        "execution": 0,
+        "has_equity": 0,
+        "val_price": 0,
+        "val_observed_at": 0,
+        "val_age_ms": 0,
+        "consolidated_exposure": 0,
+        "has_val_price": 0
+      }
+    ],
+    "rows": 2,
+    "rows_before_limit_at_least": 2
+  }
+}

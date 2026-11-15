@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MAX_TICKER_DIVERGENCE_BPS,
   createCandle,
   createClientOrderId,
   createFill,
@@ -8,6 +9,7 @@ import {
   createProductId,
   createSignal,
   validateCandleSeries,
+  validateMarketDataIntegrity,
 } from "../src/index.js";
 
 const product = () => {
@@ -56,6 +58,129 @@ describe("market domain", () => {
       ok: false,
       error: { code: "UNSORTED_CANDLE_SERIES", index: 1 },
     });
+  });
+});
+
+describe("validateMarketDataIntegrity — models/market-data-integrity.md", () => {
+  const candle = (start: number, close = 100) => ({
+    start,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+    volume: 10,
+  });
+  const intervalMs = 60_000;
+  const conformingSeries = [candle(0), candle(60_000), candle(120_000)];
+
+  it("accepte une série conforme (INV-I6)", () => {
+    const result = validateMarketDataIntegrity(
+      conformingSeries,
+      intervalMs,
+      { price: 100.5 },
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejette une bougie manquante au milieu avec son index", () => {
+    const result = validateMarketDataIntegrity(
+      [candle(0), candle(60_000), candle(180_000)],
+      intervalMs,
+      null,
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "CANDLE_GAP", index: 2, expectedIntervalMs: intervalMs },
+    });
+  });
+
+  it("rejette les timestamps désordonnés et les doublons via les codes existants", () => {
+    expect(
+      validateMarketDataIntegrity(
+        [candle(60_000), candle(0)],
+        intervalMs,
+        null,
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "INVALID_SERIES",
+        cause: { code: "UNSORTED_CANDLE_SERIES", index: 1 },
+      },
+    });
+    expect(
+      validateMarketDataIntegrity(
+        [candle(0), candle(0)],
+        intervalMs,
+        null,
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "INVALID_SERIES",
+        cause: { code: "DUPLICATE_CANDLE", index: 1 },
+      },
+    });
+    expect(
+      validateMarketDataIntegrity([], intervalMs, null),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "INVALID_SERIES",
+        cause: { code: "EMPTY_CANDLE_SERIES" },
+      },
+    });
+  });
+
+  it("rejette un intervalle déclaré invalide", () => {
+    expect(
+      validateMarketDataIntegrity(conformingSeries, 0, null),
+    ).toEqual({ ok: false, error: { code: "INVALID_INTERVAL" } });
+    expect(
+      validateMarketDataIntegrity(conformingSeries, Number.NaN, null),
+    ).toEqual({ ok: false, error: { code: "INVALID_INTERVAL" } });
+  });
+
+  it("applique la tolérance ticker figée à la borne incluse (INV-I2)", () => {
+    expect(MAX_TICKER_DIVERGENCE_BPS).toBe(100);
+    // 101 vs close 100 = exactement 100 bps → conforme.
+    expect(
+      validateMarketDataIntegrity(conformingSeries, intervalMs, { price: 101 })
+        .ok,
+    ).toBe(true);
+    // 101.1 vs close 100 = 110 bps → rejet fermé avec la cause chiffrée.
+    expect(
+      validateMarketDataIntegrity(conformingSeries, intervalMs, {
+        price: 101.1,
+      }),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "TICKER_INCOHERENT",
+        divergenceBps: 109.99999999999943,
+        maxDivergenceBps: 100,
+      },
+    });
+  });
+
+  it("rejette un prix de ticker non fini ou non positif", () => {
+    expect(
+      validateMarketDataIntegrity(conformingSeries, intervalMs, {
+        price: Number.POSITIVE_INFINITY,
+      }),
+    ).toEqual({ ok: false, error: { code: "TICKER_INVALID_PRICE" } });
+    expect(
+      validateMarketDataIntegrity(conformingSeries, intervalMs, { price: 0 }),
+    ).toEqual({ ok: false, error: { code: "TICKER_INVALID_PRICE" } });
+  });
+
+  it("n'applique pas le contrôle ticker au rejeu (ticker null, INV-I7)", () => {
+    const result = validateMarketDataIntegrity(
+      conformingSeries,
+      intervalMs,
+      null,
+    );
+    expect(result.ok).toBe(true);
   });
 });
 

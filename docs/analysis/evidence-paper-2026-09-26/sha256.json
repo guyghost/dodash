@@ -1,0 +1,14 @@
+{
+  "boundaries.json": "898cbfea7ec489316bbfb5ecabf71c23e6ab0af3eebdc5c60e7a25f4898669e3",
+  "campaign-cycles.json": "19ab82824d1a37550a2d441143bf67e913e32970d1e3119ac7653c7a79034078",
+  "cycles.json": "bea6f06d800d8aba8f72c609d550507320a059ef179ab288cbcbfd2628a9f161",
+  "deployed-source-excerpts.txt": "ba226c979de7a0cd438aa58048f222de83c4ddf9693ce77e2d27dc2f8f915e53",
+  "deployed-source-provenance.json": "4c82af63a897433bf11dfeac6f5a190b70d1b7f44e77cbe0f2e380c0a5390095",
+  "dodash-paper-agent.json": "e1d5440d8ae97eca48a79479b09bb2ce74599b7fe74a3e8f72f5bb82fd0da0a2",
+  "dodash-paper-dashboard-api.json": "4e01f3e87b2c2057e01b697791917bc9ce1a12593183103bbe2e5fbce59cc890",
+  "dodash-paper-dashboard.json": "23f6893d77607d1278375cd35c836a149384c162a6ee0952dfbf3c660586c2db",
+  "dodash-paper-mcp-market-data.json": "59c644f08484c447dfaa92edb8215fb143270737fd536b416cc8a0e4a88ee177",
+  "health-recheck.json": "0d5f52726bd3bb01f475f1924a86f6be7899997fb9a9e64c10c12e5678e5997a",
+  "summary.json": "869b0314acb356a86f592cb01a903958cc8ac9d3302841e90fac12fb7c1b65b2",
+  "totals.json": "2558b6514837cae8083d0ee3daaa562a73439cf4870c9013d5834054cb528902"
+}
