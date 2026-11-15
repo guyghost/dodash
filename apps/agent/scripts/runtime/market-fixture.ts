@@ -6,12 +6,16 @@ export default {
 			fixtureClose = body.close;
 			return Response.json({ ok: true });
 		}
+		const source =
+			typeof body.sources?.[0] === "string"
+				? body.sources[0].toLowerCase()
+				: "hyperliquid";
 		if (new URL(request.url).pathname.endsWith("/ticker"))
 			return Response.json({
 				productId: body.productId,
 				price: 10,
 				observedAt: Number(fixtureClose ?? env.CANDLE_CLOSE),
-				source: "coinbase",
+				source,
 				cached: false,
 			});
 		const close = Number(
@@ -28,7 +32,7 @@ export default {
 				close: 10,
 				volume: 10,
 			})),
-			source: "coinbase",
+			source,
 			cached: false,
 		});
 	},

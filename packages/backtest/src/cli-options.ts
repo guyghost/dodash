@@ -6,6 +6,7 @@ import {
   type Result,
   type Timeframe,
 } from "@dodash/domain";
+import type { RsiMode } from "@dodash/indicators-prolog";
 import {
   isValidProtectiveExitPolicy,
   isValidRegimeConditionalExitPolicy,
@@ -59,6 +60,15 @@ export interface BacktestCliOptions {
   readonly outputPath: string;
   readonly protectiveExit: BacktestCliProtectiveExitPolicy;
   readonly regimeFilter: RegimeFilterPolicy | null;
+  readonly rsiMode?: RsiMode;
+  readonly adxWarmupMultiplier?: number;
+  readonly positionAware?: boolean;
+  readonly maxTrendStrength?: number;
+  readonly minRelativeVolume?: number;
+  readonly atrStopLossMultiple?: number;
+  readonly atrTakeProfitMultiple?: number;
+  readonly feeBps?: number;
+  readonly slippageBps?: number;
 }
 
 export type BacktestCliProtectiveExitPolicy = Extract<
@@ -177,6 +187,15 @@ export const parseBacktestCliOptions = (
     "--start",
     "--end",
     "--output",
+    "--rsi-mode",
+    "--adx-warmup-multiplier",
+    "--position-aware",
+    "--max-trend-strength",
+    "--min-relative-volume",
+    "--atr-stop-loss-multiple",
+    "--atr-take-profit-multiple",
+    "--fee-bps",
+    "--slippage-bps",
   ]);
   for (let index = 0; index < normalizedArgs.length; index += 2) {
     const key = normalizedArgs[index];
@@ -364,6 +383,66 @@ export const parseBacktestCliOptions = (
   }
   const confidenceCalibration = confidenceCalibrationRaw;
 
+  const rsiModeRaw = values.get("--rsi-mode")?.toUpperCase();
+  if (
+    rsiModeRaw !== undefined &&
+    rsiModeRaw !== "CUTLER" &&
+    rsiModeRaw !== "WILDER"
+  ) {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+  const rsiMode: RsiMode | undefined = rsiModeRaw;
+  const adxWarmupRaw = values.get("--adx-warmup-multiplier");
+  const adxWarmupMultiplier =
+    adxWarmupRaw === undefined ? undefined : Number(adxWarmupRaw);
+  if (
+    adxWarmupMultiplier !== undefined &&
+    (!Number.isSafeInteger(adxWarmupMultiplier) || adxWarmupMultiplier < 2)
+  ) {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+  const positionAwareRaw = values.get("--position-aware");
+  if (
+    positionAwareRaw !== undefined &&
+    positionAwareRaw !== "true" &&
+    positionAwareRaw !== "false"
+  ) {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+  const positionAware =
+    positionAwareRaw === undefined ? undefined : positionAwareRaw === "true";
+
+  const parsePositiveOptional = (flag: string): number | undefined | null => {
+    const raw = values.get(flag);
+    if (raw === undefined) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  };
+  const parseNonNegativeOptional = (flag: string): number | undefined | null => {
+    const raw = values.get(flag);
+    if (raw === undefined) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  };
+  const maxTrendStrength = parsePositiveOptional("--max-trend-strength");
+  const minRelativeVolume = parsePositiveOptional("--min-relative-volume");
+  const atrStopLossMultiple = parsePositiveOptional("--atr-stop-loss-multiple");
+  const atrTakeProfitMultiple = parsePositiveOptional(
+    "--atr-take-profit-multiple",
+  );
+  const feeBps = parseNonNegativeOptional("--fee-bps");
+  const slippageBps = parseNonNegativeOptional("--slippage-bps");
+  if (
+    maxTrendStrength === null ||
+    minRelativeVolume === null ||
+    atrStopLossMultiple === null ||
+    atrTakeProfitMultiple === null ||
+    feeBps === null ||
+    slippageBps === null
+  ) {
+    return err({ code: "INVALID_CLI_OPTIONS" });
+  }
+
   const latestClosedBoundary = Math.floor(now / duration) * duration;
   const startAt = values.has("--start")
     ? parseUtcDate(values.get("--start") as string)
@@ -423,6 +502,17 @@ export const parseBacktestCliOptions = (
       outputPath,
       protectiveExit,
       regimeFilter,
+      ...(rsiMode === undefined ? {} : { rsiMode }),
+      ...(adxWarmupMultiplier === undefined ? {} : { adxWarmupMultiplier }),
+      ...(positionAware === undefined ? {} : { positionAware }),
+      ...(maxTrendStrength === undefined ? {} : { maxTrendStrength }),
+      ...(minRelativeVolume === undefined ? {} : { minRelativeVolume }),
+      ...(atrStopLossMultiple === undefined ? {} : { atrStopLossMultiple }),
+      ...(atrTakeProfitMultiple === undefined
+        ? {}
+        : { atrTakeProfitMultiple }),
+      ...(feeBps === undefined ? {} : { feeBps }),
+      ...(slippageBps === undefined ? {} : { slippageBps }),
     }),
   );
 };
