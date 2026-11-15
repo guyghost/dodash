@@ -33,8 +33,8 @@ try {
 					"strategies",
 				]
 					.map((n) => [
-						"@dodash/" + n,
-						resolve("../../packages/" + n + "/src/index.ts"),
+						`@dodash/${n}`,
+						resolve(`../../packages/${n}/src/index.ts`),
 					])
 					.concat([["@dodash/models", resolve("../../models/index.ts")]]),
 			),
@@ -49,7 +49,7 @@ try {
 								filter:
 									/^(path|fs|util|stream|events|buffer|os|crypto|child_process)$/,
 							},
-							(a) => ({ path: "node:" + a.path, external: true }),
+							(a) => ({ path: `node:${a.path}`, external: true }),
 						);
 					},
 				},
@@ -189,7 +189,7 @@ try {
 	assert.deepEqual(orphan.state, orphanBefore.state);
 	assert.deepEqual(orphan.telemetry, orphanBefore.telemetry);
 	for (const newCandle of [false, true]) {
-		const name = "grid-" + newCandle;
+		const name = `grid-${newCandle}`;
 		await call({ action: "market", close: CLOSE });
 		await call({
 			action: "prepare",
