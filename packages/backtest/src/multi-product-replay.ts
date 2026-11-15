@@ -336,11 +336,21 @@ export const replayMultiProductBacktest = async (
       if (!indicatorResult.ok) {
         return err({ code: "INDICATOR_FAILURE", cause: indicatorResult.error });
       }
+      const position = positions.get(product.productId) ?? {
+        quantity: 0,
+        averagePrice: 0,
+      };
       const signalResult = product.strategies.evaluateAll({
         productId: product.productId,
         candles: history,
         indicators: indicatorResult.value,
         previousIndicators: previousIndicators.get(product.productId) ?? null,
+        positionSide:
+          position.quantity > 0
+            ? "LONG"
+            : position.quantity < 0
+              ? "SHORT"
+              : "FLAT",
       });
       if (!signalResult.ok) {
         return err({ code: "STRATEGY_FAILURE", cause: signalResult.error });
@@ -392,6 +402,7 @@ export const replayMultiProductBacktest = async (
         productPnlProxy(product.productId, productIndex, index),
       );
       dailyWindows.set(product.productId, dailyRisk.window);
+      const atr = previousIndicators.get(product.productId)?.atr;
       riskInputs.push({
         productId: product.productId,
         intent: orderFor.get(product.productId) ?? null,
@@ -406,6 +417,7 @@ export const replayMultiProductBacktest = async (
             lastTradeAt.get(product.productId) ?? null,
           ),
           killSwitchActive: false,
+          ...(atr !== undefined && Number.isFinite(atr) && atr > 0 ? { atr } : {}),
         },
         config: product.risk,
       });

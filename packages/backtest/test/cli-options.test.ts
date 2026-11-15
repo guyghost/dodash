@@ -545,5 +545,57 @@ describe("backtest CLI options", () => {
       ),
     ).toEqual({ ok: false, error: { code: "INVALID_CLI_OPTIONS" } });
   });
+
+  it("accepte et valide les options d'indicateurs, conditionnement, ATR et frais", () => {
+    const now = Date.UTC(2026, 7, 18);
+    const parsed = backtest.parseBacktestCliOptions(
+      [
+        "--rsi-mode",
+        "wilder",
+        "--adx-warmup-multiplier",
+        "2",
+        "--position-aware",
+        "true",
+        "--max-trend-strength",
+        "35",
+        "--min-relative-volume",
+        "1.1",
+        "--atr-stop-loss-multiple",
+        "2",
+        "--atr-take-profit-multiple",
+        "3",
+        "--fee-bps",
+        "1",
+        "--slippage-bps",
+        "0",
+      ],
+      now,
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.rsiMode).toBe("WILDER");
+    expect(parsed.value.adxWarmupMultiplier).toBe(2);
+    expect(parsed.value.positionAware).toBe(true);
+    expect(parsed.value.maxTrendStrength).toBe(35);
+    expect(parsed.value.minRelativeVolume).toBe(1.1);
+    expect(parsed.value.atrStopLossMultiple).toBe(2);
+    expect(parsed.value.atrTakeProfitMultiple).toBe(3);
+    expect(parsed.value.feeBps).toBe(1);
+    expect(parsed.value.slippageBps).toBe(0);
+
+    expect(
+      backtest.parseBacktestCliOptions(["--rsi-mode", "INVALID"], now).ok,
+    ).toBe(false);
+    expect(
+      backtest.parseBacktestCliOptions(["--adx-warmup-multiplier", "1"], now)
+        .ok,
+    ).toBe(false);
+    expect(
+      backtest.parseBacktestCliOptions(["--position-aware", "maybe"], now).ok,
+    ).toBe(false);
+    expect(
+      backtest.parseBacktestCliOptions(["--max-trend-strength", "0"], now).ok,
+    ).toBe(false);
+  });
 });
 

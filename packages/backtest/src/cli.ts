@@ -50,6 +50,17 @@ const main = async (): Promise<void> => {
     : null;
 
   const runId = createBacktestRunId(options.value);
+  const strategyOptions = {
+    ...(options.value.positionAware === undefined
+      ? {}
+      : { positionAware: options.value.positionAware }),
+    ...(options.value.maxTrendStrength === undefined
+      ? {}
+      : { maxTrendStrength: options.value.maxTrendStrength }),
+    ...(options.value.minRelativeVolume === undefined
+      ? {}
+      : { minRelativeVolume: options.value.minRelativeVolume }),
+  };
   const config: BacktestSuiteConfig = Object.freeze({
     runId,
     agentId: "dodash-backtest",
@@ -58,7 +69,15 @@ const main = async (): Promise<void> => {
     minNetQuantity: 0.000_001,
     targetSignalNotional: options.value.targetSignalNotional,
     confidenceCalibration: options.value.confidenceCalibration,
-    indicators: DEFAULT_INDICATOR_CONFIG,
+    indicators: Object.freeze({
+      ...DEFAULT_INDICATOR_CONFIG,
+      ...(options.value.rsiMode === undefined
+        ? {}
+        : { rsiMode: options.value.rsiMode }),
+      ...(options.value.adxWarmupMultiplier === undefined
+        ? {}
+        : { adxWarmupMultiplier: options.value.adxWarmupMultiplier }),
+    }),
     risk: Object.freeze({
       maxOrderNotional: 2_000,
       maxPositionNotional: 10_000,
@@ -67,12 +86,24 @@ const main = async (): Promise<void> => {
       cooldownMs: 0,
       stopLossBps: 150,
       takeProfitBps: 300,
+      ...(options.value.atrStopLossMultiple === undefined
+        ? {}
+        : { atrStopLossMultiple: options.value.atrStopLossMultiple }),
+      ...(options.value.atrTakeProfitMultiple === undefined
+        ? {}
+        : { atrTakeProfitMultiple: options.value.atrTakeProfitMultiple }),
     }),
-    broker: Object.freeze({ feeBps: 6, slippageBps: 2 }),
+    broker: Object.freeze({
+      feeBps: options.value.feeBps ?? 6,
+      slippageBps: options.value.slippageBps ?? 2,
+    }),
     protectiveExit: options.value.protectiveExit,
     ...(options.value.regimeFilter === null
       ? {}
       : { regimeFilter: options.value.regimeFilter }),
+    ...(Object.keys(strategyOptions).length === 0
+      ? {}
+      : { strategyOptions: Object.freeze(strategyOptions) }),
   });
   const result = await runModeledBacktest(
     dataset.value,

@@ -524,4 +524,17 @@ describe("backtest suite", () => {
       error: { code: "INVALID_SUITE_CONFIG" },
     });
   });
+
+  it("propage strategyOptions aux stratégies de la suite", async () => {
+    const { dataset, config } = suiteFixture();
+    const result = await backtest.runBacktestSuite(dataset, {
+      ...config,
+      strategyOptions: {
+        positionAware: true,
+        maxTrendStrength: 35,
+        minRelativeVolume: 1.1,
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
 });

@@ -38,6 +38,12 @@ import { replayBacktest } from "./replay.js";
 import type { RegimeGatingSummary } from "./replay.js";
 import { withTargetSignalNotional } from "./target-notional-strategy.js";
 
+export interface BacktestStrategyOptions {
+  readonly positionAware?: boolean;
+  readonly maxTrendStrength?: number;
+  readonly minRelativeVolume?: number;
+}
+
 export interface BacktestSuiteConfig {
   readonly runId: string;
   readonly agentId: string;
@@ -57,6 +63,7 @@ export interface BacktestSuiteConfig {
   // INV-P1..P3 (models/strategy-permission.md) : table de permission
   // optionnelle, validée côté replay ; nécessite regimeFilter.
   readonly regimePermissions?: RegimePermissions;
+  readonly strategyOptions?: BacktestStrategyOptions;
 }
 
 export interface BacktestSuiteOptions {
@@ -171,12 +178,19 @@ const strategiesById = (
       strategy,
       config.confidenceCalibration ?? "IDENTITY",
     );
+  const opts = config.strategyOptions;
   return Object.freeze({
     "rsi-reversion": size(
       createRsiReversionStrategy({
         oversold: 30,
         overbought: 70,
         baseSize: config.targetSignalNotional,
+        ...(opts?.maxTrendStrength === undefined
+          ? {}
+          : { maxTrendStrength: opts.maxTrendStrength }),
+        ...(opts?.positionAware === undefined
+          ? {}
+          : { positionAware: opts.positionAware }),
       }),
     ),
     "ema-cross": size(
@@ -191,6 +205,12 @@ const strategiesById = (
         createBreakoutStrategy({
           lookback: 20,
           baseSize: config.targetSignalNotional,
+          ...(opts?.minRelativeVolume === undefined
+            ? {}
+            : { minRelativeVolume: opts.minRelativeVolume }),
+          ...(opts?.positionAware === undefined
+            ? {}
+            : { positionAware: opts.positionAware }),
         }),
       ),
     ),
