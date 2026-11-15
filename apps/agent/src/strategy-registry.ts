@@ -17,6 +17,7 @@ import type { AgentConfiguration } from "./configuration.js";
 export const createConfiguredStrategyRegistry = (
   configuration: AgentConfiguration,
 ) => {
+  const options = configuration.strategyOptions;
   const strategies = configuration.strategyIds.map((id) => {
     let strategy: Strategy;
     switch (id) {
@@ -26,13 +27,29 @@ export const createConfiguredStrategyRegistry = (
           oversold: 30,
           overbought: 70,
           baseSize: 0.01,
+          ...(options?.maxTrendStrength === undefined
+            ? {}
+            : { maxTrendStrength: options.maxTrendStrength }),
+          ...(options?.positionAware === undefined
+            ? {}
+            : { positionAware: options.positionAware }),
         });
         break;
       case "ema-cross":
         strategy = createEmaCrossStrategy({ id, baseSize: 0.01 });
         break;
       case "breakout":
-        strategy = createBreakoutStrategy({ id, lookback: 20, baseSize: 0.01 });
+        strategy = createBreakoutStrategy({
+          id,
+          lookback: 20,
+          baseSize: 0.01,
+          ...(options?.minRelativeVolume === undefined
+            ? {}
+            : { minRelativeVolume: options.minRelativeVolume }),
+          ...(options?.positionAware === undefined
+            ? {}
+            : { positionAware: options.positionAware }),
+        });
         break;
       // Seuil figé §5 (percentile p75 in-sample, dao #38 — variant non
       // validé OOS, INV-F9), non calibré : CALIBRATED_STRATEGY_IDS
@@ -42,6 +59,9 @@ export const createConfiguredStrategyRegistry = (
           id,
           enterThreshold: FUNDING_TREND_ENTER_THRESHOLD,
           baseSize: 0.01,
+          ...(options?.exitThreshold === undefined
+            ? {}
+            : { exitThreshold: options.exitThreshold }),
         });
         break;
       // Signal informatif P7 (models/target-exposure.md §4) : jamais

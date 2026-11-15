@@ -3,6 +3,8 @@
     "AllocationDecision",
     "AllocationError",
     "AllocationInput",
+    "ExecutionStyle",
+    "OrderBookTop",
     "allocateSignals"
   ],
   "@dodash/backtest": [
@@ -108,6 +110,7 @@
     "OrderBookLevel",
     "OrderBookSnapshot",
     "OrderBookVwap",
+    "RsiMode",
     "TradeSample",
     "computeIndicators",
     "createIndicatorSeriesComputer",
@@ -144,8 +147,10 @@
     "FundingTrendConfig",
     "RsiReversionConfig",
     "Strategy",
+    "StrategyConfirmedRegime",
     "StrategyContext",
     "StrategyError",
+    "StrategyPositionSide",
     "StrategyRegistry",
     "TARGET_EXPOSURE_STRATEGY_ID",
     "createBreakoutStrategy",

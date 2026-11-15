@@ -71,6 +71,13 @@ const SIGNAL_CONFIG: IndicatorConfig = {
 	signalEmaSlowPeriod: 6,
 };
 
+const WILDER_MATH_CONFIG: IndicatorConfig = {
+	...COMPACT_CONFIG,
+	rsiMode: "WILDER",
+	adxWarmupMultiplier: 3,
+	longSmaPeriod: 8,
+};
+
 const assertSeriesIdentical = async (
 	candles: readonly Candle[],
 	config: IndicatorConfig,
@@ -125,6 +132,12 @@ describe("IndicatorSeriesComputer (INV-27)", () => {
 		timeout: 30_000,
 	}, async () => {
 		await assertSeriesIdentical(randomCandles(40, 0x5eed), SIGNAL_CONFIG);
+	});
+
+	it("produit des snapshots strictement identiques (RSI Wilder + ADX Wilder +DI/-DI + longSma)", {
+		timeout: 30_000,
+	}, async () => {
+		await assertSeriesIdentical(randomCandles(40, 0x2026), WILDER_MATH_CONFIG);
 	});
 
 	it("produit des snapshots strictement identiques sur une série longue (> 100 snapshots)", {

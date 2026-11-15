@@ -24,6 +24,13 @@ export interface FundingTrendConfig {
    * passent leur seuil explicitement : reproductibilité inchangée (C2).
    */
   readonly enterThreshold?: number;
+  /**
+   * Seuil de sortie de carry (0 <= exitThreshold < enterThreshold).
+   * Lorsque configuré :
+   * - positionSide === "LONG" et fundingAvg > -exitThreshold ⇒ SELL (FUNDING_CARRY_EXIT)
+   * - positionSide === "SHORT" et fundingAvg < exitThreshold ⇒ BUY (FUNDING_CARRY_EXIT)
+   */
+  readonly exitThreshold?: number;
   readonly baseSize: number;
 }
 
@@ -45,7 +52,11 @@ export const createFundingTrendStrategy = (
         !Number.isFinite(enterThreshold) ||
         enterThreshold <= 0 ||
         !Number.isFinite(config.baseSize) ||
-        config.baseSize <= 0
+        config.baseSize <= 0 ||
+        (config.exitThreshold !== undefined &&
+          (!Number.isFinite(config.exitThreshold) ||
+            config.exitThreshold < 0 ||
+            config.exitThreshold >= enterThreshold))
       ) {
         return {
           ok: false as const,
@@ -66,6 +77,26 @@ export const createFundingTrendStrategy = (
             reasonCode: "FUNDING_WARMUP",
           }),
         );
+      }
+
+      if (config.exitThreshold !== undefined) {
+        const exitLong =
+          context.positionSide === "LONG" && fundingAvg > -config.exitThreshold;
+        const exitShort =
+          context.positionSide === "SHORT" && fundingAvg < config.exitThreshold;
+        if (exitLong || exitShort) {
+          return strategySignal(
+            id,
+            createSignal({
+              strategyId: id,
+              productId: context.productId,
+              side: exitLong ? "SELL" : "BUY",
+              confidence: 1,
+              suggestedSize: config.baseSize,
+              reasonCode: "FUNDING_CARRY_EXIT",
+            }),
+          );
+        }
       }
 
       const { emaFast, emaSlow } = context.indicators;

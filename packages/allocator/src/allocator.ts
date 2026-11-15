@@ -10,6 +10,14 @@ import {
   type TradingValidationError,
 } from "@dodash/domain";
 
+export type ExecutionStyle = "MARKET" | "LIMIT_PASSIVE";
+
+export interface OrderBookTop {
+  readonly bestBid: number;
+  readonly bestAsk: number;
+  readonly spreadBps: number;
+}
+
 export interface AllocationInput {
   readonly agentId: string;
   readonly cycleId: string;
@@ -19,6 +27,9 @@ export interface AllocationInput {
   readonly capitalAvailable: number;
   readonly maxDecisionNotional: number;
   readonly minNetQuantity: number;
+  readonly executionStyle?: ExecutionStyle;
+  readonly orderBooks?: Readonly<Record<string, OrderBookTop>>;
+  readonly maxSpreadBps?: number;
 }
 
 export interface AllocationDecision {
@@ -48,7 +59,43 @@ const validInput = (input: AllocationInput): boolean =>
   Number.isFinite(input.maxDecisionNotional) &&
   input.maxDecisionNotional > 0 &&
   Number.isFinite(input.minNetQuantity) &&
-  input.minNetQuantity >= 0;
+  input.minNetQuantity >= 0 &&
+  (input.executionStyle === undefined ||
+    input.executionStyle === "MARKET" ||
+    input.executionStyle === "LIMIT_PASSIVE") &&
+  (input.maxSpreadBps === undefined ||
+    (Number.isFinite(input.maxSpreadBps) && input.maxSpreadBps >= 0));
+
+const isSpreadBlocked = (
+  book: OrderBookTop | undefined,
+  maxSpreadBps: number | undefined,
+): boolean =>
+  maxSpreadBps !== undefined &&
+  book !== undefined &&
+  (!Number.isFinite(book.spreadBps) ||
+    book.spreadBps < 0 ||
+    book.spreadBps > maxSpreadBps);
+
+const isValidBookForLimit = (book: OrderBookTop | undefined): book is OrderBookTop =>
+  book !== undefined &&
+  Number.isFinite(book.bestBid) &&
+  book.bestBid > 0 &&
+  Number.isFinite(book.bestAsk) &&
+  book.bestAsk >= book.bestBid;
+
+const resolveOrderExecution = (
+  executionStyle: ExecutionStyle | undefined,
+  book: OrderBookTop | undefined,
+  side: "BUY" | "SELL",
+): { readonly type: "MARKET" | "LIMIT"; readonly limitPrice: number | null } => {
+  if (executionStyle === "LIMIT_PASSIVE" && isValidBookForLimit(book)) {
+    return {
+      type: "LIMIT",
+      limitPrice: side === "BUY" ? book.bestBid : book.bestAsk,
+    };
+  }
+  return { type: "MARKET", limitPrice: null };
+};
 
 export const allocateSignals = (
   input: AllocationInput,
@@ -90,6 +137,9 @@ export const allocateSignals = (
     netQuantities[productKey] = net;
     if (Math.abs(net) <= input.minNetQuantity || remainingNotional <= 0) continue;
 
+    const book = input.orderBooks?.[productKey];
+    if (isSpreadBlocked(book, input.maxSpreadBps)) continue;
+
     const quantity = Math.min(Math.abs(net), remainingNotional / price);
     if (quantity <= input.minNetQuantity) continue;
     const clientOrderId = createClientOrderId(
@@ -103,6 +153,11 @@ export const allocateSignals = (
     }
 
     const side = net > 0 ? "BUY" : "SELL";
+    const { type, limitPrice } = resolveOrderExecution(
+      input.executionStyle,
+      book,
+      side,
+    );
     const contributors = group.signals
       .filter((signal) => signal.side === side)
       .map((signal) => signal.strategyId)
@@ -113,9 +168,9 @@ export const allocateSignals = (
       strategyIds: contributors,
       productId: group.productId,
       side,
-      type: "MARKET",
+      type,
       quantity,
-      limitPrice: null,
+      limitPrice,
     });
     if (!intent.ok) {
       return err({ code: "INVALID_ORDER_INTENT", cause: intent.error });

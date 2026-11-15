@@ -10,8 +10,15 @@ import pl from "tau-prolog";
 
 import { PROLOG_SOURCE } from "./prolog-source.js";
 
+export type RsiMode = "CUTLER" | "WILDER";
+
 export interface IndicatorConfig {
 	readonly rsiPeriod: number;
+	/**
+	 * Mode de calcul du RSI (models/indicators.md Amendement 2026-11-15) :
+	 * absent ou `"CUTLER"` ⇒ moyenne simple V1 ; `"WILDER"` ⇒ lissage de Wilder.
+	 */
+	readonly rsiMode?: RsiMode;
 	readonly emaFastPeriod: number;
 	readonly emaSlowPeriod: number;
 	readonly atrPeriod: number;
@@ -23,6 +30,18 @@ export interface IndicatorConfig {
 	readonly volumeSpikeThreshold: number;
 	readonly volumeTrendPeriod: number;
 	readonly trendStrengthPeriod: number;
+	/**
+	 * Multiplicateur de fenêtre ADX (models/indicators.md Amendement 2026-11-15) :
+	 * entier >= 2. Absent ⇒ fenêtre V1 (2 × trendStrengthPeriod) sans +DI/-DI ;
+	 * présent ⇒ fenêtre (trendStrengthPeriod × adxWarmupMultiplier) et exposition
+	 * de `plusDi` et `minusDi`.
+	 */
+	readonly adxWarmupMultiplier?: number;
+	/**
+	 * Période de la SMA longue optionnelle (models/indicators.md Amendement
+	 * 2026-11-15) : absente ⇒ `longSma` absent ; présente ⇒ `longSma` exposé.
+	 */
+	readonly longSmaPeriod?: number;
 	/**
 	 * Paire d'EMAs de signal optionnelle (models/ema-signal-decoupling.md) :
 	 * les deux champs présents ou aucun (INV-E2). Absente ⇒ comportement et
@@ -123,6 +142,17 @@ export interface IndicatorSnapshot {
 	readonly volumeTrend: number | null;
 	readonly vwapDeviation: number | null;
 	readonly trendStrength: number;
+	/**
+	 * Indicateurs directionnels de Wilder (+DI / -DI) : présents uniquement
+	 * lorsque `adxWarmupMultiplier` est configuré (Amendement 2026-11-15).
+	 */
+	readonly plusDi?: number;
+	readonly minusDi?: number;
+	/**
+	 * SMA longue optionnelle : présente uniquement lorsque `longSmaPeriod` est
+	 * configuré (Amendement 2026-11-15).
+	 */
+	readonly longSma?: number;
 	/**
 	 * Funding moyen glissant (models/funding-rate-strategy.md) : absent du
 	 * snapshot tant qu'aucune entrée funding n'est fournie (INV-F1) ou
@@ -228,6 +258,9 @@ const validReturnPeriods = (periods: readonly number[]): boolean =>
 
 const validConfig = (config: IndicatorConfig): boolean =>
 	validPeriod(config.rsiPeriod) &&
+	(config.rsiMode === undefined ||
+		config.rsiMode === "CUTLER" ||
+		config.rsiMode === "WILDER") &&
 	validPeriod(config.emaFastPeriod) &&
 	validPeriod(config.emaSlowPeriod) &&
 	validPeriod(config.atrPeriod) &&
@@ -242,6 +275,10 @@ const validConfig = (config: IndicatorConfig): boolean =>
 	validPeriod(config.volumeTrendPeriod) &&
 	config.volumeTrendPeriod >= 2 &&
 	validPeriod(config.trendStrengthPeriod) &&
+	(config.adxWarmupMultiplier === undefined ||
+		(Number.isSafeInteger(config.adxWarmupMultiplier) &&
+			config.adxWarmupMultiplier >= 2)) &&
+	(config.longSmaPeriod === undefined || validPeriod(config.longSmaPeriod)) &&
 	config.emaFastPeriod < config.emaSlowPeriod &&
 	// INV-E2 (models/ema-signal-decoupling.md) : couplage strict, fail-closed.
 	((config.signalEmaFastPeriod === undefined &&
@@ -265,7 +302,8 @@ export const requiredIndicatorCandles = (config: IndicatorConfig): number =>
 		config.vwapPeriod,
 		config.relativeVolumePeriod + 1,
 		config.volumeTrendPeriod,
-		config.trendStrengthPeriod * 2,
+		config.trendStrengthPeriod * (config.adxWarmupMultiplier ?? 2),
+		config.longSmaPeriod ?? 0,
 	);
 
 const isPositiveFinite = (value: number): boolean =>
@@ -314,11 +352,19 @@ const evaluateBoundedIndicators = async (
 	}
 	const fixedWindowList = (values: readonly number[], length: number): string =>
 		asPrologList(values.slice(-length));
+	const rsiWilder = config.rsiMode === "WILDER";
+	const adxDiActive = config.adxWarmupMultiplier !== undefined;
+	const adxWindow =
+		config.trendStrengthPeriod * (config.adxWarmupMultiplier ?? 2);
 	const boundedGoals: readonly (readonly [string, string])[] = [
-		[
-			"Rsi",
-			`rsi(${fixedWindowList(closeValues, config.rsiPeriod + 1)}, ${config.rsiPeriod}, Value).`,
-		],
+		...(!rsiWilder
+			? ([
+					[
+						"Rsi",
+						`rsi(${fixedWindowList(closeValues, config.rsiPeriod + 1)}, ${config.rsiPeriod}, Value).`,
+					],
+				] as const)
+			: []),
 		[
 			"HistoricalVolatility",
 			`historical_volatility(${fixedWindowList(closeValues, config.historicalVolatilityPeriod + 1)}, ${config.historicalVolatilityPeriod}, Value).`,
@@ -327,15 +373,39 @@ const evaluateBoundedIndicators = async (
 			"Momentum",
 			`momentum(${fixedWindowList(closeValues, config.momentumPeriod + 1)}, ${config.momentumPeriod}, Value).`,
 		],
-		[
-			"TrendStrength",
-			`trend_strength(${fixedWindowList(highValues, config.trendStrengthPeriod * 2)}, ${fixedWindowList(lowValues, config.trendStrengthPeriod * 2)}, ${fixedWindowList(closeValues, config.trendStrengthPeriod * 2)}, ${config.trendStrengthPeriod}, Value).`,
-		],
+		...(!adxDiActive
+			? ([
+					[
+						"TrendStrength",
+						`trend_strength(${fixedWindowList(highValues, adxWindow)}, ${fixedWindowList(lowValues, adxWindow)}, ${fixedWindowList(closeValues, adxWindow)}, ${config.trendStrengthPeriod}, Value).`,
+					],
+				] as const)
+			: []),
+		...(config.longSmaPeriod !== undefined
+			? ([
+					[
+						"LongSma",
+						`sma(${fixedWindowList(closeValues, config.longSmaPeriod)}, ${config.longSmaPeriod}, Value).`,
+					],
+				] as const)
+			: []),
 	];
 	for (const [indicator, goal] of boundedGoals) {
 		const result = await queryNumber(session, indicator, goal);
 		if (!result.ok) return result;
 		candleValues[indicator] = result.value;
+	}
+	if (adxDiActive) {
+		const adxResult = await queryNumbers(
+			session,
+			"TrendStrengthDi",
+			`trend_strength_di(${fixedWindowList(highValues, adxWindow)}, ${fixedWindowList(lowValues, adxWindow)}, ${fixedWindowList(closeValues, adxWindow)}, ${config.trendStrengthPeriod}, Adx, PlusDi, MinusDi).`,
+			["Adx", "PlusDi", "MinusDi"],
+		);
+		if (!adxResult.ok) return adxResult;
+		candleValues.TrendStrength = adxResult.value.Adx ?? 0;
+		candleValues.PlusDi = adxResult.value.PlusDi ?? 0;
+		candleValues.MinusDi = adxResult.value.MinusDi ?? 0;
 	}
 
 	const periodicReturns: Record<string, number> = {};
@@ -453,6 +523,8 @@ interface FoldAccumulators {
 	previousClose: number;
 	signalEmaFast?: number;
 	signalEmaSlow?: number;
+	rsiAvgGain?: number;
+	rsiAvgLoss?: number;
 }
 
 export const createIndicatorSeriesComputer = async (
@@ -468,6 +540,9 @@ export const createIndicatorSeriesComputer = async (
 	const signalEmaActive =
 		config.signalEmaFastPeriod !== undefined &&
 		config.signalEmaSlowPeriod !== undefined;
+	const rsiWilder = config.rsiMode === "WILDER";
+	const adxDiActive = config.adxWarmupMultiplier !== undefined;
+	const longSmaActive = config.longSmaPeriod !== undefined;
 	const candles: Candle[] = [];
 	let folds: FoldAccumulators | null = null;
 
@@ -557,6 +632,18 @@ export const createIndicatorSeriesComputer = async (
 						}
 					: {}),
 			};
+			if (rsiWilder) {
+				const rsiSeed = await queryNumbers(
+					session,
+					"RsiWilder",
+					`rsi_wilder_state(${closes}, ${config.rsiPeriod}, AvgGain, AvgLoss, Value).`,
+					["AvgGain", "AvgLoss", "Value"],
+				);
+				if (!rsiSeed.ok) return rsiSeed;
+				candleValues.Rsi = rsiSeed.value.Value ?? 0;
+				folds.rsiAvgGain = rsiSeed.value.AvgGain ?? 0;
+				folds.rsiAvgLoss = rsiSeed.value.AvgLoss ?? 0;
+			}
 		} else if (folds !== null) {
 			// Continuation : mêmes prédicats d'accumulation que le pli complet,
 			// appliqués au seul suffixe nouveau (bit-exact par construction).
@@ -608,6 +695,22 @@ export const createIndicatorSeriesComputer = async (
 				nextFolds.signalEmaFast = signalFastResult.value;
 				nextFolds.signalEmaSlow = signalSlowResult.value;
 			}
+			if (
+				rsiWilder &&
+				folds.rsiAvgGain !== undefined &&
+				folds.rsiAvgLoss !== undefined
+			) {
+				const rsiCont = await queryNumbers(
+					session,
+					"RsiWilder",
+					`rsi_wilder_continue([${last.close}], ${asPrologNumber(folds.previousClose)}, ${config.rsiPeriod}, ${asPrologNumber(folds.rsiAvgGain)}, ${asPrologNumber(folds.rsiAvgLoss)}, AvgGain, AvgLoss, Value).`,
+					["AvgGain", "AvgLoss", "Value"],
+				);
+				if (!rsiCont.ok) return rsiCont;
+				candleValues.Rsi = rsiCont.value.Value ?? 0;
+				nextFolds.rsiAvgGain = rsiCont.value.AvgGain ?? 0;
+				nextFolds.rsiAvgLoss = rsiCont.value.AvgLoss ?? 0;
+			}
 			folds = nextFolds;
 		} else {
 			return err({
@@ -655,6 +758,13 @@ export const createIndicatorSeriesComputer = async (
 				volumeTrend: bounded.value.volumeTrend,
 				vwapDeviation: bounded.value.vwapDeviation,
 				trendStrength: candleValues.TrendStrength ?? 0,
+				...(adxDiActive
+					? {
+							plusDi: candleValues.PlusDi ?? 0,
+							minusDi: candleValues.MinusDi ?? 0,
+						}
+					: {}),
+				...(longSmaActive ? { longSma: candleValues.LongSma ?? 0 } : {}),
 			}),
 		);
 	};
@@ -764,6 +874,9 @@ export const computeIndicators = async (
 	const signalEmaActive =
 		config.signalEmaFastPeriod !== undefined &&
 		config.signalEmaSlowPeriod !== undefined;
+	const rsiWilder = config.rsiMode === "WILDER";
+	const adxDiActive = config.adxWarmupMultiplier !== undefined;
+	const longSmaActive = config.longSmaPeriod !== undefined;
 	const closes = asPrologList(closeValues);
 	const highs = asPrologList(highValues);
 	const lows = asPrologList(lowValues);
@@ -775,6 +888,9 @@ export const computeIndicators = async (
 			`macd(${closes}, ${config.emaFastPeriod}, ${config.emaSlowPeriod}, Value).`,
 		],
 		["Atr", `atr(${highs}, ${lows}, ${closes}, ${config.atrPeriod}, Value).`],
+		...(rsiWilder
+			? ([["Rsi", `rsi_wilder(${closes}, ${config.rsiPeriod}, Value).`]] as const)
+			: []),
 		...(signalEmaActive
 			? ([
 					[
@@ -909,6 +1025,13 @@ export const computeIndicators = async (
 			volumeTrend: bounded.value.volumeTrend,
 			vwapDeviation: bounded.value.vwapDeviation,
 			trendStrength: candleValues.TrendStrength ?? 0,
+			...(adxDiActive
+				? {
+						plusDi: candleValues.PlusDi ?? 0,
+						minusDi: candleValues.MinusDi ?? 0,
+					}
+				: {}),
+			...(longSmaActive ? { longSma: candleValues.LongSma ?? 0 } : {}),
 			...(fundingReady ? { fundingAvg: candleValues.FundingAvg } : {}),
 		}),
 	);

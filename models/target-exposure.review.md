@@ -57,3 +57,20 @@ closes), porte d'achat sur `min(dailyPnl, pnlBougie)`, coupe-circuit consolidé
 pour le paper ; aucune autre politique touchée ; test runtime rouge avant le
 correctif ; test de cohérence aligné sur le runtime (CAGR 50,4 %, drawdown
 max 47,2 %, pire fenêtre 35,2 %, 80 achats bloqués, 0 vente rejetée).
+
+## Revue de l'amendement du 2026-11-15 — Filtre de coût d'exécution (No-Trade Zone dynamique)
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
+
+- **Pureté** : `roundTripCostFraction`, `resolveEffectiveDriftThreshold` et `resolveEffectiveMinOrderNotional` sont des fonctions pures déterministes sans effet de bord ni horloge ; elles bornent les entrées négatives ou non finies à `0`.
+- **Invariants** : INV-T8 garantit qu'un changement de tendance (`ANCHOR`) n'est jamais bloqué par le filtre de coût ni par `minCostEdgeMultiple`. INV-T9 garantit la rétrocompatibilité bit-exacte quand `costAwareRebalance` est absent ou `false` (préservation du test de cohérence §7).
+- **Cohérence économique** : la bande de non-échange s'élargit proportionnellement au coût aller-retour `2 * (feeBps + slippageBps) / 10_000`, et le notionnel minimal `effectiveMinOrderNotional` évite les ordres résiduels plafonnés par le cash dont le montant est faible au regard des frais sur l'équité du créneau.
+- **Limites acceptées** : le runtime existant ne passe pas encore `costAwareRebalance: true` par défaut ; l'activation reste opt-in par l'appelant. Aucun impact sur les modèles voisins.
+
+## Revue de l'amendement du 2026-11-15 — Admission mode `perp` (Hyperliquid)
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
+
+- **Sécurité et préservation de l'enveloppe Hyperliquid** : ouvrir `TARGET_EXPOSURE` à `executionMode: "perp"` ne contourne ni `admitHyperliquidPerpAgent` ni `assessPerpOrderIntent`. Les limites réelles sur Hyperliquid (`HYPERLIQUID_PERP_POLICY` : 600 $ / ordre, 10 000 $ position et exposition brute, perte journalière 1 000 $) restent strictement appliquées avant toute signature L1.
+- **Isolation `"live"` spot et `"paper"`** : le mode `"live"` (Coinbase spot) reste strictement rejeté, et le mode `"paper"` conserve intégralement l'exigence des plafonds neutralisés `>= 1e9` (`INV-T7`).
+- **Limite opérationnelle documentée** : du fait du plafond `maxOrderNotional = 600` de `HYPERLIQUID_PERP_POLICY`, les ordres unitaires P7 en `"perp"` dont le notionnel dépasse 600 $ sont refusés par `checkRisk` / `assessPerpOrderIntent` tant que l'enveloppe Hyperliquid figée reste à 600 $ ; le fonctionnement nominal est donc dimensionné pour des créneaux de taille adaptée (ou rééquilibrages progressifs ≤ 600 $). Aucune modification du modèle `hyperliquid-execution.ts` requise.

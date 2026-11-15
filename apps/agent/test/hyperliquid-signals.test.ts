@@ -125,4 +125,39 @@ describe("conversion signal → intention perp", () => {
       }),
     ).toBeNull();
   });
+
+  it("transmet limitPrice pour les ordres LIMIT et refuse les LIMIT sans prix valide", () => {
+    expect(
+      toPerpIntent({
+        intent: {
+          productId: "BTC-USD",
+          side: "BUY",
+          quantity: 0.01,
+          type: "LIMIT",
+          limitPrice: 99_500,
+        },
+        markPrice: 100_000,
+      }),
+    ).toEqual({
+      productId: "BTC-PERP",
+      side: "BUY",
+      quantity: 0.01,
+      markPrice: 100_000,
+      leverage: 1,
+      limitPrice: 99_500,
+    });
+
+    expect(
+      toPerpIntent({
+        intent: {
+          productId: "BTC-USD",
+          side: "BUY",
+          quantity: 0.01,
+          type: "LIMIT",
+          limitPrice: null,
+        },
+        markPrice: 100_000,
+      }),
+    ).toBeNull();
+  });
 });

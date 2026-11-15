@@ -10,6 +10,7 @@ import {
 export interface PaperBrokerConfig {
   readonly feeBps: number;
   readonly slippageBps: number;
+  readonly makerFeeBps?: number;
 }
 
 export interface PaperPortfolio {
@@ -36,13 +37,13 @@ export type PaperBrokerError =
   | { readonly code: "INSUFFICIENT_CASH" }
   | { readonly code: "INSUFFICIENT_POSITION" };
 
+const validBps = (value: number): boolean =>
+  Number.isFinite(value) && value >= 0 && value < 10_000;
+
 const validConfig = (config: PaperBrokerConfig): boolean =>
-  Number.isFinite(config.feeBps) &&
-  config.feeBps >= 0 &&
-  config.feeBps < 10_000 &&
-  Number.isFinite(config.slippageBps) &&
-  config.slippageBps >= 0 &&
-  config.slippageBps < 10_000;
+  validBps(config.feeBps) &&
+  validBps(config.slippageBps) &&
+  (config.makerFeeBps === undefined || validBps(config.makerFeeBps));
 
 export const executePaperOrder = (
   portfolio: PaperPortfolio,
@@ -56,9 +57,20 @@ export const executePaperOrder = (
     return err({ code: "INVALID_MARKET_PRICE" });
   }
 
+  const isPassiveLimit = intent.type === "LIMIT";
+  if (
+    isPassiveLimit &&
+    (intent.limitPrice === null || !Number.isFinite(intent.limitPrice) || intent.limitPrice <= 0)
+  ) {
+    return err({ code: "INVALID_MARKET_PRICE" });
+  }
   const direction = intent.side === "BUY" ? 1 : -1;
-  const price = marketPrice * (1 + direction * (config.slippageBps / 10_000));
-  const fee = price * intent.quantity * (config.feeBps / 10_000);
+  const price =
+    isPassiveLimit && intent.limitPrice !== null
+      ? intent.limitPrice
+      : marketPrice * (1 + direction * (config.slippageBps / 10_000));
+  const appliedFeeBps = isPassiveLimit ? (config.makerFeeBps ?? config.feeBps) : config.feeBps;
+  const fee = price * intent.quantity * (appliedFeeBps / 10_000);
   const notional = price * intent.quantity;
   const cashTolerance = Math.max(1, Math.abs(portfolio.cash)) * Number.EPSILON * 16;
   const positionTolerance =

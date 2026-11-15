@@ -3,5 +3,7 @@ export type {
   AllocationDecision,
   AllocationError,
   AllocationInput,
+  ExecutionStyle,
+  OrderBookTop,
 } from "./allocator.js";
 

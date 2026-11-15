@@ -203,4 +203,104 @@ describe("funding-trend (models/funding-rate-strategy.md §5)", () => {
     const second = strategy().evaluate(input);
     expect(second).toEqual(first);
   });
+
+  describe("exitThreshold — sortie de carry (models/strategy-conditioning.md §3.4)", () => {
+    const withExit = (exitThreshold = 1e-5) =>
+      createFundingTrendStrategy({
+        enterThreshold: 5e-5,
+        exitThreshold,
+        baseSize: 0.01,
+      });
+
+    it("INV-SC2 : exitThreshold invalide (< 0, NaN, >= enterThreshold) ⇒ INVALID_STRATEGY_CONFIG", () => {
+      for (const exitThreshold of [-1e-5, Number.NaN, 5e-5, 1e-4]) {
+        const result = withExit(exitThreshold).evaluate(context());
+        expect(result).toEqual({
+          ok: false,
+          error: {
+            code: "INVALID_STRATEGY_CONFIG",
+            strategyId: FUNDING_TREND_STRATEGY_ID,
+          },
+        });
+      }
+    });
+
+    it("exitThreshold = 0 est valide et déclenche SELL pour LONG dès que fundingAvg > 0", () => {
+      const s = withExit(0);
+      const hold = s.evaluate(
+        context({
+          positionSide: "LONG",
+          indicators: snapshot({ fundingAvg: 0 }),
+        }),
+      );
+      expect(hold.ok && hold.value.side).toBe("HOLD");
+
+      const exit = s.evaluate(
+        context({
+          positionSide: "LONG",
+          indicators: snapshot({ fundingAvg: 1e-6 }),
+        }),
+      );
+      expect(exit.ok && exit.value.side).toBe("SELL");
+      expect(exit.ok && exit.value.reasonCode).toBe("FUNDING_CARRY_EXIT");
+      expect(exit.ok && exit.value.suggestedSize).toBe(0.01);
+      expect(exit.ok && exit.value.confidence).toBe(1);
+    });
+
+    it("LONG avec fundingAvg > -exitThreshold ⇒ SELL FUNDING_CARRY_EXIT", () => {
+      const result = withExit(1e-5).evaluate(
+        context({
+          positionSide: "LONG",
+          indicators: snapshot({ emaFast: 101, emaSlow: 100, fundingAvg: -5e-6 }),
+        }),
+      );
+      expect(result.ok && result.value.side).toBe("SELL");
+      expect(result.ok && result.value.reasonCode).toBe("FUNDING_CARRY_EXIT");
+      expect(result.ok && result.value.suggestedSize).toBe(0.01);
+    });
+
+    it("LONG avec fundingAvg <= -exitThreshold reste HOLD (carry encore présent)", () => {
+      const result = withExit(1e-5).evaluate(
+        context({
+          positionSide: "LONG",
+          indicators: snapshot({ emaFast: 101, emaSlow: 100, fundingAvg: -1e-5 }),
+        }),
+      );
+      expect(result.ok && result.value.side).toBe("HOLD");
+      expect(result.ok && result.value.reasonCode).toBe("FUNDING_NO_SIGNAL");
+    });
+
+    it("SHORT avec fundingAvg < exitThreshold ⇒ BUY FUNDING_CARRY_EXIT", () => {
+      const result = withExit(1e-5).evaluate(
+        context({
+          positionSide: "SHORT",
+          indicators: snapshot({ emaFast: 99, emaSlow: 100, fundingAvg: 5e-6 }),
+        }),
+      );
+      expect(result.ok && result.value.side).toBe("BUY");
+      expect(result.ok && result.value.reasonCode).toBe("FUNDING_CARRY_EXIT");
+      expect(result.ok && result.value.suggestedSize).toBe(0.01);
+    });
+
+    it("FLAT ou positionSide absent avec exitThreshold ⇒ pas de FUNDING_CARRY_EXIT", () => {
+      for (const positionSide of ["FLAT", undefined] as const) {
+        const result = withExit(1e-5).evaluate(
+          context({
+            positionSide,
+            indicators: snapshot({ emaFast: 101, emaSlow: 100, fundingAvg: 0 }),
+          }),
+        );
+        expect(result.ok && result.value.side).toBe("HOLD");
+        expect(result.ok && result.value.reasonCode).toBe("FUNDING_NO_SIGNAL");
+      }
+    });
+
+    it("warm-up (fundingAvg absent) reste prioritaire sur FUNDING_CARRY_EXIT", () => {
+      const result = withExit(1e-5).evaluate(
+        context({ positionSide: "LONG" }),
+      );
+      expect(result.ok && result.value.side).toBe("HOLD");
+      expect(result.ok && result.value.reasonCode).toBe("FUNDING_WARMUP");
+    });
+  });
 });

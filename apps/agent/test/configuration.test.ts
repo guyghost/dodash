@@ -408,4 +408,81 @@ describe("configuration multi-produits (dao #24)", () => {
     if (!result.ok) return;
     expect(admit(result.value)).toEqual({ status: "APPROVED" });
   });
+
+  it("expose les options strategyOptions, executionStyle, maxSpreadBps, makerFeeBps et costAwareRebalance sans casser V1", () => {
+    const baseline = parseAgentConfiguration({ productId: "BTC-USD" });
+    expect(baseline.ok).toBe(true);
+    if (!baseline.ok) return;
+    expect("strategyOptions" in baseline.value).toBe(false);
+    expect("executionStyle" in baseline.value).toBe(false);
+    expect("maxSpreadBps" in baseline.value).toBe(false);
+    expect("makerFeeBps" in baseline.value.broker).toBe(false);
+
+    const configured = parseAgentConfiguration({
+      productId: "BTC-USD",
+      strategyIds: ["rsi-reversion", "breakout"],
+      strategyOptions: {
+        positionAware: true,
+        maxTrendStrength: 0.02,
+        minRelativeVolume: 1.5,
+      },
+      executionStyle: "LIMIT_PASSIVE",
+      maxSpreadBps: 15,
+      broker: { feeBps: 10, slippageBps: 5, makerFeeBps: 2 },
+    });
+    expect(configured.ok).toBe(true);
+    if (!configured.ok) return;
+    expect(configured.value.strategyOptions).toEqual({
+      positionAware: true,
+      maxTrendStrength: 0.02,
+      minRelativeVolume: 1.5,
+    });
+    expect(configured.value.executionStyle).toBe("LIMIT_PASSIVE");
+    expect(configured.value.maxSpreadBps).toBe(15);
+    expect(configured.value.broker.makerFeeBps).toBe(2);
+
+    const p7CostAware = parseAgentConfiguration({
+      productId: "BTC-USD",
+      executionMode: "paper",
+      timeframe: "ONE_DAY",
+      candleLimit: 240,
+      strategyIds: ["target-exposure"],
+      sizingPolicy: {
+        type: "TARGET_EXPOSURE",
+        volTarget: 0.5,
+        trendSmaPeriod: 200,
+        volPeriod: 30,
+        driftThreshold: 0.1,
+        minOrderNotional: 10,
+        costAwareRebalance: true,
+        costMultiple: 2,
+        minCostEdgeMultiple: 3,
+      },
+      risk: {
+        maxOrderNotional: 1_000_000_000,
+        maxPositionNotional: 1_000_000_000,
+        maxGrossExposure: 1_000_000_000,
+        maxDailyLoss: 2_500,
+        cooldownMs: 0,
+        stopLossBps: 150,
+        takeProfitBps: 300,
+      },
+    });
+    expect(p7CostAware.ok).toBe(true);
+    if (p7CostAware.ok && p7CostAware.value.sizingPolicy.type === "TARGET_EXPOSURE") {
+      expect(p7CostAware.value.sizingPolicy.costAwareRebalance).toBe(true);
+      expect(p7CostAware.value.sizingPolicy.costMultiple).toBe(2);
+      expect(p7CostAware.value.sizingPolicy.minCostEdgeMultiple).toBe(3);
+    }
+
+    expect(
+      parseAgentConfiguration({ productId: "BTC-USD", maxSpreadBps: -1 }).ok,
+    ).toBe(false);
+    expect(
+      parseAgentConfiguration({
+        productId: "BTC-USD",
+        strategyOptions: { exitThreshold: 1 },
+      }).ok,
+    ).toBe(false);
+  });
 });

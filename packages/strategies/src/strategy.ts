@@ -9,11 +9,16 @@ import {
 } from "@dodash/domain";
 import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 
+export type StrategyPositionSide = "FLAT" | "LONG" | "SHORT";
+export type StrategyConfirmedRegime = "BULLISH" | "BEARISH" | "RANGE";
+
 export interface StrategyContext {
   readonly productId: ProductId;
   readonly candles: readonly Candle[];
   readonly indicators: IndicatorSnapshot;
   readonly previousIndicators: IndicatorSnapshot | null;
+  readonly positionSide?: StrategyPositionSide;
+  readonly confirmedRegime?: StrategyConfirmedRegime | null;
 }
 
 export interface Strategy {

@@ -87,7 +87,9 @@ const invalidIntent = (intent: PerpOrderIntent): boolean =>
   !Number.isFinite(intent.markPrice) ||
   intent.markPrice <= 0 ||
   !Number.isSafeInteger(intent.leverage) ||
-  intent.leverage < 1;
+  intent.leverage < 1 ||
+  (intent.limitPrice !== undefined &&
+    (!Number.isFinite(intent.limitPrice) || intent.limitPrice <= 0));
 
 /**
  * Forme seule d'une intention (marché allowlist, side, quantité, prix,

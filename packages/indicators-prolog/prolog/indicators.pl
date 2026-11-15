@@ -36,6 +36,39 @@ rsi_value(Gain, Loss, Value) :-
   Ratio is Gain / Loss,
   Value is 100 - (100 / (1 + Ratio)).
 
+rsi_wilder_seed(Gains, Losses, 0, GainSum, LossSum, Gains, Losses, GainSum, LossSum).
+rsi_wilder_seed([Gain|Gains], [Loss|Losses], Count, GainAcc, LossAcc, RemGains, RemLosses, GainSum, LossSum) :-
+  Count > 0,
+  NextGainAcc is GainAcc + Gain,
+  NextLossAcc is LossAcc + Loss,
+  NextCount is Count - 1,
+  rsi_wilder_seed(Gains, Losses, NextCount, NextGainAcc, NextLossAcc, RemGains, RemLosses, GainSum, LossSum).
+
+rsi_wilder_smooth([], [], _, AvgGain, AvgLoss, AvgGain, AvgLoss).
+rsi_wilder_smooth([Gain|Gains], [Loss|Losses], Period, AvgGainAcc, AvgLossAcc, FinalAvgGain, FinalAvgLoss) :-
+  NextAvgGain is (AvgGainAcc * (Period - 1) + Gain) / Period,
+  NextAvgLoss is (AvgLossAcc * (Period - 1) + Loss) / Period,
+  rsi_wilder_smooth(Gains, Losses, Period, NextAvgGain, NextAvgLoss, FinalAvgGain, FinalAvgLoss).
+
+rsi_wilder_state(Closes, Period, FinalAvgGain, FinalAvgLoss, Value) :-
+  Period > 0,
+  deltas(Closes, AllDeltas),
+  split_gains_losses(AllDeltas, Gains, Losses),
+  rsi_wilder_seed(Gains, Losses, Period, 0, 0, RemGains, RemLosses, GainSum, LossSum),
+  SeedAvgGain is GainSum / Period,
+  SeedAvgLoss is LossSum / Period,
+  rsi_wilder_smooth(RemGains, RemLosses, Period, SeedAvgGain, SeedAvgLoss, FinalAvgGain, FinalAvgLoss),
+  rsi_value(FinalAvgGain, FinalAvgLoss, Value).
+
+rsi_wilder(Closes, Period, Value) :-
+  rsi_wilder_state(Closes, Period, _, _, Value).
+
+rsi_wilder_continue(NewCloses, PreviousClose, Period, PrevAvgGain, PrevAvgLoss, FinalAvgGain, FinalAvgLoss, Value) :-
+  deltas([PreviousClose|NewCloses], NewDeltas),
+  split_gains_losses(NewDeltas, NewGains, NewLosses),
+  rsi_wilder_smooth(NewGains, NewLosses, Period, PrevAvgGain, PrevAvgLoss, FinalAvgGain, FinalAvgLoss),
+  rsi_value(FinalAvgGain, FinalAvgLoss, Value).
+
 macd(Closes, FastPeriod, SlowPeriod, Value) :-
   ema(Closes, FastPeriod, Fast),
   ema(Closes, SlowPeriod, Slow),
@@ -213,17 +246,23 @@ adx_dx_seed([High|Highs], [Low|Lows], [Close|Closes], Count, PreviousHigh, Previ
   NextCount is Count - 1,
   adx_dx_seed(Highs, Lows, Closes, NextCount, High, Low, Close, Period, NextRange, NextPlus, NextMinus, NextDxAccumulator, RemainingHighs, RemainingLows, RemainingCloses, LastHigh, LastLow, LastClose, FinalRange, FinalPlus, FinalMinus, DxSum).
 
-adx_continue([], [], [], _, _, _, _, _, _, _, Accumulator, Accumulator).
-adx_continue([High|Highs], [Low|Lows], [Close|Closes], PreviousHigh, PreviousLow, PreviousClose, Period, SmoothedRange, SmoothedPlus, SmoothedMinus, Accumulator, Value) :-
+di_values(TrueRange, _, _, 0, 0) :- TrueRange =:= 0, !.
+di_values(TrueRange, Plus, Minus, PlusDi, MinusDi) :-
+  PlusDi is 100 * Plus / TrueRange,
+  MinusDi is 100 * Minus / TrueRange.
+
+adx_continue_di([], [], [], _, _, _, _, SmoothedRange, SmoothedPlus, SmoothedMinus, Accumulator, Accumulator, PlusDi, MinusDi) :-
+  di_values(SmoothedRange, SmoothedPlus, SmoothedMinus, PlusDi, MinusDi).
+adx_continue_di([High|Highs], [Low|Lows], [Close|Closes], PreviousHigh, PreviousLow, PreviousClose, Period, SmoothedRange, SmoothedPlus, SmoothedMinus, Accumulator, Value, PlusDi, MinusDi) :-
   directional_step(PreviousHigh, PreviousLow, PreviousClose, High, Low, Range, Plus, Minus),
   NextRange is (SmoothedRange * (Period - 1) + Range) / Period,
   NextPlus is (SmoothedPlus * (Period - 1) + Plus) / Period,
   NextMinus is (SmoothedMinus * (Period - 1) + Minus) / Period,
   dx_value(NextRange, NextPlus, NextMinus, DirectionalIndex),
   Next is (Accumulator * (Period - 1) + DirectionalIndex) / Period,
-  adx_continue(Highs, Lows, Closes, High, Low, Close, Period, NextRange, NextPlus, NextMinus, Next, Value).
+  adx_continue_di(Highs, Lows, Closes, High, Low, Close, Period, NextRange, NextPlus, NextMinus, Next, Value, PlusDi, MinusDi).
 
-trend_strength([High|Highs], [Low|Lows], [Close|Closes], Period, Value) :-
+trend_strength_di([High|Highs], [Low|Lows], [Close|Closes], Period, Value, PlusDi, MinusDi) :-
   Period > 0,
   adx_directional_seed(Highs, Lows, Closes, Period, High, Low, Close, 0, 0, 0, SeedHighs, SeedLows, SeedCloses, SeedHigh, SeedLow, SeedClose, RangeSum, PlusSum, MinusSum),
   SmoothedRange is RangeSum / Period,
@@ -233,7 +272,10 @@ trend_strength([High|Highs], [Low|Lows], [Close|Closes], Period, Value) :-
   RemainingDxCount is Period - 1,
   adx_dx_seed(SeedHighs, SeedLows, SeedCloses, RemainingDxCount, SeedHigh, SeedLow, SeedClose, Period, SmoothedRange, SmoothedPlus, SmoothedMinus, FirstDirectionalIndex, RemainingHighs, RemainingLows, RemainingCloses, PreviousHigh, PreviousLow, PreviousClose, FinalRange, FinalPlus, FinalMinus, DxSum),
   AdxSeed is DxSum / Period,
-  adx_continue(RemainingHighs, RemainingLows, RemainingCloses, PreviousHigh, PreviousLow, PreviousClose, Period, FinalRange, FinalPlus, FinalMinus, AdxSeed, Value).
+  adx_continue_di(RemainingHighs, RemainingLows, RemainingCloses, PreviousHigh, PreviousLow, PreviousClose, Period, FinalRange, FinalPlus, FinalMinus, AdxSeed, Value, PlusDi, MinusDi).
+
+trend_strength(Highs, Lows, Closes, Period, Value) :-
+  trend_strength_di(Highs, Lows, Closes, Period, Value, _, _).
 
 funding_average(FundingRates, Period, Value) :-
   Period >= 2,

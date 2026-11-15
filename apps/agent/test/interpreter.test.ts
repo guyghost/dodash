@@ -814,4 +814,218 @@ describe("runTradingCycle", () => {
       expect(fixture.persistedCycles).toBe(1);
     });
   });
+
+  describe("LIMIT_PASSIVE, maxSpreadBps et strategyOptions dans runTradingCycle", () => {
+    it("émet un ordre LIMIT au bestBid via fetchOrderBook et bloque si le spread dépasse maxSpreadBps", async () => {
+      const parsed = parseAgentConfiguration({
+        productId: "BTC-USD",
+        strategyIds: ["rsi-reversion"],
+        candleLimit: 6,
+        intervalSeconds: 60,
+        executionStyle: "LIMIT_PASSIVE",
+        maxSpreadBps: 10,
+        indicators: {
+          rsiPeriod: 5,
+          emaFastPeriod: 3,
+          emaSlowPeriod: 5,
+          atrPeriod: 3,
+          historicalVolatilityPeriod: 2,
+          momentumPeriod: 1,
+          returnPeriods: [1],
+          vwapPeriod: 2,
+          relativeVolumePeriod: 1,
+          volumeSpikeThreshold: 2,
+          volumeTrendPeriod: 2,
+          trendStrengthPeriod: 1,
+        },
+        risk: {
+          maxOrderNotional: 2_000,
+          maxPositionNotional: 10_000,
+          maxGrossExposure: 20_000,
+          maxDailyLoss: 1_000,
+          cooldownMs: 0,
+          stopLossBps: 150,
+          takeProfitBps: 300,
+        },
+        broker: { feeBps: 10, slippageBps: 20, makerFeeBps: 1 },
+      });
+      if (!parsed.ok) throw new Error("invalid config");
+      const config = parsed.value;
+      // Baisse régulière -> RSI < 30 -> signal BUY
+      const candles = candlesFromCloses([110, 108, 106, 104, 102, 100]);
+      const snapshot: MarketSnapshot = {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles,
+        source: "coinbase",
+        cached: false,
+      };
+      const portfolio: PaperPortfolio = { cash: 10_000, positionQuantity: 0, averagePrice: 0 };
+      const submitted: OrderIntent[] = [];
+      const baseEffects: TradingCycleEffects = {
+        reconcileAccount: async (p, observedAt) =>
+          ok({
+            snapshotId: `s:${observedAt}`,
+            observedAt,
+            portfolio: p,
+            accountEquity: p.cash,
+            otherExposureNotional: 0,
+          }),
+        fetchMarketData: async () => ok(snapshot),
+        fetchOrderBook: async () => ({ bestBid: 99.5, bestAsk: 99.55, spreadBps: 5 }),
+        ensureSchedule: async () => ok({ nextWakeAt: 420_000 }),
+        checkpoint: async () => ok(undefined),
+        persistMachine: async () => undefined,
+        persistOrderIntent: async (_id, intent) => {
+          submitted.push(intent);
+          return ok(undefined);
+        },
+        authorize: async () => ok({ issuedAt: 360_000, expiresAt: 420_000 }),
+        submitOrder: async (intent, _r, _a, price, p, at) => {
+          const ex = executePaperOrder(p, intent, price, at, config.broker);
+          if (!ex.ok) throw new Error("paper failed");
+          return {
+            status: "CONFIRMED",
+            exchangeOrderId: ex.value.trade.fill.exchangeOrderId,
+            portfolio: ex.value.portfolio,
+            fill: ex.value.trade.fill,
+          };
+        },
+        reconcileOrder: async () => {
+          throw new Error("no reconcile expected");
+        },
+        cancelCurrentEffect: async () => ok(undefined),
+        persistCycle: async () => ok(undefined),
+      };
+
+      const filled = await runTradingCycle({
+        agentId: "agent-limit",
+        configuration: config,
+        machine: readyMachine("agent-limit", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio,
+        dailyPnl: 0,
+        lastTradeAt: null,
+        triggeredAt: 360_000,
+        cycleId: "cycle-limit-fill",
+        now: () => 360_000,
+        triggerAlarm: true,
+        effects: baseEffects,
+      });
+      expect(filled.machine.context.outcome).toBe("ORDER_CONFIRMED");
+      expect(submitted[0]?.type).toBe("LIMIT");
+      expect(submitted[0]?.limitPrice).toBe(99.5);
+      expect(filled.artifacts?.execution?.fill?.price).toBe(99.5);
+
+      const wideSpread = await runTradingCycle({
+        agentId: "agent-limit",
+        configuration: config,
+        machine: readyMachine("agent-limit", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio,
+        dailyPnl: 0,
+        lastTradeAt: null,
+        triggeredAt: 360_000,
+        cycleId: "cycle-limit-wide",
+        now: () => 360_000,
+        triggerAlarm: true,
+        effects: {
+          ...baseEffects,
+          fetchOrderBook: async () => ({ bestBid: 99, bestAsk: 101, spreadBps: 200 }),
+        },
+      });
+      expect(wideSpread.machine.context.outcome).toBe("NO_ACTION");
+      expect(submitted.length).toBe(1);
+    });
+
+    it("transmet strategyOptions.positionAware à rsi-reversion pour bloquer un doublon LONG", async () => {
+      const parsed = parseAgentConfiguration({
+        productId: "BTC-USD",
+        strategyIds: ["rsi-reversion"],
+        strategyOptions: { positionAware: true },
+        candleLimit: 6,
+        intervalSeconds: 60,
+        indicators: {
+          rsiPeriod: 5,
+          emaFastPeriod: 3,
+          emaSlowPeriod: 5,
+          atrPeriod: 3,
+          historicalVolatilityPeriod: 2,
+          momentumPeriod: 1,
+          returnPeriods: [1],
+          vwapPeriod: 2,
+          relativeVolumePeriod: 1,
+          volumeSpikeThreshold: 2,
+          volumeTrendPeriod: 2,
+          trendStrengthPeriod: 1,
+        },
+        risk: {
+          maxOrderNotional: 2_000,
+          maxPositionNotional: 10_000,
+          maxGrossExposure: 20_000,
+          maxDailyLoss: 1_000,
+          cooldownMs: 0,
+          stopLossBps: 150,
+          takeProfitBps: 300,
+        },
+      });
+      if (!parsed.ok) throw new Error("invalid config");
+      const config = parsed.value;
+      const candles = candlesFromCloses([110, 108, 106, 104, 102, 100]);
+      const snapshot: MarketSnapshot = {
+        productId: config.productId,
+        timeframe: config.timeframe,
+        candles,
+        source: "coinbase",
+        cached: false,
+      };
+      const submitted: OrderIntent[] = [];
+      const result = await runTradingCycle({
+        agentId: "agent-pos-aware",
+        configuration: config,
+        machine: readyMachine("agent-pos-aware", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio: { cash: 9_000, positionQuantity: 0.5, averagePrice: 100 },
+        dailyPnl: 0,
+        lastTradeAt: null,
+        triggeredAt: 360_000,
+        cycleId: "cycle-pos-aware",
+        now: () => 360_000,
+        triggerAlarm: true,
+        effects: {
+          reconcileAccount: async (p, observedAt) =>
+            ok({
+              snapshotId: `s:${observedAt}`,
+              observedAt,
+              portfolio: p,
+              accountEquity: p.cash + p.positionQuantity * p.averagePrice,
+              otherExposureNotional: 0,
+            }),
+          fetchMarketData: async () => ok(snapshot),
+          ensureSchedule: async () => ok({ nextWakeAt: 420_000 }),
+          checkpoint: async () => ok(undefined),
+          persistMachine: async () => undefined,
+          persistOrderIntent: async (_id, intent) => {
+            submitted.push(intent);
+            return ok(undefined);
+          },
+          authorize: async () => ok({ issuedAt: 360_000, expiresAt: 420_000 }),
+          submitOrder: async () => {
+            throw new Error("no order expected");
+          },
+          reconcileOrder: async () => {
+            throw new Error("no reconcile expected");
+          },
+          cancelCurrentEffect: async () => ok(undefined),
+          persistCycle: async () => ok(undefined),
+        },
+      });
+      expect(result.machine.context.outcome).toBe("NO_ACTION");
+      expect(result.artifacts?.signals?.[0]?.reasonCode).toBe("RSI_ALREADY_LONG");
+      expect(submitted).toEqual([]);
+    });
+  });
 });

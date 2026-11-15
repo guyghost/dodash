@@ -10,7 +10,26 @@ export interface BreakoutConfig {
   readonly id?: string;
   readonly lookback: number;
   readonly baseSize: number;
+  readonly minRelativeVolume?: number;
+  readonly positionAware?: boolean;
 }
+
+const blockedHold = (
+  id: string,
+  productId: StrategyContext["productId"],
+  reasonCode: string,
+) =>
+  strategySignal(
+    id,
+    createSignal({
+      strategyId: id,
+      productId,
+      side: "HOLD",
+      confidence: 0,
+      suggestedSize: 0,
+      reasonCode,
+    }),
+  );
 
 export const createBreakoutStrategy = (config: BreakoutConfig): Strategy => {
   const id = config.id ?? "breakout";
@@ -21,7 +40,10 @@ export const createBreakoutStrategy = (config: BreakoutConfig): Strategy => {
         !Number.isSafeInteger(config.lookback) ||
         config.lookback < 2 ||
         !Number.isFinite(config.baseSize) ||
-        config.baseSize <= 0
+        config.baseSize <= 0 ||
+        (config.minRelativeVolume !== undefined &&
+          (!Number.isFinite(config.minRelativeVolume) ||
+            config.minRelativeVolume <= 0))
       ) {
         return {
           ok: false as const,
@@ -46,6 +68,32 @@ export const createBreakoutStrategy = (config: BreakoutConfig): Strategy => {
       const highest = Math.max(...history.map((candle) => candle.high));
       const lowest = Math.min(...history.map((candle) => candle.low));
       const side = latest.close > highest ? "BUY" : latest.close < lowest ? "SELL" : "HOLD";
+
+      if (side !== "HOLD") {
+        if (config.positionAware === true) {
+          if (side === "BUY" && context.positionSide === "LONG") {
+            return blockedHold(id, context.productId, "BREAKOUT_ALREADY_LONG");
+          }
+          if (side === "SELL" && context.positionSide === "FLAT") {
+            return blockedHold(id, context.productId, "BREAKOUT_NO_POSITION_TO_SELL");
+          }
+          if (side === "SELL" && context.positionSide === "SHORT") {
+            return blockedHold(id, context.productId, "BREAKOUT_ALREADY_SHORT");
+          }
+        }
+
+        if (config.minRelativeVolume !== undefined) {
+          const relVol = context.indicators.relativeVolume;
+          if (
+            relVol === null ||
+            !Number.isFinite(relVol) ||
+            relVol < config.minRelativeVolume
+          ) {
+            return blockedHold(id, context.productId, "BREAKOUT_LOW_VOLUME");
+          }
+        }
+      }
+
       const boundary = side === "SELL" ? lowest : highest;
       const confidence =
         side === "HOLD"
