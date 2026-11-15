@@ -8,6 +8,8 @@ export interface RiskConfig {
   readonly cooldownMs: number;
   readonly stopLossBps: number;
   readonly takeProfitBps: number;
+  readonly atrStopLossMultiple?: number;
+  readonly atrTakeProfitMultiple?: number;
 }
 
 export interface RiskSnapshot {
@@ -18,6 +20,7 @@ export interface RiskSnapshot {
   readonly lastTradeAt: number | null;
   readonly now: number;
   readonly killSwitchActive: boolean;
+  readonly atr?: number;
 }
 
 export type RiskReasonCode =
@@ -43,8 +46,14 @@ export type RiskError =
   | { readonly code: "INVALID_RISK_CONFIG" }
   | { readonly code: "INVALID_RISK_SNAPSHOT" };
 
+const MAX_ATR_STOP_DISTANCE = 0.9999;
+const MAX_ATR_TAKE_DISTANCE = 9.9999;
+
 const validPositive = (value: number): boolean =>
   Number.isFinite(value) && value > 0;
+
+const validOptionalPositive = (value: number | undefined): boolean =>
+  value === undefined || validPositive(value);
 
 const validConfig = (config: RiskConfig): boolean =>
   validPositive(config.maxOrderNotional) &&
@@ -56,7 +65,9 @@ const validConfig = (config: RiskConfig): boolean =>
   validPositive(config.stopLossBps) &&
   validPositive(config.takeProfitBps) &&
   config.stopLossBps < 10_000 &&
-  config.takeProfitBps < 100_000;
+  config.takeProfitBps < 100_000 &&
+  validOptionalPositive(config.atrStopLossMultiple) &&
+  validOptionalPositive(config.atrTakeProfitMultiple);
 
 const validSnapshot = (snapshot: RiskSnapshot): boolean =>
   validPositive(snapshot.marketPrice) &&
@@ -69,7 +80,34 @@ const validSnapshot = (snapshot: RiskSnapshot): boolean =>
   (snapshot.lastTradeAt === null ||
     (Number.isSafeInteger(snapshot.lastTradeAt) &&
       snapshot.lastTradeAt >= 0 &&
-      snapshot.lastTradeAt <= snapshot.now));
+      snapshot.lastTradeAt <= snapshot.now)) &&
+  validOptionalPositive(snapshot.atr);
+
+const resolveProtectionDistances = (
+  snapshot: RiskSnapshot,
+  config: RiskConfig,
+): { readonly stopDistance: number; readonly takeDistance: number } => {
+  if (
+    snapshot.atr !== undefined &&
+    config.atrStopLossMultiple !== undefined &&
+    config.atrTakeProfitMultiple !== undefined
+  ) {
+    return {
+      stopDistance: Math.min(
+        (snapshot.atr * config.atrStopLossMultiple) / snapshot.marketPrice,
+        MAX_ATR_STOP_DISTANCE,
+      ),
+      takeDistance: Math.min(
+        (snapshot.atr * config.atrTakeProfitMultiple) / snapshot.marketPrice,
+        MAX_ATR_TAKE_DISTANCE,
+      ),
+    };
+  }
+  return {
+    stopDistance: config.stopLossBps / 10_000,
+    takeDistance: config.takeProfitBps / 10_000,
+  };
+};
 
 export const checkRisk = (
   intent: OrderIntent,
@@ -115,8 +153,10 @@ export const checkRisk = (
     return ok({ status: "REJECTED", reasonCode: "GROSS_EXPOSURE_LIMIT" });
   }
 
-  const stopDistance = config.stopLossBps / 10_000;
-  const takeDistance = config.takeProfitBps / 10_000;
+  const { stopDistance, takeDistance } = resolveProtectionDistances(
+    snapshot,
+    config,
+  );
   const stopLossPrice =
     intent.side === "BUY"
       ? snapshot.marketPrice * (1 - stopDistance)

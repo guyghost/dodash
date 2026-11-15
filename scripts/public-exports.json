@@ -3,6 +3,8 @@
     "AllocationDecision",
     "AllocationError",
     "AllocationInput",
+    "ExecutionStyle",
+    "OrderBookTop",
     "allocateSignals"
   ],
   "@dodash/backtest": [

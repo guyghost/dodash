@@ -34,6 +34,7 @@ export interface PerpOrderIntent {
   readonly quantity: number;
   readonly markPrice: number;
   readonly leverage: number;
+  readonly limitPrice?: number;
 }
 
 export interface PerpRiskGate {
