@@ -70,7 +70,7 @@ test("la CI produit et publie la preuve uniquement après le gate qualité", asy
   const workflow = await readFile(".github/workflows/ci.yml", "utf8");
   const qualityGate = workflow.indexOf("run: pnpm verify:push");
   const generation = workflow.indexOf("node scripts/generate-release-evidence.mjs");
-  const upload = workflow.indexOf("uses: actions/upload-artifact@v6");
+  const upload = workflow.search(/uses:\s*actions\/upload-artifact@v\d+/);
 
   assert.ok(qualityGate >= 0);
   assert.ok(generation > qualityGate);
