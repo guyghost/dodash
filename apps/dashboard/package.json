@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build && node scripts/prepare-sites-build.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
-    "deploy": "pnpm run build && wrangler deploy",
+    "deploy": "pnpm run build && cf deploy",
     "preview": "vite preview",
     "test": "vitest run",
     "test:sites": "node --test tests/sites-worker.test.mjs"
@@ -29,6 +29,6 @@
     "typescript": "^7.0.2",
     "vite": "8.2.2",
     "vitest": "^4.1.11",
-    "wrangler": "^4.160.1"
+    "wrangler": "^4.162.0"
   }
 }
