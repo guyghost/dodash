@@ -7,9 +7,28 @@
  */
 export type PaperValuationQuality = "fresh" | "stale" | "unavailable";
 
+/**
+ * Closed label of the candle close that supplied the mark. One series, one
+ * source. A ticker, mid, or book is never a mark.
+ */
+export const CANDLE_CLOSE_MARK_SOURCES = Object.freeze([
+  "COINBASE_CANDLE_CLOSE",
+  "HYPERLIQUID_CANDLE_CLOSE",
+  "DYDX_CANDLE_CLOSE",
+] as const);
+
+export type CandleCloseMarkSource = (typeof CANDLE_CLOSE_MARK_SOURCES)[number];
+
+export const isCandleCloseMarkSource = (
+  value: unknown,
+): value is CandleCloseMarkSource =>
+  value === "COINBASE_CANDLE_CLOSE" ||
+  value === "HYPERLIQUID_CANDLE_CLOSE" ||
+  value === "DYDX_CANDLE_CLOSE";
+
 export interface PaperValuationMark {
   readonly price: number;
-  readonly source: "COINBASE_CANDLE_CLOSE";
+  readonly source: CandleCloseMarkSource;
   readonly timeframe: string;
   readonly candleClosedAt: number;
   /** Configuration policy captured with this immutable price observation. */
@@ -62,7 +81,7 @@ export const isValidPaperValuationMark = (
   Number.isFinite(value.price) &&
   value.price > 0 &&
   "source" in value &&
-  value.source === "COINBASE_CANDLE_CLOSE" &&
+  isCandleCloseMarkSource(value.source) &&
   "timeframe" in value &&
   typeof value.timeframe === "string" &&
   value.timeframe.trim().length > 0 &&

@@ -347,6 +347,20 @@ describe("dashboard API boundary", () => {
     expect(createStartConfiguration(paper)).toEqual(paper);
   });
 
+  it("accepts a Hyperliquid candle mark and rejects an unknown source", () => {
+    const hyperliquid = structuredClone(state);
+    const valuation = hyperliquid.paperValuation as {
+      value: { markSource: string };
+    };
+    valuation.value.markSource = "HYPERLIQUID_CANDLE_CLOSE";
+    expect(parseAgentState(hyperliquid).paperValuation).toMatchObject({
+      ok: true,
+      value: { markSource: "HYPERLIQUID_CANDLE_CLOSE" },
+    });
+    valuation.value.markSource = "HYPERLIQUID_MID";
+    expect(() => parseAgentState(hyperliquid)).toThrow(DashboardRequestError);
+  });
+
   it("projects a validated Agent state", () => {
     expect(parseAgentState(state)).toMatchObject({
       phase: "waiting",

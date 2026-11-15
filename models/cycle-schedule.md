@@ -66,11 +66,14 @@ Sur un réveil de grille (`scheduledTick` uniquement : ni `runNow` HTTP, ni
 alarme de retry), les produits actifs d'un portefeuille sont exécutés
 séquentiellement ; avant le produit actif de rang `k ≥ 1`, le runtime attend
 `PORTFOLIO_PRODUCT_STAGGER_MS = 2 000` (un produit désactivé n'ajoute aucune
-attente) puis relit l'état, l'attente rendant la main à d'autres événements. Les appels Coinbase des produits ne
-partent plus dans la même seconde. Aucune transition, aucune politique ni
-intervalle ne change ; `T` de chaque produit est l'instant réel de son
-déclenchement. Les alarmes de retry ne sont pas décalées
-(`market-retry-schedule.md` §3, limite acceptée).
+attente) puis relit l'état. Les bougies de décision ne passent plus par
+Coinbase (amendement marché 2026-11-14), donc l'écart de 8 s n'est plus
+utile. Les deux secondes restent pour que les quotes Coinbase d'exécution
+de BTC et d'ETH, lues seulement au moment de placer un ordre, ne partent
+pas dans la même seconde. Aucune transition, aucune politique ni intervalle
+ne change ; `T` de chaque produit est l'instant réel de son déclenchement.
+Les alarmes de retry ne sont pas décalées (`market-retry-schedule.md` §3).
+Le runtime journalise `portfolio_product_stagger`.
 
 ## 5. Invariants
 
@@ -89,5 +92,5 @@ déclenchement. Les alarmes de retry ne sont pas décalées
   une décision existe pour la bougie ; une seule émission par bougie ; aucune
   émission pendant la fenêtre ; cycle repris (`T` = 00:01) clos à 02:01 →
   émise à 02:01 avec `completedAt`.
-- Décalage : sur un réveil de grille à deux produits, le second démarre au
-  moins 2 s après la fin du premier ; un réveil de retry n'attend pas.
+- Décalage : sur un réveil de grille à deux produits, le premier n'attend
+  pas et le second attend 2 s ; un réveil de retry n'attend pas.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   acceptPaperValuationMark,
+  type CandleCloseMarkSource,
   normalizePaperValuationMark,
   projectPaperValuation,
 } from "./paper-valuation.js";
@@ -167,5 +168,15 @@ describe("paper valuation mark acceptance", () => {
   it("returns null when both the new and previous marks are invalid", () => {
     expect(acceptPaperValuationMark({ ...mark(1_200), source: "other" }, null)).toBeNull();
     expect(acceptPaperValuationMark(null, { ...mark(1_100), candleClosedAt: -1 })).toBeNull();
+  });
+
+  it("accepts a perp candle close and rejects a ticker label", () => {
+    for (const source of ["HYPERLIQUID_CANDLE_CLOSE", "DYDX_CANDLE_CLOSE"] as const) {
+      const accepted = acceptPaperValuationMark({ ...mark(1_200), source }, null);
+      expect(accepted?.source).toBe(source satisfies CandleCloseMarkSource);
+    }
+    expect(
+      acceptPaperValuationMark({ ...mark(1_200), source: "HYPERLIQUID_MID" }, null),
+    ).toBeNull();
   });
 });

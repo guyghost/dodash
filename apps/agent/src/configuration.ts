@@ -65,6 +65,8 @@ export interface AgentConfiguration {
   readonly strategyIds: readonly StrategyId[];
   readonly intervalSeconds: number;
   readonly maxMarketStalenessMs: number;
+  /** |Coinbase quote − decision close| / close, in bps. Default 200. */
+  readonly executionPriceMaxDivergenceBps: number;
   readonly candleLimit: number;
   readonly initialCapital: number;
   readonly maxDecisionNotional: number;
@@ -108,6 +110,7 @@ export interface MultiProductAgentConfiguration {
   readonly strategyIds: readonly StrategyId[];
   readonly intervalSeconds: number;
   readonly maxMarketStalenessMs: number;
+  readonly executionPriceMaxDivergenceBps: number;
   readonly candleLimit: number;
   readonly initialCapital: number;
   readonly maxDecisionNotional: number;
@@ -291,6 +294,11 @@ const inputSchema = z.object({
     .default([...DEFAULT_STRATEGY_IDS]),
   intervalSeconds: z.number().int().min(10).max(86_400).default(60),
   maxMarketStalenessMs: z.number().int().positive().default(90_000),
+  executionPriceMaxDivergenceBps: z
+    .number()
+    .positive()
+    .max(10_000)
+    .default(200),
   candleLimit: z.number().int().min(2).max(350).default(200),
   initialCapital: z.number().positive().default(10_000),
   maxDecisionNotional: z.number().positive().default(2_000),
@@ -431,6 +439,7 @@ const projectedLegacyInput = (
   strategyIds: [...multi.strategyIds],
   intervalSeconds: multi.intervalSeconds,
   maxMarketStalenessMs: multi.maxMarketStalenessMs,
+  executionPriceMaxDivergenceBps: multi.executionPriceMaxDivergenceBps,
   candleLimit: multi.candleLimit,
   initialCapital: multi.initialCapital,
   maxDecisionNotional: multi.maxDecisionNotional,
@@ -534,6 +543,7 @@ export const parseMultiProductAgentConfiguration = (
       ) as readonly StrategyId[],
       intervalSeconds: parsed.data.intervalSeconds,
       maxMarketStalenessMs: parsed.data.maxMarketStalenessMs,
+      executionPriceMaxDivergenceBps: parsed.data.executionPriceMaxDivergenceBps,
       candleLimit: parsed.data.candleLimit,
       initialCapital: parsed.data.initialCapital,
       maxDecisionNotional: parsed.data.maxDecisionNotional,

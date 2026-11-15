@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fetchDydxBookMid, fetchDydxCandles } from "../src/dydx.js";
-import { serveBackupCandles } from "../src/failover.js";
+import { BASIS_REFERENCE_MAX_AGE_MS } from "@dodash/models";
+import { serveBackupCandles, writeBasisReference } from "../src/failover.js";
 import {
 	fetchHyperliquidCandles,
 	fetchHyperliquidMid,
@@ -144,7 +145,9 @@ describe("failover service — gate de basis (INV 3)", () => {
 			return this.store.get(key) ?? null;
 		},
 		async put(key: string, value: string, options: { expirationTtl: number }) {
-			expect(options.expirationTtl).toBe(600);
+			expect(options.expirationTtl).toBe(
+				Math.ceil(BASIS_REFERENCE_MAX_AGE_MS / 1000),
+			);
 			this.store.set(key, value);
 		},
 	};
@@ -206,6 +209,39 @@ describe("failover service — gate de basis (INV 3)", () => {
 		);
 		// 102 vs 99.9 ≈ 210 bps → BASIS_REJECTED (source écartée)
 		expect(rejected).toMatchObject({ ok: false, failure: "BASIS_REJECTED" });
+	});
+
+	it("sert la série du jour quand l'ancre est la close de la veille", async () => {
+		const day = 24 * 3_600_000;
+		const now = day + 60_000;
+		cache.store.set(
+			"basis:ref:BTC-USD:ONE_MINUTE",
+			JSON.stringify({
+				close: 100.4,
+				candleStart: 298 * MIN,
+				fetchedAt: now - day,
+			}),
+		);
+		const result = await serveBackupCandles(
+			"HYPERLIQUID",
+			{ productId: "BTC-USD", timeframe: "ONE_MINUTE", limit: 2, endMs },
+			cache as never,
+			{
+				fetch: mockFetch(hyperResponse("BTC")) as unknown as typeof fetch,
+				now: () => now,
+			},
+		);
+		expect(result.ok).toBe(true);
+		if (result.ok) expect(result.candles?.at(-1)?.close).toBe(101);
+	});
+
+	it("persiste l'ancre Coinbase pour toute la durée de référence", async () => {
+		await writeBasisReference(cache as never, "ETH-USD", "ONE_DAY", [
+			{ start: 0, open: 1, high: 2, low: 1, close: 1.5, volume: 1 },
+		]);
+		expect(
+			JSON.parse(cache.store.get("basis:ref:ETH-USD:ONE_DAY") ?? ""),
+		).toMatchObject({ close: 1.5, candleStart: 0 });
 	});
 });
 

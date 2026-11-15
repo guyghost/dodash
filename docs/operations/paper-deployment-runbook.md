@@ -161,6 +161,17 @@ signaleuse (INV-P5, fail-closed) — aucun ordre placé, `dailyPnl: 0`,
 `RATE_LIMITED` (phase `market-data`, retryable, rate limit public Coinbase) ;
 le cycle suivant a réussi (auto-récupéré).
 
+Depuis l'amendement chairman 2026-11-14, les bougies de décision ne sont
+plus lues chez Coinbase. L'ordre est Hyperliquid, puis dYdX. Un 429
+Coinbase ne ferme plus la fenêtre de décision. Si les deux venues perp
+échouent, le cycle porte `MARKET_SOURCES_EXHAUSTED` et, hors fenêtre,
+`decision.missed` reprend ce code. Avant un ordre, la quote Coinbase est
+comparée à la close de décision ; au-delà de
+`executionPriceMaxDivergenceBps` (défaut 200), l'ordre est sauté
+(`ORDER_REJECTED` / `EXECUTION_PRICE_DIVERGENCE`) et le journal
+`execution_price_guard` l'indique. Une quote Coinbase indisponible saute
+l'ordre (`EXECUTION_QUOTE_UNAVAILABLE`) sans annuler la décision.
+
 ## 4bis. Incident #43 — RISK_REJECTED systématique (résolu, 2026-09-04)
 
 **Symptôme** : tous les cycles porteurs d'une décision finissent

@@ -26,8 +26,8 @@ import {
 	normalizePaperValuationMark,
 	type PaperValuationMark,
 	type PaperBookResetAudit,
-	PORTFOLIO_PRODUCT_STAGGER_MS,
 	planCycleWake,
+	planPortfolioProductStaggerMs,
 	projectDashboardPnlHistory,
 	projectDecisionAdmission,
 	projectPaperValuation,
@@ -1816,8 +1816,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	/**
 	 * `onlyProductId` restreint un réveil de retry au produit ciblé
 	 * (models/market-retry-schedule.md §3). `staggerProducts` (réveil de
-	 * grille uniquement) décale les produits exécutés de
-	 * PORTFOLIO_PRODUCT_STAGGER_MS (models/cycle-schedule.md §4).
+	 * grille uniquement) décale les produits exécutés via
+	 * planPortfolioProductStaggerMs (models/cycle-schedule.md §4).
 	 */
 	private async runPortfolio(
 		triggerAlarm: boolean,
@@ -1844,9 +1844,18 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				continue;
 			}
 			if (staggerProducts && executed > 0) {
-				await new Promise((resolve) =>
-					setTimeout(resolve, PORTFOLIO_PRODUCT_STAGGER_MS),
+				const delayMs = planPortfolioProductStaggerMs(executed);
+				console.log(
+					JSON.stringify({
+						event: "portfolio_product_stagger",
+						productId,
+						executedBefore: executed,
+						delayMs,
+					}),
 				);
+				if (delayMs > 0) {
+					await new Promise((resolve) => setTimeout(resolve, delayMs));
+				}
 			}
 			// L'attente rend la main : relire l'état avant d'exécuter le produit.
 			const current = this.state.portfolioSession;

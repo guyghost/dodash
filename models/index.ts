@@ -191,6 +191,7 @@ export type {
 	MissedDecisionResolution,
 } from "./cycle-schedule.js";
 export {
+	planPortfolioProductStaggerMs,
 	PORTFOLIO_PRODUCT_STAGGER_MS,
 	resolveCycleSchedule,
 	resolveMissedDecision,
@@ -363,11 +364,25 @@ export {
 	BASIS_MAX_BPS,
 	BASIS_REFERENCE_MAX_AGE_MS,
 	type BasisAssessment,
+	type BasisCandle,
 	type BasisGateInput,
+	assessExecutionPriceDivergence,
+	candleCloseMarkSource,
+	DECISION_MARKET_SOURCE_ORDER,
+	EXECUTION_PRICE_MAX_DIVERGENCE_BPS,
+	type ExecutionPriceAssessment,
+	COINBASE_RATE_LIMIT_BASE_DELAYS_MS,
+	COINBASE_RATE_LIMIT_BUDGET_MS,
+	COINBASE_RATE_LIMIT_JITTER_RATIO,
+	COINBASE_RATE_LIMIT_MAX_ATTEMPTS,
+	COINBASE_RATE_LIMIT_MAX_DELAY_MS,
+	findOverlappingBasisCandle,
 	MARKET_SOURCE_ORDER,
 	type MarketSourceFailure,
 	type MarketSourceId,
 	type MarketSourceResolution,
+	planRateLimitBackoff,
+	type RateLimitBackoffPlan,
 	resolveMarketSource,
 } from "./market-source-failover.js";
 export {
@@ -511,6 +526,7 @@ export type {
 } from "./p7-source-profile.js";
 export { evaluateP7SourceCandidate } from "./p7-source-profile.js";
 export type {
+	CandleCloseMarkSource,
 	PaperValuation,
 	PaperValuationErrorCode,
 	PaperValuationInput,
@@ -520,6 +536,8 @@ export type {
 } from "./paper-valuation.js";
 export {
 	acceptPaperValuationMark,
+	CANDLE_CLOSE_MARK_SOURCES,
+	isCandleCloseMarkSource,
 	isValidPaperValuationMark,
 	normalizePaperValuationMark,
 	projectPaperValuation,

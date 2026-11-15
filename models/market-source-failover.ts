@@ -1,12 +1,14 @@
 /**
  * Market source failover (models/market-source-failover.md).
  *
- * Pure resolution: fixed deployment order COINBASE → HYPERLIQUID → DYDX,
- * one attempt per source per request — the trading machine stays the sole
- * owner of retries (market-retry-schedule.md). A perp backup is never
- * served without a fresh Coinbase close reference within BASIS_MAX_BPS
- * (same candle start); no reference means fail-closed.
+ * Decision candles (amendement 2026-11-14, chairman): HYPERLIQUID then
+ * DYDX. Coinbase is not a decision source. It remains the execution
+ * quote used by `assessExecutionPriceDivergence` before an order.
+ * The trading machine stays the owner of cycle retries
+ * (market-retry-schedule.md).
  */
+
+import type { CandleCloseMarkSource } from "./paper-valuation.js";
 
 export type MarketSourceId = "COINBASE" | "HYPERLIQUID" | "DYDX";
 
@@ -17,20 +19,53 @@ export type MarketSourceFailure =
 	| "STALE_SERIES"
 	| "BASIS_REJECTED";
 
-/** Ordre figé par déploiement (§2). */
-export const MARKET_SOURCE_ORDER: readonly MarketSourceId[] = Object.freeze([
-	"COINBASE",
-	"HYPERLIQUID",
-	"DYDX",
-]);
+/**
+ * Decision-candle order. Coinbase is absent: a Coinbase rate limit cannot
+ * fail the decision. An explicit `sources: ["COINBASE"]` request is the
+ * execution quote only.
+ */
+export const DECISION_MARKET_SOURCE_ORDER: readonly MarketSourceId[] =
+	Object.freeze(["HYPERLIQUID", "DYDX"]);
+
+/** @deprecated Use `DECISION_MARKET_SOURCE_ORDER`. Kept as the deployment alias. */
+export const MARKET_SOURCE_ORDER = DECISION_MARKET_SOURCE_ORDER;
+
+/**
+ * Default maximum |execution quote − decision close| / decision close.
+ * 200 bps matches the previous perp/spot basis bound: wide enough for a
+ * one-minute gap after the daily close, tight enough to refuse a bad venue.
+ */
+export const EXECUTION_PRICE_MAX_DIVERGENCE_BPS = 200;
 
 /** Basis perp/spot maximal accepté (revue 2026-10-31). */
 export const BASIS_MAX_BPS = 200;
 
-/** Âge maximal de la référence Coinbase pour la gate de basis (4 h : le
- * failover reste armé pendant les pannes longues, la borne 200 bps couvre
- * la dérive du basis perp sur cette fenêtre). */
-export const BASIS_REFERENCE_MAX_AGE_MS = 4 * 3_600_000;
+/**
+ * How long a Coinbase close may still anchor a perp series.
+ *
+ * The daily decision runs once, at 00:01 UTC. A reference written then is
+ * ~24h old at the next window and ~26h old if that window closes at 02:00.
+ * The observed RATE_LIMITED run lasted 7 days, mostly on ETH, so the anchor
+ * has to outlive several missed daily closes. 8 days covers that run plus
+ * the next freshness window. Age does not measure basis drift: the gate
+ * compares one shared candle start. It only bounds how long a spot close
+ * may authorize the rest of a perp series.
+ */
+export const BASIS_REFERENCE_MAX_AGE_MS = 8 * 24 * 3_600_000;
+
+/**
+ * In-request Coinbase re-attempts after RATE_LIMITED, before the next
+ * source. The machine retry schedule is unchanged and still owns waits
+ * longer than this budget.
+ */
+export const COINBASE_RATE_LIMIT_MAX_ATTEMPTS = 3;
+export const COINBASE_RATE_LIMIT_BASE_DELAYS_MS: readonly number[] = Object.freeze([
+	400, 1_200,
+]);
+export const COINBASE_RATE_LIMIT_MAX_DELAY_MS = 1_500;
+export const COINBASE_RATE_LIMIT_BUDGET_MS = 2_500;
+/** ±25% around the chosen delay. `randomUnit` is injected. */
+export const COINBASE_RATE_LIMIT_JITTER_RATIO = 0.25;
 
 export type MarketSourceResolution =
 	| { readonly source: MarketSourceId }
@@ -67,10 +102,10 @@ export type BasisAssessment =
 	| { readonly ok: false; readonly reason: "NO_REFERENCE" | "BASIS_REJECTED" };
 
 /**
- * Gate de basis (§2) : comparaison close↔close au **même start de bougie**,
- * référence Coinbase fraîche (< BASIS_REFERENCE_MAX_AGE_MS). Toute entrée
+ * Gate de basis (§2) : comparaison close↔close au même start de bougie,
+ * référence Coinbase d'âge ≤ BASIS_REFERENCE_MAX_AGE_MS. Toute entrée
  * invalide, désalignée ou périmée ⇒ NO_REFERENCE : un secours perp n'est
- * jamais servi sans référence valide.
+ * jamais servi sans référence valide. La borne d'âge est inclusive.
  */
 export const assessBasisGate = (input: BasisGateInput): BasisAssessment => {
 	const invalid =
@@ -99,4 +134,167 @@ export const assessBasisGate = (input: BasisGateInput): BasisAssessment => {
 		return { ok: false, reason: "BASIS_REJECTED" };
 	}
 	return { ok: true };
+};
+
+export type ExecutionPriceAssessment =
+	| { readonly ok: true; readonly divergenceBps: number }
+	| {
+			readonly ok: false;
+			readonly reason: "INVALID_PRICE" | "DIVERGENCE";
+			readonly divergenceBps: number | null;
+	  };
+
+/**
+ * Compares the decision close with the Coinbase execution quote.
+ * The shell fetches the quote; this function only classifies. A result
+ * of `DIVERGENCE` skips the order and does not revisit the decision.
+ */
+export const assessExecutionPriceDivergence = (input: {
+	readonly decisionPrice: number;
+	readonly executionPrice: number;
+	readonly maxDivergenceBps: number;
+}): ExecutionPriceAssessment => {
+	if (
+		!Number.isFinite(input.decisionPrice) ||
+		input.decisionPrice <= 0 ||
+		!Number.isFinite(input.executionPrice) ||
+		input.executionPrice <= 0 ||
+		!Number.isFinite(input.maxDivergenceBps) ||
+		input.maxDivergenceBps < 0
+	) {
+		return Object.freeze({
+			ok: false,
+			reason: "INVALID_PRICE",
+			divergenceBps: null,
+		});
+	}
+	const divergenceBps =
+		(Math.abs(input.executionPrice - input.decisionPrice) /
+			input.decisionPrice) *
+		10_000;
+	if (divergenceBps > input.maxDivergenceBps) {
+		return Object.freeze({ ok: false, reason: "DIVERGENCE", divergenceBps });
+	}
+	return Object.freeze({ ok: true, divergenceBps });
+};
+
+export interface BasisCandle {
+	readonly start: number;
+	readonly close: number;
+}
+
+/**
+ * Backup candle whose start equals the Coinbase reference. The newest
+ * backup close is often the candle Coinbase did not return; it is not
+ * the pair the gate compares. No safe overlap → null (fail-closed).
+ */
+export const findOverlappingBasisCandle = (
+	candles: readonly BasisCandle[],
+	referenceCandleStart: number,
+): BasisCandle | null => {
+	if (!Number.isSafeInteger(referenceCandleStart)) return null;
+	for (const candle of candles) {
+		if (
+			candle.start === referenceCandleStart &&
+			Number.isFinite(candle.close) &&
+			candle.close > 0
+		) {
+			return candle;
+		}
+	}
+	return null;
+};
+
+export type RateLimitBackoffPlan =
+	| {
+			readonly kind: "retry";
+			readonly delayMs: number;
+			readonly spentMs: number;
+	  }
+	| {
+			readonly kind: "stop";
+			readonly reason: "ATTEMPTS" | "RETRY_AFTER_EXCEEDS_BUDGET" | "BUDGET";
+	  };
+
+const jitterScale = (randomUnit: number): number => {
+	const unit = Number.isFinite(randomUnit)
+		? Math.min(1, Math.max(0, randomUnit))
+		: 0;
+	return (
+		1 -
+		COINBASE_RATE_LIMIT_JITTER_RATIO +
+		2 * COINBASE_RATE_LIMIT_JITTER_RATIO * unit
+	);
+};
+
+/**
+ * Next in-request wait after a Coinbase RATE_LIMITED, or stop.
+ * `attempt` is the 0-based index of the retry about to be scheduled
+ * (0 after the first failure). `randomUnit` ∈ [0, 1] is injected so the
+ * plan stays pure. Jitter applies to the table delay only. `Retry-After`
+ * is a floor: the wait is never shorter than the server cooldown. A floor
+ * above the in-request cap stops instead of being clipped; the machine
+ * retry schedule owns that wait, and this request fails over.
+ */
+export const planRateLimitBackoff = (input: {
+	readonly attempt: number;
+	readonly retryAfterMs: number | null;
+	readonly randomUnit: number;
+	readonly spentMs: number;
+}): RateLimitBackoffPlan => {
+	if (
+		!Number.isSafeInteger(input.attempt) ||
+		input.attempt < 0 ||
+		input.attempt >= COINBASE_RATE_LIMIT_MAX_ATTEMPTS - 1
+	) {
+		return Object.freeze({ kind: "stop", reason: "ATTEMPTS" });
+	}
+	const table =
+		COINBASE_RATE_LIMIT_BASE_DELAYS_MS[
+			Math.min(input.attempt, COINBASE_RATE_LIMIT_BASE_DELAYS_MS.length - 1)
+		] ?? COINBASE_RATE_LIMIT_MAX_DELAY_MS;
+	const retryAfter =
+		input.retryAfterMs !== null &&
+		Number.isFinite(input.retryAfterMs) &&
+		input.retryAfterMs >= 0
+			? input.retryAfterMs
+			: null;
+	const jitteredBase = Math.min(
+		Math.round(table * jitterScale(input.randomUnit)),
+		COINBASE_RATE_LIMIT_MAX_DELAY_MS,
+	);
+	if (
+		retryAfter !== null &&
+		retryAfter > COINBASE_RATE_LIMIT_MAX_DELAY_MS
+	) {
+		return Object.freeze({ kind: "stop", reason: "RETRY_AFTER_EXCEEDS_BUDGET" });
+	}
+	const delayMs =
+		retryAfter === null ? jitteredBase : Math.max(jitteredBase, retryAfter);
+	if (
+		!Number.isFinite(input.spentMs) ||
+		input.spentMs < 0 ||
+		input.spentMs + delayMs > COINBASE_RATE_LIMIT_BUDGET_MS
+	) {
+		return Object.freeze({ kind: "stop", reason: "BUDGET" });
+	}
+	return Object.freeze({
+		kind: "retry",
+		delayMs,
+		spentMs: input.spentMs + delayMs,
+	});
+};
+
+/** Closed mark label for the snapshot source. One series, one label. */
+export const candleCloseMarkSource = (
+	source: "coinbase" | "hyperliquid" | "dydx",
+): CandleCloseMarkSource => {
+	switch (source) {
+		case "hyperliquid":
+			return "HYPERLIQUID_CANDLE_CLOSE";
+		case "dydx":
+			return "DYDX_CANDLE_CLOSE";
+		case "coinbase":
+			return "COINBASE_CANDLE_CLOSE";
+	}
 };

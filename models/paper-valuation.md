@@ -18,9 +18,12 @@ Le contrat exécutable est `models/paper-valuation.ts` :
 
 - `cash` et `positionQuantity` sont les faits du portefeuille paper après la
   dernière exécution confirmée. Une valeur négative ou non finie est invalide.
-- Le seul prix accepté est `COINBASE_CANDLE_CLOSE`, lu dans la dernière bougie
-  du snapshot marché accepté pour le cycle. Le mark capture également son
-  timeframe.
+- Le prix accepté est la close de la dernière bougie du snapshot marché
+  accepté pour le cycle. La source est fermée :
+  `COINBASE_CANDLE_CLOSE`, `HYPERLIQUID_CANDLE_CLOSE` ou
+  `DYDX_CANDLE_CLOSE`, exactement la source de cette série
+  (`candleCloseMarkSource`). Un ticker, un mid ou un carnet n'est pas un
+  mark. Le mark capture également son timeframe.
 - `candleClosedAt = candle.start + TIMEFRAME_MILLISECONDS[timeframe]`. Ne pas
   employer l’heure de déclenchement, l’heure d’écriture, l’`averagePrice` ou le
   prix de fill à la place de la date de clôture de la bougie.

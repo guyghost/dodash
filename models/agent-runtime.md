@@ -68,7 +68,7 @@ de retry ou une commande de contrôle ne lance jamais cette suite.
 
 `lastPaperMark` est une donnée de mesure distincte du portefeuille comptable et
 du contexte de la machine. Sa forme est celle de
-`PaperValuationMark` (`price`, `source=COINBASE_CANDLE_CLOSE`, `timeframe`,
+`PaperValuationMark` (`price`, `source` fermée `*_CANDLE_CLOSE`, `timeframe`,
 `candleClosedAt`, `maxMarketStalenessMs`). Le runtime la remplace uniquement après un snapshot marché
 accepté, en dérivant `candleClosedAt` depuis le début de bougie et la table
 canonique `TIMEFRAME_MILLISECONDS`. Un échec marché conserve le dernier mark

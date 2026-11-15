@@ -6,7 +6,10 @@ activation live.
 
 ## Décisions de modèle
 
-- Le prix est un close Coinbase de la dernière bougie acceptée. Le timestamp
+- Le prix est la close de la dernière bougie acceptée, étiquetée par la
+  source de cette série (`COINBASE_CANDLE_CLOSE`,
+  `HYPERLIQUID_CANDLE_CLOSE` ou `DYDX_CANDLE_CLOSE`, amendement
+  2026-11-14). Le timestamp
   vient de `candle.start + TIMEFRAME_MILLISECONDS[timeframe]`; le cycle garde
   séparément `asOf` et la limite de fraîcheur observée.
 - La qualité se calcule à la lecture. Il n’y a pas de nouveau cycle de vie ni

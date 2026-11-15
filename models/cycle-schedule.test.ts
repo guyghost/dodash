@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCycleSchedule, resolveMissedDecision } from "./cycle-schedule.js";
+import {
+  planPortfolioProductStaggerMs,
+  resolveCycleSchedule,
+  resolveMissedDecision,
+} from "./cycle-schedule.js";
 
 describe("resolveCycleSchedule", () => {
   it.each([
@@ -19,6 +23,18 @@ describe("resolveCycleSchedule", () => {
 
   it.each([7, 90, 7_200 + 60, 100_000])("retombe sur l'intervalle pour %i s", (interval) => {
     expect(resolveCycleSchedule(interval)).toEqual({ kind: "interval", intervalSeconds: interval });
+  });
+});
+
+describe("planPortfolioProductStaggerMs", () => {
+  it("laisse partir le premier produit tout de suite", () => {
+    expect(planPortfolioProductStaggerMs(0)).toBe(0);
+    expect(planPortfolioProductStaggerMs(-1)).toBe(0);
+  });
+
+  it("décale le produit suivant de 2 s pour séparer les quotes d'exécution", () => {
+    expect(planPortfolioProductStaggerMs(1)).toBe(2_000);
+    expect(planPortfolioProductStaggerMs(2)).toBe(2_000);
   });
 });
 
