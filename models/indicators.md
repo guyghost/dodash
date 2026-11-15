@@ -68,3 +68,40 @@ Le moteur transforme une série OHLCV validée et, facultativement, des transact
 6. L’identifiant du snapshot couvre les bougies, la configuration et le contexte microstructurel fournis.
 7. Les règles `.pl` sont la source éditable ; leur représentation TypeScript embarquée est générée et vérifiée.
 8. Les prédicats à fenêtre fixe ne reçoivent que leur fenêtre utile ; EMA et ATR de Wilder conservent l’historique requis par leur lissage.
+
+## Amendement 2026-11-15 — Qualité mathématique : ADX de Wilder (+DI/-DI), RSI de Wilder et SMA longue
+
+Statut : normatif (2026-11-15).
+
+### Constat
+
+1. **ADX (`trend_strength`)** : `evaluateBoundedIndicators` tronquait la série à `2 × trendStrengthPeriod` chandelles, ne laissant aucune chandelle résiduelle après `adx_directional_seed` (`P`) et `adx_dx_seed` (`P - 1`). Le prédicat `adx_continue` n’était jamais exécuté sur une liste non vide : l’ADX retourné n’était qu’une moyenne simple des `P` premiers DX, sans lissage de Wilder ni exposition de `+DI` / `-DI`.
+2. **RSI** : `rsi/3` implémente le RSI de Cutler (moyenne simple sur `rsiPeriod` deltas) et ne proposait pas le lissage de Wilder.
+3. **Tendance longue** : les stratégies de tendance longue (ex. `TARGET_EXPOSURE`) devaient calculer une SMA longue en TypeScript hors du moteur Prolog.
+
+### Résolution pure
+
+Extensions optionnelles de `IndicatorConfig` (absentes par défaut dans `DEFAULT_INDICATOR_CONFIG`) :
+
+- `adxWarmupMultiplier?: number` — entier `>= 2`. Absent ⇒ fenêtre V1 de `2 × trendStrengthPeriod` chandelles, `plusDi` et `minusDi` absents de `IndicatorSnapshot`. Présent ⇒ fenêtre de `trendStrengthPeriod × adxWarmupMultiplier` chandelles (permettant à `adx_continue` d’exécuter `(adxWarmupMultiplier - 2) × trendStrengthPeriod` pas de lissage de Wilder) et exposition de `plusDi: number` et `minusDi: number` dans `IndicatorSnapshot` via `trend_strength_di/7`.
+- `rsiMode?: "CUTLER" | "WILDER"` — absent ou `"CUTLER"` ⇒ comportement V1 (`rsi/3` sur `rsiPeriod + 1` chandelles). `"WILDER"` ⇒ `rsi_wilder/3` sur l’historique des clôtures (seed SMA des `rsiPeriod` premiers gains/pertes, puis lissage de Wilder `(AvgPrev × (P - 1) + Courant) / P`).
+- `longSmaPeriod?: number` — entier `> 0`. Absent ⇒ `longSma` absent de `IndicatorSnapshot`. Présent ⇒ `requiredIndicatorCandles` inclut `longSmaPeriod` et `IndicatorSnapshot` expose `longSma: number` via `sma/3` sur les `longSmaPeriod` dernières clôtures.
+
+Toute configuration invalide (`adxWarmupMultiplier` non entier ou `< 2`, `rsiMode` hors `"CUTLER" | "WILDER"`, `longSmaPeriod` non entier ou `<= 0`) retourne le code d’erreur fermé `INVALID_CONFIG`. Aucun changement aux transitions de la machine XState (`INDICATORS_COMPUTED` / `INDICATORS_FAILED`).
+
+### Invariants
+
+- **INV-M1 (Rétrocompatibilité V1 bit-exacte)** : lorsque `adxWarmupMultiplier`, `rsiMode` (ou `"CUTLER"`) et `longSmaPeriod` sont absents, les requêtes Prolog, les valeurs, les clés de `IndicatorSnapshot` et `snapshotId` sont strictement identiques à V1.
+- **INV-M2 (ADX de Wilder et +DI/-DI)** : lorsque `adxWarmupMultiplier` est configuré, `trendStrength` est l’ADX lissé de Wilder sur `trendStrengthPeriod × adxWarmupMultiplier` chandelles (`adx_continue` actif dès `adxWarmupMultiplier >= 3`), et `plusDi` / `minusDi` sont exposés dans `[0, 100]` (`0` si le true range lissé est nul).
+- **INV-M3 (RSI de Wilder)** : lorsque `rsiMode === "WILDER"`, `rsi` utilise le lissage de Wilder sur l’ensemble de la série fournie (seed SMA puis lissage récursif), borné dans `[0, 100]`.
+- **INV-M4 (SMA longue)** : lorsque `longSmaPeriod` est configuré, `longSma` égale `sma(Closes, longSmaPeriod)` et `requiredIndicatorCandles >= longSmaPeriod`.
+- **INV-M5 (Équivalence incrémentale INV-27)** : `createIndicatorSeriesComputer` produit des snapshots strictement bit-identiques à `computeIndicators` sur chaque préfixe, y compris avec `rsiMode: "WILDER"`, `adxWarmupMultiplier` et `longSmaPeriod`.
+
+### Vérification requise
+
+1. Non-régression bit-exacte V1 sur `DEFAULT_INDICATOR_CONFIG` (clés optionnelles absentes, valeurs inchangées).
+2. `rsiMode: "WILDER"` vs `"CUTLER"` : divergence numérique sur série non monotone de longueur `> rsiPeriod + 1`, bornes `[0, 100]` et cas limites (plat → `50`, hausse pure → `100`, baisse pure → `0`).
+3. `adxWarmupMultiplier >= 3` : exécution effective de `adx_continue` (divergence vs `adxWarmupMultiplier: 2` sur série non monotone) et cohérence directionnelle de `plusDi` / `minusDi`.
+4. `longSmaPeriod` : égalité avec la SMA exacte des `longSmaPeriod` dernières clôtures et prise en compte dans `requiredIndicatorCandles`.
+5. Rejet `INVALID_CONFIG` pour valeurs invalides de `adxWarmupMultiplier`, `rsiMode` et `longSmaPeriod`.
+6. Équivalence incrémentale (`IndicatorSeriesComputer`, INV-27) avec les trois options activées conjointement.

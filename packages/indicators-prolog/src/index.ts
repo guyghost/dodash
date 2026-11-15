@@ -9,6 +9,7 @@ export type {
 	OrderBookLevel,
 	OrderBookSnapshot,
 	OrderBookVwap,
+	RsiMode,
 	TradeSample,
 } from "./engine.js";
 export {

@@ -108,6 +108,7 @@
     "OrderBookLevel",
     "OrderBookSnapshot",
     "OrderBookVwap",
+    "RsiMode",
     "TradeSample",
     "computeIndicators",
     "createIndicatorSeriesComputer",
