@@ -209,3 +209,119 @@ il ne justifie jamais un élargissement de la tolérance (nouveau modèle).
   elle, y compris quand `dailyPnl = 0` mais que la bougie de décision a perdu
   plus que `maxDailyLoss`.
 - Cohérence §7.
+
+## Amendement 2026-11-15 — Filtre de coût d'exécution (No-Trade Zone dynamique)
+
+Statut : normatif (2026-11-15).
+
+### Constat
+
+Sous la règle §3, un rééquilibrage `MONTH_START` se déclenche dès le 1er du mois
+quel que soit l'écart `|exposure − target|` (sous réserve de `minOrderNotional = 10 $`),
+et `DRIFT` utilise un seuil fixe `0,10` indépendant des frais (`feeBps`) et du
+slippage (`slippageBps`). Lorsque les coûts aller-retour
+`2 × (feeBps + slippageBps) / 10 000` sont élevés ou que l'écart de début de
+mois est faible, ces micro-rééquilibrages dégradent le rendement net sans
+avantage espéré suffisant.
+
+### Résolution pure
+
+Nouvelles fonctions pures dans `models/target-exposure.ts` :
+
+```ts
+roundTripCostFraction(feeBps: number, slippageBps: number): number
+resolveEffectiveDriftThreshold(
+  baseDriftThreshold: number,
+  feeBps: number,
+  slippageBps: number,
+  costMultiple?: number, // défaut 2
+): number
+resolveEffectiveMinOrderNotional(
+  baseMinOrderNotional: number,
+  equity: number,
+  feeBps: number,
+  slippageBps: number,
+  minCostEdgeMultiple?: number, // défaut 2
+): number
+```
+
+Extension de `TargetExposureInput` (rétrocompatible) :
+
+```ts
+costAwareRebalance?: boolean;    // défaut false
+costMultiple?: number;           // défaut 2
+minCostEdgeMultiple?: number;    // défaut 2
+```
+
+Formules :
+
+- `roundTripCostFraction = 2 × (max(0, feeBps) + max(0, slippageBps)) / 10 000`
+- `effectiveDriftThreshold = max(baseDriftThreshold, max(0, costMultiple) × roundTripCostFraction)`
+- `effectiveMinOrderNotional = max(baseMinOrderNotional, max(0, minCostEdgeMultiple) × equity × roundTripCostFraction)`
+
+### Règles de décision (`costAwareRebalance = true`)
+
+1. **`ANCHOR` prioritaire** : les ancres (et en particulier tout changement de
+   tendance `trend(anchor) ≠ trend(previous)` entraînant une entrée ou une
+   sortie à 0) ne sont **jamais** bloquées par le filtre de dérive ni par
+   `minCostEdgeMultiple`.
+2. **No-Trade Zone dynamique (`DRIFT` et `MONTH_START`)** : si
+   `|exposure − target| ≤ effectiveDriftThreshold`, la décision est `HOLD`
+   avec raison `IN_BAND`.
+3. **Seuil de notionnel minimal tenant compte des frais** : pour `DRIFT` et
+   `MONTH_START`, si le notionnel plafonné est inférieur à
+   `effectiveMinOrderNotional`, la décision est `HOLD` avec raison
+   `BELOW_MIN_ORDER`.
+4. **Rétrocompatibilité** : lorsque `costAwareRebalance` est absent ou `false`,
+   le comportement §3 est conservé à l'identique (bit-exact pour le test de
+   cohérence §7).
+
+### Invariants ajoutés
+
+- **INV-T8** : Un changement de tendance (`ANCHOR`) n'est jamais bloqué par le
+  filtre de coût.
+- **INV-T9** : Avec `costAwareRebalance` absent ou `false`, `planTargetExposure`
+  produit exactement la même décision que §3.
+
+### Vérification requise (amendement 2026-11-15)
+
+- `resolveEffectiveDriftThreshold` : retourne `baseDriftThreshold` quand le
+  coût pondéré est inférieur à la base, augmente proportionnellement quand
+  `costMultiple × roundTripCostFraction > baseDriftThreshold`, gère les entrées
+  nulles ou négatives.
+- `resolveEffectiveMinOrderNotional` : retourne `max(minOrderNotional, minCostEdgeMultiple × equity × roundTripCostFraction)`.
+- Rétrocompatibilité : `costAwareRebalance` absent ou `false` conserve le
+  rééquilibrage `MONTH_START` dans la bande (5 % d'écart) et le seuil fixe 0,10.
+- Avec `costAwareRebalance: true` :
+  - `MONTH_START` dans la bande (`|exposure − target| ≤ effectiveDriftThreshold`) → `HOLD` avec `reason: "IN_BAND"`.
+  - `DRIFT` sous frais élevés où `0,10 < |exposure − target| ≤ effectiveDriftThreshold` → `HOLD` avec `reason: "IN_BAND"`.
+  - `DRIFT` ou `MONTH_START` au-delà de `effectiveDriftThreshold` mais avec notionnel plafonné `< effectiveMinOrderNotional` → `HOLD` avec `reason: "BELOW_MIN_ORDER"`.
+  - `DRIFT` ou `MONTH_START` au-delà des deux seuils → ordre émis (`BUY` ou `SELL`).
+  - Changement de tendance (`ANCHOR` sortie à 0 ou entrée) jamais bloqué même avec frais élevés.
+
+## Amendement 2026-11-15 — Admission en mode `perp` (Hyperliquid)
+
+Statut : normatif (2026-11-15).
+
+### Constat
+
+`INV-T5` limitait jusqu'ici `TARGET_EXPOSURE` au seul mode `"paper"`. Or les marchés perp Hyperliquid (`BTC-PERP`, `ETH-PERP` via proxy `BTC-USD`/`ETH-USD`) disposent déjà d'une enveloppe d'exécution figée (`HYPERLIQUID_PERP_POLICY`), d'un routeur d'intention (`toPerpIntent`), d'une machine d'ordre dédiée et d'une réconciliation L1 complète sur `ONE_DAY`. Interdire `"perp"` prive l'opérateur d'exécuter P7 sur Hyperliquid alors que le mode `"live"` spot Coinbase reste volontairement hors périmètre (gestion de brackets spot incompatible avec des ventes à 0 sans position de marge).
+
+### Résolution et amendement d'`INV-T5`
+
+- **INV-T5 (amendé)** : `TARGET_EXPOSURE` est admise en modes `"paper"` et `"perp"`, et reste **strictement refusée en mode `"live"`** (Coinbase spot).
+- **Invariants de validation en `"paper"`** : inchangés (§5 — plafonds absolus neutralisés `>= 1 000 000 000 $`, `cooldownMs === 0`, `ONE_DAY`, `candleLimit >= 240`, exclusivité `target-exposure` / `TARGET_EXPOSURE`).
+- **Invariants de validation et garde-fous en `"perp"`** :
+  - `timeframe === "ONE_DAY"`, `candleLimit >= 240` (défaut `240` appliqué par `withPerpPolicyDefaults` lorsque P7 est sélectionné), `cooldownMs === 0`, exclusivité `target-exposure` / `TARGET_EXPOSURE`.
+  - L'admission perp (`admitHyperliquidPerpAgent`) et la garde d'ordre perp (`assessPerpOrderIntent`) restent **pleinement actives et inchangées** : seuls les miroirs autorisés (`BTC-USD` -> `BTC-PERP`, `ETH-USD` -> `ETH-PERP`) et l'enveloppe `HYPERLIQUID_PERP_POLICY` (`maxOrderNotional: 600`, `maxPositionNotional: 10_000`, `maxGrossExposure: 10_000`, `maxDailyLoss: 1_000`, `maxLeverage: 2`) sont approuvés.
+  - Les plafonds `>= 1e9` propres au paper spot ne sont donc pas exigés en `"perp"` (où les plafonds réels de `HYPERLIQUID_PERP_POLICY` protègent le capital Hyperliquid).
+- **Porte de risque d'interpréteur (`INV-T7` en `"perp"`)** :
+  - `targetExposureRiskGate` continue d'isoler `SELL` du coupe-circuit journalier local et de l'admission portefeuille consolidée, tandis que `assessPerpOrderIntent` garantit en dernier ressort le respect strict de l'enveloppe Hyperliquid avant signature.
+
+### Vérification requise (amendement `perp`)
+
+- `apps/agent/test/target-exposure-runtime.test.ts` :
+  - `executionMode: "live"` reste rejeté par `parseAgentConfiguration`.
+  - `executionMode: "perp"` avec `productId: "BTC-USD"`, `strategyIds: ["target-exposure"]`, `sizingPolicy: TARGET_EXPOSURE`, `candleLimit: 240` (ou par défaut) et enveloppe `HYPERLIQUID_PERP_POLICY` est accepté par `parseAgentConfiguration` ET approuvé par `admitHyperliquidPerpAgent`.
+  - `executionMode: "perp"` sur un produit hors périmètre (ex. `"SOL-USD"`) est rejeté par `admitHyperliquidPerpAgent`.
+  - `executionMode: "perp"` avec `candleLimit < 240` ou `cooldownMs > 0` ou mauvaise exclusivité stratégie reste rejeté par `parseAgentConfiguration`.

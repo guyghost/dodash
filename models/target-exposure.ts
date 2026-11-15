@@ -17,6 +17,12 @@ export const TARGET_EXPOSURE_POLICY = Object.freeze({
 /** Bougies requises : SMA200 à l'ancre et la veille (≤ 7 jours) + marge (§2). */
 export const TARGET_EXPOSURE_MIN_CANDLES = 240;
 
+/** Multiplicateurs par défaut du filtre de coût d'exécution (amendement 2026-11-15). */
+export const TARGET_EXPOSURE_COST_DEFAULTS = Object.freeze({
+  costMultiple: 2,
+  minCostEdgeMultiple: 2,
+});
+
 export interface TargetExposureCandle {
   readonly start: number;
   readonly close: number;
@@ -36,6 +42,12 @@ export interface TargetExposureInput {
   readonly cash: number;
   readonly feeBps: number;
   readonly slippageBps: number;
+  /** Active la No-Trade Zone dynamique et le seuil de notionnel lié aux frais (défaut `false`). */
+  readonly costAwareRebalance?: boolean;
+  /** Multiplicateur appliqué au coût aller-retour pour le seuil de dérive effectif (défaut `2`). */
+  readonly costMultiple?: number;
+  /** Multiplicateur appliqué au coût aller-retour sur l'équité pour le notionnel minimal (défaut `2`). */
+  readonly minCostEdgeMultiple?: number;
 }
 
 export interface TargetExposureDecision {
@@ -82,6 +94,45 @@ export const annualizedRealizedVolatility = (
 const DAY_MS = 86_400_000;
 const isUtcMonday = (start: number): boolean => new Date(start).getUTCDay() === 1;
 const isUtcMonthStart = (start: number): boolean => new Date(start).getUTCDate() === 1;
+
+/** Coût aller-retour en fraction du notionnel : `2 * (feeBps + slippageBps) / 10_000`. */
+export const roundTripCostFraction = (feeBps: number, slippageBps: number): number => {
+  const safeFee = Number.isFinite(feeBps) ? Math.max(0, feeBps) : 0;
+  const safeSlippage = Number.isFinite(slippageBps) ? Math.max(0, slippageBps) : 0;
+  return (2 * (safeFee + safeSlippage)) / 10_000;
+};
+
+/**
+ * Seuil de dérive effectif de la No-Trade Zone dynamique :
+ * `max(baseDriftThreshold, costMultiple * roundTripCostFraction)`.
+ */
+export const resolveEffectiveDriftThreshold = (
+  baseDriftThreshold: number,
+  feeBps: number,
+  slippageBps: number,
+  costMultiple: number = TARGET_EXPOSURE_COST_DEFAULTS.costMultiple,
+): number => {
+  const safeBase = Number.isFinite(baseDriftThreshold) ? Math.max(0, baseDriftThreshold) : 0;
+  const safeMultiple = Number.isFinite(costMultiple) ? Math.max(0, costMultiple) : 0;
+  return Math.max(safeBase, safeMultiple * roundTripCostFraction(feeBps, slippageBps));
+};
+
+/**
+ * Seuil de notionnel minimal tenant compte des frais aller-retour sur l'équité :
+ * `max(baseMinOrderNotional, minCostEdgeMultiple * equity * roundTripCostFraction)`.
+ */
+export const resolveEffectiveMinOrderNotional = (
+  baseMinOrderNotional: number,
+  equity: number,
+  feeBps: number,
+  slippageBps: number,
+  minCostEdgeMultiple: number = TARGET_EXPOSURE_COST_DEFAULTS.minCostEdgeMultiple,
+): number => {
+  const safeBase = Number.isFinite(baseMinOrderNotional) ? Math.max(0, baseMinOrderNotional) : 0;
+  const safeEquity = Number.isFinite(equity) ? Math.max(0, equity) : 0;
+  const safeMultiple = Number.isFinite(minCostEdgeMultiple) ? Math.max(0, minCostEdgeMultiple) : 0;
+  return Math.max(safeBase, safeMultiple * safeEquity * roundTripCostFraction(feeBps, slippageBps));
+};
 
 const hold = (
   reason: TargetExposureReason,
@@ -152,12 +203,26 @@ export const planTargetExposure = (input: TargetExposureInput): TargetExposureDe
     anchorStart: candles[anchor]?.start ?? null,
   } as const;
 
+  const costAware = input.costAwareRebalance === true;
+  const effectiveDriftThreshold = costAware
+    ? resolveEffectiveDriftThreshold(
+        policy.driftThreshold,
+        input.feeBps,
+        input.slippageBps,
+        input.costMultiple,
+      )
+    : policy.driftThreshold;
+  const drift = Math.abs(exposure - target);
+
+  // INV-T8 : un changement d'ancre (et tout ANCHOR) n'est jamais filtré par le coût.
   const reason: TargetExposureReason | null =
     anchor === last
       ? "ANCHOR"
       : isUtcMonthStart(lastCandle.start)
-        ? "MONTH_START"
-        : Math.abs(exposure - target) > policy.driftThreshold
+        ? costAware && drift <= effectiveDriftThreshold
+          ? null
+          : "MONTH_START"
+        : drift > effectiveDriftThreshold
           ? "DRIFT"
           : null;
   if (reason === null) return hold("IN_BAND", fields);
@@ -170,7 +235,17 @@ export const planTargetExposure = (input: TargetExposureInput): TargetExposureDe
     delta > 0
       ? Math.min(delta, (Math.max(0, input.cash) / buyCostFactor) * (1 - 1e-9))
       : Math.min(-delta, holding);
-  if (notional < policy.minOrderNotional) return hold("BELOW_MIN_ORDER", fields);
+  const effectiveMinNotional =
+    costAware && reason !== "ANCHOR"
+      ? resolveEffectiveMinOrderNotional(
+          policy.minOrderNotional,
+          equity,
+          input.feeBps,
+          input.slippageBps,
+          input.minCostEdgeMultiple,
+        )
+      : policy.minOrderNotional;
+  if (notional < effectiveMinNotional) return hold("BELOW_MIN_ORDER", fields);
   const quantity =
     delta > 0 ? notional / price : Math.min(notional / price, Math.max(0, input.positionQuantity));
   return Object.freeze({

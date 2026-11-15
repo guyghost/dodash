@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   annualizedRealizedVolatility,
   planTargetExposure,
+  resolveEffectiveDriftThreshold,
+  resolveEffectiveMinOrderNotional,
+  roundTripCostFraction,
   simpleMovingAverage,
+  TARGET_EXPOSURE_COST_DEFAULTS,
   TARGET_EXPOSURE_MIN_CANDLES,
   TARGET_EXPOSURE_POLICY,
   decisionCandlePnl,
@@ -148,5 +152,132 @@ describe("targetExposureRiskGate (INV-T7)", () => {
     expect(targetExposureRiskGate("BUY", 0, -3_000)).toEqual({ dailyPnlForRisk: -3_000, portfolioAdmission: true });
     expect(targetExposureRiskGate("BUY", -9_000, 100)).toEqual({ dailyPnlForRisk: -9_000, portfolioAdmission: true });
     expect(targetExposureRiskGate("BUY", -100, null)).toEqual({ dailyPnlForRisk: -100, portfolioAdmission: true });
+  });
+});
+
+describe("filtre de coût d'exécution (amendement 2026-11-15)", () => {
+  it("calcule la fraction de coût aller-retour et les seuils effectifs", () => {
+    expect(TARGET_EXPOSURE_COST_DEFAULTS).toEqual({ costMultiple: 2, minCostEdgeMultiple: 2 });
+    // 2 * (60 + 2) / 10_000 = 0.0124
+    expect(roundTripCostFraction(60, 2)).toBeCloseTo(0.0124, 10);
+    expect(roundTripCostFraction(-10, Number.NaN)).toBe(0);
+
+    // 2 * 0.0124 = 0.0248 < 0.10 => baseDriftThreshold conservé
+    expect(resolveEffectiveDriftThreshold(0.1, 60, 2)).toBe(0.1);
+    // Frais élevés : 2 * (2 * (500 + 100) / 10_000) = 0.24 > 0.10
+    expect(resolveEffectiveDriftThreshold(0.1, 500, 100)).toBeCloseTo(0.24, 10);
+    // Multiplicateur personnalisé : 10 * 0.0124 = 0.124
+    expect(resolveEffectiveDriftThreshold(0.1, 60, 2, 10)).toBeCloseTo(0.124, 10);
+
+    // Notionnel minimal : max(10, 2 * 10_000 * 0.0124) = 248
+    expect(resolveEffectiveMinOrderNotional(10, 10_000, 60, 2)).toBeCloseTo(248, 10);
+    expect(resolveEffectiveMinOrderNotional(10, 100, 60, 2)).toBe(10);
+    expect(resolveEffectiveMinOrderNotional(10, 10_000, 0, 0)).toBe(10);
+  });
+
+  it("préserve à l'identique le comportement historique quand costAwareRebalance est absent ou false (INV-T9)", () => {
+    const firstOfMonth = Date.UTC(2025, 1, 1); // samedi 2025-02-01
+    const candles = series(rising(TARGET_EXPOSURE_MIN_CANDLES, 0.001), firstOfMonth);
+    const price = candles.at(-1)?.close ?? 0;
+
+    const withoutFlag = planTargetExposure({
+      ...base,
+      candles,
+      positionQuantity: 9_500 / price,
+      cash: 500,
+    });
+    const withFalse = planTargetExposure({
+      ...base,
+      candles,
+      positionQuantity: 9_500 / price,
+      cash: 500,
+      costAwareRebalance: false,
+    });
+    expect(withoutFlag).toMatchObject({ side: "BUY", reason: "MONTH_START" });
+    expect(withFalse).toEqual(withoutFlag);
+  });
+
+  it("bloque les micro-rééquilibrages MONTH_START dans la No-Trade Zone dynamique", () => {
+    const firstOfMonth = Date.UTC(2025, 1, 1); // samedi 2025-02-01
+    const candles = series(rising(TARGET_EXPOSURE_MIN_CANDLES, 0.001), firstOfMonth);
+    const price = candles.at(-1)?.close ?? 0;
+    // Écart de 5 % <= effectiveDriftThreshold (0.10)
+    const decision = planTargetExposure({
+      ...base,
+      candles,
+      positionQuantity: 9_500 / price,
+      cash: 500,
+      costAwareRebalance: true,
+    });
+    expect(decision).toMatchObject({ side: "HOLD", reason: "IN_BAND", quantity: 0 });
+  });
+
+  it("élargit la No-Trade Zone sur DRIFT proportionnellement aux frais", () => {
+    const candles = series(rising(TARGET_EXPOSURE_MIN_CANDLES, 0.001), MONDAY + 2 * DAY);
+    const price = candles.at(-1)?.close ?? 0;
+    // Frais aller-retour = 2 * (500 + 100) / 10_000 = 0.12 => effectiveDriftThreshold = 0.24.
+    // Écart de 15 % : déclenche DRIFT sans filtre, mais reste IN_BAND avec costAwareRebalance.
+    const highFeeBase = { feeBps: 500, slippageBps: 100 };
+    const unfiltered = planTargetExposure({
+      ...highFeeBase,
+      candles,
+      positionQuantity: 8_500 / price,
+      cash: 1_500,
+    });
+    expect(unfiltered).toMatchObject({ side: "BUY", reason: "DRIFT" });
+
+    const filtered = planTargetExposure({
+      ...highFeeBase,
+      candles,
+      positionQuantity: 8_500 / price,
+      cash: 1_500,
+      costAwareRebalance: true,
+    });
+    expect(filtered).toMatchObject({ side: "HOLD", reason: "IN_BAND", quantity: 0 });
+  });
+
+  it("filtre les ordres au-delà de la bande dont le notionnel plafonné est inférieur au seuil lié aux frais", () => {
+    // 2025-01-01 est un mercredi (MONTH_START hors ancre du lundi).
+    const firstOfMonth = Date.UTC(2025, 0, 1);
+    const candles = series(rising(TARGET_EXPOSURE_MIN_CANDLES, 0.001), firstOfMonth);
+    const price = candles.at(-1)?.close ?? 0;
+    // Équité = 10_000 (position 8_000, cash 2_000) => écart 20 % (> 10 %).
+    // Mais avec minCostEdgeMultiple = 200 et roundTripCost = 0.0124 => seuil = 2_480 > delta (2_000).
+    const blocked = planTargetExposure({
+      ...base,
+      candles,
+      positionQuantity: 8_000 / price,
+      cash: 2_000,
+      costAwareRebalance: true,
+      minCostEdgeMultiple: 200,
+    });
+    expect(blocked).toMatchObject({ side: "HOLD", reason: "BELOW_MIN_ORDER", quantity: 0 });
+
+    // Avec le multiplicateur par défaut (2 => seuil 248 $), l'ordre de 2_000 $ passe.
+    const allowed = planTargetExposure({
+      ...base,
+      candles,
+      positionQuantity: 8_000 / price,
+      cash: 2_000,
+      costAwareRebalance: true,
+    });
+    expect(allowed).toMatchObject({ side: "BUY", reason: "MONTH_START" });
+  });
+
+  it("ne bloque jamais un changement d'ancre de tendance même sous frais élevés (INV-T8)", () => {
+    const closes = rising(TARGET_EXPOSURE_MIN_CANDLES - 1, 0.001);
+    closes.push(50); // passage sous SMA200 : sortie à 0
+    const candles = series(closes, MONDAY + 3 * DAY);
+    const decision = planTargetExposure({
+      feeBps: 500,
+      slippageBps: 100,
+      candles,
+      positionQuantity: 80,
+      cash: 0,
+      costAwareRebalance: true,
+      costMultiple: 10,
+      minCostEdgeMultiple: 100,
+    });
+    expect(decision).toMatchObject({ trend: false, target: 0, reason: "ANCHOR", side: "SELL", quantity: 80 });
   });
 });
