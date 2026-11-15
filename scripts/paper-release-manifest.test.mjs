@@ -32,22 +32,28 @@ function fixture() {
 	git(["config", "user.email", "fixture@example.invalid"]);
 	for (const app of apps) {
 		mkdirSync(join(root, "apps", app), { recursive: true });
-		writeFileSync(
-			join(root, "apps", app, "wrangler.paper.jsonc"),
-			JSON.stringify({
+		const configObj = {
+			worker: {
 				name: "dodash-paper-" + app,
-				main: "src/worker.ts",
+				entrypoint: "src/worker.ts",
 				...(app === "dashboard"
 					? { assets: { directory: "./dist/client" } }
 					: {}),
-				vars:
+				env:
 					app === "agent"
 						? {
-								LIVE_TRADING_ENABLED: "false",
-								HYPERLIQUID_PERP_TRADING_ENABLED: "false",
+								LIVE_TRADING_ENABLED: { type: "text", value: "false" },
+								HYPERLIQUID_PERP_TRADING_ENABLED: {
+									type: "text",
+									value: "false",
+								},
 							}
 						: {},
-			}),
+			},
+		};
+		writeFileSync(
+			join(root, "apps", app, "cloudflare.config.ts"),
+			`export default ({ mode }: { mode?: string }) => (${JSON.stringify(configObj)});\n`,
 		);
 	}
 	writeFileSync(join(root, ".gitignore"), "dist/\n");
@@ -89,7 +95,7 @@ function fixture() {
 	const assets = {
 		sourceDirectory: "./dist/client",
 		snapshotDirectory: "dashboard/assets/client",
-		configSha256: hash(join(root, "apps/dashboard/wrangler.paper.jsonc")),
+		configSha256: hash(join(root, "apps/dashboard/cloudflare.config.ts")),
 		files: ["app.js", "index.html"].map((path) => ({
 			path,
 			sha256: hash(join(snapshot, path)),
@@ -158,7 +164,7 @@ check(
 );
 check(
 	"tracked dirty source rejects",
-	(f) => appendFileSync(join(f.root, "apps/agent/wrangler.paper.jsonc"), " "),
+	(f) => appendFileSync(join(f.root, "apps/agent/cloudflare.config.ts"), " "),
 	"DIRTY_SOURCE",
 );
 check(
@@ -262,12 +268,12 @@ check(
 check(
 	"nested log basename remains payload",
 	(f) => {
-		writeFileSync(join(f.bundles, "agent/wrangler.log"), "unproven");
+		writeFileSync(join(f.bundles, "agent/cf.log"), "unproven");
 	},
 	"BUNDLE_TREE_MISMATCH",
 );
 check("root build log is allowed", (f) => {
-	writeFileSync(join(f.bundles, "wrangler.log"), "diagnostics");
+	writeFileSync(join(f.bundles, "cf.log"), "diagnostics");
 });
 for (const path of [
 	"../outside.js",

@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "wrangler deploy --dry-run --outdir dist",
+    "build": "cf build",
     "check": "tsc -p tsconfig.json --noEmit",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev --port 8787",
-    "types": "wrangler types",
+    "deploy": "cf deploy",
+    "dev": "cf dev -- --port 8787",
+    "types": "cf workers types",
     "test": "vitest run",
     "test:runtime": "node scripts/paper-runtime.mjs"
   },
@@ -31,6 +31,6 @@
     "@types/node": "^26.6.6",
     "hyperliquid": "^1.7.7",
     "vitest": "^4.1.11",
-    "wrangler": "^4.160.1"
+    "wrangler": "^4.162.0"
   }
 }

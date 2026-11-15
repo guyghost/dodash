@@ -9,8 +9,18 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = resolve(import.meta.dirname, "..");
+const loadPaperWorkerConfig = async (app) => {
+	const configPath = join(root, "apps", app, "cloudflare.config.ts");
+	const mod = await import(pathToFileURL(configPath).href);
+	const resolved =
+		typeof mod.default === "function"
+			? await mod.default({ mode: "paper", command: "deploy" })
+			: mod.default;
+	return { configPath, worker: resolved.worker };
+};
 const bundles = process.argv[2] && resolve(process.argv[2]);
 const output = process.argv[3] && resolve(process.argv[3]);
 if (!bundles || !output)
@@ -60,15 +70,11 @@ const sourceFiles = execFileSync("git", ["ls-files", "-z"], {
 const inputSha256 = createHash("sha256")
 	.update(sourceFiles.map((p) => p + "\0" + hash(join(root, p))).join("\n"))
 	.digest("hex");
-const dashboardConfigPath = join(root, "apps/dashboard/wrangler.paper.jsonc");
-const dashboardConfig = JSON.parse(
-	readFileSync(dashboardConfigPath, "utf8").replace(/^\s*\/\/.*$/gm, ""),
-);
-const assetSource = resolve(
-	root,
-	"apps/dashboard",
-	dashboardConfig.assets?.directory ?? "dist/client",
-);
+const { configPath: dashboardConfigPath, worker: dashboardWorker } =
+	await loadPaperWorkerConfig("dashboard");
+const assetDirectory =
+	dashboardWorker.assets?.directory ?? "./dist/client";
+const assetSource = resolve(root, "apps/dashboard", assetDirectory);
 const assetSnapshot = join(bundles, "dashboard/assets/client");
 const assetTree = (dir) => {
 	if (
@@ -85,16 +91,15 @@ const provenancePath = join(bundles, "paper-build-provenance.json");
 const payloadTree = () =>
 	files(bundles)
 		.map((p) => p.slice(bundles.length + 1))
-		.filter((p) => p !== "paper-build-provenance.json" && p !== "wrangler.log");
+		.filter((p) => p !== "paper-build-provenance.json" && p !== "cf.log");
 if (process.argv.includes("--prepare")) {
 	if (existsSync(bundles))
 		throw new Error("BUNDLE_ROOT_EXISTS: refuse stale or unrelated outputs");
 	mkdirSync(bundles, { recursive: true });
-	const run = (args, cwd = root) =>
-		execFileSync(process.execPath, args, {
+	const run = (args, cwd = root, cmd = process.execPath) =>
+		execFileSync(cmd, args, {
 			cwd,
 			stdio: "inherit",
-			env: { ...process.env, WRANGLER_LOG_PATH: join(bundles, "wrangler.log") },
 		});
 	for (const pkg of [
 		"packages/domain",
@@ -112,19 +117,14 @@ if (process.argv.includes("--prepare")) {
 		]);
 	run(["node_modules/vite/bin/vite.js", "build"], join(root, "apps/dashboard"));
 	run(["scripts/prepare-sites-build.mjs"], join(root, "apps/dashboard"));
-	for (const app of ["agent", "mcp-market-data", "dashboard-api", "dashboard"])
-		run(
-			[
-				join(root, "apps/agent/node_modules/wrangler/bin/wrangler.js"),
-				"deploy",
-				"--dry-run",
-				"--config",
-				"wrangler.paper.jsonc",
-				"--outdir",
-				join(bundles, app),
-			],
-			join(root, "apps", app),
-		);
+	const cfBin = join(root, "node_modules/.bin/cf");
+	for (const app of ["agent", "mcp-market-data", "dashboard-api", "dashboard"]) {
+		const appDir = join(root, "apps", app);
+		run(["build", "--mode", "paper"], appDir, cfBin);
+		cpSync(join(appDir, ".cloudflare/output"), join(bundles, app), {
+			recursive: true,
+		});
+	}
 	cpSync(assetSource, assetSnapshot, {
 		recursive: true,
 		errorOnExist: true,
@@ -138,7 +138,7 @@ if (process.argv.includes("--prepare")) {
 				inputSha256,
 				command: "paper-release-manifest --prepare",
 				assets: {
-					sourceDirectory: dashboardConfig.assets.directory,
+					sourceDirectory: assetDirectory,
 					snapshotDirectory: "dashboard/assets/client",
 					configSha256: hash(dashboardConfigPath),
 					files: assetTree(assetSnapshot),
@@ -161,7 +161,7 @@ if (provenance.gitSha !== gitSha || provenance.inputSha256 !== inputSha256)
 if (
 	!provenance.assets ||
 	provenance.assets.configSha256 !== hash(dashboardConfigPath) ||
-	provenance.assets.sourceDirectory !== dashboardConfig.assets?.directory ||
+	provenance.assets.sourceDirectory !== assetDirectory ||
 	provenance.assets.snapshotDirectory !== "dashboard/assets/client"
 )
 	throw new Error("MISSING_ASSET_PROVENANCE");
@@ -197,46 +197,57 @@ if (JSON.stringify(payloadTree()) !== JSON.stringify([...outputPaths].sort()))
 for (const item of provenance.outputs)
 	if (hash(join(bundles, item.path)) !== item.sha256)
 		throw new Error("BUNDLE_FINGERPRINT_MISMATCH");
-const workers = ["agent", "mcp-market-data", "dashboard-api", "dashboard"].map(
-	(app) => {
-		const path = join(root, "apps", app, "wrangler.paper.jsonc");
-		const config = JSON.parse(
-			readFileSync(path, "utf8").replace(/^\s*\/\/.*$/gm, ""),
-		);
-		if (!config.name.startsWith("dodash-paper-"))
-			throw new Error("non-paper worker");
-		for (const service of config.services ?? [])
-			if (!service.service.startsWith("dodash-paper-"))
-				throw new Error("non-paper service");
-		for (const dataset of config.analytics_engine_datasets ?? [])
-			if (!dataset.dataset.startsWith("dodash_paper_"))
-				throw new Error("non-paper dataset");
-		if (app === "agent")
-			for (const flag of [
-				"LIVE_TRADING_ENABLED",
-				"HYPERLIQUID_PERP_TRADING_ENABLED",
-			])
-				if (config.vars[flag] !== "false") throw new Error("live flag enabled");
-		const entry = basename(config.main).replace(/\.ts$/, ".js");
-		if (
-			!existsSync(join(bundles, app, entry)) ||
-			readFileSync(join(bundles, app, entry)).length === 0
-		)
-			throw new Error("MISSING_ENTRY_BUNDLE");
-		return {
-			entry,
-			app,
-			name: config.name,
-			configSha256: hash(path),
-			services: config.services ?? [],
-			datasets: config.analytics_engine_datasets ?? [],
-			vars: config.vars ?? {},
-			bundles: files(join(bundles, app)).map((path) => ({
-				path: path.slice(bundles.length + 1),
-				sha256: hash(path),
-			})),
-		};
-	},
+const workers = await Promise.all(
+	["agent", "mcp-market-data", "dashboard-api", "dashboard"].map(
+		async (app) => {
+			const { configPath, worker: config } = await loadPaperWorkerConfig(app);
+			if (!config.name.startsWith("dodash-paper-"))
+				throw new Error("non-paper worker");
+			const envEntries = Object.entries(config.env ?? {});
+			const services = envEntries
+				.filter(([, binding]) => binding?.type === "worker")
+				.map(([binding, b]) => ({ binding, service: b.worker }));
+			const datasets = envEntries
+				.filter(([, binding]) => binding?.type === "analytics-engine-dataset")
+				.map(([binding, b]) => ({ binding, dataset: b.name }));
+			const vars = Object.fromEntries(
+				envEntries
+					.filter(([, binding]) => binding?.type === "text")
+					.map(([k, b]) => [k, b.value]),
+			);
+			for (const service of services)
+				if (!service.service.startsWith("dodash-paper-"))
+					throw new Error("non-paper service");
+			for (const dataset of datasets)
+				if (!dataset.dataset.startsWith("dodash_paper_"))
+					throw new Error("non-paper dataset");
+			if (app === "agent")
+				for (const flag of [
+					"LIVE_TRADING_ENABLED",
+					"HYPERLIQUID_PERP_TRADING_ENABLED",
+				])
+					if (vars[flag] !== "false") throw new Error("live flag enabled");
+			const entry = basename(config.entrypoint).replace(/\.ts$/, ".js");
+			if (
+				!existsSync(join(bundles, app, entry)) ||
+				readFileSync(join(bundles, app, entry)).length === 0
+			)
+				throw new Error("MISSING_ENTRY_BUNDLE");
+			return {
+				entry,
+				app,
+				name: config.name,
+				configSha256: hash(configPath),
+				services,
+				datasets,
+				vars,
+				bundles: files(join(bundles, app)).map((path) => ({
+					path: path.slice(bundles.length + 1),
+					sha256: hash(path),
+				})),
+			};
+		},
+	),
 );
 const manifest = {
 	assets: provenance.assets,
@@ -249,7 +260,7 @@ const manifest = {
 	preparedOnly: true,
 	deployed: false,
 	managedSecrets: "preserve; no secret writes authorized",
-	config: "wrangler.paper.jsonc only",
+	config: "cloudflare.config.ts (mode: paper) only",
 	workers,
 };
 writeFileSync(output, JSON.stringify(manifest, null, 2) + "\n", { flag: "wx" });
