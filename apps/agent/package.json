@@ -27,7 +27,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20261110.1",
+    "@cloudflare/workers-types": "^5.20261113.1",
     "@types/node": "^26.6.6",
     "hyperliquid": "^1.7.7",
     "vitest": "^4.1.11",

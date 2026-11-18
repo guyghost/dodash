@@ -28,7 +28,7 @@
     "pre-push": "npm run verify:push"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.6",
+    "@biomejs/biome": "2.6.7",
     "cf": "1.0.0-beta.32",
     "pnpm": "11.23.0",
     "simple-git-hooks": "^2.14.0",
