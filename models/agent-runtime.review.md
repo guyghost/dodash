@@ -77,3 +77,9 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
 - **Pureté & Rétrocompatibilité (INV-AR1, INV-AR2)** : `positionQuantities` et `closeFullPositionOnSell` sont des champs optionnels sur `AllocationInput`. Sans eux, `allocateSignals` conserve son comportement V1 exact. Avec eux, les ventes ne sont plus plafonnées à tort par `capitalAvailable` ni supérieures à `positionQuantity`, éliminant les rejets `SELL_EXCEEDS_POSITION` et les résidus bloquants.
 - **Isolation Paper (INV-AR3)** : la sortie protectrice SL/TP sur bougie close et le carnet synthétique `LIMIT_PASSIVE` sont strictement bornés à `executionMode === "paper"`. Aucune transition XState de `tradingCycleMachine` n'est modifiée.
 - **Anti-pyramidage et sortie asymétrique contrôlée (2026-11-18)** : l'interdiction d'empiler un 2e `BUY` lorsque `closeFullPositionOnSell === true` et `heldQty > minNetQuantity` ainsi que la condition de sortie non protectrice (`rsi >= 55` ou gain latent net `close > averagePrice * 1.0005`) éliminent les sorties précoces à `-15 bps` hors Stop-Loss. Verdict : **APPROUVÉ**.
+- **Revue Amendement 2026-11-18 (v2) — Correctifs Risque/SQLite/Cache + Axes 1 & 2** :
+  - [x] Exemption des ventes réduisant une position longue (`isPositionReducingSell`) vis-à-vis de `DAILY_LOSS_LIMIT`, `COOLDOWN_ACTIVE`, `ORDER_NOTIONAL_LIMIT`, `POSITION_NOTIONAL_LIMIT` et `GROSS_EXPOSURE_LIMIT`.
+  - [x] Index SQLite idempotents et purge bornée aux seules lignes `NO_ACTION` au-delà des 400 plus récentes.
+  - [x] Fraîcheur maximale de 30s sur le cache ticker Coinbase en lecture.
+  - [x] Filtre de régime directionnel (`BEARISH` / `BULLISH` / `RANGE`) et Breakeven / Trailing Stop reconstruits purement à partir de `indicators` (`plusDi`, `minusDi`, `trendStrength`) et des bougies postérieures à `lastTradeAt`, sans nouvelle table ni mutation d'état XState.
+  - Verdict : **APPROUVÉ**.

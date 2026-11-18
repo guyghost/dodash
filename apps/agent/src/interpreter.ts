@@ -492,8 +492,44 @@ export const runTradingCycle = async (
                           bpsTakeDistance,
                         )
                       : bpsTakeDistance;
-                    const stopLossPrice = portfolio.averagePrice - stopDistance;
-                    const takeProfitPrice = portfolio.averagePrice + takeDistance;
+                    const baseStopLossPrice =
+                      portfolio.averagePrice - stopDistance;
+                    const takeProfitPrice =
+                      portfolio.averagePrice + takeDistance;
+                    // Axe 2 : Plus haut observé depuis l'entrée (lastTradeAt) pour
+                    // Breakeven Stop (+22 bps -> +5 bps) et Trailing Stop (+35 bps).
+                    const candlesSinceEntry =
+                      input.lastTradeAt !== null
+                        ? (artifacts.market?.candles ?? []).filter(
+                            (c) => c.start >= input.lastTradeAt!,
+                          )
+                        : [];
+                    const highWaterMark = Math.max(
+                      portfolio.averagePrice,
+                      last.close,
+                      ...candlesSinceEntry.map((c) => c.high),
+                    );
+                    const peakGainBps =
+                      ((highWaterMark - portfolio.averagePrice) /
+                        portfolio.averagePrice) *
+                      10_000;
+                    const dynamicFloorStop =
+                      peakGainBps >= 35
+                        ? Math.max(
+                            portfolio.averagePrice * 1.001,
+                            highWaterMark -
+                              Math.max(
+                                useAtr ? atrVal * 1.0 : 0,
+                                highWaterMark * 0.0018,
+                              ),
+                          )
+                        : peakGainBps >= 22
+                          ? portfolio.averagePrice * 1.0005
+                          : baseStopLossPrice;
+                    const stopLossPrice = Math.max(
+                      baseStopLossPrice,
+                      dynamicFloorStop,
+                    );
                     if (
                       last.close <= stopLossPrice ||
                       last.close >= takeProfitPrice
@@ -508,7 +544,9 @@ export const runTradingCycle = async (
                         reasonCode:
                           last.close >= takeProfitPrice
                             ? "PAPER_TAKE_PROFIT"
-                            : "PAPER_STOP_LOSS",
+                            : stopLossPrice > portfolio.averagePrice
+                              ? "PAPER_TRAILING_STOP"
+                              : "PAPER_STOP_LOSS",
                       });
                       if (exitSignal.ok) {
                         effectiveSignals = Object.freeze([exitSignal.value]);
@@ -526,6 +564,66 @@ export const runTradingCycle = async (
                       effectiveSignals = Object.freeze(
                         signals.filter((signal) => signal.side !== "SELL"),
                       );
+                    }
+                  } else if (
+                    input.configuration.executionMode === "paper" &&
+                    positionAware &&
+                    portfolio.positionQuantity === 0 &&
+                    artifacts.indicators !== undefined
+                  ) {
+                    // Axe 1 : Filtre de régime directionnel (+DI / -DI / ADX) et
+                    // adaptation de la taille d'entrée (BEARISH / BULLISH / RANGE).
+                    const ind = artifacts.indicators;
+                    const isBearishRegime =
+                      ind.minusDi !== undefined &&
+                      ind.plusDi !== undefined &&
+                      ind.minusDi > ind.plusDi * 1.25 &&
+                      ind.trendStrength >= 22 &&
+                      ind.emaFast < ind.emaSlow;
+                    const isBullishRegime =
+                      ind.plusDi !== undefined &&
+                      ind.minusDi !== undefined &&
+                      ind.plusDi > ind.minusDi * 1.25 &&
+                      ind.trendStrength >= 20 &&
+                      ind.emaFast >= ind.emaSlow;
+                    if (isBearishRegime) {
+                      const adjusted: Signal[] = [];
+                      for (const sig of signals) {
+                        if (sig.side !== "BUY") {
+                          adjusted.push(sig);
+                          continue;
+                        }
+                        if (sig.strategyId === "rsi-reversion" && ind.rsi <= 22) {
+                          const scaled = createSignal({
+                            strategyId: sig.strategyId,
+                            productId: sig.productId,
+                            side: "BUY",
+                            confidence: sig.confidence,
+                            suggestedSize: sig.suggestedSize * 0.5,
+                            reasonCode: sig.reasonCode,
+                          });
+                          if (scaled.ok) adjusted.push(scaled.value);
+                        }
+                      }
+                      effectiveSignals = Object.freeze(adjusted);
+                    } else if (isBullishRegime) {
+                      const adjusted: Signal[] = [];
+                      for (const sig of signals) {
+                        if (sig.side !== "BUY") {
+                          adjusted.push(sig);
+                          continue;
+                        }
+                        const scaled = createSignal({
+                          strategyId: sig.strategyId,
+                          productId: sig.productId,
+                          side: "BUY",
+                          confidence: sig.confidence,
+                          suggestedSize: sig.suggestedSize * 1.15,
+                          reasonCode: sig.reasonCode,
+                        });
+                        if (scaled.ok) adjusted.push(scaled.value);
+                      }
+                      effectiveSignals = Object.freeze(adjusted);
                     }
                   }
                   return allocateSignals({

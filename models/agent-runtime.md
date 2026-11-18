@@ -219,3 +219,37 @@ Sur la campagne Paper `ONE_MINUTE` multi-produits (`btc-usd--multi`), trois fric
 - En mode `paper` `positionAware`, la distance SL/TP avec ATR respecte un plancher minimal en `bps` (`stopLossBps` / `takeProfitBps`), et un signal `SELL` non protecteur (`BREAKOUT_DOWN`) est ignoré tant que le RSI reste en zone de survente (`rsi < oversold`), éliminant le ping-pong `BUY ↔ SELL` à 1 minute.
 - Lorsque `closeFullPositionOnSell === true` et `positionQuantities[productId] > minNetQuantity`, tout signal `BUY` additionnel est ignoré par `allocateSignals` (pas de pyramidage sur position longue déjà ouverte).
 - En mode `paper` `positionAware` à l'intérieur du corridor `[stopLossPrice, takeProfitPrice]`, un signal `SELL` non protecteur de stratégie (`EMA_CROSS_DOWN`, `BREAKOUT_DOWN`) n'est exécuté que si le rebond a atteint la zone neutre/haute (`rsi >= 55`) ou si la position est déjà en gain net au-dessus du coût moyen (`close > averagePrice * 1.0005`), évitant la liquidation à 100 % en perte sur micro-croisement EMA.
+
+## Amendement 2026-11-18 (v2) — Exemption de risque sur les ventes de clôture, indexation/purge SQLite, fraîcheur ticker 30s, filtre de régime directionnel (+DI/-DI) et Breakeven / Trailing Stop Paper
+
+### 1. Correctifs de sûreté et de performance
+
+1. **Exemption des ventes réduisant une position longue (`@dodash/risk`)** :
+   - Un ordre `SELL` qui réduit ou clôture une position longue existante (`intent.side === "SELL" && currentPositionQuantity > 0 && intent.quantity <= currentPositionQuantity + 1e-12`) réduit le risque d'exposition.
+   - Il ne doit jamais être rejeté par `DAILY_LOSS_LIMIT`, `COOLDOWN_ACTIVE`, `ORDER_NOTIONAL_LIMIT`, `POSITION_NOTIONAL_LIMIT` ni `GROSS_EXPOSURE_LIMIT` (seuls `KILL_SWITCH_ACTIVE` et `SPOT_SHORT_FORBIDDEN` s'appliquent).
+   - Dans `resolveProtectionDistances`, lorsque l'ATR est actif, les distances `stopDistance` et `takeDistance` respectent `Math.max(rawAtrDistance, bpsDistance)` afin que `stopLossBps` et `takeProfitBps` constituent un plancher minimal cohérent avec l'interpréteur.
+2. **Indexation et purge bornée de `dodash_cycles` (`trading-agent.ts`)** :
+   - Création idempotente des index `idx_dodash_cycles_triggered_at`, `idx_dodash_cycles_outcome_triggered_at` et `idx_dodash_orders_cycle_id`.
+   - Lors de la persistance d'un cycle `NO_ACTION`, purge des lignes `NO_ACTION` au-delà des 400 plus récentes (tous les cycles `ORDER_CONFIRMED`, `RISK_REJECTED` et `FAILED` sont intégralement conservés).
+3. **Fraîcheur maximale de 30 secondes sur le cache ticker Coinbase (`coinbase.ts`)** :
+   - Lors de la lecture du cache `market:ticker:v1:${productId}`, une entrée dont l'âge `nowSec - cached.observedAt` dépasse `Math.min(cacheTtlSeconds, 30)` est ignorée et rafraîchie en direct, évitant tout rejet `EXECUTION_PRICE_DIVERGENCE` dû à un cache KV de 300s.
+
+### 2. Axe 1 — Filtre de Régime Directionnel (`+DI / -DI / ADX`) & Sizing Adaptatif
+
+En mode `paper` `positionAware`, lorsque `portfolio.positionQuantity === 0` et que les indicateurs directionnels (`plusDi`, `minusDi`, `trendStrength`, `emaFast`, `emaSlow`, `rsi`) sont présents :
+- **Régime `BEARISH`** (`minusDi > plusDi * 1.25 && trendStrength >= 22 && emaFast < emaSlow`) :
+  - Les signaux `BUY` de suivi de tendance (`ema-cross`, `breakout`) sont filtrés.
+  - Les signaux `BUY` de `rsi-reversion` exigent une survente profonde (`rsi <= 22`) et leur `suggestedSize` est réduite de moitié (`× 0.5`).
+- **Régime `BULLISH`** (`plusDi > minusDi * 1.25 && trendStrength >= 20 && emaFast >= emaSlow`) :
+  - Les signaux `BUY` reçoivent un multiplicateur de taille `× 1.15` (toujours borné par `maxDecisionNotional` et `checkRisk`).
+- **Régime `RANGE`** : taille nominale (`× 1.0`).
+
+### 3. Axe 2 — Breakeven Stop & Trailing Stop Dynamique sans état additionnel
+
+En mode `paper` `positionAware`, lorsqu'une position longue est ouverte (`portfolio.positionQuantity > 0 && portfolio.averagePrice > 0`) :
+- Le plus haut prix atteint depuis l'entrée (`highWaterMark`) est reconstruit purement à partir des bougies du snapshot postérieures ou égales à `input.lastTradeAt` (`c.start >= input.lastTradeAt`) :
+  `highWaterMark = Math.max(portfolio.averagePrice, last.close, ...candlesSinceEntry.map(c => c.high))`
+- Soit `peakGainBps = ((highWaterMark - portfolio.averagePrice) / portfolio.averagePrice) * 10_000` :
+  - **Palier Breakeven (`peakGainBps >= 22`)** : le Stop-Loss remonte au minimum à `portfolio.averagePrice * 1.0005` (`+5 bps`, couvrant les frais aller-retour).
+  - **Palier Trailing Stop (`peakGainBps >= 35`)** : le Stop-Loss suit le plus haut à `Math.max(portfolio.averagePrice * 1.0010, highWaterMark - Math.max(atrVal ?? 0, highWaterMark * 0.0018))`.
+- Si `last.close <= effectiveStopLossPrice`, l'interpréteur émet un signal `SELL` prioritaire fermant 100 % de la position (`PAPER_TRAILING_STOP` si `effectiveStopLossPrice > portfolio.averagePrice`, sinon `PAPER_STOP_LOSS`).

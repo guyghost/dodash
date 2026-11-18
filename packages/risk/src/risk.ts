@@ -87,6 +87,8 @@ const resolveProtectionDistances = (
   snapshot: RiskSnapshot,
   config: RiskConfig,
 ): { readonly stopDistance: number; readonly takeDistance: number } => {
+  const minStopDistance = config.stopLossBps / 10_000;
+  const minTakeDistance = config.takeProfitBps / 10_000;
   if (
     snapshot.atr !== undefined &&
     config.atrStopLossMultiple !== undefined &&
@@ -94,18 +96,24 @@ const resolveProtectionDistances = (
   ) {
     return {
       stopDistance: Math.min(
-        (snapshot.atr * config.atrStopLossMultiple) / snapshot.marketPrice,
+        Math.max(
+          (snapshot.atr * config.atrStopLossMultiple) / snapshot.marketPrice,
+          minStopDistance,
+        ),
         MAX_ATR_STOP_DISTANCE,
       ),
       takeDistance: Math.min(
-        (snapshot.atr * config.atrTakeProfitMultiple) / snapshot.marketPrice,
+        Math.max(
+          (snapshot.atr * config.atrTakeProfitMultiple) / snapshot.marketPrice,
+          minTakeDistance,
+        ),
         MAX_ATR_TAKE_DISTANCE,
       ),
     };
   }
   return {
-    stopDistance: config.stopLossBps / 10_000,
-    takeDistance: config.takeProfitBps / 10_000,
+    stopDistance: minStopDistance,
+    takeDistance: minTakeDistance,
   };
 };
 
@@ -120,20 +128,23 @@ export const checkRisk = (
   if (snapshot.killSwitchActive) {
     return ok({ status: "REJECTED", reasonCode: "KILL_SWITCH_ACTIVE" });
   }
-  if (snapshot.dailyPnl <= -config.maxDailyLoss) {
+
+  const isPositionReducingSell =
+    intent.side === "SELL" &&
+    snapshot.currentPositionQuantity > 0 &&
+    intent.quantity <= snapshot.currentPositionQuantity + 1e-12;
+
+  if (!isPositionReducingSell && snapshot.dailyPnl <= -config.maxDailyLoss) {
     return ok({ status: "REJECTED", reasonCode: "DAILY_LOSS_LIMIT" });
   }
   if (
+    !isPositionReducingSell &&
     snapshot.lastTradeAt !== null &&
     snapshot.now - snapshot.lastTradeAt < config.cooldownMs
   ) {
     return ok({ status: "REJECTED", reasonCode: "COOLDOWN_ACTIVE" });
   }
 
-  const isPositionReducingSell =
-    intent.side === "SELL" &&
-    snapshot.currentPositionQuantity > 0 &&
-    intent.quantity <= snapshot.currentPositionQuantity + 1e-12;
   const orderNotional = intent.quantity * snapshot.marketPrice;
   if (!isPositionReducingSell && orderNotional > config.maxOrderNotional) {
     return ok({ status: "REJECTED", reasonCode: "ORDER_NOTIONAL_LIMIT" });
@@ -147,13 +158,19 @@ export const checkRisk = (
   }
   const projectedPositionNotional =
     Math.abs(projectedPositionQuantity) * snapshot.marketPrice;
-  if (projectedPositionNotional > config.maxPositionNotional) {
+  if (
+    !isPositionReducingSell &&
+    projectedPositionNotional > config.maxPositionNotional
+  ) {
     return ok({ status: "REJECTED", reasonCode: "POSITION_NOTIONAL_LIMIT" });
   }
 
   const projectedGrossExposure =
     snapshot.otherExposureNotional + projectedPositionNotional;
-  if (projectedGrossExposure > config.maxGrossExposure) {
+  if (
+    !isPositionReducingSell &&
+    projectedGrossExposure > config.maxGrossExposure
+  ) {
     return ok({ status: "REJECTED", reasonCode: "GROSS_EXPOSURE_LIMIT" });
   }
 

@@ -84,11 +84,16 @@ describe("checkRisk", () => {
     });
   });
 
-  it("une vente peut réduire une position longue", () => {
-    const sell = { ...intent, side: "SELL" as const };
+  it("une vente peut réduire une position longue même en perte journalière ou pendant le cooldown", () => {
+    const sell = { ...intent, side: "SELL" as const, quantity: 0.05 };
     const result = checkRisk(
       sell,
-      { ...snapshot, currentPositionQuantity: 0.05 },
+      {
+        ...snapshot,
+        currentPositionQuantity: 0.05,
+        dailyPnl: -1_000,
+        lastTradeAt: 95_000,
+      },
       config,
     );
     expect(result.ok && result.value.status).toBe("APPROVED");

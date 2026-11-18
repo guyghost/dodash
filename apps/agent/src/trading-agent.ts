@@ -354,6 +354,18 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		this.ensureProductIdColumn("dodash_cycles");
 		this.ensureProductIdColumn("dodash_orders");
 		this.sql`
+      CREATE INDEX IF NOT EXISTS idx_dodash_cycles_triggered_at
+      ON dodash_cycles (triggered_at DESC)
+    `;
+		this.sql`
+      CREATE INDEX IF NOT EXISTS idx_dodash_cycles_outcome_triggered_at
+      ON dodash_cycles (outcome, triggered_at DESC)
+    `;
+		this.sql`
+      CREATE INDEX IF NOT EXISTS idx_dodash_orders_cycle_id
+      ON dodash_orders (cycle_id)
+    `;
+		this.sql`
       CREATE TABLE IF NOT EXISTS dodash_sell_workflows (
         client_order_id TEXT PRIMARY KEY,
         checkpoint_json TEXT NOT NULL,
@@ -3407,6 +3419,21 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           error_json = excluded.error_json,
           updated_at = excluded.updated_at
       `;
+			if (machine.context.outcome === "NO_ACTION") {
+				this.sql`
+          DELETE FROM dodash_cycles
+          WHERE outcome = 'NO_ACTION'
+            AND triggered_at < COALESCE(
+              (
+                SELECT triggered_at FROM dodash_cycles
+                WHERE outcome = 'NO_ACTION'
+                ORDER BY triggered_at DESC
+                LIMIT 1 OFFSET 400
+              ),
+              0
+            )
+        `;
+			}
 			return ok(undefined);
 		} catch {
 			return err(storageError());

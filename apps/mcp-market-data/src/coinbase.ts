@@ -374,12 +374,15 @@ export class CoinbaseMarketData {
 		const cached = parseCached<Omit<TickerSnapshot, "cached">>(
 			await this.#cache.get(cacheKey).catch(() => null),
 		);
+		const nowSec = Math.floor(this.#now() / 1_000);
+		const maxTickerAgeSec = Math.min(this.#cacheTtlSeconds, 30);
 		if (
 			cached !== undefined &&
 			cached.productId === productResult.value &&
 			Number.isFinite(cached.price) &&
 			cached.price > 0 &&
 			Number.isSafeInteger(cached.observedAt) &&
+			nowSec - cached.observedAt <= maxTickerAgeSec &&
 			cached.source === "coinbase"
 		) {
 			return ok(Object.freeze({ ...cached, cached: true }));
