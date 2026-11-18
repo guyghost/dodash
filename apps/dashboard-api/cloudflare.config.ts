@@ -17,6 +17,9 @@ export default defineConfig(({ mode }) => {
 				headSamplingRate: 1,
 			},
 			env: {
+				...(isPaper
+					? { PUBLIC_READ_ONLY: bindings.text("true") }
+					: {}),
 				AGENT_SERVICE: bindings.worker({
 					worker: isPaper ? "dodash-paper-agent" : "dodash-agent",
 				}),

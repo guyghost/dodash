@@ -54,12 +54,14 @@ export interface CycleView {
   readonly completedAt: number | null;
   readonly phase: string;
   readonly outcome: string;
+  readonly productId?: string | null;
 }
 
 export interface PnlEquityPointView {
   readonly t: number;
   readonly equity: number | null;
   readonly valuation: PaperValuationView;
+  readonly productId?: string | null;
 }
 
 export interface PnlCycleView {
@@ -75,6 +77,7 @@ export interface PnlCycleView {
   readonly fee: number | null;
   readonly realizedPnl: number | null;
   readonly slippageBps: number | null;
+  readonly productId?: string | null;
 }
 
 export interface PnlHistoryView {
@@ -162,6 +165,26 @@ export interface StartConfiguration {
   readonly timeframe: string;
   readonly strategyIds: readonly string[];
   readonly executionMode: "paper" | "live";
+  readonly intervalSeconds?: number;
+  readonly executionStyle?: "MARKET" | "LIMIT_PASSIVE";
+  readonly strategyOptions?: {
+    readonly positionAware?: boolean;
+    readonly maxTrendStrength?: number;
+    readonly minRelativeVolume?: number;
+  };
+  readonly indicators?: {
+    readonly rsiMode?: "CUTLER" | "WILDER";
+    readonly adxWarmupMultiplier?: number;
+  };
+  readonly risk?: {
+    readonly atrStopLossMultiple?: number;
+    readonly atrTakeProfitMultiple?: number;
+  };
+  readonly broker?: {
+    readonly feeBps?: number;
+    readonly slippageBps?: number;
+    readonly makerFeeBps?: number;
+  };
 }
 
 export const createStartConfiguration = (
@@ -355,13 +378,10 @@ const parseIndicators = (value: unknown): AgentStateView["indicators"] => {
 };
 
 export const parseAgentState = (value: unknown): AgentStateView => {
-  if (!isRecord(value) || !isRecord(value.machine) || !isRecord(value.portfolio)) {
+  if (!isRecord(value) || !isRecord(value.portfolio)) {
     throw invalidResponse();
   }
-  const phase = value.machine.value;
   if (
-    typeof phase !== "string" ||
-    !phases.has(phase) ||
     typeof value.enabled !== "boolean" ||
     !Number.isSafeInteger(value.updatedAt) ||
     !isNonNegativeFinite(value.portfolio.cash) ||
@@ -371,8 +391,6 @@ export const parseAgentState = (value: unknown): AgentStateView => {
   ) {
     throw invalidResponse();
   }
-  const machineContext = value.machine.context;
-  if (!isRecord(machineContext)) throw invalidResponse();
 
   // dao #34 (models/state-portfolio-contract.md §5) : la hiérarchie
   // portefeuille voyage dans le contrat `/state` ; le parseur strict de
@@ -383,6 +401,115 @@ export const parseAgentState = (value: unknown): AgentStateView => {
     throw invalidResponse();
   }
   const portfolioSummary = parsePortfolioSummary(portfolioEnvelope.value);
+
+  if (!isRecord(value.machine)) {
+    if (value.machine !== null || portfolioSummary.kind !== "portfolio") {
+      throw invalidResponse();
+    }
+    const portfolioSession = isRecord(value.portfolioSession)
+      ? value.portfolioSession
+      : null;
+    const primaryProduct = portfolioSummary.products[0] ?? null;
+    const sessionProducts =
+      portfolioSession !== null && isRecord(portfolioSession.products)
+        ? portfolioSession.products
+        : null;
+    const primarySessionProduct =
+      primaryProduct !== null &&
+      sessionProducts !== null &&
+      isRecord(sessionProducts[primaryProduct.productId])
+        ? (sessionProducts[primaryProduct.productId] as Record<string, unknown>)
+        : null;
+    const phase =
+      primaryProduct !== null && phases.has(primaryProduct.phase)
+        ? (primaryProduct.phase as DashboardRemotePhase)
+        : portfolioSummary.phase === "running"
+          ? "waiting"
+          : "stopped";
+    const configuration =
+      value.configuration !== null
+        ? parseConfiguration(value.configuration)
+        : portfolioSession !== null &&
+            isRecord(portfolioSession.configuration) &&
+            primaryProduct !== null
+          ? parseConfiguration({
+              ...portfolioSession.configuration,
+              productId: primaryProduct.productId,
+            })
+          : null;
+    const primaryMachineContext =
+      primarySessionProduct !== null &&
+      isRecord(primarySessionProduct.machine) &&
+      isRecord(primarySessionProduct.machine.context)
+        ? primarySessionProduct.machine.context
+        : null;
+    const primarySessionCycle =
+      primarySessionProduct !== null && isRecord(primarySessionProduct.lastCycle)
+        ? primarySessionProduct.lastCycle
+        : null;
+    const lastCycle: AgentStateView["lastCycle"] =
+      primaryProduct?.lastCycle !== null && primaryProduct?.lastCycle !== undefined
+        ? Object.freeze({
+            cycleId: primaryProduct.lastCycle.cycleId,
+            outcome: primaryProduct.lastCycle.outcome,
+            marketPrice: primaryProduct.lastCycle.marketPrice,
+            signalCount:
+              primarySessionCycle !== null &&
+              Number.isSafeInteger(primarySessionCycle.signalCount)
+                ? Number(primarySessionCycle.signalCount)
+                : 0,
+            completedAt: primaryProduct.lastCycle.completedAt,
+          })
+        : null;
+    const paperValuation =
+      value.paperValuation !== null
+        ? parsePaperValuationResult(value.paperValuation)
+        : primaryProduct !== null
+          ? Object.freeze({ ok: true as const, value: primaryProduct.valuation })
+          : null;
+    return Object.freeze({
+      enabled: value.enabled,
+      phase,
+      updatedAt: Number(value.updatedAt),
+      configuration,
+      portfolio:
+        primaryProduct !== null
+          ? Object.freeze({
+              cash: primaryProduct.cash,
+              positionQuantity: primaryProduct.positionQuantity,
+              averagePrice: primaryProduct.averagePrice,
+            })
+          : Object.freeze({
+              cash: value.portfolio.cash,
+              positionQuantity: value.portfolio.positionQuantity,
+              averagePrice: value.portfolio.averagePrice,
+            }),
+      dailyPnl: portfolioSummary.consolidated.dailyPnl,
+      nextWakeAt:
+        primaryMachineContext !== null
+          ? optionalTime(primaryMachineContext.nextWakeAt)
+          : null,
+      lastTradeAt:
+        primarySessionProduct !== null && "lastTradeAt" in primarySessionProduct
+          ? optionalTime(primarySessionProduct.lastTradeAt)
+          : optionalTime(value.lastTradeAt),
+      lastCycle,
+      portfolioSummary,
+      paperValuation,
+      indicators:
+        primarySessionProduct !== null &&
+        "previousIndicators" in primarySessionProduct
+          ? parseIndicators(primarySessionProduct.previousIndicators)
+          : parseIndicators(value.previousIndicators),
+    });
+  }
+
+  const phase = value.machine.value;
+  if (typeof phase !== "string" || !phases.has(phase)) {
+    throw invalidResponse();
+  }
+  const machineContext = value.machine.context;
+  if (!isRecord(machineContext)) throw invalidResponse();
   const paperValuation = parsePaperValuationResult(value.paperValuation ?? null);
   if (paperValuation?.ok === true) {
     const measurement = paperValuation.value;
@@ -472,6 +599,9 @@ export const parseCycles = (value: unknown): readonly CycleView[] => {
         completedAt: item.completed_at === null ? null : Number(item.completed_at),
         phase: item.phase,
         outcome: item.outcome,
+        ...(typeof item.product_id === "string" && item.product_id.length > 0
+          ? { productId: item.product_id }
+          : {}),
       });
     }),
   );
@@ -499,7 +629,11 @@ const optionalTradeField = (
   return value;
 };
 
-export const parsePnlHistory = (value: unknown): PnlHistoryView => {
+export const parsePnlHistory = (input: unknown): PnlHistoryView => {
+  const value =
+    isRecord(input) && input.ok === true && "value" in input
+      ? input.value
+      : input;
   if (!isRecord(value) || !Array.isArray(value.equityCurve) || !Array.isArray(value.cycles)) {
     throw invalidResponse();
   }
@@ -535,6 +669,9 @@ export const parsePnlHistory = (value: unknown): PnlHistoryView => {
       t: point.t,
       equity: isLegacyPoint ? null : point.equity as number | null,
       valuation,
+      ...(typeof point.productId === "string" && point.productId.length > 0
+        ? { productId: point.productId }
+        : {}),
     });
   });
   const cycles = value.cycles.slice(0, 50).map((cycle) => {
@@ -563,6 +700,9 @@ export const parsePnlHistory = (value: unknown): PnlHistoryView => {
       fee: optionalTradeField(cycle.side, cycle.fee, true),
       realizedPnl: optionalTradeField(cycle.side, cycle.realizedPnl, false),
       slippageBps: optionalTradeField(cycle.side, cycle.slippageBps, false),
+      ...(typeof cycle.productId === "string" && cycle.productId.length > 0
+        ? { productId: cycle.productId }
+        : {}),
     });
   });
   let openPosition: PnlHistoryView["openPosition"] = null;
@@ -833,6 +973,10 @@ export const createHttpGateway = (
   request: typeof fetch = fetch,
 ): DashboardGateway => {
   const base = normalizeBase(apiBaseUrl);
+  const hasToken = token.trim().length > 0;
+  const authHeader: Readonly<Record<string, string>> = hasToken
+    ? { authorization: `Bearer ${token}` }
+    : {};
   const call = async (path: string, init?: RequestInit): Promise<unknown> => {
     let response: Response;
     try {
@@ -840,7 +984,7 @@ export const createHttpGateway = (
         ...init,
         headers: {
           accept: "application/json",
-          authorization: `Bearer ${token}`,
+          ...authHeader,
           ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
         },
       });

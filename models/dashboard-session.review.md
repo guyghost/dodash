@@ -32,3 +32,21 @@
 La machine ne prend aucune décision de trading. Elle autorise seulement des
 effets UI typés; `tradingCycleMachine` reste l’unique arbitre des transitions du
 bot et le Worker Agent reste l’unique frontière de permission métier.
+
+## Revue de l'amendement du 2026-11-16
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
+
+- **Pureté & invariants** : L'ajout de `readOnly` dans `DashboardSessionContext`
+  et la garde `!context.readOnly` garantissent au niveau de la machine XState
+  qu'aucune session anonyme ne peut émettre `start`, `stop`, `reset`, `tick`,
+  `kill` ou `perp-order`. L'invariant V1 (`credentialPresent: false` sans
+  `readOnly: true` → `INVALID_CREDENTIAL`) reste intact.
+- **Frontière serveur fail-closed** : Au proxy `dashboard-api`,
+  `PUBLIC_READ_ONLY === "true"` est opt-in, limité au mode `paper`, et ne
+  s'applique qu'aux verbes `GET` de la liste blanche (`state`, `cycles`, `pnl`,
+  `portfolio`). Tout `POST` sans `DASHBOARD_ACCESS_TOKEN` continue d'échouer en
+  `401 UNAUTHORIZED`.
+- **Limites acceptées** : L'activation de `PUBLIC_READ_ONLY` en `paper` expose
+  en lecture l'état et les métriques paper du bot ; aucun secret ni endpoint
+  d'exécution live n'est exposé.

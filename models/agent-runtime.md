@@ -180,3 +180,40 @@ l'allocateur) au lieu d'`allocateSignals` ; la phase `checkingRisk` applique
 journalière ni par l'admission portefeuille, INV-T7). Aucune phase, aucun
 événement ni aucune transition de `trading-cycle.machine.ts` ne change ; la
 garde « une décision par bougie » est inchangée.
+
+
+## Amendement 2026-11-18 — Clôture bornée par position, sortie protectrice Paper (SL/TP) et exécution passive Paper
+
+### 1. Constat
+
+Sur la campagne Paper `ONE_MINUTE` multi-produits (`btc-usd--multi`), trois frictions empêchent la rotation du capital et la réalisation du PnL :
+1. `allocateSignals` plafonne les ordres `SELL` par `capitalAvailable` (cash) et non par la quantité réellement détenue (`positionQuantity`), provoquant des rejets `RISK_REJECTED` (`SELL_EXCEEDS_POSITION`) dès qu'un signal de vente dépasse la position ouverte, ou laissant un résidu non nul qui maintient `positionSide === "LONG"`.
+2. En mode `paper`, les bornes `stopLossPrice` et `takeProfitPrice` sont calculées mais ne déclenchent aucune clôture automatique lorsque le prix de clôture de la bougie les franchit.
+3. En mode `paper` avec `executionStyle === "LIMIT_PASSIVE"`, l'absence de `fetchOrderBook` fait retomber tous les ordres en `MARKET` (frais taker `6 bps` + slippage `2 bps` au lieu de `makerFeeBps: 1` et `0` slippage).
+
+### 2. Résolution pure
+
+1. **Clôture et plafonnement `SELL` sur la position détenue (`@dodash/allocator`)** :
+   - `AllocationInput` accepte `positionQuantities?: Readonly<Record<string, number>>` et `closeFullPositionOnSell?: boolean`.
+   - Pour un signal net vendeur (`net < 0`), lorsque `positionQuantities[productId]` est fourni :
+     - Si `positionQuantities[productId] <= minNetQuantity`, aucun ordre `SELL` n'est alloué.
+     - Si `closeFullPositionOnSell === true`, la quantité `SELL` allouée est exactement `positionQuantities[productId]` (clôture intégrale sans poussière résiduelle).
+     - Sinon, la quantité `SELL` est bornée par `Math.min(Math.abs(net), positionQuantities[productId])` (sans plafonnement par le cash disponible).
+2. **Sortie protectrice automatique en mode Paper (`interpreter.ts`)** :
+   - En `executionMode === "paper"`, lorsque `portfolio.positionQuantity > 0` et `portfolio.averagePrice > 0`, les seuils Stop-Loss et Take-Profit effectifs sont résolus à partir de `risk` (`atrStopLossMultiple` / `atrTakeProfitMultiple` avec `indicators.atr`, ou `stopLossBps` / `takeProfitBps`).
+   - Si `lastCandle.close <= stopLossPrice` ou `lastCandle.close >= takeProfitPrice`, un signal de sortie prioritaire `SELL` de taille `portfolio.positionQuantity` (`confidence: 1`) est transmis à l'allocateur pour fermer intégralement la position.
+3. **Top-of-book synthétique Paper pour `LIMIT_PASSIVE`** :
+   - En `executionMode === "paper"` avec `executionStyle === "LIMIT_PASSIVE"`, si aucun carnet externe n'est fourni, le prix `lastCandle.close` forme un `OrderBookTop` synthétique (`bestBid: close, bestAsk: close, spreadBps: 0`), permettant l'émission d'un ordre `LIMIT` passif facturé à `makerFeeBps`.
+
+### 3. Invariants
+
+- **INV-AR1** : Aucun ordre `SELL` alloué avec `positionQuantities` fourni ne peut dépasser `positionQuantities[productId]`.
+- **INV-AR2** : Le comportement V1 de `allocateSignals` lorsque `positionQuantities` est omis reste bit-à-bit identique.
+- **INV-AR3** : Le mode `live` et le mode `perp` ne sont pas affectés par le carnet synthétique Paper ni par la sortie protectrice Paper.
+
+### 4. Vérification requise
+
+- `allocateSignals` avec `positionQuantities` plafonne un `SELL` trop grand à la position détenue et ferme `100 %` de la position lorsque `closeFullPositionOnSell === true`.
+- En cycle `paper`, le franchissement du Take-Profit ou du Stop-Loss sur une position ouverte génère un `ORDER_CONFIRMED` `SELL` liquidant toute la position.
+- En cycle `paper` avec `executionStyle: "LIMIT_PASSIVE"` et `makerFeeBps: 1`, l'ordre est exécuté en `LIMIT` avec `1 bps` de frais et `0` slippage.
+- En mode `paper` `positionAware`, la distance SL/TP avec ATR respecte un plancher minimal en `bps` (`stopLossBps` / `takeProfitBps`), et un signal `SELL` non protecteur (`BREAKOUT_DOWN`) est ignoré tant que le RSI reste en zone de survente (`rsi < oversold`), éliminant le ping-pong `BUY ↔ SELL` à 1 minute.

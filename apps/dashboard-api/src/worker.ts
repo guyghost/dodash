@@ -22,6 +22,7 @@ export interface DashboardApiEnv {
   readonly AGENT_SERVICE: Fetcher;
   readonly DASHBOARD_ACCESS_TOKEN: string;
   readonly CONTROL_API_TOKEN: string;
+  readonly PUBLIC_READ_ONLY?: string;
 }
 
 interface ParsedRoute {
@@ -167,7 +168,14 @@ export const handleDashboardApiRequest = async (
     const allow = readActions.has(route.action) ? "GET" : "POST";
     return error("METHOD_NOT_ALLOWED", 405, { allow });
   }
-  if (!hasValidBearerToken(request.headers.get("authorization"), env.DASHBOARD_ACCESS_TOKEN)) {
+  const allowPublicRead =
+    env.PUBLIC_READ_ONLY === "true" &&
+    request.method === "GET" &&
+    readActions.has(route.action);
+  if (
+    !allowPublicRead &&
+    !hasValidBearerToken(request.headers.get("authorization"), env.DASHBOARD_ACCESS_TOKEN)
+  ) {
     return error("UNAUTHORIZED", 401);
   }
   if (typeof env.CONTROL_API_TOKEN !== "string" || env.CONTROL_API_TOKEN.length < 32) {

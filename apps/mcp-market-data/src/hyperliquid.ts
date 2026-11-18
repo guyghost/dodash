@@ -96,7 +96,7 @@ export const fetchHyperliquidCandles = async (
 					endTime: request.endMs - 1,
 				},
 			}),
-			redirect: "error",
+			redirect: "manual",
 			signal: AbortSignal.timeout(10_000),
 		});
 	} catch {
@@ -161,7 +161,7 @@ export const fetchHyperliquidMid = async (
 			method: "POST",
 			headers: { "content-type": "application/json", "user-agent": USER_AGENT },
 			body: JSON.stringify({ type: "allMids" }),
-			redirect: "error",
+			redirect: "manual",
 			signal: AbortSignal.timeout(10_000),
 		});
 	} catch {

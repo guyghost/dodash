@@ -317,4 +317,43 @@ describe("dashboard Agent proxy", () => {
     expect(failedResponse.status).toBe(502);
     expect(unavailable.AGENT_SERVICE.fetch).toHaveBeenCalledOnce();
   });
+
+  it("allows anonymous GET read routes when PUBLIC_READ_ONLY=true while keeping POST locked", async () => {
+    const fetcher = vi.fn(async (upstream: Request) => {
+      expect(upstream.headers.get("authorization")).toBe(`Bearer ${controlToken}`);
+      return Response.json({ ok: true });
+    });
+    const readOnlyEnv = { ...createEnv(fetcher), PUBLIC_READ_ONLY: "true" };
+
+    const [stateRes, cyclesRes, pnlRes, tickRes, startRes] = await Promise.all([
+      handleDashboardApiRequest(
+        new Request("https://dashboard.example/api/agents/btc/state"),
+        readOnlyEnv,
+      ),
+      handleDashboardApiRequest(
+        new Request("https://dashboard.example/api/agents/btc/cycles?limit=10"),
+        readOnlyEnv,
+      ),
+      handleDashboardApiRequest(
+        new Request("https://dashboard.example/api/agents/btc/pnl?limit=10"),
+        readOnlyEnv,
+      ),
+      handleDashboardApiRequest(
+        new Request("https://dashboard.example/api/agents/btc/tick", { method: "POST" }),
+        readOnlyEnv,
+      ),
+      handleDashboardApiRequest(
+        new Request("https://dashboard.example/api/agents/btc/start", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        }),
+        readOnlyEnv,
+      ),
+    ]);
+
+    expect([stateRes.status, cyclesRes.status, pnlRes.status]).toEqual([200, 200, 200]);
+    expect([tickRes.status, startRes.status]).toEqual([401, 401]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
 });

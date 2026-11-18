@@ -84,7 +84,7 @@ export const fetchDydxCandles = async (
 		// toISO = clôture de fenêtre : borne de start exclusive observée.
 		fromISO: new Date(request.endMs - request.limit * duration).toISOString(),
 		toISO: new Date(request.endMs).toISOString(),
-		limit: String(Math.min(request.limit, 100)),
+		limit: String(Math.min(request.limit, 1000)),
 	});
 	let response: Response;
 	try {
@@ -92,7 +92,7 @@ export const fetchDydxCandles = async (
 			`${DYDX_INDEXER_URL}/candles/perpetualMarkets/${encodeURIComponent(request.productId)}?${params}`,
 			{
 				headers: { accept: "application/json", "user-agent": USER_AGENT },
-				redirect: "error",
+				redirect: "manual",
 				signal: AbortSignal.timeout(10_000),
 			},
 		);
@@ -155,7 +155,7 @@ export const fetchDydxBookMid = async (
 			`${DYDX_INDEXER_URL}/orderbooks/perpetualMarket/${encodeURIComponent(productId)}`,
 			{
 				headers: { accept: "application/json", "user-agent": USER_AGENT },
-				redirect: "error",
+				redirect: "manual",
 				signal: AbortSignal.timeout(10_000),
 			},
 		);

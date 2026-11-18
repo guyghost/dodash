@@ -29,28 +29,33 @@ export const dashboardSessionMachine = setup({
   guards: {
     validConnectionRequest: ({ event }) =>
       event.type === "CONNECT_REQUESTED" &&
-      event.credentialPresent &&
+      (event.credentialPresent || event.readOnly === true) &&
       event.agentName.trim().length > 0 &&
       event.agentName.length <= 200,
     validRemoteState: ({ event }) => validRemoteState(event),
-    canIssueCommand: ({ event }) =>
+    canIssueCommand: ({ context, event }) =>
+      !context.readOnly &&
       event.type === "COMMAND_REQUESTED" &&
       event.permissions.canControl &&
       (event.command !== "start" && event.command !== "tick"
         ? true
         : event.permissions.canTrade),
-    canRequestKill: ({ event }) =>
+    canRequestKill: ({ context, event }) =>
+      !context.readOnly &&
       event.type === "KILL_CONFIRMATION_REQUESTED" &&
       event.permissions.canControl,
-    canConfirmKill: ({ event }) =>
-      event.type === "KILL_CONFIRMED" && event.permissions.canControl,
+    canConfirmKill: ({ context, event }) =>
+      !context.readOnly &&
+      event.type === "KILL_CONFIRMED" &&
+      event.permissions.canControl,
   },
   actions: {
     initializeConnection: assign(({ event }) =>
       event.type === "CONNECT_REQUESTED"
         ? {
             agentName: event.agentName.trim(),
-            credentialPresent: true,
+            credentialPresent: event.credentialPresent,
+            readOnly: event.readOnly === true || !event.credentialPresent,
             remotePhase: null,
             pendingCommand: null,
             remoteUpdatedAt: null,
@@ -106,6 +111,7 @@ export const dashboardSessionMachine = setup({
     disconnect: assign(({ context }) => ({
       agentName: context.agentName,
       credentialPresent: false,
+      readOnly: false,
       remotePhase: null,
       pendingCommand: null,
       remoteUpdatedAt: null,
@@ -117,6 +123,7 @@ export const dashboardSessionMachine = setup({
   context: ({ input }) => ({
     agentName: input.defaultAgentName?.trim() || null,
     credentialPresent: false,
+    readOnly: false,
     remotePhase: null,
     pendingCommand: null,
     remoteUpdatedAt: null,

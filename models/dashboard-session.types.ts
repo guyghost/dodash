@@ -48,6 +48,7 @@ export interface DashboardError {
 export interface DashboardSessionContext {
   readonly agentName: string | null;
   readonly credentialPresent: boolean;
+  readonly readOnly: boolean;
   readonly remotePhase: DashboardRemotePhase | null;
   readonly pendingCommand: DashboardCommand | null;
   readonly remoteUpdatedAt: number | null;
@@ -59,6 +60,7 @@ export type DashboardSessionEvent =
       readonly type: "CONNECT_REQUESTED";
       readonly agentName: string;
       readonly credentialPresent: boolean;
+      readonly readOnly?: boolean;
     }
   | {
       readonly type: "STATE_LOADED";

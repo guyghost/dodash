@@ -107,4 +107,47 @@ describe("dashboardSessionMachine", () => {
     expect(actor.getSnapshot().value).toBe("ready");
     expect(actor.getSnapshot().context.remotePhase).toBe("waiting");
   });
+
+  it("autorise une session en lecture seule sans credential et bloque toute mutation", () => {
+    const actor = createDashboard();
+    actor.send({
+      type: "CONNECT_REQUESTED",
+      agentName: "btc-usd--multi",
+      credentialPresent: false,
+      readOnly: true,
+    });
+    expect(actor.getSnapshot().value).toBe("loading");
+    expect(actor.getSnapshot().context.readOnly).toBe(true);
+    expect(actor.getSnapshot().context.credentialPresent).toBe(false);
+
+    actor.send({
+      type: "STATE_LOADED",
+      remotePhase: "waiting",
+      remoteUpdatedAt: 1_700_000_000_000,
+    });
+    expect(actor.getSnapshot().value).toBe("ready");
+
+    actor.send({
+      type: "COMMAND_REQUESTED",
+      command: "tick",
+      permissions: { canControl: true, canTrade: true },
+    });
+    expect(actor.getSnapshot().value).toBe("ready");
+    expect(actor.getSnapshot().context.lastError?.code).toBe(
+      "CONTROL_PERMISSION_REQUIRED",
+    );
+
+    actor.send({
+      type: "KILL_CONFIRMATION_REQUESTED",
+      permissions: { canControl: true, canTrade: true },
+    });
+    expect(actor.getSnapshot().value).toBe("ready");
+    expect(actor.getSnapshot().context.lastError?.code).toBe(
+      "CONTROL_PERMISSION_REQUIRED",
+    );
+
+    actor.send({ type: "DISCONNECT_REQUESTED" });
+    expect(actor.getSnapshot().value).toBe("disconnected");
+    expect(actor.getSnapshot().context.readOnly).toBe(false);
+  });
 });

@@ -107,3 +107,57 @@ navigateur
 8. Aucun Worker privé ne possède de route publique directe en production.
 9. Le Worker d'assets ne décide d'aucun état métier : il route `/api/*` et sert
    le reste depuis le binding `ASSETS`.
+
+## Amendement 2026-11-16 — Observation publique en lecture seule
+
+### Constat
+
+En environnement `paper`, l'opérateur souhaite pouvoir observer en direct le
+comportement du bot (état, portefeuille, cycles, PnL, indicateurs) sans saisir
+de `DASHBOARD_ACCESS_TOKEN`, tout en conservant le blocage strict de toute
+action mutante ou de trading (`start`, `stop`, `reset`, `tick`, `kill`,
+`perp-order`, `preflight`).
+
+### Résolution et décisions d'état
+
+1. `DashboardSessionContext` porte `readOnly: boolean` (initialisé à `false`).
+2. `CONNECT_REQUESTED` accepte `readOnly?: boolean`.
+   - `validConnectionRequest` autorise la connexion si `agentName` est valide et
+     (`event.credentialPresent` OU `event.readOnly === true`).
+   - Sans `credentialPresent` ni `readOnly: true`, la transition reste refusée
+     (`INVALID_CREDENTIAL`), préservant l'invariant V1.
+   - `initializeConnection` fixe `readOnly = event.readOnly === true || !event.credentialPresent`.
+   - `DISCONNECT_REQUESTED` réinitialise `readOnly = false`.
+3. En session `readOnly === true`, les gardes `canIssueCommand`, `canRequestKill`
+   et `canConfirmKill` refusent toute transition vers `commanding` ou
+   `confirmingKill` et émettent `CONTROL_PERMISSION_REQUIRED` (ou
+   `TRADE_PERMISSION_REQUIRED` pour `start`/`tick`).
+4. Au proxy `dashboard-api` :
+   - Une variable d'environnement explicite `PUBLIC_READ_ONLY === "true"`
+     (activée uniquement en `mode === "paper"`, jamais en production live)
+     autorise les requêtes `GET` sur les routes de lecture (`state`, `cycles`,
+     `pnl`, `portfolio`) sans header `Authorization`.
+   - Toutes les routes `POST` (`preflight`, `start`, `stop`, `reset`, `tick`,
+     `kill`, `perp-order`) continuent d'exiger un `Bearer` valide égal à
+     `DASHBOARD_ACCESS_TOKEN` (`401 UNAUTHORIZED` sinon).
+
+### Invariants ajoutés
+
+10. Une session `readOnly` ne peut jamais déclencher de commande mutante ni
+    d'ordre dans `dashboardSessionMachine`, quelles que soient les permissions
+    fournies par l'interface.
+11. `PUBLIC_READ_ONLY` ne contourne jamais l'authentification des routes `POST`
+    et reste désactivé par défaut hors environnement `paper`.
+
+### Vérification requise
+
+- `CONNECT_REQUESTED` avec `credentialPresent: false` et `readOnly: true`
+  passe à `loading` puis `ready` avec `context.readOnly === true`.
+- `COMMAND_REQUESTED` et `KILL_CONFIRMATION_REQUESTED` en mode `readOnly`
+  restent dans `ready` avec erreur `CONTROL_PERMISSION_REQUIRED` /
+  `TRADE_PERMISSION_REQUIRED`.
+- Au proxy `dashboard-api` avec `PUBLIC_READ_ONLY: "true"` : `GET /state`,
+  `GET /cycles`, `GET /pnl` réussissent sans token ; `POST /start`,
+  `POST /tick`, `POST /kill` sans token renvoient `401 UNAUTHORIZED`.
+- Au proxy `dashboard-api` sans `PUBLIC_READ_ONLY` : `GET /state` sans token
+  renvoie `401 UNAUTHORIZED`.

@@ -194,5 +194,31 @@ describe("allocateSignals", () => {
       error: { code: "INVALID_ALLOCATION_CONFIG" },
     });
   });
+
+  it("plafonne un SELL à la position détenue et ferme 100 % avec closeFullPositionOnSell", () => {
+    const capped = allocateSignals({
+      ...base,
+      capitalAvailable: 0,
+      signals: [signal("rsi", "SELL", 1, 0.5)],
+      positionQuantities: { "BTC-USD": 0.012 },
+    });
+    expect(capped.ok && capped.value.outcome).toBe("ALLOCATED");
+    if (capped.ok) {
+      expect(capped.value.orders[0]?.side).toBe("SELL");
+      expect(capped.value.orders[0]?.quantity).toBeCloseTo(0.012, 10);
+    }
+
+    const fullClose = allocateSignals({
+      ...base,
+      signals: [signal("ema", "SELL", 0.2, 0.01)],
+      positionQuantities: { "BTC-USD": 0.012 },
+      closeFullPositionOnSell: true,
+    });
+    expect(fullClose.ok && fullClose.value.outcome).toBe("ALLOCATED");
+    if (fullClose.ok) {
+      expect(fullClose.value.orders[0]?.side).toBe("SELL");
+      expect(fullClose.value.orders[0]?.quantity).toBeCloseTo(0.012, 10);
+    }
+  });
 });
 

@@ -30,6 +30,8 @@ export interface AllocationInput {
   readonly executionStyle?: ExecutionStyle;
   readonly orderBooks?: Readonly<Record<string, OrderBookTop>>;
   readonly maxSpreadBps?: number;
+  readonly positionQuantities?: Readonly<Record<string, number>>;
+  readonly closeFullPositionOnSell?: boolean;
 }
 
 export interface AllocationDecision {
@@ -135,12 +137,22 @@ export const allocateSignals = (
       0,
     );
     netQuantities[productKey] = net;
-    if (Math.abs(net) <= input.minNetQuantity || remainingNotional <= 0) continue;
+    const heldQty = input.positionQuantities?.[productKey];
+    const isBoundedSell = net < 0 && heldQty !== undefined && Number.isFinite(heldQty);
+    if (isBoundedSell) {
+      if (heldQty <= input.minNetQuantity) continue;
+    } else if (Math.abs(net) <= input.minNetQuantity || remainingNotional <= 0) {
+      continue;
+    }
 
     const book = input.orderBooks?.[productKey];
     if (isSpreadBlocked(book, input.maxSpreadBps)) continue;
 
-    const quantity = Math.min(Math.abs(net), remainingNotional / price);
+    const quantity = isBoundedSell
+      ? input.closeFullPositionOnSell === true
+        ? heldQty
+        : Math.min(Math.abs(net), heldQty)
+      : Math.min(Math.abs(net), remainingNotional / price);
     if (quantity <= input.minNetQuantity) continue;
     const clientOrderId = createClientOrderId(
       input.agentId,
@@ -176,7 +188,9 @@ export const allocateSignals = (
       return err({ code: "INVALID_ORDER_INTENT", cause: intent.error });
     }
     orders.push(intent.value);
-    remainingNotional -= quantity * price;
+    if (!isBoundedSell) {
+      remainingNotional -= quantity * price;
+    }
   }
 
   return ok(

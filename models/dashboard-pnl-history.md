@@ -183,3 +183,23 @@ point d’équité pour une position ouverte. Aucun prix moyen n’est substitu�
 - Positions et PnL perpétuels Hyperliquid (pas de fills/frais persistés).
 - Agrégats multi-agents, fiscalité, conversion de devise.
 - Toute écriture : cette proposition n'ajoute aucune commande ni mutation.
+
+## Amendement 2026-11-18 — Attribution et isolation par produit (`productId`) en mode multi-produits
+
+### 1. Problème
+
+Sur une instance multi-produits (`btc-usd--multi` : `BTC-USD`, `ETH-USD`, `SOL-USD`, `XRP-USD`), les lignes de `dodash_cycles` et `dodash_orders` entrelacent les quatre paires :
+1. `DashboardPnlCycleHistory` et `DashboardPnlEquityPoint` n'exposaient pas `productId`, empêchant le dashboard d'indiquer sur quel portefeuille/paire un trade a été exécuté et de filtrer la courbe d'équité ou le journal des trades par paire.
+2. `projectDashboardPnlHistory` maintenait un unique `carriedPortfolio` et un unique `carriedMark` globaux : un `SELL` sur `XRP-USD` (`~0,99 $US`) comparait son prix d'exécution au `previousPortfolio.averagePrice` du dernier produit ayant tradé avant lui (ex. `ETH-USD` à `~1 800 $US`), produisant un `realizedPnl` erroné, tandis qu'un cycle `NO_ACTION` valorisait la position d'une paire avec le mark d'une autre paire.
+3. À raison de 4 cycles par minute, `DASHBOARD_PNL_HISTORY_MAX_CYCLES = 50` ne couvrait que 12,5 minutes d'historique.
+
+### 2. Résolution pure
+
+1. **Attribution `productId`** :
+   - `DashboardPnlCycleRow` accepte `productId?: string | null` (colonne `dodash_cycles.product_id`), et `parseArtifacts` extrait également `market.productId` ou `order.productId` comme repli déterministe.
+   - `DashboardPnlCycleHistory` et `DashboardPnlEquityPoint` exposent `productId?: string | null`.
+2. **Isolation du portefeuille et du mark par produit** :
+   - `carriedPortfolio`, `carriedMark` et `protectionCandidate` sont indexés par clé produit (`productId`, avec repli sur l'unique clé active si un cycle sans snapshot marché survient en mode mono-produit).
+   - Le `realizedPnl` d'un `SELL` sur `P` est calculé exclusivement à partir du `previousPortfolio` de `P`.
+   - Chaque point d'équité valorise le `carriedPortfolio` de `P` avec le `carriedMark` de `P`.
+   - En mode mono-produit (`productId === null` ou unique), le comportement reste bit-à-bit identique.

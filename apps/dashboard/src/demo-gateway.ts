@@ -25,7 +25,7 @@ const valuation = (
   exposureQuality: "fresh",
   markPrice,
   markSource: markPrice === null ? null : "COINBASE_CANDLE_CLOSE",
-  timeframe: markPrice === null ? null : "FIVE_MINUTE",
+  timeframe: markPrice === null ? null : "ONE_MINUTE",
   candleClosedAt: ageMs === null ? null : asOf - ageMs,
   ageMs,
   quality: markPrice === null ? "unavailable" : "fresh",
@@ -36,9 +36,9 @@ let state: AgentStateView = Object.freeze({
   updatedAt: startedAt,
   configuration: Object.freeze({
     productId: "BTC-USD",
-    timeframe: "FIVE_MINUTE",
+    timeframe: "ONE_MINUTE",
     strategyIds: Object.freeze(["breakout", "ema-cross", "rsi-reversion"]),
-    intervalSeconds: 300,
+    intervalSeconds: 60,
     executionMode: "paper",
   }),
   portfolio: Object.freeze({
@@ -47,7 +47,7 @@ let state: AgentStateView = Object.freeze({
     averagePrice: 61_284.42,
   }),
   dailyPnl: 172.38,
-  nextWakeAt: startedAt + 184_000,
+  nextWakeAt: startedAt + 60_000,
   lastTradeAt: startedAt - 886_000,
   lastCycle: Object.freeze({
     cycleId: "cycle-01J6A2J8X7",
@@ -94,16 +94,18 @@ let cycles: readonly CycleView[] = Object.freeze([
   },
 ]);
 
-const pnlHistory: PnlHistoryView = Object.freeze({
+let pnlHistory: PnlHistoryView = Object.freeze({
   equityCurve: Object.freeze([
-    { t: startedAt - 2_090_000, equity: 9_812.4, valuation: valuation(startedAt - 2_090_000, 9_812.4, 63_400) },
-    { t: startedAt - 1_490_000, equity: 9_774.02, valuation: valuation(startedAt - 1_490_000, 9_774.02, 63_402.11) },
-    { t: startedAt - 1_190_000, equity: 9_869.76, valuation: valuation(startedAt - 1_190_000, 9_869.76, 63_712) },
-    { t: startedAt - 890_000, equity: 9_964.56, valuation: valuation(startedAt - 890_000, 9_964.56, 63_912.18) },
+    { t: startedAt - 2_690_000, equity: 9_680.0, valuation: valuation(startedAt - 2_690_000, 9_680.0, 62_850), productId: "BTC-USD" },
+    { t: startedAt - 2_090_000, equity: 9_812.4, valuation: valuation(startedAt - 2_090_000, 9_812.4, 63_400), productId: "BTC-USD" },
+    { t: startedAt - 1_490_000, equity: 9_774.02, valuation: valuation(startedAt - 1_490_000, 9_774.02, 63_402.11), productId: "ETH-USD" },
+    { t: startedAt - 1_190_000, equity: 9_869.76, valuation: valuation(startedAt - 1_190_000, 9_869.76, 63_712), productId: "ETH-USD" },
+    { t: startedAt - 890_000, equity: 9_964.56, valuation: valuation(startedAt - 890_000, 9_964.56, 63_912.18), productId: "BTC-USD" },
   ]),
   cycles: Object.freeze([
     Object.freeze({
       cycleId: "cycle-01J6A2J8X7",
+      productId: "BTC-USD",
       triggeredAt: startedAt - 890_000,
       completedAt: startedAt - 886_000,
       outcome: "ORDER_CONFIRMED",
@@ -111,13 +113,14 @@ const pnlHistory: PnlHistoryView = Object.freeze({
       valuation: valuation(startedAt - 886_000, 9_964.56, 63_912.18),
       side: "BUY" as const,
       quantity: 0.0184,
-      fillPrice: 63_924.51,
-      fee: 1.18,
+      fillPrice: 63_912.18,
+      fee: 0.12,
       realizedPnl: null,
-      slippageBps: 1.93,
+      slippageBps: 0,
     }),
     Object.freeze({
       cycleId: "cycle-01J6A1TB4M",
+      productId: "ETH-USD",
       triggeredAt: startedAt - 1_190_000,
       completedAt: startedAt - 1_187_000,
       outcome: "NO_ACTION",
@@ -132,6 +135,7 @@ const pnlHistory: PnlHistoryView = Object.freeze({
     }),
     Object.freeze({
       cycleId: "cycle-01J6A14QPC",
+      productId: "SOL-USD",
       triggeredAt: startedAt - 1_490_000,
       completedAt: startedAt - 1_486_000,
       outcome: "RISK_REJECTED",
@@ -143,6 +147,36 @@ const pnlHistory: PnlHistoryView = Object.freeze({
       fee: null,
       realizedPnl: null,
       slippageBps: null,
+    }),
+    Object.freeze({
+      cycleId: "cycle-01J69Z8K1P",
+      productId: "ETH-USD",
+      triggeredAt: startedAt - 2_090_000,
+      completedAt: startedAt - 2_086_000,
+      outcome: "ORDER_CONFIRMED",
+      marketPrice: 63_400.0,
+      valuation: valuation(startedAt - 2_086_000, 9_812.4, 63_400.0),
+      side: "SELL" as const,
+      quantity: 0.016,
+      fillPrice: 63_400.0,
+      fee: 0.1,
+      realizedPnl: 132.4,
+      slippageBps: 0,
+    }),
+    Object.freeze({
+      cycleId: "cycle-01J69X2M9A",
+      productId: "BTC-USD",
+      triggeredAt: startedAt - 2_690_000,
+      completedAt: startedAt - 2_687_000,
+      outcome: "ORDER_CONFIRMED",
+      marketPrice: 62_850.0,
+      valuation: valuation(startedAt - 2_687_000, 9_680.0, 62_850.0),
+      side: "BUY" as const,
+      quantity: 0.016,
+      fillPrice: 62_850.0,
+      fee: 0.1,
+      realizedPnl: null,
+      slippageBps: 0,
     }),
   ]),
   openPosition: Object.freeze({ quantity: 0.0184, averagePrice: 61_284.42 }),
@@ -292,24 +326,59 @@ export const createDemoGateway = (): DashboardGateway =>
       } else if (command === "kill") {
         state = nextState({ enabled: false, phase: "halted", nextWakeAt: null });
       } else {
+        const now = Date.now();
+        const isFill = cycles.length % 2 === 1;
+        const nextMark = Number((63_948.72 + (isFill ? 142.5 : -38.2)).toFixed(2));
+        const nextEquity = Number((9_964.56 + cycles.length * 14.2).toFixed(2));
+        const cycleId = `cycle-demo-${cycles.length + 1}`;
         const cycle: CycleView = Object.freeze({
-          cycleId: `cycle-demo-${cycles.length + 1}`,
-          triggeredAt: Date.now() - 1_200,
-          completedAt: Date.now(),
+          cycleId,
+          triggeredAt: now - 1_200,
+          completedAt: now,
           phase: "scheduling",
-          outcome: "NO_ACTION",
+          outcome: isFill ? "ORDER_CONFIRMED" : "NO_ACTION",
         });
         cycles = Object.freeze([cycle, ...cycles].slice(0, 12));
+        const nextVal = valuation(now, nextEquity, nextMark, 1_195.2, 4_000);
+        pnlHistory = Object.freeze({
+          ...pnlHistory,
+          equityCurve: Object.freeze([
+            ...pnlHistory.equityCurve,
+            { t: now, equity: nextEquity, valuation: nextVal },
+          ]),
+          cycles: Object.freeze([
+            Object.freeze({
+              cycleId,
+              triggeredAt: now - 1_200,
+              completedAt: now,
+              outcome: isFill ? "ORDER_CONFIRMED" : "NO_ACTION",
+              marketPrice: nextMark,
+              valuation: nextVal,
+              side: isFill ? ("BUY" as const) : null,
+              quantity: isFill ? 0.004 : null,
+              fillPrice: isFill ? nextMark : null,
+              fee: isFill ? 0.03 : null,
+              realizedPnl: isFill ? 14.2 : null,
+              slippageBps: isFill ? 0 : null,
+            }),
+            ...pnlHistory.cycles,
+          ]),
+        });
         state = nextState({
           enabled: true,
           phase: "waiting",
-          nextWakeAt: Date.now() + 300_000,
+          dailyPnl: Number((state.dailyPnl + (isFill ? 14.2 : 0)).toFixed(2)),
+          nextWakeAt: now + 300_000,
           lastCycle: Object.freeze({
             cycleId: cycle.cycleId,
             outcome: cycle.outcome,
-            marketPrice: 63_948.72,
+            marketPrice: nextMark,
             signalCount: 3,
-            completedAt: cycle.completedAt ?? Date.now(),
+            completedAt: cycle.completedAt ?? now,
+          }),
+          paperValuation: Object.freeze({
+            ok: true as const,
+            value: Object.freeze(nextVal),
           }),
         });
       }

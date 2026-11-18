@@ -30,6 +30,7 @@ export interface DashboardPnlCycleRow {
   readonly completedAt: number | null;
   readonly outcome: string;
   readonly artifactsJson: string;
+  readonly productId?: string | null;
 }
 
 /** Ligne de `dodash_orders` jointe par `cycle_id` (models/dashboard-pnl-history.md §2). */
@@ -44,6 +45,7 @@ export interface DashboardPnlEquityPoint {
   readonly t: number;
   readonly equity: number | null;
   readonly valuation: PaperValuation;
+  readonly productId?: string | null;
 }
 
 export interface DashboardPnlCycleHistory {
@@ -59,6 +61,7 @@ export interface DashboardPnlCycleHistory {
   readonly fee: number | null;
   readonly realizedPnl: number | null;
   readonly slippageBps: number | null;
+  readonly productId?: string | null;
 }
 
 export interface DashboardPnlProtection {
@@ -102,6 +105,7 @@ type SubmissionFacts =
   | { readonly kind: "none" };
 
 interface ArtifactsFacts {
+  readonly productId: string | null;
   readonly marketPrice: number | null;
   readonly hasMarketSnapshot: boolean;
   readonly valuationMark: PaperValuationMark | null;
@@ -210,12 +214,16 @@ const parseArtifacts = (raw: string): ArtifactsFacts | null => {
   }
   if (!isRecord(parsed)) return null;
 
+  let productId: string | null = null;
   let marketPrice: number | null = null;
   let hasMarketSnapshot = false;
   let valuationMark: PaperValuationMark | null = null;
   if (parsed.market !== undefined) {
     if (!isRecord(parsed.market) || !Array.isArray(parsed.market.candles)) {
       return null;
+    }
+    if (isNonEmptyText(parsed.market.productId)) {
+      productId = parsed.market.productId.trim();
     }
     hasMarketSnapshot = true;
     const last = parsed.market.candles.at(-1);
@@ -237,6 +245,9 @@ const parseArtifacts = (raw: string): ArtifactsFacts | null => {
       !isPositiveFinite(parsed.order.quantity)
     ) {
       return null;
+    }
+    if (productId === null && isNonEmptyText(parsed.order.productId)) {
+      productId = parsed.order.productId.trim();
     }
     side = parsed.order.side;
     quantity = parsed.order.quantity;
@@ -261,6 +272,7 @@ const parseArtifacts = (raw: string): ArtifactsFacts | null => {
   }
 
   return {
+    productId,
     marketPrice,
     hasMarketSnapshot,
     valuationMark,
@@ -279,7 +291,12 @@ const parseCycleRow = (
     !isSafeTime(row.triggeredAt) ||
     !(row.completedAt === null || isSafeTime(row.completedAt)) ||
     !isNonEmptyText(row.outcome) ||
-    typeof row.artifactsJson !== "string"
+    typeof row.artifactsJson !== "string" ||
+    !(
+      row.productId === undefined ||
+      row.productId === null ||
+      isNonEmptyText(row.productId)
+    )
   ) {
     return "INVALID_CYCLE_ROW";
   }
@@ -345,9 +362,10 @@ export const projectDashboardPnlHistory = (
     bucket.sort(byClientOrderId);
   }
 
-  let carriedPortfolio: PortfolioFacts | null = null;
-  let carriedMark: PaperValuationMark | null = null;
-  let protectionCandidate: DashboardPnlProtection | null = null;
+  const carriedPortfolioByProduct = new Map<string, PortfolioFacts>();
+  const carriedMarkByProduct = new Map<string, PaperValuationMark | null>();
+  const protectionByProduct = new Map<string, DashboardPnlProtection | null>();
+  let lastProductKey = "__single__";
   const equityCurve: DashboardPnlEquityPoint[] = [];
   const cyclesAscending: DashboardPnlCycleHistory[] = [];
 
@@ -356,9 +374,19 @@ export const projectDashboardPnlHistory = (
     if (invalidCycle !== null) return failure(invalidCycle);
     const artifacts = parseArtifacts(cycleRow.artifactsJson);
     if (artifacts === null) return failure("INVALID_ARTIFACTS_JSON");
-    if (artifacts.hasMarketSnapshot) carriedMark = artifacts.valuationMark;
+    const explicitProductId =
+      typeof cycleRow.productId === "string"
+        ? cycleRow.productId.trim()
+        : artifacts.productId;
+    const productKey = explicitProductId ?? lastProductKey;
+    if (explicitProductId !== null) {
+      lastProductKey = explicitProductId;
+    }
+    if (artifacts.hasMarketSnapshot) {
+      carriedMarkByProduct.set(productKey, artifacts.valuationMark);
+    }
 
-    const previousPortfolio = carriedPortfolio;
+    const previousPortfolio = carriedPortfolioByProduct.get(productKey) ?? null;
     let trade:
       | {
           readonly side: "BUY" | "SELL";
@@ -373,8 +401,8 @@ export const projectDashboardPnlHistory = (
       const submission = parseSubmission(orderRow.executionJson);
       if (submission === null) return failure("INVALID_EXECUTION_JSON");
       if (submission.kind === "none") continue;
-      // §3.2 : chaque soumission porteuse met à jour le portefeuille porté.
-      carriedPortfolio = submission.portfolio;
+      // §3.2 : chaque soumission porteuse met à jour le portefeuille porté du produit.
+      carriedPortfolioByProduct.set(productKey, submission.portfolio);
       // §3.2 : le premier ordre porteur d'un fill confirme le trade du
       // cycle. Un PROTECTION_FAILED portant un fill est structurellement
       // une sortie de vente (§3.3), même sans intention persistée.
@@ -401,11 +429,11 @@ export const projectDashboardPnlHistory = (
         artifacts.stopLossPrice !== null &&
         artifacts.takeProfitPrice !== null
       ) {
-        protectionCandidate = {
+        protectionByProduct.set(productKey, {
           stopLossPrice: artifacts.stopLossPrice,
           takeProfitPrice: artifacts.takeProfitPrice,
           protectiveOrderConfirmed: submission.protectiveOrderConfirmed,
-        };
+        });
       }
     }
 
@@ -434,6 +462,8 @@ export const projectDashboardPnlHistory = (
       }
     }
 
+    const carriedPortfolio = carriedPortfolioByProduct.get(productKey) ?? null;
+    const carriedMark = carriedMarkByProduct.get(productKey) ?? null;
     let valuation: PaperValuation | null = null;
     if (carriedPortfolio !== null) {
       const asOf = cycleRow.completedAt ?? cycleRow.triggeredAt;
@@ -449,6 +479,7 @@ export const projectDashboardPnlHistory = (
         t: asOf,
         equity: valuation.equity,
         valuation,
+        ...(explicitProductId !== null ? { productId: explicitProductId } : {}),
       });
     }
 
@@ -465,14 +496,17 @@ export const projectDashboardPnlHistory = (
       fee: trade?.fee ?? null,
       realizedPnl,
       slippageBps,
+      ...(explicitProductId !== null ? { productId: explicitProductId } : {}),
     });
   }
 
+  const finalPortfolio = carriedPortfolioByProduct.get(lastProductKey) ?? null;
+  const finalProtection = protectionByProduct.get(lastProductKey) ?? null;
   const openPosition =
-    carriedPortfolio !== null && carriedPortfolio.positionQuantity > 0
+    finalPortfolio !== null && finalPortfolio.positionQuantity > 0
       ? {
-          quantity: carriedPortfolio.positionQuantity,
-          averagePrice: carriedPortfolio.averagePrice,
+          quantity: finalPortfolio.positionQuantity,
+          averagePrice: finalPortfolio.averagePrice,
         }
       : null;
 
@@ -483,7 +517,7 @@ export const projectDashboardPnlHistory = (
       cycles: Object.freeze(cyclesAscending.reverse()),
       openPosition: openPosition === null ? null : Object.freeze(openPosition),
       protection:
-        openPosition === null ? null : protectionCandidate,
+        openPosition === null ? null : finalProtection,
     }),
   });
 };

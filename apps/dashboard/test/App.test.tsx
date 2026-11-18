@@ -228,6 +228,7 @@ describe("dashboard journey", () => {
       cycles: [
         {
           cycleId: "cycle-buy",
+          productId: "BTC-USD",
           triggeredAt: startedAt - 300_000,
           completedAt: startedAt - 296_000,
           outcome: "ORDER_CONFIRMED",
@@ -284,6 +285,8 @@ describe("dashboard journey", () => {
       screen.getByRole("group", { name: "Position et protections" }).textContent,
     ).toContain("TAKE-PROFIT 63\u202f000,00\u00a0$US");
     expect(screen.getByRole("img", { name: "Courbe d’équité" })).toBeTruthy();
+    expect(screen.getByText("Portefeuille")).toBeTruthy();
+    expect(screen.getByText("BTC/USD")).toBeTruthy();
     expect(screen.getByText("cycle-buy")).toBeTruthy();
     expect(screen.getByText("Slippage")).toBeTruthy();
     expect(screen.getByText("+10,00 bps")).toBeTruthy();
@@ -550,5 +553,42 @@ describe("perp order form", () => {
     expect(
       screen.getByRole("button", { name: "Préparer l'ordre" }),
     ).toBeTruthy();
+  });
+
+  it("permet l'observation en lecture seule sans token tout en bloquant les actions de trading", async () => {
+    const command = vi.fn<DashboardGateway["command"]>(async () => stoppedAgent());
+    const active = {
+      ...stoppedAgent(),
+      enabled: true,
+      phase: "waiting" as const,
+    };
+    render(
+      <App
+        gateways={gateways(createGateway({ loadState: async () => active, command }))}
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Observer sans token (lecture seule)" }),
+    );
+    await screen.findByRole("heading", { name: "Piloter la boucle" });
+
+    expect(screen.getByText("LECTURE SEULE")).toBeTruthy();
+    expect(
+      screen.getByText(/Mode lecture seule actif/),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Exécuter maintenant" }).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Arrêter" }).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Kill switch" }).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Préparer l'ordre" }).disabled,
+    ).toBe(true);
+    expect(command).not.toHaveBeenCalled();
   });
 });

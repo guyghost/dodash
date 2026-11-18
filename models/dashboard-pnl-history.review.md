@@ -96,3 +96,10 @@ legacy, parser API et affichage UI couverts dans les suites `models` (430/430),
 `agent` (264/264) et `dashboard` (45/45). TypeScript des trois paquets réussi.
 Les données historiques restent en lecture seule; aucune provenance n’est
 reconstruite à partir du coût moyen ou de l’heure du cycle.
+
+## Revue complémentaire — Amendement 2026-11-18 (`productId` & isolation multi-produits)
+
+- [x] Chaque cycle et point d'équité expose `productId: string | null` (issu de `dodash_cycles.product_id` ou d'`artifacts_json`).
+- [x] `carriedPortfolio` et `carriedMark` sont isolés par `productId` : aucun mélange de `averagePrice`, de `positionQuantity` ou de `valuationMark` entre deux paires distinctes (`BTC-USD`, `ETH-USD`, `SOL-USD`, `XRP-USD`).
+- [x] Rétrocompatibilité totale avec les appels mono-produit sans `productId`.
+- Verdict : **APPROUVÉ**.

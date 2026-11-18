@@ -130,8 +130,12 @@ export const checkRisk = (
     return ok({ status: "REJECTED", reasonCode: "COOLDOWN_ACTIVE" });
   }
 
+  const isPositionReducingSell =
+    intent.side === "SELL" &&
+    snapshot.currentPositionQuantity > 0 &&
+    intent.quantity <= snapshot.currentPositionQuantity + 1e-12;
   const orderNotional = intent.quantity * snapshot.marketPrice;
-  if (orderNotional > config.maxOrderNotional) {
+  if (!isPositionReducingSell && orderNotional > config.maxOrderNotional) {
     return ok({ status: "REJECTED", reasonCode: "ORDER_NOTIONAL_LIMIT" });
   }
 

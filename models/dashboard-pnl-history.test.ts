@@ -485,4 +485,137 @@ describe("projectDashboardPnlHistory", () => {
       }
     }
   });
+
+  it("isolates carried portfolio, valuation mark and realized PnL per productId in multi-product mode", () => {
+    const ethBuyCycle: DashboardPnlCycleRow = {
+      cycleId: "eth-buy",
+      productId: "ETH-USD",
+      triggeredAt: t0,
+      completedAt: t0 + 1_000,
+      outcome: "ORDER_CONFIRMED",
+      artifactsJson: JSON.stringify({
+        market: {
+          productId: "ETH-USD",
+          timeframe: "ONE_MINUTE",
+          candles: [{ close: 1800 }],
+          valuationMark: {
+            price: 1800,
+            source: "HYPERLIQUID_CANDLE_CLOSE",
+            timeframe: "ONE_MINUTE",
+            candleClosedAt: t0,
+            maxMarketStalenessMs: 120_000,
+          },
+        },
+        order: {
+          clientOrderId: "order-eth-buy",
+          decisionId: "dec-eth-buy",
+          strategyIds: ["rsi-reversion"],
+          productId: "ETH-USD",
+          side: "BUY",
+          type: "LIMIT",
+          quantity: 1,
+          limitPrice: 1800,
+        },
+      }),
+    };
+    const xrpBuyCycle: DashboardPnlCycleRow = {
+      cycleId: "xrp-buy",
+      productId: "XRP-USD",
+      triggeredAt: t0 + 2_000,
+      completedAt: t0 + 3_000,
+      outcome: "ORDER_CONFIRMED",
+      artifactsJson: JSON.stringify({
+        market: {
+          productId: "XRP-USD",
+          timeframe: "ONE_MINUTE",
+          candles: [{ close: 0.99 }],
+          valuationMark: {
+            price: 0.99,
+            source: "HYPERLIQUID_CANDLE_CLOSE",
+            timeframe: "ONE_MINUTE",
+            candleClosedAt: t0,
+            maxMarketStalenessMs: 120_000,
+          },
+        },
+        order: {
+          clientOrderId: "order-xrp-buy",
+          decisionId: "dec-xrp-buy",
+          strategyIds: ["rsi-reversion"],
+          productId: "XRP-USD",
+          side: "BUY",
+          type: "LIMIT",
+          quantity: 1000,
+          limitPrice: 0.99,
+        },
+      }),
+    };
+    const xrpSellCycle: DashboardPnlCycleRow = {
+      cycleId: "xrp-sell",
+      productId: "XRP-USD",
+      triggeredAt: t0 + 62_000,
+      completedAt: t0 + 63_000,
+      outcome: "ORDER_CONFIRMED",
+      artifactsJson: JSON.stringify({
+        market: {
+          productId: "XRP-USD",
+          timeframe: "ONE_MINUTE",
+          candles: [{ close: 1.0 }],
+          valuationMark: {
+            price: 1.0,
+            source: "HYPERLIQUID_CANDLE_CLOSE",
+            timeframe: "ONE_MINUTE",
+            candleClosedAt: t0 + 60_000,
+            maxMarketStalenessMs: 120_000,
+          },
+        },
+        order: {
+          clientOrderId: "order-xrp-sell",
+          decisionId: "dec-xrp-sell",
+          strategyIds: ["rsi-reversion"],
+          productId: "XRP-USD",
+          side: "SELL",
+          type: "LIMIT",
+          quantity: 1000,
+          limitPrice: 1.0,
+        },
+      }),
+    };
+
+    const orders: DashboardPnlOrderRow[] = [
+      orderRow(
+        "order-eth-buy",
+        "eth-buy",
+        confirmedSubmission(
+          { cash: 8200, positionQuantity: 1, averagePrice: 1800 },
+          { price: 1800, quantity: 1, fee: 0.18 },
+        ),
+      ),
+      orderRow(
+        "order-xrp-buy",
+        "xrp-buy",
+        confirmedSubmission(
+          { cash: 9010, positionQuantity: 1000, averagePrice: 0.99 },
+          { price: 0.99, quantity: 1000, fee: 0.1 },
+        ),
+      ),
+      orderRow(
+        "order-xrp-sell",
+        "xrp-sell",
+        confirmedSubmission(
+          { cash: 10009.9, positionQuantity: 0, averagePrice: 0 },
+          { price: 1.0, quantity: 1000, fee: 0.1 },
+        ),
+      ),
+    ];
+
+    const result = projectDashboardPnlHistory(
+      [ethBuyCycle, xrpBuyCycle, xrpSellCycle],
+      orders,
+      30,
+    );
+    if (!result.ok) throw new Error("multi-product projection must succeed");
+    const sell = result.value.cycles[0];
+    expect(sell?.productId).toBe("XRP-USD");
+    expect(sell?.realizedPnl).toBeCloseTo((1.0 - 0.99) * 1000 - 0.1, 8);
+  });
 });

@@ -1,3 +1,11 @@
+/*
+  THESIS: Chrono-synoptic telemetry console for autonomous trading loops, refusing the editorial brochure/card-grid dashboard default.
+  OWN-WORLD: Obsidian #0b0f14 ground, gunmetal #10161f/#151d28 instrument bays, 1px #243142 hairlines, amber #f59e0b command accent, emerald #10b981 fills, crimson #ef4444 risk guards, tabular-nums monospace telemetry.
+  STORY: The operator sees live loop health, open position protection (Stop-Mark-TP), equity waveform, and real-time trade fills in one glance, and commands tick/stop/kill safely.
+  FIRST VIEWPORT: Top telemetry bar with live wake countdown and refresh selector; 3-column synoptic deck (Left: Agent state, Stop-Mark-TP gauge, Loop controls; Center: Equity waveform & Live Trade Blotter; Right: 7-stage XState pipeline & Prolog indicators).
+  FORM: NASA/SpaceX Flight Director Loop Console, candidate #7 on ordered list, seed key 65c7e41e. Raised with Split-Flap Row Discipline (signals-instruments-split-flap-concourse), Hairline Module Mosaic (japanese-high-density-web), Cell-Mark State Encoding (rw-timetable-slide-rack), Waveform Line Dominance (brand-identity-canon-saville-catalog-sleeve).
+  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+*/
 import {
   baseWalletSessionMachine,
   BASE_MAINNET_CHAIN_ID,
@@ -79,6 +87,82 @@ const outcomeClass = (outcome: string): string => {
   return "neutral";
 };
 
+const outcomeLabel = (outcome: string): string => {
+  if (outcome === "ORDER_CONFIRMED") return "Ordre exécuté";
+  if (outcome === "NO_ACTION") return "Aucun signal";
+  if (outcome === "RISK_REJECTED") return "Risque bloqué";
+  if (outcome === "FAILED") return "Échec";
+  if (outcome === "DECISION_WINDOW_MISSED") return "Fenêtre manquée";
+  return outcome;
+};
+
+const describeRsiZone = (rsi: number): { readonly label: string; readonly tone: string } => {
+  if (rsi < 30) return { label: "Survente (< 30)", tone: "positive" };
+  if (rsi > 70) return { label: "Surachat (> 70)", tone: "negative" };
+  return { label: "Neutre (30–70)", tone: "neutral" };
+};
+
+const describeLatestDecision = (params: {
+  readonly enabled: boolean;
+  readonly productId: string;
+  readonly outcome: string | null;
+  readonly price: number | null;
+  readonly indicators: AgentStateView["indicators"];
+  readonly nextWakeAt: number | null;
+  readonly nowMs: number;
+}): {
+  readonly badge: string;
+  readonly tone: "positive" | "negative" | "neutral";
+  readonly headline: string;
+  readonly explanation: string;
+} => {
+  const priceText = params.price === null ? "" : ` (${money.format(params.price)})`;
+  const rsiNote =
+    params.indicators === null
+      ? "Indicateurs en cours de calcul."
+      : `RSI à ${params.indicators.rsi.toFixed(1)} (${describeRsiZone(params.indicators.rsi).label}) · Tendance ${params.indicators.emaFast >= params.indicators.emaSlow ? "haussière" : "baissière"} (EMA ${money.format(params.indicators.emaFast)} vs ${money.format(params.indicators.emaSlow)}).`;
+
+  if (!params.enabled) {
+    return {
+      badge: "En pause",
+      tone: "neutral",
+      headline: `Agent arrêté sur ${params.productId}${priceText}`,
+      explanation: "La boucle automatique est en pause. Aucun ordre ne sera placé tant qu’elle n’est pas relancée.",
+    };
+  }
+  if (params.outcome === "ORDER_CONFIRMED") {
+    return {
+      badge: "Trade exécuté",
+      tone: "positive",
+      headline: `Ordre confirmé sur ${params.productId}${priceText}`,
+      explanation: `${rsiNote} Un signal validé par le module de risque vient d’être exécuté.`,
+    };
+  }
+  if (params.outcome === "RISK_REJECTED") {
+    return {
+      badge: "Protégé",
+      tone: "negative",
+      headline: `Signal bloqué par le garde-fou risque sur ${params.productId}${priceText}`,
+      explanation: `${rsiNote} Le modèle de risque a refusé la prise de position pour protéger le capital.`,
+    };
+  }
+  if (params.outcome === "FAILED") {
+    return {
+      badge: "Incident",
+      tone: "negative",
+      headline: `Dernier cycle en échec sur ${params.productId}`,
+      explanation: "Le dernier cycle a rencontré une erreur technique. L’agent retentera automatiquement au prochain réveil.",
+    };
+  }
+  const countdown = formatCountdown(params.nextWakeAt, params.nowMs);
+  return {
+    badge: "En veille active",
+    tone: "neutral",
+    headline: `En attente sur ${params.productId}${priceText}`,
+    explanation: `${rsiNote} Aucun signal d’entrée/sortie sur la dernière bougie${countdown === "—" ? "" : ` · Prochaine analyse dans ${countdown.replace("T-", "")}`}.`,
+  };
+};
+
 const signedClass = (value: number): string =>
   value >= 0 ? "pnl-positive" : "pnl-negative";
 
@@ -96,8 +180,14 @@ const portfolioStatusLabel = (status: PortfolioProductStatusView): string =>
         ? "SUSPENDU"
         : "EN ÉCHEC";
 
-const equityPath = (points: readonly { readonly t: number; readonly equity: number }[]): string => {
-  if (points.length < 2) return "";
+const equityGeometry = (
+  points: readonly { readonly t: number; readonly equity: number }[],
+): {
+  readonly line: string;
+  readonly area: string;
+  readonly lastPoint: { readonly x: number; readonly y: number } | null;
+} => {
+  if (points.length < 2) return { line: "", area: "", lastPoint: null };
   const times = points.map((point) => point.t);
   const equities = points.map((point) => point.equity);
   const tMin = Math.min(...times);
@@ -108,32 +198,30 @@ const equityPath = (points: readonly { readonly t: number; readonly equity: numb
   const height = 160;
   const spanT = Math.max(1, tMax - tMin);
   const spanE = Math.max(Number.EPSILON, eMax - eMin);
-  return points
-    .map((point, index) => {
-      const x = (point.t - tMin) / spanT * width;
-      const y = height - ((point.equity - eMin) / spanE) * (height - 12) - 6;
-      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
+  const coords = points.map((point) => {
+    const x = ((point.t - tMin) / spanT) * (width - 16) + 8;
+    const y = height - ((point.equity - eMin) / spanE) * (height - 28) - 14;
+    return { x, y };
+  });
+  const line = coords
+    .map((pt, index) => `${index === 0 ? "M" : "L"}${pt.x.toFixed(1)},${pt.y.toFixed(1)}`)
     .join(" ");
+  const first = coords[0];
+  const last = coords.at(-1) ?? null;
+  const area =
+    first !== undefined && last !== null
+      ? `${line} L${last.x.toFixed(1)},${height} L${first.x.toFixed(1)},${height} Z`
+      : "";
+  return { line, area, lastPoint: last };
 };
 
-function SectionHeading({
-  index,
-  title,
-  detail,
-}: {
-  readonly index: string;
-  readonly title: string;
-  readonly detail: string;
-}) {
-  return (
-    <div className="section-heading">
-      <span>{index}</span>
-      <strong>{title}</strong>
-      <small>{detail}</small>
-    </div>
-  );
-}
+const formatCountdown = (nextWakeAt: number | null, nowMs: number): string => {
+  if (nextWakeAt === null) return "—";
+  const remainingSec = Math.max(0, Math.round((nextWakeAt - nowMs) / 1_000));
+  const mins = Math.floor(remainingSec / 60);
+  const secs = remainingSec % 60;
+  return `T-${String(mins).padStart(2, "0")}m ${String(secs).padStart(2, "0")}s`;
+};
 
 function Metric({
   label,
@@ -176,7 +264,9 @@ function BaseWalletCard({
   const { account, lastError } = snapshot.context;
   const capability = resolvePerpTradingCapability(account);
   const connectedOnBase =
-    snapshot.value === "connected" && account !== null && account.chainId === BASE_MAINNET_CHAIN_ID;
+    snapshot.value === "connected" &&
+    account !== null &&
+    account.chainId === BASE_MAINNET_CHAIN_ID;
   const badge =
     snapshot.value === "connecting"
       ? "CONNEXION"
@@ -189,20 +279,12 @@ function BaseWalletCard({
             : "HORS LIGNE";
   return (
     <article className="paper-card wallet-card">
-      <div className="card-topline">
-        <span className="card-label blue-bg">WALLET BASE</span>
-        <span
-          className={`phase-badge ${connectedOnBase ? "online" : "offline"}`}
-        >
-          {badge}
-        </span>
-      </div>
       <h2>Session wallet</h2>
+      <span className={`phase-badge ${connectedOnBase ? "online" : "offline"}`}>
+        {badge}
+      </span>
       {account === null ? (
-        <p>
-          Connecter le wallet Base pour signer sur `eip155:8453`. La clé reste
-          dans le wallet ; la machine ne voit que l’adresse et la chaîne.
-        </p>
+        <p>Signature locale sur Base (`eip155:8453`).</p>
       ) : (
         <p className="agent-meta">
           <code>{shortAddress(account.address)}</code> ·{" "}
@@ -211,9 +293,9 @@ function BaseWalletCard({
             : `Chaîne ${account.chainId}`}
         </p>
       )}
-      <p className="next-wake" aria-live="polite">
+      <span className="telemetry-pill" aria-live="polite">
         {capabilityLabel(capability)}
-      </p>
+      </span>
       {lastError !== null && (
         <p className="error-note" role="alert">
           {lastError.code}
@@ -221,11 +303,7 @@ function BaseWalletCard({
       )}
       {snapshot.value === "failed" || snapshot.value === "disconnected" ? (
         <div className="button-row">
-          <button
-            className="button primary"
-            type="button"
-            onClick={onConnect}
-          >
+          <button className="button secondary" type="button" onClick={onConnect}>
             {snapshot.value === "failed"
               ? "Réessayer la connexion"
               : "Connecter le wallet"}
@@ -296,12 +374,13 @@ export function App({
   const [agent, setAgent] = useState<AgentStateView | null>(null);
   const [cycles, setCycles] = useState<readonly CycleView[]>([]);
   const [pnlHistory, setPnlHistory] = useState<PnlHistoryView | null>(null);
-  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummaryView | null>(null);
+  const [portfolioSummary, setPortfolioSummary] =
+    useState<PortfolioSummaryView | null>(null);
   const [agentName, setAgentName] = useState("btc-usd--multi");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [token, setToken] = useState("");
   const [productId, setProductId] = useState("BTC-USD");
-  const [timeframe, setTimeframe] = useState("FIVE_MINUTE");
+  const [timeframe, setTimeframe] = useState("ONE_MINUTE");
   const [executionMode, setExecutionMode] = useState<"paper" | "live">("paper");
   const [strategyIds, setStrategyIds] = useState<readonly string[]>([
     "rsi-reversion",
@@ -309,6 +388,10 @@ export function App({
     "breakout",
   ]);
   const [liveConfirmation, setLiveConfirmation] = useState("");
+  const [refreshIntervalMs, setRefreshIntervalMs] = useState<number>(15_000);
+  const [blotterFilter, setBlotterFilter] = useState<"all" | "fills">("all");
+  const [selectedProductId, setSelectedProductId] = useState<string>("ALL");
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const gatewayRef = useRef<DashboardGateway | null>(null);
   const inFlightRef = useRef<string | null>(null);
   const pendingStartRef = useRef<StartConfiguration | undefined>(undefined);
@@ -316,10 +399,32 @@ export function App({
   useEffect(() => {
     actor.start();
     const subscription = actor.subscribe(setSnapshot);
+    if (
+      typeof globalThis.location?.search === "string" &&
+      new URLSearchParams(globalThis.location.search).get("demo") === "1"
+    ) {
+      gatewayRef.current = gateways.createDemo();
+      actor.send({
+        type: "CONNECT_REQUESTED",
+        agentName: "btc-usd--multi",
+        credentialPresent: true,
+      });
+    } else if (
+      typeof globalThis.location?.hostname === "string" &&
+      globalThis.location.hostname.endsWith(".workers.dev")
+    ) {
+      gatewayRef.current = gateways.createHttp("", "");
+      actor.send({
+        type: "CONNECT_REQUESTED",
+        agentName: "btc-usd--multi",
+        credentialPresent: false,
+        readOnly: true,
+      });
+    }
     return () => {
       subscription.unsubscribe();
     };
-  }, [actor]);
+  }, [actor, gateways]);
 
   useEffect(() => {
     walletActor.start();
@@ -355,8 +460,6 @@ export function App({
       actor.send({ type: "REQUEST_FAILED", error: toDashboardError(error) });
     };
     if (state === "loading" || state === "refreshing") {
-      // dao #34 : la hiérarchie portefeuille est portée par le contrat
-      // `/state` — plus aucune lecture `/portfolio` séparée.
       void Promise.all([
         gateway.loadState(target),
         gateway.loadCycles(target),
@@ -373,6 +476,7 @@ export function App({
             setCycles(nextCycles);
             setPnlHistory(nextPnl);
             setPortfolioSummary(nextAgent.portfolioSummary);
+            setNowMs(Date.now());
           }
         })
         .catch(fail);
@@ -401,6 +505,7 @@ export function App({
             setCycles(nextCycles);
             setPnlHistory(nextPnl);
             setPortfolioSummary(nextAgent.portfolioSummary);
+            setNowMs(Date.now());
           }
           pendingStartRef.current = undefined;
         })
@@ -409,14 +514,22 @@ export function App({
   }, [actor, snapshot]);
 
   useEffect(() => {
-    if (snapshot.value !== "ready") return;
+    if (snapshot.value !== "ready" || refreshIntervalMs <= 0) return;
     const timer = globalThis.setInterval(() => {
       if (actor.getSnapshot().value === "ready") {
         actor.send({ type: "REFRESH_REQUESTED" });
       }
-    }, 15_000);
+    }, refreshIntervalMs);
     return () => globalThis.clearInterval(timer);
-  }, [actor, snapshot.value]);
+  }, [actor, refreshIntervalMs, snapshot.value]);
+
+  useEffect(() => {
+    if (snapshot.value !== "ready") return;
+    const clock = globalThis.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1_000);
+    return () => globalThis.clearInterval(clock);
+  }, [snapshot.value]);
 
   const connect = (event: FormEvent) => {
     event.preventDefault();
@@ -437,6 +550,16 @@ export function App({
     });
   };
 
+  const connectReadOnly = () => {
+    gatewayRef.current = gateways.createHttp(apiBaseUrl, "");
+    actor.send({
+      type: "CONNECT_REQUESTED",
+      agentName,
+      credentialPresent: false,
+      readOnly: true,
+    });
+  };
+
   const issueCommand = (command: DashboardDirectCommand) => {
     if (command === "start") {
       pendingStartRef.current = createStartConfiguration({
@@ -444,6 +567,30 @@ export function App({
         timeframe,
         strategyIds,
         executionMode,
+        ...(executionMode === "paper"
+          ? {
+              intervalSeconds: timeframe === "ONE_MINUTE" ? 60 : 300,
+              executionStyle: "LIMIT_PASSIVE" as const,
+              strategyOptions: {
+                positionAware: true,
+                maxTrendStrength: 35,
+                minRelativeVolume: 1.1,
+              },
+              indicators: {
+                rsiMode: "WILDER" as const,
+                adxWarmupMultiplier: 2,
+              },
+              risk: {
+                atrStopLossMultiple: 2,
+                atrTakeProfitMultiple: 3,
+              },
+              broker: {
+                feeBps: 6,
+                slippageBps: 2,
+                makerFeeBps: 1,
+              },
+            }
+          : {}),
       });
     }
     actor.send({ type: "COMMAND_REQUESTED", command, permissions });
@@ -538,7 +685,12 @@ export function App({
     const target = snapshot.context.agentName;
     const draft = perpUi.context.draft;
     const clientOrderId = perpUi.context.clientOrderId;
-    if (gateway === null || target === null || draft === null || clientOrderId === null) {
+    if (
+      gateway === null ||
+      target === null ||
+      draft === null ||
+      clientOrderId === null
+    ) {
       perpUiActor.send({
         type: "SUBMISSION_FAILED",
         error: { code: "REQUEST_FAILED", retryable: false },
@@ -625,6 +777,7 @@ export function App({
     perpUiActor.send({ type: "PERP_ORDER_CANCELLED" });
   };
 
+  const readOnly = snapshot.context.readOnly;
   const busy =
     snapshot.value === "loading" ||
     snapshot.value === "refreshing" ||
@@ -634,8 +787,11 @@ export function App({
     snapshot.value === "confirmingKill" ||
     snapshot.value === "commanding" ||
     snapshot.value === "refreshing";
-  const activePipeline = PIPELINE.findIndex((item) => item.phase === agent?.phase);
-  const liveStartBlocked = executionMode === "live" && liveConfirmation !== "LIVE";
+  const activePipeline = PIPELINE.findIndex(
+    (item) => item.phase === agent?.phase,
+  );
+  const liveStartBlocked =
+    executionMode === "live" && liveConfirmation !== "LIVE";
   const paperValuation = agent?.paperValuation?.ok
     ? agent.paperValuation.value
     : null;
@@ -649,73 +805,252 @@ export function App({
     (agent?.portfolioSummary.kind === "portfolio"
       ? agent.portfolioSummary.consolidated.grossExposure
       : null);
-  const equityQuality = paperValuation?.quality ??
+  const equityQuality =
+    paperValuation?.quality ??
     (agent?.paperValuation?.ok === false ? "unavailable" : null);
   const equityAge = paperValuation?.ageMs ?? null;
-  const plottedEquityCurve =
+  const portfolioProducts =
+    portfolioSummary?.kind === "portfolio" ? portfolioSummary.products : [];
+  const activeProduct =
+    portfolioProducts.length > 0
+      ? (portfolioProducts.find((p) => p.productId === selectedProductId) ??
+        portfolioProducts[0] ??
+        null)
+      : null;
+  const isConsolidatedView =
+    portfolioSummary?.kind === "portfolio" && selectedProductId === "ALL";
+  const displayProductId =
+    activeProduct?.productId ??
+    agent?.configuration?.productId ??
+    "Non configuré";
+
+  const rawEquityPoints =
     pnlHistory?.equityCurve.filter(
-      (point): point is typeof point & { readonly equity: number } => point.equity !== null,
+      (point): point is typeof point & { readonly equity: number } =>
+        point.equity !== null,
     ) ?? [];
+  const plottedEquityCurve = useMemo(() => {
+    if (selectedProductId !== "ALL") {
+      return rawEquityPoints.filter(
+        (point) => !point.productId || point.productId === selectedProductId,
+      );
+    }
+    if (
+      portfolioProducts.length > 1 &&
+      rawEquityPoints.some((point) => typeof point.productId === "string")
+    ) {
+      const latestByProduct = new Map<string, number>();
+      for (const product of portfolioProducts) {
+        const firstPoint = rawEquityPoints.find(
+          (pt) => pt.productId === product.productId,
+        );
+        latestByProduct.set(
+          product.productId,
+          firstPoint?.equity ?? product.valuation.equity ?? product.cash,
+        );
+      }
+      return rawEquityPoints.map((point) => {
+        if (typeof point.productId === "string") {
+          latestByProduct.set(point.productId, point.equity);
+        }
+        let sum = 0;
+        for (const val of latestByProduct.values()) {
+          sum += val;
+        }
+        return { ...point, equity: sum };
+      });
+    }
+    return rawEquityPoints;
+  }, [portfolioProducts, rawEquityPoints, selectedProductId]);
+  const chartGeometry = equityGeometry(plottedEquityCurve);
+
+  const allPnlCycles = pnlHistory?.cycles ?? [];
+  const allFilledCycles = allPnlCycles.filter((cycle) => cycle.side !== null);
+  const scopedPnlCycles =
+    selectedProductId === "ALL"
+      ? allPnlCycles
+      : allPnlCycles.filter(
+          (cycle) => !cycle.productId || cycle.productId === selectedProductId,
+        );
+  const filledCycles = scopedPnlCycles.filter((cycle) => cycle.side !== null);
+  const visibleBlotterCycles =
+    blotterFilter === "fills" ? filledCycles : scopedPnlCycles;
+  const totalRealizedPnl = filledCycles.reduce(
+    (acc, item) => acc + (item.realizedPnl ?? 0),
+    0,
+  );
+  const totalFees = filledCycles.reduce(
+    (acc, item) => acc + (item.fee ?? 0),
+    0,
+  );
+  const avgSlippageBps =
+    filledCycles.length === 0
+      ? 0
+      : filledCycles.reduce((acc, item) => acc + (item.slippageBps ?? 0), 0) /
+        filledCycles.length;
+
+  const stopPrice = pnlHistory?.protection?.stopLossPrice ?? null;
+  const takePrice = pnlHistory?.protection?.takeProfitPrice ?? null;
+  const entryPrice = pnlHistory?.openPosition?.averagePrice ?? null;
+  const currentMark =
+    paperValuation?.markPrice ?? agent?.lastCycle?.marketPrice ?? entryPrice;
+  const clampPercent = (price: number | null): number | null => {
+    if (
+      price === null ||
+      stopPrice === null ||
+      takePrice === null ||
+      takePrice <= stopPrice
+    ) {
+      return null;
+    }
+    return Math.min(
+      100,
+      Math.max(0, ((price - stopPrice) / (takePrice - stopPrice)) * 100),
+    );
+  };
+  const entryPercent = clampPercent(entryPrice);
+  const markPercent = clampPercent(currentMark ?? null);
+  const displayEquity = isConsolidatedView
+    ? portfolioSummary.consolidated.equity
+    : activeProduct !== null
+      ? activeProduct.valuation.equity
+      : equity;
+  const displayExposure = isConsolidatedView
+    ? portfolioSummary.consolidated.grossExposure
+    : activeProduct !== null
+      ? activeProduct.grossExposure
+      : exposure;
+  const displayDailyPnl = isConsolidatedView
+    ? portfolioSummary.consolidated.dailyPnl
+    : activeProduct !== null
+      ? activeProduct.dailyPnl
+      : (agent?.dailyPnl ?? 0);
+  const displayPositionQty = activeProduct !== null
+    ? activeProduct.positionQuantity
+    : (agent?.portfolio.positionQuantity ?? 0);
+  const displayAvgPrice = activeProduct !== null
+    ? activeProduct.averagePrice
+    : (agent?.portfolio.averagePrice ?? 0);
+  const displayCash = activeProduct !== null
+    ? activeProduct.cash
+    : (agent?.portfolio.cash ?? 0);
+  const displayPrice =
+    activeProduct?.marketPrice ??
+    paperValuation?.markPrice ??
+    agent?.lastCycle?.marketPrice ??
+    null;
+  const displayOutcome =
+    activeProduct?.lastCycle?.outcome ?? agent?.lastCycle?.outcome ?? null;
+  const decisionSummary = describeLatestDecision({
+    enabled: agent?.enabled ?? false,
+    productId: displayProductId,
+    outcome: displayOutcome,
+    price: displayPrice,
+    indicators: agent?.indicators ?? null,
+    nextWakeAt: agent?.nextWakeAt ?? null,
+    nowMs,
+  });
 
   return (
     <main className="dashboard-shell">
-      <header className="masthead">
-        <p className="eyebrow">OBSERVATOIRE · EDGE COMPUTING · CLOUDFLARE</p>
-        <div className="masthead-row">
-          <div>
-            <h1>
-              DoDash
-              <br />
-              Trading Agent
-            </h1>
-            <p className="dek">
-              Piloter la boucle, lire les signaux et garder chaque transition
-              sous contrôle.
+      <header className="telemetry-bar">
+        <div className="brand-cluster">
+          <div className="brand-mark" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M3 13h4l3-7 4 14 3-7h4"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <div className="brand-title-group">
+            <h1>DoDash Trading Agent</h1>
+            <p className="brand-subtitle">
+              Cockpit d’observation et de pilotage temps réel sur Cloudflare Durable Objects.
             </p>
           </div>
-          <div className="connection-stamp" aria-live="polite">
-            <span>SESSION</span>
-            <strong>
-              {ready ? "CONNECTÉE" : busy ? "CHARGEMENT" : "VERROUILLÉE"}
-            </strong>
-            <small>{snapshot.context.agentName ?? "aucune cible"}</small>
-          </div>
         </div>
-        <div className="rule" />
-        {/* biome-ignore lint/a11y/useSemanticElements: conteneur de présentation, fieldset altérerait le rendu */}
-        <div className="legend" role="group" aria-label="Légende système">
-          <span><i className="orange" />Agent</span>
-          <span><i className="teal" />Marché</span>
-          <span><i className="purple" />Indicateurs</span>
-          <span><i className="green" />Stratégies</span>
-          <span><i className="red" />Décision</span>
-          <span><i className="blue" />Persistance</span>
+
+        <div className="telemetry-center">
+          {ready && agent !== null && (
+            <>
+              <div className="telemetry-pill">
+                <span
+                  className={`pulse-dot ${
+                    agent.enabled ? "live" : "danger"
+                  }`}
+                />
+                <span>RÉVEIL</span>
+                <strong>{formatCountdown(agent.nextWakeAt, nowMs)}</strong>
+              </div>
+              {/* biome-ignore lint/a11y/useSemanticElements: groupe de boutons de présentation */}
+              <div
+                className="cadence-group"
+                role="group"
+                aria-label="Cadence de rafraîchissement"
+              >
+                {[
+                  { label: "5s", ms: 5_000 },
+                  { label: "15s", ms: 15_000 },
+                  { label: "30s", ms: 30_000 },
+                  { label: "Pause", ms: 0 },
+                ].map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    className={`cadence-btn ${
+                      refreshIntervalMs === opt.ms ? "active" : ""
+                    }`}
+                    onClick={() => setRefreshIntervalMs(opt.ms)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="cadence-btn"
+                disabled={busy}
+                onClick={() => actor.send({ type: "REFRESH_REQUESTED" })}
+              >
+                Rafraîchir
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="connection-stamp" aria-live="polite">
+          <span>SESSION</span>
+          <strong>
+            {ready
+              ? readOnly
+                ? "LECTURE SEULE"
+                : "CONNECTÉE"
+              : busy
+                ? "CHARGEMENT"
+                : "VERROUILLÉE"}
+          </strong>
+          <small>{snapshot.context.agentName ?? "aucune cible"}</small>
         </div>
       </header>
 
-      <section>
-        <SectionHeading
-          index="00"
-          title="WALLET BASE"
-          detail="SIGNATURE LOCALE · EIP-155:8453"
-        />
-        <BaseWalletCard
-          snapshot={wallet}
-          onConnect={connectWallet}
-          onDisconnect={disconnectWallet}
-        />
-      </section>
+      {(!ready || !readOnly) && (
+        <div className="sub-telemetry-bar">
+          <BaseWalletCard
+            snapshot={wallet}
+            onConnect={connectWallet}
+            onDisconnect={disconnectWallet}
+          />
+        </div>
+      )}
 
       {!ready ? (
         <section className="access-section">
-          <SectionHeading
-            index="01"
-            title="ACCÈS"
-            detail="OUVRIR UNE SESSION ÉPHÉMÈRE"
-          />
           <div className="access-grid">
             <form className="paper-card access-card" onSubmit={connect}>
-              <span className="card-label orange-bg">CONNEXION AU PROXY</span>
               <h2>Choisir l’agent</h2>
               <p>
                 Le token reste en mémoire vive. Il n’est ni stocké, ni placé
@@ -759,6 +1094,14 @@ export function App({
                 <button
                   className="button secondary"
                   type="button"
+                  onClick={connectReadOnly}
+                  disabled={busy}
+                >
+                  Observer sans token (lecture seule)
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
                   onClick={connectDemo}
                   disabled={busy}
                 >
@@ -767,7 +1110,6 @@ export function App({
               </div>
             </form>
             <aside className="paper-card access-note">
-              <span className="card-label green-bg">FRONTIÈRE SÛRE</span>
               <h2>Le modèle décide</h2>
               <p>
                 Le dashboard ne modifie jamais l’état affiché avant la réponse
@@ -787,366 +1129,113 @@ export function App({
           Lecture de l’état durable…
         </section>
       ) : (
-        <>
-          <section>
-            <SectionHeading
-              index="01"
-              title="ÉTAT DU BOT"
-              detail="SOURCE : DURABLE OBJECT"
-            />
-            <div className="summary-grid">
-              <article className="paper-card agent-card">
-                <div className="card-topline">
-                  <span className="card-label orange-bg">TRADING AGENT</span>
-                  <span
-                    className={`phase-badge ${agent.enabled ? "online" : "offline"}`}
-                  >
-                    {phaseLabel(agent.phase)}
-                  </span>
-                </div>
-                <h2>{agent.configuration?.productId ?? "Non configuré"}</h2>
-                <p className="agent-meta">
-                  {agent.configuration?.executionMode.toUpperCase() ?? "—"} ·{" "}
-                  {agent.configuration?.timeframe.replaceAll("_", " ") ?? "—"}
-                </p>
-                <div className="metric-grid">
-                  <Metric
-                    label="ÉQUITÉ"
-                    value={equity === null ? "—" : money.format(equity)}
-                    accent="blue-text"
-                  />
-                  <Metric
-                    label="EXPOSITION"
-                    value={exposure === null ? "INDISPONIBLE" : money.format(exposure)}
-                    accent="blue-text"
-                  />
-                  <Metric
-                    label="PNL JOUR"
-                    value={money.format(agent.dailyPnl)}
-                    accent={agent.dailyPnl >= 0 ? "green-text" : "red-text"}
-                  />
-                  <Metric
-                    label="POSITION"
-                    value={quantity.format(agent.portfolio.positionQuantity)}
-                  />
-                  <Metric
-                    label="PRIX MOYEN"
-                    value={money.format(agent.portfolio.averagePrice)}
-                  />
-                </div>
-                {agent.configuration?.executionMode === "paper" && (
-                  <p className="next-wake" aria-live="polite">
-                    Mark {equityQuality === "fresh" ? "frais" : equityQuality === "stale" ? "périmé" : "indisponible"}
-                    {equityAge === null ? "" : ` · âge ${Math.round(equityAge / 1_000)} s`}
-                    {paperValuation?.markPrice === null || paperValuation?.markPrice === undefined
-                      ? " · aucun close daté"
-                      : ` · close ${money.format(paperValuation.markPrice)}`}
-                  </p>
-                )}
-              </article>
-
-              <article className="paper-card control-card">
-                <div className="card-topline">
-                  <span className="card-label red-bg">CONTRÔLE</span>
-                  <span className="sync-time">
-                    MAJ {compactDate.format(agent.updatedAt)}
-                  </span>
-                </div>
-                <h2>Piloter la boucle</h2>
-                <div className="control-buttons">
-                  <button
-                    className="button primary"
-                    type="button"
-                    onClick={() => issueCommand("tick")}
-                    disabled={busy || !agent.enabled}
-                  >
-                    Exécuter maintenant
-                  </button>
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={() => issueCommand("stop")}
-                    disabled={busy || !agent.enabled}
-                  >
-                    Arrêter
-                  </button>
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={() => issueCommand("reset")}
-                    disabled={
-                      busy ||
-                      (agent.phase !== "failed" && agent.phase !== "halted")
-                    }
-                  >
-                    Réinitialiser
-                  </button>
-                  <button
-                    className="button danger"
-                    type="button"
-                    onClick={() =>
-                      actor.send({
-                        type: "KILL_CONFIRMATION_REQUESTED",
-                        permissions,
-                      })
-                    }
-                    disabled={busy || !agent.enabled}
-                  >
-                    Kill switch
-                  </button>
-                </div>
-                <p className="next-wake">
-                  Prochain réveil :{" "}
-                  {agent.nextWakeAt === null
-                    ? "aucun"
-                    : compactDate.format(agent.nextWakeAt)}
-                </p>
-                <button
-                  className="text-button"
-                  type="button"
-                  onClick={() => actor.send({ type: "DISCONNECT_REQUESTED" })}
-                >
-                  Fermer la session
-                </button>
-              </article>
-            </div>
-          </section>
-
-          <section>
-            <SectionHeading
-              index="02"
-              title="BOUCLE D’EXÉCUTION"
-              detail="UNE TRANSITION À LA FOIS"
-            />
-            {/* biome-ignore lint/a11y/useSemanticElements: conteneur de présentation, fieldset altérerait le rendu */}
-            <div className="pipeline" role="group" aria-label={`Phase courante : ${phaseLabel(agent.phase)}`}>
-              {PIPELINE.map((item, index) => (
-                <div
-                  key={item.phase}
-                  className={`pipeline-step ${item.color} ${
-                    index === activePipeline ? "active" : ""
-                  }`}
-                >
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <strong>{item.label}</strong>
-                  <small>{index === activePipeline ? "EN COURS" : "CONTRÔLÉ"}</small>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="detail-grid">
-            <div>
-              <SectionHeading
-                index="03"
-                title="STRATÉGIES"
-                detail="SIGNAUX NORMALISÉS"
-              />
-              <div className="strategy-list">
-                {(agent.configuration?.strategyIds ?? []).map((strategy) => (
-                  <article className="paper-card strategy-card" key={strategy}>
-                    <span className="card-label green-bg">ACTIVE</span>
-                    <h3>{strategy}</h3>
-                    <p>
-                      Évalue les mêmes chandelles, puis transmet un signal typé
-                      à l’allocateur.
-                    </p>
-                  </article>
-                ))}
+        <div className="narrative-shell">
+          {/* 1. HERO NARRATIVE DECISION BANNER */}
+          <section className={`paper-card decision-banner tone-${decisionSummary.tone}`}>
+            <div className="decision-banner-top">
+              <div className="decision-banner-title">
+                <span className={`outcome ${decisionSummary.tone}`}>
+                  {decisionSummary.badge}
+                </span>
+                <h2>{decisionSummary.headline}</h2>
               </div>
-            </div>
-            <div>
-              <SectionHeading
-                index="04"
-                title="INDICATEURS"
-                detail="CALCUL PUR PROLOG"
-              />
-              <article className="paper-card indicator-card">
-                {agent.indicators === null ? (
-                  <p>Aucun snapshot calculé.</p>
-                ) : (
-                  <dl>
-                    <div><dt>RSI</dt><dd>{agent.indicators.rsi.toFixed(2)}</dd></div>
-                    <div><dt>EMA RAPIDE</dt><dd>{money.format(agent.indicators.emaFast)}</dd></div>
-                    <div><dt>EMA LENTE</dt><dd>{money.format(agent.indicators.emaSlow)}</dd></div>
-                    <div><dt>MACD</dt><dd>{agent.indicators.macd.toFixed(2)}</dd></div>
-                    <div><dt>ATR</dt><dd>{agent.indicators.atr.toFixed(2)}</dd></div>
-                  </dl>
-                )}
-              </article>
-            </div>
-          </section>
-
-          {!agent.enabled && agent.phase === "stopped" && (
-            <section>
-              <SectionHeading
-                index="05"
-                title="DÉMARRAGE"
-                detail="CONFIGURATION STRUCTURÉE"
-              />
-              <article className="paper-card start-card">
-                <div className="start-fields">
-                  {/* biome-ignore lint/a11y/noLabelWithoutControl: le ternaire contient toujours un select ou un input */}
-                  <label>
-                    Produit
-                    {executionMode === "live" ? (
-                      <select
-                        value={productId}
-                        onChange={(event) => setProductId(event.target.value)}
-                      >
-                        {LIVE_TRADING_PRODUCTS.map((product) => (
-                          <option key={product} value={product}>{product}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        value={productId}
-                        onChange={(event) =>
-                          setProductId(event.target.value.toUpperCase())
-                        }
-                      />
-                    )}
-                  </label>
-                  <label>
-                    Timeframe
-                    <select
-                      value={timeframe}
-                      disabled={executionMode === "live"}
-                      onChange={(event) => setTimeframe(event.target.value)}
+              {portfolioProducts.length > 0 && (
+                /* biome-ignore lint/a11y/useSemanticElements: groupe de boutons de présentation */
+                <div className="cadence-group pair-switcher" role="group" aria-label="Sélection de paire">
+                  <button
+                    type="button"
+                    className={`cadence-btn ${selectedProductId === "ALL" ? "active" : ""}`}
+                    onClick={() => setSelectedProductId("ALL")}
+                  >
+                    Toutes
+                  </button>
+                  {portfolioProducts.map((p) => (
+                    <button
+                      key={p.productId}
+                      type="button"
+                      className={`cadence-btn ${selectedProductId === p.productId ? "active" : ""}`}
+                      aria-label={`Afficher ${p.productId}`}
+                      onClick={() => setSelectedProductId(p.productId)}
                     >
-                      <option value="ONE_MINUTE">1 minute</option>
-                      <option value="FIVE_MINUTE">5 minutes</option>
-                      <option value="ONE_HOUR">1 heure</option>
-                      <option value="ONE_DAY">1 jour</option>
-                    </select>
-                  </label>
-                  <label>
-                    Exécution
-                    <select
-                      value={executionMode}
-                      onChange={(event) =>
-                        selectExecutionMode(
-                          event.target.value as "paper" | "live",
-                        )
-                      }
-                    >
-                      <option value="paper">Paper</option>
-                      <option value="live">Live</option>
-                    </select>
-                  </label>
+                      {p.productId.split("-")[0]}
+                    </button>
+                  ))}
                 </div>
-                <fieldset>
-                  <legend>Stratégies</legend>
-                  {["rsi-reversion", "ema-cross", "breakout"].map((strategy) => (
-                    <label className="check-label" key={strategy}>
-                      <input
-                        type="checkbox"
-                        checked={strategyIds.includes(strategy)}
-                        disabled={executionMode === "live"}
-                        onChange={() => toggleStrategy(strategy)}
-                      />
-                      {strategy}
-                    </label>
-                  ))}
-                </fieldset>
-                {executionMode === "live" && (
-                  <label className="live-confirmation">
-                    Confirmer en saisissant LIVE
-                    <input
-                      value={liveConfirmation}
-                      onChange={(event) => setLiveConfirmation(event.target.value)}
-                      autoComplete="off"
-                    />
-                  </label>
-                )}
-                <button
-                  className="button primary"
-                  type="button"
-                  onClick={() => issueCommand("start")}
-                  disabled={
-                    busy || strategyIds.length === 0 || liveStartBlocked
-                  }
-                >
-                  Démarrer l’agent
-                </button>
-              </article>
-            </section>
-          )}
-
-          <section>
-            <SectionHeading
-              index="06"
-              title="HISTORIQUE"
-              detail="CYCLES PERSISTÉS SQLITE"
-            />
-            <div className="paper-card table-card">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Cycle</th>
-                    <th>Déclenché</th>
-                    <th>Issue</th>
-                    <th>Phase finale</th>
-                    <th>Durée</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cycles.map((cycle) => (
-                    <tr key={cycle.cycleId}>
-                      <td><code>{cycle.cycleId}</code></td>
-                      <td>{compactDate.format(cycle.triggeredAt)}</td>
-                      <td>
-                        <span className={`outcome ${outcomeClass(cycle.outcome)}`}>
-                          {cycle.outcome}
-                        </span>
-                      </td>
-                      <td>{cycle.phase}</td>
-                      <td>
-                        {cycle.completedAt === null
-                          ? "—"
-                          : `${(
-                              (cycle.completedAt - cycle.triggeredAt) /
-                              1_000
-                            ).toFixed(1)} s`}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {cycles.length === 0 && (
-                <p className="empty-state">Aucun cycle persisté.</p>
+              )}
+            </div>
+            <p className="decision-explanation">{decisionSummary.explanation}</p>
+            <div className="decision-meta-row">
+              <span>
+                Mode : <strong>{agent.configuration?.executionMode.toUpperCase() ?? "PAPER"}</strong> ·{" "}
+                {agent.configuration?.timeframe.replaceAll("_", " ") ?? "ONE MINUTE"}
+              </span>
+              {agent.configuration?.executionMode === "paper" && (
+                <span>
+                  Prix mark{" "}
+                  {equityQuality === "fresh"
+                    ? "à jour"
+                    : equityQuality === "stale"
+                      ? "périmé"
+                      : "indisponible"}
+                  {equityAge === null ? "" : ` (${Math.round(equityAge / 1_000)} s)`}
+                </span>
               )}
             </div>
           </section>
 
-          <section>
-            <SectionHeading
-              index="07"
-              title="PERFORMANCE"
-              detail="PROJECTION SQLITE · LECTURE SEULE"
-            />
-            {pnlHistory === null ? null : (
-              <>
-                <article className="paper-card equity-card">
-                  <div className="card-topline">
-                    <span className="card-label blue-bg">COURBE D’ÉQUITÉ</span>
-                    <span className="sync-time">
-                      {pnlHistory.equityCurve.length} POINTS
-                    </span>
-                  </div>
-                  {plottedEquityCurve.length < 2 ? (
-                    <p className="empty-state">Aucun point d’équité.</p>
-                  ) : (
-                    <svg
-                      className="equity-chart"
-                      viewBox="0 0 600 160"
-                      preserveAspectRatio="none"
-                      role="img"
-                      aria-label="Courbe d’équité"
-                    >
-                      <path d={equityPath(plottedEquityCurve)} />
-                    </svg>
-                  )}
+          {/* 2. 3-CARD DIGESTIBLE SUMMARY ROW */}
+          <div className="summary-trio">
+            {/* Card 1: Capital & PnL */}
+            <article className="paper-card">
+              <div className="module-header">
+                <h2>{isConsolidatedView ? "Capital consolidé" : `Capital · ${displayProductId}`}</h2>
+                <span className={`phase-badge ${agent.enabled ? "online" : "offline"}`}>
+                  {phaseLabel(agent.phase)}
+                </span>
+              </div>
+              <div className="metric-grid">
+                <Metric
+                  label="ÉQUITÉ"
+                  value={displayEquity === null ? "—" : money.format(displayEquity)}
+                  accent="blue-text"
+                />
+                <Metric
+                  label="PNL JOUR"
+                  value={money.format(displayDailyPnl)}
+                  accent={displayDailyPnl >= 0 ? "green-text" : "red-text"}
+                />
+                <Metric
+                  label="EXPOSITION"
+                  value={displayExposure === null ? "INDISPONIBLE" : money.format(displayExposure)}
+                  accent="blue-text"
+                />
+                <Metric
+                  label="TRÉSORERIE"
+                  value={money.format(displayCash)}
+                />
+              </div>
+            </article>
+
+            {/* Card 2: Position & Protections */}
+            <article className="paper-card">
+              <div className="module-header">
+                <h2>Position ouverte · {displayProductId}</h2>
+                <span className="sync-time">
+                  {displayPrice === null ? "—" : money.format(displayPrice)}
+                </span>
+              </div>
+              <div className="metric-grid" style={{ marginBottom: "12px" }}>
+                <Metric
+                  label="POSITION"
+                  value={quantity.format(displayPositionQty)}
+                />
+                <Metric
+                  label="PRIX MOYEN"
+                  value={money.format(displayAvgPrice)}
+                />
+              </div>
+              {pnlHistory !== null && (
+                <div className="protection-panel" style={{ marginTop: 0 }}>
                   {/* biome-ignore lint/a11y/useSemanticElements: groupe de badges de présentation */}
                   <div
                     className="protection-badges"
@@ -1154,7 +1243,7 @@ export function App({
                     aria-label="Position et protections"
                   >
                     {pnlHistory.openPosition === null ? (
-                      <span className="outcome neutral">PLAT</span>
+                      <span className="outcome neutral">AUCUNE POSITION</span>
                     ) : (
                       <>
                         <span className="outcome neutral">
@@ -1186,79 +1275,366 @@ export function App({
                       </>
                     )}
                   </div>
-                </article>
-                <div className="paper-card table-card">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Cycle</th>
-                        <th>Déclenché</th>
-                        <th>Issue</th>
-                        <th>Sens</th>
-                        <th>Quantité</th>
-                        <th>Prix exec.</th>
-                        <th>PnL réalisé</th>
-                        <th>Frais</th>
-                        <th>Slippage</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pnlHistory.cycles.map((cycle) => (
-                        <tr key={cycle.cycleId}>
-                          <td><code>{cycle.cycleId}</code></td>
-                          <td>{compactDate.format(cycle.triggeredAt)}</td>
-                          <td>
-                            <span className={`outcome ${outcomeClass(cycle.outcome)}`}>
-                              {cycle.outcome}
-                            </span>
-                          </td>
-                          <td>{cycle.side ?? "—"}</td>
-                          <td>{cycle.quantity === null ? "—" : quantity.format(cycle.quantity)}</td>
-                          <td>{cycle.fillPrice === null ? "—" : money.format(cycle.fillPrice)}</td>
-                          <td>
-                            {cycle.realizedPnl === null ? (
-                              "—"
-                            ) : (
-                              <span className={signedClass(cycle.realizedPnl)}>
-                                {money.format(cycle.realizedPnl)}
-                              </span>
-                            )}
-                          </td>
-                          <td>{cycle.fee === null ? "—" : money.format(cycle.fee)}</td>
-                          <td>
-                            {cycle.slippageBps === null ? (
-                              "—"
-                            ) : (
-                              <span className={signedClass(-cycle.slippageBps)}>
-                                {cycle.slippageBps >= 0 ? "+" : ""}
-                                {bps.format(cycle.slippageBps)} bps
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {pnlHistory.cycles.length === 0 && (
-                    <p className="empty-state">Aucun cycle dans la fenêtre.</p>
-                  )}
+                  {pnlHistory.openPosition !== null &&
+                    pnlHistory.protection !== null &&
+                    entryPercent !== null && (
+                      <div className="protection-scale">
+                        <div className="protection-track">
+                          <div
+                            className="protection-marker entry"
+                            style={{ left: `${entryPercent}%` }}
+                            title="Prix moyen d'entrée"
+                          />
+                          {markPercent !== null && (
+                            <div
+                              className="protection-marker mark"
+                              style={{ left: `${markPercent}%` }}
+                              title="Prix de marque actuel"
+                            />
+                          )}
+                        </div>
+                        <div className="protection-scale-labels">
+                          <div>
+                            <small>SL</small>
+                            <strong>{money.format(pnlHistory.protection.stopLossPrice)}</strong>
+                          </div>
+                          <div>
+                            <small>Entrée</small>
+                            <strong>{money.format(pnlHistory.openPosition.averagePrice)}</strong>
+                          </div>
+                          <div>
+                            <small>TP</small>
+                            <strong>{money.format(pnlHistory.protection.takeProfitPrice)}</strong>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                </div>
+              )}
+            </article>
+
+            {/* Card 3: Market Health (Translated Indicators) */}
+            <article className="paper-card indicator-card">
+              <div className="module-header">
+                <h2>Santé du marché</h2>
+                <span className="sync-time">INDICATEURS</span>
+              </div>
+              {agent.indicators === null ? (
+                <p className="empty-state">Aucun snapshot calculé.</p>
+              ) : (
+                <>
+                  <div className="rsi-meter">
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "0.75rem",
+                      }}
+                    >
+                      <span style={{ color: "var(--fg-muted)" }}>
+                        RSI · {describeRsiZone(agent.indicators.rsi).label}
+                      </span>
+                      <strong>{agent.indicators.rsi.toFixed(1)}</strong>
+                    </div>
+                    <div className="rsi-meter-bar">
+                      <div
+                        className="rsi-meter-Thumb"
+                        style={{
+                          left: `${Math.min(100, Math.max(0, agent.indicators.rsi))}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Tendance EMA</dt>
+                      <dd className={agent.indicators.emaFast >= agent.indicators.emaSlow ? "pnl-positive" : "pnl-negative"}>
+                        {agent.indicators.emaFast >= agent.indicators.emaSlow ? "Haussière" : "Baissière"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>MACD</dt>
+                      <dd>{agent.indicators.macd.toFixed(2)}</dd>
+                    </div>
+                    <div>
+                      <dt>Volatilité (ATR)</dt>
+                      <dd>{agent.indicators.atr.toFixed(2)}</dd>
+                    </div>
+                  </dl>
+                </>
+              )}
+            </article>
+          </div>
+
+          {/* 3. EQUITY CURVE & LIVE ACTIVITY FEED (OPTIMIZED 13.3" SPLIT) */}
+          <section className="paper-card performance-card">
+            <div className="module-header performance-header">
+              <div className="performance-title-cluster">
+                <h2>PERFORMANCE</h2>
+                <span className="scope-pill">
+                  {isConsolidatedView
+                    ? `Portefeuille consolidé (${portfolioProducts.length} paires)`
+                    : `Portefeuille : ${displayProductId.replace("-", "/")}`}
+                </span>
+              </div>
+              <div className="performance-header-right">
+                {portfolioProducts.length > 0 && (
+                  /* biome-ignore lint/a11y/useSemanticElements: groupe de boutons de présentation */
+                  <div
+                    className="cadence-group"
+                    role="group"
+                    aria-label="Filtrer la performance par portefeuille"
+                  >
+                    <button
+                      type="button"
+                      className={`cadence-btn ${selectedProductId === "ALL" ? "active" : ""}`}
+                      onClick={() => setSelectedProductId("ALL")}
+                    >
+                      Toutes ({allFilledCycles.length})
+                    </button>
+                    {portfolioProducts.map((p) => {
+                      const pairFillCount = allFilledCycles.filter(
+                        (c) => c.productId === p.productId,
+                      ).length;
+                      const shortSymbol = p.productId.split("-")[0] ?? p.productId;
+                      return (
+                        <button
+                          key={p.productId}
+                          type="button"
+                          className={`cadence-btn ${selectedProductId === p.productId ? "active" : ""}`}
+                          onClick={() => setSelectedProductId(p.productId)}
+                        >
+                          {shortSymbol} ({pairFillCount})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <span className="sync-time">
+                  {pnlHistory ? `${plottedEquityCurve.length} POINTS` : "—"}
+                </span>
+              </div>
+            </div>
+
+            {pnlHistory !== null && (
+              <>
+                <div className="kpi-strip">
+                  <div className="kpi-cell">
+                    <span>Trades exécutés</span>
+                    <strong>{filledCycles.length}</strong>
+                  </div>
+                  <div className="kpi-cell">
+                    <span>PnL réalisé</span>
+                    <strong className={signedClass(totalRealizedPnl)}>
+                      {money.format(totalRealizedPnl)}
+                    </strong>
+                  </div>
+                  <div className="kpi-cell">
+                    <span>Frais cumulés</span>
+                    <strong>{money.format(totalFees)}</strong>
+                  </div>
+                  <div className="kpi-cell">
+                    <span>Slippage moyen</span>
+                    <strong>{bps.format(avgSlippageBps)} bps moy.</strong>
+                  </div>
+                </div>
+
+                <div className="performance-split">
+                  <div className="equity-chart-container">
+                    {plottedEquityCurve.length < 2 ? (
+                      <p className="empty-state">Aucun point d’équité.</p>
+                    ) : (
+                      <>
+                        <div className="equity-chart-bounds">
+                          <span>
+                            Min {money.format(Math.min(...plottedEquityCurve.map((p) => p.equity)))}
+                          </span>
+                          <span>
+                            Dernier {money.format(plottedEquityCurve.at(-1)?.equity ?? 0)}
+                          </span>
+                          <span>
+                            Max {money.format(Math.max(...plottedEquityCurve.map((p) => p.equity)))}
+                          </span>
+                        </div>
+                        <svg
+                          className="equity-chart"
+                          viewBox="0 0 600 160"
+                          preserveAspectRatio="none"
+                          role="img"
+                          aria-label="Courbe d’équité"
+                        >
+                          <line x1="0" y1="32" x2="600" y2="32" className="grid-line" />
+                          <line x1="0" y1="80" x2="600" y2="80" className="grid-line" />
+                          <line x1="0" y1="128" x2="600" y2="128" className="grid-line" />
+                          <path className="area" d={chartGeometry.area} />
+                          <path className="line" d={chartGeometry.line} />
+                          {chartGeometry.lastPoint !== null && (
+                            <circle
+                              className="terminal-node"
+                              cx={chartGeometry.lastPoint.x}
+                              cy={chartGeometry.lastPoint.y}
+                              r="4"
+                            />
+                          )}
+                        </svg>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="blotter-pane">
+                    <div className="blotter-toolbar">
+                      <h3>Fil d’activité en direct</h3>
+                      {/* biome-ignore lint/a11y/useSemanticElements: groupe de boutons de présentation */}
+                      <div className="cadence-group" role="group" aria-label="Filtre des trades">
+                        <button
+                          type="button"
+                          className={`cadence-btn ${blotterFilter === "all" ? "active" : ""}`}
+                          onClick={() => setBlotterFilter("all")}
+                        >
+                          Tous ({scopedPnlCycles.length})
+                        </button>
+                        <button
+                          type="button"
+                          className={`cadence-btn ${blotterFilter === "fills" ? "active" : ""}`}
+                          onClick={() => setBlotterFilter("fills")}
+                        >
+                          Trades exécutés ({filledCycles.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="table-card blotter-table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Portefeuille</th>
+                            <th>Heure</th>
+                            <th>Sens</th>
+                            <th>Quantité</th>
+                            <th>Prix</th>
+                            <th>PnL réalisé</th>
+                            <th>Frais</th>
+                            <th>Slippage</th>
+                            <th>Décision</th>
+                            <th>Cycle</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleBlotterCycles.map((cycle) => {
+                            const resolvedPair =
+                              cycle.productId ??
+                              (portfolioProducts.length === 0
+                                ? (agent.configuration?.productId ?? null)
+                                : null);
+                            const pairBase =
+                              resolvedPair === null
+                                ? "—"
+                                : (resolvedPair.split("-")[0] ?? resolvedPair);
+                            const pairLabel =
+                              resolvedPair === null
+                                ? "—"
+                                : resolvedPair.replace("-", "/");
+                            return (
+                              <tr
+                                key={cycle.cycleId}
+                                className={
+                                  cycle.side === "BUY"
+                                    ? "fill-row-buy"
+                                    : cycle.side === "SELL"
+                                      ? "fill-row-sell"
+                                      : ""
+                                }
+                              >
+                                <td>
+                                  {resolvedPair === null ? (
+                                    "—"
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={`pair-pill pair-${pairBase.toLowerCase()}`}
+                                      title={`Filtrer sur ${resolvedPair}`}
+                                      onClick={() =>
+                                        setSelectedProductId((current) =>
+                                          current === resolvedPair ? "ALL" : resolvedPair,
+                                        )
+                                      }
+                                    >
+                                      {pairLabel}
+                                    </button>
+                                  )}
+                                </td>
+                                <td>{compactDate.format(cycle.triggeredAt)}</td>
+                                <td>
+                                  {cycle.side === null ? (
+                                    "—"
+                                  ) : (
+                                    <span className={`side-pill ${cycle.side.toLowerCase()}`}>
+                                      {cycle.side === "BUY" ? "ACHAT" : "VENTE"}
+                                    </span>
+                                  )}
+                                </td>
+                                <td>{cycle.quantity === null ? "—" : quantity.format(cycle.quantity)}</td>
+                                <td>{cycle.fillPrice === null ? (cycle.marketPrice === null ? "—" : money.format(cycle.marketPrice)) : money.format(cycle.fillPrice)}</td>
+                                <td>
+                                  {cycle.realizedPnl === null ? (
+                                    "—"
+                                  ) : (
+                                    <span className={signedClass(cycle.realizedPnl)}>
+                                      {money.format(cycle.realizedPnl)}
+                                    </span>
+                                  )}
+                                </td>
+                                <td>{cycle.fee === null ? "—" : money.format(cycle.fee)}</td>
+                                <td>
+                                  {cycle.slippageBps === null ? (
+                                    "—"
+                                  ) : (
+                                    <span className={signedClass(-cycle.slippageBps)}>
+                                      {cycle.slippageBps >= 0 ? "+" : ""}
+                                      {bps.format(cycle.slippageBps)} bps
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  <span className={`outcome ${outcomeClass(cycle.outcome)}`}>
+                                    {outcomeLabel(cycle.outcome)}
+                                  </span>
+                                </td>
+                                <td><code>{cycle.cycleId}</code></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {visibleBlotterCycles.length === 0 && (
+                        <p className="empty-state">Aucun cycle dans la fenêtre.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </>
             )}
           </section>
 
+          {/* 4. PORTFOLIO OVERVIEW (WHEN MULTI-PRODUCT) */}
           {portfolioSummary?.kind === "portfolio" && (
-            <section>
-              <SectionHeading
-                index="08"
-                title="PORTEFEUILLE"
-                detail="VUE MULTI-PRODUITS · LECTURE SEULE"
-              />
+            <section className="paper-card">
+              <div className="module-header">
+                <h2>PORTEFEUILLE</h2>
+                <span className="sync-time">VUE PAR PAIRE</span>
+              </div>
               <div className="portfolio-grid">
                 {portfolioSummary.products.map((product) => (
-                  <article className="paper-card product-card" key={product.productId}>
-                    <div className="card-topline">
-                      <span className="card-label teal-bg">{product.productId}</span>
+                  <article className="product-card" key={product.productId}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <strong>{product.productId}</strong>
                       <span
                         className={`phase-badge ${
                           product.status === "running" ? "online" : "offline"
@@ -1271,7 +1647,11 @@ export function App({
                     <div className="metric-grid">
                       <Metric
                         label="EXPOSITION"
-                        value={product.grossExposure === null ? "INDISPONIBLE" : money.format(product.grossExposure)}
+                        value={
+                          product.grossExposure === null
+                            ? "INDISPONIBLE"
+                            : money.format(product.grossExposure)
+                        }
                         accent="blue-text"
                       />
                       <Metric
@@ -1289,20 +1669,22 @@ export function App({
                       />
                     </div>
                     <p className="next-wake">
-                      Valorisation {product.valuation.quality} · exposition {product.exposureQuality}
-                      {product.valuation.ageMs === null ? "" : ` · mark âgé de ${Math.round(product.valuation.ageMs / 1_000)} s`}
-                    </p>
-                    <p className="next-wake">
                       Dernier cycle :{" "}
                       {product.lastCycle === null
                         ? "aucun"
-                        : `${product.lastCycle.outcome} · ${compactDate.format(product.lastCycle.completedAt)}`}
+                        : `${outcomeLabel(product.lastCycle.outcome)} · ${compactDate.format(product.lastCycle.completedAt)}`}
                     </p>
                   </article>
                 ))}
-                <article className="paper-card consolidated-card">
-                  <div className="card-topline">
-                    <span className="card-label orange-bg">CONSOLIDÉ</span>
+                <article className="consolidated-card">
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <strong>CONSOLIDÉ</strong>
                     <span
                       className={`phase-badge ${
                         portfolioSummary.killSwitchActive ? "offline" : "online"
@@ -1317,12 +1699,20 @@ export function App({
                   <div className="metric-grid">
                     <Metric
                       label="EXPOSITION CONSOLIDÉE"
-                      value={portfolioSummary.consolidated.grossExposure === null ? "INDISPONIBLE" : money.format(portfolioSummary.consolidated.grossExposure)}
+                      value={
+                        portfolioSummary.consolidated.grossExposure === null
+                          ? "INDISPONIBLE"
+                          : money.format(portfolioSummary.consolidated.grossExposure)
+                      }
                       accent="blue-text"
                     />
                     <Metric
                       label="ÉQUITÉ CONSOLIDÉE"
-                      value={portfolioSummary.consolidated.equity === null ? "INDISPONIBLE" : money.format(portfolioSummary.consolidated.equity)}
+                      value={
+                        portfolioSummary.consolidated.equity === null
+                          ? "INDISPONIBLE"
+                          : money.format(portfolioSummary.consolidated.equity)
+                      }
                     />
                     <Metric
                       label="PLAFOND PORTEFEUILLE"
@@ -1332,7 +1722,9 @@ export function App({
                       label="PNL JOUR CONSOLIDÉ"
                       value={money.format(portfolioSummary.consolidated.dailyPnl)}
                       accent={
-                        portfolioSummary.consolidated.dailyPnl >= 0 ? "green-text" : "red-text"
+                        portfolioSummary.consolidated.dailyPnl >= 0
+                          ? "green-text"
+                          : "red-text"
                       }
                     />
                     <Metric
@@ -1340,190 +1732,447 @@ export function App({
                       value={money.format(portfolioSummary.consolidated.maxDailyLoss)}
                     />
                   </div>
-                  <p className="next-wake">
-                    {portfolioSummary.products.length} produits · lecture seule, aucune décision
-                    automatique · valuation {portfolioSummary.consolidated.valuationQuality} · exposition {portfolioSummary.consolidated.exposureQuality}
-                  </p>
                 </article>
               </div>
             </section>
           )}
 
-          <section>
-            <SectionHeading
-              index="09"
-              title="PERPÉTUELS · HYPERLIQUID"
-              detail="ORDRE OPÉRATEUR · GARDES SERVEUR"
-            />
-            <article className="paper-card perp-card">
-              <div className="card-topline">
-                <span className="card-label blue-bg">INTENTION PERP</span>
-                <span className="phase-badge offline">
-                  {perpUi.value === "submitting" ? "SOUMISSION" : "MANUEL"}
-                </span>
+          {/* 5. LOOP CONTROL STRIP */}
+          <article className="paper-card control-card">
+            <div className="module-header">
+              <h2>Piloter la boucle</h2>
+              <span className="sync-time">MAJ {compactDate.format(agent.updatedAt)}</span>
+            </div>
+            <div className="control-strip">
+              <div className="control-buttons-inline">
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => issueCommand("tick")}
+                  disabled={readOnly || busy || !agent.enabled}
+                >
+                  Exécuter maintenant
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => issueCommand("stop")}
+                  disabled={readOnly || busy || !agent.enabled}
+                >
+                  Arrêter
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => issueCommand("reset")}
+                  disabled={
+                    readOnly ||
+                    busy ||
+                    (agent.phase !== "failed" && agent.phase !== "halted")
+                  }
+                >
+                  Réinitialiser
+                </button>
+                <button
+                  className="button danger"
+                  type="button"
+                  onClick={() =>
+                    actor.send({
+                      type: "KILL_CONFIRMATION_REQUESTED",
+                      permissions,
+                    })
+                  }
+                  disabled={readOnly || busy || !agent.enabled}
+                >
+                  Kill switch
+                </button>
               </div>
-              <h2>Ordre manuel sur l'enveloppe figée</h2>
-              <p>
-                Marchés BTC-PERP et ETH-PERP, levier ≤{" "}
-                {HYPERLIQUID_PERP_POLICY.maxLeverage}x. Position et exposition
-                sont lues sur le compte ; le PnL journalier reste votre entrée.
-              </p>
-              {perpUi.context.lastRefusal !== null && (
-                <p className="error-note" role="alert">
-                  {perpUi.context.lastRefusal}
-                </p>
-              )}
-              {perpUi.value === "result" && (
-                <p className="next-wake" aria-live="polite">
-                  {perpUi.context.result?.status === "SETTLED"
-                    ? `ORDRE ${perpUi.context.result.outcome} · ${perpUi.context.result.clientOrderId}`
-                    : perpUi.context.result?.status === "REFUSED"
-                      ? `REFUSÉ · ${perpUi.context.result.reasonCode}`
-                      : perpUi.context.result?.status === "FAILED"
-                        ? `ÉCHEC · ${perpUi.context.result.errorCode}`
-                        : perpUi.context.lastError?.code ?? "—"}
-                </p>
-              )}
-              {perpUi.value === "form" && (
-                <div className="start-fields">
-                  <label>
-                    Marché
-                    <select
-                      value={perpDraft.productId}
-                      onChange={(event) =>
-                        setPerpDraft((current) => ({
-                          ...current,
-                          productId: event.target.value as PerpOrderFormDraft["productId"],
-                        }))
-                      }
-                    >
-                      {HYPERLIQUID_PERP_POLICY.products.map((product) => (
-                        <option key={product} value={product}>{product}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Sens
-                    <select
-                      value={perpDraft.side}
-                      onChange={(event) =>
-                        setPerpDraft((current) => ({
-                          ...current,
-                          side: event.target.value as PerpOrderFormDraft["side"],
-                        }))
-                      }
-                    >
-                      <option value="BUY">Achat (long)</option>
-                      <option value="SELL">Vente (short)</option>
-                    </select>
-                  </label>
-                  <label>
-                    Quantité
-                    <input
-                      value={perpDraft.quantity}
-                      inputMode="decimal"
-                      onChange={(event) =>
-                        setPerpDraft((current) => ({
-                          ...current,
-                          quantity: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Prix de marque
-                    <input
-                      value={perpDraft.markPrice}
-                      inputMode="decimal"
-                      onChange={(event) =>
-                        setPerpDraft((current) => ({
-                          ...current,
-                          markPrice: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </label>
-                  <label>
-                    Levier (×{HYPERLIQUID_PERP_POLICY.maxLeverage} max)
-                    <select
-                      value={perpDraft.leverage}
-                      onChange={(event) =>
-                        setPerpDraft((current) => ({
-                          ...current,
-                          leverage: Number(event.target.value),
-                        }))
-                      }
-                    >
-                      {Array.from(
-                        { length: HYPERLIQUID_PERP_POLICY.maxLeverage },
-                        (_, index) => index + 1,
-                      ).map((value) => (
-                        <option key={value} value={value}>{value}x</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    PnL journalier (USD)
-                    <input
-                      value={perpDraft.dailyPnl}
-                      inputMode="decimal"
-                      onChange={(event) =>
-                        setPerpDraft((current) => ({
-                          ...current,
-                          dailyPnl: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-              )}
-              <div className="button-row">
-                {perpUi.value === "form" && (
+              <div className="control-meta">
+                {readOnly && (
+                  <span className="agent-meta">
+                    Mode lecture seule actif — aucune action de trading autorisée.
+                  </span>
+                )}
+                <button
+                  className="text-button"
+                  type="button"
+                  onClick={() => actor.send({ type: "DISCONNECT_REQUESTED" })}
+                >
+                  {readOnly ? "Déverrouiller avec un token" : "Fermer la session"}
+                </button>
+              </div>
+            </div>
+          </article>
+
+          {/* 6. COLLAPSIBLE EXPERT DRAWER (Pipeline XState, Stratégies, Start Form, SQLite & Perp Ticket) */}
+          <details className="paper-card expert-drawer" open={!readOnly}>
+            <summary className="expert-drawer-summary">
+              <span>Détails techniques, boucle XState & réglages avancés</span>
+              <span className="sync-time">
+                {readOnly ? "REPLIÉ (LECTURE SEULE)" : "EXPERT"}
+              </span>
+            </summary>
+            <div className="expert-drawer-body">
+              <div className="lower-two-col">
+                <section className="paper-card">
+                  <div className="module-header">
+                    <h2>Boucle d’exécution XState</h2>
+                    <span className="sync-time">7 PHASES</span>
+                  </div>
+                  {/* biome-ignore lint/a11y/useSemanticElements: conteneur de présentation, fieldset altérerait le rendu */}
+                  <div
+                    className="pipeline"
+                    role="group"
+                    aria-label={`Phase courante : ${phaseLabel(agent.phase)}`}
+                  >
+                    {PIPELINE.map((item, index) => (
+                      <div
+                        key={item.phase}
+                        className={`pipeline-step step-${item.color} ${
+                          index === activePipeline ? "active" : ""
+                        }`}
+                      >
+                        <i className={`step-cell-mark ${item.color}`} />
+                        <span>{String(index + 1).padStart(2, "0")}</span>
+                        <strong>{item.label}</strong>
+                        <small>{index === activePipeline ? "EN COURS" : "CONTRÔLÉ"}</small>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="paper-card">
+                  <div className="module-header">
+                    <h2>Stratégies actives</h2>
+                    <span className="sync-time">
+                      {(agent.configuration?.strategyIds ?? []).length} ACTIVES
+                    </span>
+                  </div>
+                  <div className="strategy-list">
+                    {(agent.configuration?.strategyIds ?? []).map((strategy) => (
+                      <article className="strategy-card" key={strategy}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          }}
+                        >
+                          <h3>{strategy}</h3>
+                          <span className="phase-badge online">ACTIVE</span>
+                        </div>
+                        <p>
+                          Évalue les bougies closes et transmet un signal typé à l’allocateur.
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              </div>
+
+              {!agent.enabled && agent.phase === "stopped" && (
+                <section className="paper-card start-card">
+                  <div className="module-header">
+                    <h2>Configuration de démarrage</h2>
+                    <span className="sync-time">PARAMÈTRES D’EXÉCUTION</span>
+                  </div>
+                  <div className="start-fields">
+                    {/* biome-ignore lint/a11y/noLabelWithoutControl: le ternaire contient toujours un select ou un input */}
+                    <label>
+                      Produit
+                      {executionMode === "live" ? (
+                        <select
+                          value={productId}
+                          onChange={(event) => setProductId(event.target.value)}
+                        >
+                          {LIVE_TRADING_PRODUCTS.map((product) => (
+                            <option key={product} value={product}>
+                              {product}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={productId}
+                          onChange={(event) => setProductId(event.target.value.toUpperCase())}
+                        />
+                      )}
+                    </label>
+                    <label>
+                      Timeframe
+                      <select
+                        value={timeframe}
+                        disabled={executionMode === "live"}
+                        onChange={(event) => setTimeframe(event.target.value)}
+                      >
+                        <option value="ONE_MINUTE">1 minute</option>
+                        <option value="FIVE_MINUTE">5 minutes</option>
+                        <option value="ONE_HOUR">1 heure</option>
+                        <option value="ONE_DAY">1 jour</option>
+                      </select>
+                    </label>
+                    <label>
+                      Exécution
+                      <select
+                        value={executionMode}
+                        onChange={(event) =>
+                          selectExecutionMode(event.target.value as "paper" | "live")
+                        }
+                      >
+                        <option value="paper">Paper</option>
+                        <option value="live">Live</option>
+                      </select>
+                    </label>
+                  </div>
+                  <fieldset>
+                    <legend>Stratégies</legend>
+                    {["rsi-reversion", "ema-cross", "breakout"].map((strategy) => (
+                      <label className="check-label" key={strategy}>
+                        <input
+                          type="checkbox"
+                          checked={strategyIds.includes(strategy)}
+                          disabled={executionMode === "live"}
+                          onChange={() => toggleStrategy(strategy)}
+                        />
+                        {strategy}
+                      </label>
+                    ))}
+                  </fieldset>
+                  {executionMode === "live" && (
+                    <label className="live-confirmation">
+                      Confirmer en saisissant LIVE
+                      <input
+                        value={liveConfirmation}
+                        onChange={(event) => setLiveConfirmation(event.target.value)}
+                        autoComplete="off"
+                      />
+                    </label>
+                  )}
                   <button
                     className="button primary"
                     type="button"
-                    onClick={preparePerpOrder}
-                    disabled={busy}
-                  >
-                    Préparer l'ordre
-                  </button>
-                )}
-                {perpUi.value === "confirming" && (
-                  <>
-                    <button
-                      className="button danger"
-                      type="button"
-                      onClick={confirmPerpOrder}
-                      disabled={busy}
-                    >
-                      Confirmer {perpUi.context.draft?.side} {" "}
-                      {perpUi.context.draft?.quantity} {" "}
-                      {perpUi.context.draft?.productId}
-                    </button>
-                    <button
-                      className="button secondary"
-                      type="button"
-                      onClick={cancelPerpOrder}
-                    >
-                      Annuler
-                    </button>
-                  </>
-                )}
-                {perpUi.value === "result" && (
-                  <button
-                    className="button secondary"
-                    type="button"
-                    onClick={() =>
-                      perpUiActor.send({ type: "SUBMISSION_DISMISSED" })
+                    onClick={() => issueCommand("start")}
+                    disabled={
+                      readOnly || busy || strategyIds.length === 0 || liveStartBlocked
                     }
                   >
-                    Nouvel ordre
+                    Démarrer l’agent
                   </button>
-                )}
+                </section>
+              )}
+
+              <div className="lower-two-col">
+                <section className="paper-card">
+                  <div className="module-header">
+                    <h2>Journal des cycles SQLite</h2>
+                    <span className="sync-time">{cycles.length} CYCLES</span>
+                  </div>
+                  <div className="table-card">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Cycle</th>
+                          <th>Déclenché</th>
+                          <th>Issue</th>
+                          <th>Phase finale</th>
+                          <th>Durée</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cycles.map((cycle) => (
+                          <tr key={cycle.cycleId}>
+                            <td><code>{cycle.cycleId}</code></td>
+                            <td>{compactDate.format(cycle.triggeredAt)}</td>
+                            <td>
+                              <span className={`outcome ${outcomeClass(cycle.outcome)}`}>
+                                {cycle.outcome}
+                              </span>
+                            </td>
+                            <td>{cycle.phase}</td>
+                            <td>
+                              {cycle.completedAt === null
+                                ? "—"
+                                : `${((cycle.completedAt - cycle.triggeredAt) / 1_000).toFixed(1)} s`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {cycles.length === 0 && (
+                      <p className="empty-state">Aucun cycle persisté.</p>
+                    )}
+                  </div>
+                </section>
+
+                <section className="paper-card perp-card">
+                  <div className="module-header">
+                    <h2>Ordre manuel sur l'enveloppe figée</h2>
+                    <span className="phase-badge offline">
+                      {perpUi.value === "submitting" ? "SOUMISSION" : "MANUEL"}
+                    </span>
+                  </div>
+                  <p className="module-subtitle">
+                    Marchés BTC-PERP et ETH-PERP, levier ≤ {HYPERLIQUID_PERP_POLICY.maxLeverage}x.
+                  </p>
+                  {perpUi.context.lastRefusal !== null && (
+                    <p className="error-note" role="alert">
+                      {perpUi.context.lastRefusal}
+                    </p>
+                  )}
+                  {perpUi.value === "result" && (
+                    <p className="next-wake" aria-live="polite">
+                      {perpUi.context.result?.status === "SETTLED"
+                        ? `ORDRE ${perpUi.context.result.outcome} · ${perpUi.context.result.clientOrderId}`
+                        : perpUi.context.result?.status === "REFUSED"
+                          ? `REFUSÉ · ${perpUi.context.result.reasonCode}`
+                          : perpUi.context.result?.status === "FAILED"
+                            ? `ÉCHEC · ${perpUi.context.result.errorCode}`
+                            : (perpUi.context.lastError?.code ?? "—")}
+                    </p>
+                  )}
+                  {perpUi.value === "form" && (
+                    <div className="start-fields">
+                      <label>
+                        Marché
+                        <select
+                          value={perpDraft.productId}
+                          onChange={(event) =>
+                            setPerpDraft((current) => ({
+                              ...current,
+                              productId: event.target.value as PerpOrderFormDraft["productId"],
+                            }))
+                          }
+                        >
+                          {HYPERLIQUID_PERP_POLICY.products.map((product) => (
+                            <option key={product} value={product}>
+                              {product}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Sens
+                        <select
+                          value={perpDraft.side}
+                          onChange={(event) =>
+                            setPerpDraft((current) => ({
+                              ...current,
+                              side: event.target.value as PerpOrderFormDraft["side"],
+                            }))
+                          }
+                        >
+                          <option value="BUY">Achat (long)</option>
+                          <option value="SELL">Vente (short)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Quantité
+                        <input
+                          value={perpDraft.quantity}
+                          inputMode="decimal"
+                          onChange={(event) =>
+                            setPerpDraft((current) => ({
+                              ...current,
+                              quantity: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Prix de marque
+                        <input
+                          value={perpDraft.markPrice}
+                          inputMode="decimal"
+                          onChange={(event) =>
+                            setPerpDraft((current) => ({
+                              ...current,
+                              markPrice: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Levier (×{HYPERLIQUID_PERP_POLICY.maxLeverage} max)
+                        <select
+                          value={perpDraft.leverage}
+                          onChange={(event) =>
+                            setPerpDraft((current) => ({
+                              ...current,
+                              leverage: Number(event.target.value),
+                            }))
+                          }
+                        >
+                          {Array.from(
+                            { length: HYPERLIQUID_PERP_POLICY.maxLeverage },
+                            (_, index) => index + 1,
+                          ).map((value) => (
+                            <option key={value} value={value}>
+                              {value}x
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        PnL journalier (USD)
+                        <input
+                          value={perpDraft.dailyPnl}
+                          inputMode="decimal"
+                          onChange={(event) =>
+                            setPerpDraft((current) => ({
+                              ...current,
+                              dailyPnl: Number(event.target.value),
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  )}
+                  <div className="button-row">
+                    {perpUi.value === "form" && (
+                      <button
+                        className="button primary"
+                        type="button"
+                        onClick={preparePerpOrder}
+                        disabled={readOnly || busy}
+                      >
+                        Préparer l'ordre
+                      </button>
+                    )}
+                    {perpUi.value === "confirming" && (
+                      <>
+                        <button
+                          className="button danger"
+                          type="button"
+                          onClick={confirmPerpOrder}
+                          disabled={busy}
+                        >
+                          Confirmer {perpUi.context.draft?.side} {perpUi.context.draft?.quantity}{" "}
+                          {perpUi.context.draft?.productId}
+                        </button>
+                        <button
+                          className="button secondary"
+                          type="button"
+                          onClick={cancelPerpOrder}
+                        >
+                          Annuler
+                        </button>
+                      </>
+                    )}
+                    {perpUi.value === "result" && (
+                      <button
+                        className="button secondary"
+                        type="button"
+                        onClick={() => perpUiActor.send({ type: "SUBMISSION_DISMISSED" })}
+                      >
+                        Nouvel ordre
+                      </button>
+                    )}
+                  </div>
+                </section>
               </div>
-            </article>
-          </section>
-        </>
+            </div>
+          </details>
+        </div>
       )}
 
       {snapshot.value === "confirmingKill" && (
@@ -1534,7 +2183,6 @@ export function App({
             aria-modal="true"
             aria-labelledby="kill-title"
           >
-            <span className="card-label red-bg">ACTION TERMINALE</span>
             <h2 id="kill-title">Engager le kill switch ?</h2>
             <p>
               Le cycle actif sera annulé ou réconcilié selon sa phase. Un reset
@@ -1544,7 +2192,9 @@ export function App({
               <button
                 className="button danger"
                 type="button"
-                onClick={() => actor.send({ type: "KILL_CONFIRMED", permissions })}
+                onClick={() =>
+                  actor.send({ type: "KILL_CONFIRMED", permissions })
+                }
               >
                 Confirmer le kill
               </button>

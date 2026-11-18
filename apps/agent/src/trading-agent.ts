@@ -1069,7 +1069,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)));
 		return this.sql<Record<string, string | number | null>>`
       SELECT cycle_id, triggered_at, completed_at, phase, outcome,
-             error_json, updated_at
+             error_json, product_id, updated_at
       FROM dodash_cycles
       ORDER BY triggered_at DESC
       LIMIT ${boundedLimit}
@@ -1095,8 +1095,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			completed_at: number | null;
 			outcome: string;
 			artifacts_json: string;
+			product_id: string | null;
 		}>`
-      SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json
+      SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json, product_id
       FROM dodash_cycles
       ORDER BY triggered_at DESC
       LIMIT ${boundedLimit}
@@ -1133,6 +1134,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				completedAt: row.completed_at,
 				outcome: row.outcome,
 				artifactsJson: row.artifacts_json,
+				productId: row.product_id ?? null,
 			})),
 			orders,
 			boundedLimit,

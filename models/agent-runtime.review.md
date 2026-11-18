@@ -69,3 +69,10 @@ Le seul champ de contexte machine lu en plus est `attempts.marketData`
 (existant). Les champs persistés ajoutés (`schedule.kind`, `schedule.expression`,
 `lastMissedDecisionCandleClosedAt`, `artifacts.marketRetry`) sont normalisés
 fail-closed à la restauration conformément à la règle « État durable ».
+
+## Revue de l'amendement du 2026-11-18
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
+
+- **Pureté & Rétrocompatibilité (INV-AR1, INV-AR2)** : `positionQuantities` et `closeFullPositionOnSell` sont des champs optionnels sur `AllocationInput`. Sans eux, `allocateSignals` conserve son comportement V1 exact. Avec eux, les ventes ne sont plus plafonnées à tort par `capitalAvailable` ni supérieures à `positionQuantity`, éliminant les rejets `SELL_EXCEEDS_POSITION` et les résidus bloquants.
+- **Isolation Paper (INV-AR3)** : la sortie protectrice SL/TP sur bougie close et le carnet synthétique `LIMIT_PASSIVE` sont strictement bornés à `executionMode === "paper"`. Aucune transition XState de `tradingCycleMachine` n'est modifiée.

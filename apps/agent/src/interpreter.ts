@@ -20,10 +20,12 @@ import {
 import {
   createClientOrderId,
   createOrderIntent,
+  createSignal,
   err,
   ok,
   type Candle,
   type Result,
+  type Signal,
   type Timeframe,
 } from "@dodash/domain";
 
@@ -442,15 +444,93 @@ export const runTradingCycle = async (
                   const needsBook =
                     input.configuration.executionStyle === "LIMIT_PASSIVE" ||
                     input.configuration.maxSpreadBps !== undefined;
-                  const book =
+                  const fetchedBook =
                     needsBook && input.effects.fetchOrderBook !== undefined
                       ? await input.effects.fetchOrderBook(input.configuration)
                       : null;
+                  const book =
+                    fetchedBook !== null
+                      ? fetchedBook
+                      : input.configuration.executionMode === "paper" &&
+                          input.configuration.executionStyle === "LIMIT_PASSIVE"
+                        ? Object.freeze({
+                            bestBid: last.close,
+                            bestAsk: last.close,
+                            spreadBps: 0,
+                          })
+                        : null;
+                  const positionAware =
+                    input.configuration.strategyOptions?.positionAware === true;
+                  let effectiveSignals: readonly Signal[] = signals;
+                  if (
+                    input.configuration.executionMode === "paper" &&
+                    positionAware &&
+                    portfolio.positionQuantity > 0 &&
+                    portfolio.averagePrice > 0
+                  ) {
+                    const riskCfg = input.configuration.risk;
+                    const atrVal = artifacts.indicators?.atr;
+                    const useAtr =
+                      atrVal !== undefined &&
+                      Number.isFinite(atrVal) &&
+                      atrVal > 0 &&
+                      riskCfg.atrStopLossMultiple !== undefined &&
+                      riskCfg.atrTakeProfitMultiple !== undefined;
+                    const bpsStopDistance =
+                      portfolio.averagePrice * (riskCfg.stopLossBps / 10_000);
+                    const bpsTakeDistance =
+                      portfolio.averagePrice * (riskCfg.takeProfitBps / 10_000);
+                    const stopDistance = useAtr
+                      ? Math.max(
+                          atrVal * (riskCfg.atrStopLossMultiple ?? 2),
+                          bpsStopDistance,
+                        )
+                      : bpsStopDistance;
+                    const takeDistance = useAtr
+                      ? Math.max(
+                          atrVal * (riskCfg.atrTakeProfitMultiple ?? 3),
+                          bpsTakeDistance,
+                        )
+                      : bpsTakeDistance;
+                    const stopLossPrice = portfolio.averagePrice - stopDistance;
+                    const takeProfitPrice = portfolio.averagePrice + takeDistance;
+                    if (
+                      last.close <= stopLossPrice ||
+                      last.close >= takeProfitPrice
+                    ) {
+                      const exitSignal = createSignal({
+                        strategyId:
+                          input.configuration.strategyIds[0] ?? "rsi-reversion",
+                        productId: input.configuration.productId,
+                        side: "SELL",
+                        confidence: 1,
+                        suggestedSize: portfolio.positionQuantity,
+                        reasonCode:
+                          last.close >= takeProfitPrice
+                            ? "PAPER_TAKE_PROFIT"
+                            : "PAPER_STOP_LOSS",
+                      });
+                      if (exitSignal.ok) {
+                        effectiveSignals = Object.freeze([exitSignal.value]);
+                      }
+                    } else if (
+                      artifacts.indicators !== undefined &&
+                      artifacts.indicators.rsi < 30
+                    ) {
+                      // Tant que le RSI est en zone de survente (où rsi-reversion a
+                      // ouvert la position longue et retombe en RSI_ALREADY_LONG),
+                      // ignorer les signaux SELL contradictoires (ex. breakout bas)
+                      // tant que le Stop-Loss n'est pas touché.
+                      effectiveSignals = Object.freeze(
+                        signals.filter((signal) => signal.side !== "SELL"),
+                      );
+                    }
+                  }
                   return allocateSignals({
                     agentId: input.agentId,
                     cycleId: artifacts.cycleId,
                     decisionId,
-                    signals,
+                    signals: effectiveSignals,
                     marketPrices: { [input.configuration.productId]: last.close },
                     capitalAvailable: Math.max(0, portfolio.cash),
                     maxDecisionNotional: input.configuration.maxDecisionNotional,
@@ -464,6 +544,17 @@ export const runTradingCycle = async (
                     ...(book === null
                       ? {}
                       : { orderBooks: { [input.configuration.productId]: book } }),
+                    ...(positionAware
+                      ? {
+                          positionQuantities: {
+                            [input.configuration.productId]: Math.max(
+                              0,
+                              portfolio.positionQuantity,
+                            ),
+                          },
+                          closeFullPositionOnSell: true,
+                        }
+                      : {}),
                   });
                 })();
           if (!result.ok) {

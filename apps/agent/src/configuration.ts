@@ -57,7 +57,11 @@ export type AgentSizingPolicy =
   | {
       readonly type: "TARGET_SIGNAL_NOTIONAL";
       readonly targetSignalNotional: number;
-      readonly confidenceCalibration: "POWER_THIRD";
+      readonly confidenceCalibration:
+        | "IDENTITY"
+        | "POWER_HALF"
+        | "POWER_THIRD"
+        | "POWER_QUARTER";
     }
   | {
       readonly type: "TARGET_EXPOSURE";
@@ -343,7 +347,9 @@ const sizingPolicySchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("TARGET_SIGNAL_NOTIONAL"),
     targetSignalNotional: z.number().positive(),
-    confidenceCalibration: z.literal("POWER_THIRD"),
+    confidenceCalibration: z
+      .enum(["IDENTITY", "POWER_HALF", "POWER_THIRD", "POWER_QUARTER"])
+      .default("POWER_THIRD"),
   }),
   // Constantes figées à l'égalité (models/target-exposure.md §4).
   z

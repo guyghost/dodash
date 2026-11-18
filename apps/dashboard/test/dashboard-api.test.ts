@@ -500,4 +500,57 @@ describe("pnl history boundary", () => {
     );
     expect(view.cycles).toHaveLength(2);
   });
+
+  it("unwraps { ok: true, value } pnl envelopes returned by the Agent API", () => {
+    const view = parsePnlHistory({ ok: true, value: pnlHistory });
+    expect(view.equityCurve).toHaveLength(2);
+    expect(view.cycles).toHaveLength(2);
+  });
+
+  it("projects a multi-product portfolio /state with machine: null", () => {
+    const multiState = {
+      ...state,
+      machine: null,
+      configuration: null,
+      portfolio: { cash: 0, positionQuantity: 0, averagePrice: 0 },
+      paperValuation: null,
+      previousIndicators: null,
+      lastCycle: null,
+      portfolioSession: {
+        configuration: {
+          timeframe: "ONE_MINUTE",
+          strategyIds: ["breakout", "ema-cross", "rsi-reversion"],
+          intervalSeconds: 60,
+          executionMode: "paper",
+        },
+        products: {
+          "BTC-USD": {
+            machine: {
+              value: "waiting",
+              context: { nextWakeAt: 1_700_000_360_000 },
+            },
+            previousIndicators: state.previousIndicators,
+            lastCycle: { signalCount: 3 },
+            lastTradeAt: 1_700_000_100_000,
+          },
+        },
+      },
+      portfolioSummary: { ok: true, value: portfolioValue },
+    };
+    const parsed = parseAgentState(multiState);
+    expect(parsed.phase).toBe("waiting");
+    expect(parsed.configuration).toMatchObject({
+      productId: "BTC-USD",
+      timeframe: "ONE_MINUTE",
+      intervalSeconds: 60,
+    });
+    expect(parsed.portfolio).toEqual({
+      cash: 5_000,
+      positionQuantity: 0.1,
+      averagePrice: 60_000,
+    });
+    expect(parsed.dailyPnl).toBe(32.5);
+    expect(parsed.indicators?.rsi).toBe(52);
+    expect(parsed.paperValuation?.ok).toBe(true);
+  });
 });
