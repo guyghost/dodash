@@ -113,6 +113,24 @@ Résolution déterministe après le contrôle de warm-up (`fundingAvg` fini, sin
    - Si `context.positionSide === "SHORT"` et `fundingAvg < exitThreshold` → `BUY` (`suggestedSize: config.baseSize`, `confidence: 1`, `reasonCode: "FUNDING_CARRY_EXIT"`).
 2. Sinon : comportement nominal d'entrée inchangé (`FUNDING_LONG_CARRY`, `FUNDING_SHORT_CROWDING`, `FUNDING_NO_SIGNAL`).
 
+### 3.5 `ema-cross` (`packages/strategies/src/ema-cross.ts`) — Amendement 2026-11-18
+
+Configuration étendue :
+```ts
+export interface EmaCrossConfig {
+  readonly id?: string;
+  readonly baseSize: number;
+  readonly positionAware?: boolean;
+}
+```
+
+Résolution déterministe pour un signal brut `side` (`BUY` sur `crossedUp`, `SELL` sur `crossedDown`, sinon `HOLD`) :
+1. Si `positionAware === true` :
+   - Si `side === "BUY"` et `context.positionSide === "LONG"` → `HOLD` (`suggestedSize: 0`, `confidence: 0`, `reasonCode: "EMA_ALREADY_LONG"`).
+   - Si `side === "SELL"` et `context.positionSide === "FLAT"` → `HOLD` (`suggestedSize: 0`, `confidence: 0`, `reasonCode: "EMA_NO_POSITION_TO_SELL"`).
+   - Si `side === "SELL"` et `context.positionSide === "SHORT"` → `HOLD` (`suggestedSize: 0`, `confidence: 0`, `reasonCode: "EMA_ALREADY_SHORT"`).
+2. Sinon : comportement nominal inchangé (`EMA_CROSS_UP`, `EMA_CROSS_DOWN`, `EMA_WARMUP`, `EMA_NO_CROSS`).
+
 ## 4. Invariants
 
 1. **INV-SC1 (Rétrocompatibilité)** : sans les nouvelles options et sans `positionSide`/`confirmedRegime`, les signaux produits sont strictement identiques aux versions antérieures.

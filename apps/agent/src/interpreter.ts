@@ -515,12 +515,14 @@ export const runTradingCycle = async (
                       }
                     } else if (
                       artifacts.indicators !== undefined &&
-                      artifacts.indicators.rsi < 30
+                      artifacts.indicators.rsi < 55 &&
+                      last.close <= portfolio.averagePrice * 1.0005
                     ) {
-                      // Tant que le RSI est en zone de survente (où rsi-reversion a
-                      // ouvert la position longue et retombe en RSI_ALREADY_LONG),
-                      // ignorer les signaux SELL contradictoires (ex. breakout bas)
-                      // tant que le Stop-Loss n'est pas touché.
+                      // À l'intérieur du corridor [stopLossPrice, takeProfitPrice],
+                      // tant que le rebond n'a pas atteint RSI >= 55 et que la
+                      // position n'est pas en gain net (> +5 bps), ignorer les
+                      // signaux SELL prématurés (ex. micro-croisement EMA ou breakout
+                      // bas) pour éviter une liquidation à 100 % en perte hors Stop-Loss.
                       effectiveSignals = Object.freeze(
                         signals.filter((signal) => signal.side !== "SELL"),
                       );

@@ -203,3 +203,5 @@ Sur une instance multi-produits (`btc-usd--multi` : `BTC-USD`, `ETH-USD`, `SOL-U
    - Le `realizedPnl` d'un `SELL` sur `P` est calculé exclusivement à partir du `previousPortfolio` de `P`.
    - Chaque point d'équité valorise le `carriedPortfolio` de `P` avec le `carriedMark` de `P`.
    - En mode mono-produit (`productId === null` ou unique), le comportement reste bit-à-bit identique.
+3. **Préservation des cycles d'ordres exécutés dans la fenêtre SQL bornée (`getPnlHistory`)** :
+   - Pour éviter que les cycles `NO_ACTION` (4 par minute en multi-produits) n'évincent le cycle `BUY` d'ouverture après 8 minutes, la sélection SQL de `getPnlHistory(limit)` unit jusqu'à `⌊0,7 × limit⌋` cycles `ORDER_CONFIRMED` récents avec les cycles les plus récents tous statuts confondus, bornés au total à `LIMIT N` (`N ∈ [1, 50]`).

@@ -9,7 +9,25 @@ import {
 export interface EmaCrossConfig {
   readonly id?: string;
   readonly baseSize: number;
+  readonly positionAware?: boolean;
 }
+
+const blockedHold = (
+  id: string,
+  productId: StrategyContext["productId"],
+  reasonCode: string,
+) =>
+  strategySignal(
+    id,
+    createSignal({
+      strategyId: id,
+      productId,
+      side: "HOLD",
+      confidence: 0,
+      suggestedSize: 0,
+      reasonCode,
+    }),
+  );
 
 // INV-E3 (models/ema-signal-decoupling.md) : la paire de signal est lue
 // exclusivement si elle est active sur le snapshot courant ET le précédent ;
@@ -57,6 +75,19 @@ export const createEmaCrossStrategy = (config: EmaCrossConfig): Strategy => {
       const crossedDown =
         hasPrevious && previousFast >= previousSlow && currentFast < currentSlow;
       const side = crossedUp ? "BUY" : crossedDown ? "SELL" : "HOLD";
+
+      if (config.positionAware === true) {
+        if (side === "BUY" && context.positionSide === "LONG") {
+          return blockedHold(id, context.productId, "EMA_ALREADY_LONG");
+        }
+        if (side === "SELL" && context.positionSide === "FLAT") {
+          return blockedHold(id, context.productId, "EMA_NO_POSITION_TO_SELL");
+        }
+        if (side === "SELL" && context.positionSide === "SHORT") {
+          return blockedHold(id, context.productId, "EMA_ALREADY_SHORT");
+        }
+      }
+
       const denominator = Math.max(Math.abs(currentSlow), Number.EPSILON);
       const confidence = Math.min(1, Math.abs(currentFast - currentSlow) / denominator);
 

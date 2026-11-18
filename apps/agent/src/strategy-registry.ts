@@ -36,7 +36,13 @@ export const createConfiguredStrategyRegistry = (
         });
         break;
       case "ema-cross":
-        strategy = createEmaCrossStrategy({ id, baseSize: 0.01 });
+        strategy = createEmaCrossStrategy({
+          id,
+          baseSize: 0.01,
+          ...(options?.positionAware === undefined
+            ? {}
+            : { positionAware: options.positionAware }),
+        });
         break;
       case "breakout":
         strategy = createBreakoutStrategy({

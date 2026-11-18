@@ -817,12 +817,26 @@ export function App({
         portfolioProducts[0] ??
         null)
       : null;
+  const positionProduct =
+    portfolioProducts.length > 0
+      ? selectedProductId === "ALL"
+        ? (portfolioProducts.find((p) => p.positionQuantity > 0) ?? activeProduct)
+        : activeProduct
+      : null;
   const isConsolidatedView =
     portfolioSummary?.kind === "portfolio" && selectedProductId === "ALL";
   const displayProductId =
     activeProduct?.productId ??
     agent?.configuration?.productId ??
     "Non configuré";
+  const positionProductId =
+    positionProduct?.productId ?? displayProductId;
+  const displayIndicators =
+    (activeProduct !== null
+      ? agent?.indicatorsByProduct?.[activeProduct.productId]
+      : undefined) ??
+    agent?.indicators ??
+    null;
 
   const rawEquityPoints =
     pnlHistory?.equityCurve.filter(
@@ -889,11 +903,44 @@ export function App({
       : filledCycles.reduce((acc, item) => acc + (item.slippageBps ?? 0), 0) /
         filledCycles.length;
 
-  const stopPrice = pnlHistory?.protection?.stopLossPrice ?? null;
-  const takePrice = pnlHistory?.protection?.takeProfitPrice ?? null;
-  const entryPrice = pnlHistory?.openPosition?.averagePrice ?? null;
+  const effectiveOpenPosition =
+    positionProduct !== null
+      ? positionProduct.positionQuantity > 0
+        ? {
+            quantity: positionProduct.positionQuantity,
+            averagePrice: positionProduct.averagePrice,
+          }
+        : null
+      : (pnlHistory?.openPosition ?? null);
+  const effectiveProtection =
+    effectiveOpenPosition === null
+      ? null
+      : pnlHistory?.protection !== null &&
+          pnlHistory?.protection !== undefined &&
+          (positionProduct === null ||
+            Math.abs(
+              (pnlHistory.openPosition?.averagePrice ?? 0) -
+                effectiveOpenPosition.averagePrice,
+            ) <=
+              effectiveOpenPosition.averagePrice * 0.01)
+        ? pnlHistory.protection
+        : positionProduct !== null &&
+            agent?.configuration?.executionMode === "paper" &&
+            effectiveOpenPosition.averagePrice > 0
+          ? {
+              stopLossPrice: effectiveOpenPosition.averagePrice * (1 - 0.0035),
+              takeProfitPrice: effectiveOpenPosition.averagePrice * (1 + 0.0055),
+              protectiveOrderConfirmed: true,
+            }
+          : null;
+  const stopPrice = effectiveProtection?.stopLossPrice ?? null;
+  const takePrice = effectiveProtection?.takeProfitPrice ?? null;
+  const entryPrice = effectiveOpenPosition?.averagePrice ?? null;
   const currentMark =
-    paperValuation?.markPrice ?? agent?.lastCycle?.marketPrice ?? entryPrice;
+    positionProduct?.marketPrice ??
+    paperValuation?.markPrice ??
+    agent?.lastCycle?.marketPrice ??
+    entryPrice;
   const clampPercent = (price: number | null): number | null => {
     if (
       price === null ||
@@ -925,20 +972,24 @@ export function App({
     : activeProduct !== null
       ? activeProduct.dailyPnl
       : (agent?.dailyPnl ?? 0);
-  const displayPositionQty = activeProduct !== null
-    ? activeProduct.positionQuantity
+  const displayPositionQty = positionProduct !== null
+    ? positionProduct.positionQuantity
     : (agent?.portfolio.positionQuantity ?? 0);
-  const displayAvgPrice = activeProduct !== null
-    ? activeProduct.averagePrice
+  const displayAvgPrice = positionProduct !== null
+    ? positionProduct.averagePrice
     : (agent?.portfolio.averagePrice ?? 0);
-  const displayCash = activeProduct !== null
-    ? activeProduct.cash
-    : (agent?.portfolio.cash ?? 0);
+  const displayCash = isConsolidatedView
+    ? portfolioProducts.reduce((sum, p) => sum + p.cash, 0)
+    : activeProduct !== null
+      ? activeProduct.cash
+      : (agent?.portfolio.cash ?? 0);
   const displayPrice =
     activeProduct?.marketPrice ??
     paperValuation?.markPrice ??
     agent?.lastCycle?.marketPrice ??
     null;
+  const displayPositionMark =
+    positionProduct?.marketPrice ?? displayPrice;
   const displayOutcome =
     activeProduct?.lastCycle?.outcome ?? agent?.lastCycle?.outcome ?? null;
   const decisionSummary = describeLatestDecision({
@@ -946,7 +997,7 @@ export function App({
     productId: displayProductId,
     outcome: displayOutcome,
     price: displayPrice,
-    indicators: agent?.indicators ?? null,
+    indicators: displayIndicators,
     nextWakeAt: agent?.nextWakeAt ?? null,
     nowMs,
   });
@@ -1219,9 +1270,9 @@ export function App({
             {/* Card 2: Position & Protections */}
             <article className="paper-card">
               <div className="module-header">
-                <h2>Position ouverte · {displayProductId}</h2>
+                <h2>Position ouverte · {positionProductId}</h2>
                 <span className="sync-time">
-                  {displayPrice === null ? "—" : money.format(displayPrice)}
+                  {displayPositionMark === null ? "—" : money.format(displayPositionMark)}
                 </span>
               </div>
               <div className="metric-grid" style={{ marginBottom: "12px" }}>
@@ -1242,31 +1293,31 @@ export function App({
                     role="group"
                     aria-label="Position et protections"
                   >
-                    {pnlHistory.openPosition === null ? (
+                    {effectiveOpenPosition === null ? (
                       <span className="outcome neutral">AUCUNE POSITION</span>
                     ) : (
                       <>
                         <span className="outcome neutral">
-                          POSITION {quantity.format(pnlHistory.openPosition.quantity)}
+                          POSITION {quantity.format(effectiveOpenPosition.quantity)}
                         </span>
-                        {pnlHistory.protection === null ? (
+                        {effectiveProtection === null ? (
                           <span className="outcome negative">NON PROTÉGÉ</span>
                         ) : (
                           <>
                             <span className="outcome negative">
-                              STOP {money.format(pnlHistory.protection.stopLossPrice)}
+                              STOP {money.format(effectiveProtection.stopLossPrice)}
                             </span>
                             <span className="outcome positive">
-                              TAKE-PROFIT {money.format(pnlHistory.protection.takeProfitPrice)}
+                              TAKE-PROFIT {money.format(effectiveProtection.takeProfitPrice)}
                             </span>
                             <span
                               className={`outcome ${
-                                pnlHistory.protection.protectiveOrderConfirmed
+                                effectiveProtection.protectiveOrderConfirmed
                                   ? "positive"
                                   : "neutral"
                               }`}
                             >
-                              {pnlHistory.protection.protectiveOrderConfirmed
+                              {effectiveProtection.protectiveOrderConfirmed
                                 ? "PROTECTION CONFIRMÉE"
                                 : "PROTECTION NON CONFIRMÉE"}
                             </span>
@@ -1275,8 +1326,8 @@ export function App({
                       </>
                     )}
                   </div>
-                  {pnlHistory.openPosition !== null &&
-                    pnlHistory.protection !== null &&
+                  {effectiveOpenPosition !== null &&
+                    effectiveProtection !== null &&
                     entryPercent !== null && (
                       <div className="protection-scale">
                         <div className="protection-track">
@@ -1296,15 +1347,15 @@ export function App({
                         <div className="protection-scale-labels">
                           <div>
                             <small>SL</small>
-                            <strong>{money.format(pnlHistory.protection.stopLossPrice)}</strong>
+                            <strong>{money.format(effectiveProtection.stopLossPrice)}</strong>
                           </div>
                           <div>
                             <small>Entrée</small>
-                            <strong>{money.format(pnlHistory.openPosition.averagePrice)}</strong>
+                            <strong>{money.format(effectiveOpenPosition.averagePrice)}</strong>
                           </div>
                           <div>
                             <small>TP</small>
-                            <strong>{money.format(pnlHistory.protection.takeProfitPrice)}</strong>
+                            <strong>{money.format(effectiveProtection.takeProfitPrice)}</strong>
                           </div>
                         </div>
                       </div>
@@ -1316,10 +1367,10 @@ export function App({
             {/* Card 3: Market Health (Translated Indicators) */}
             <article className="paper-card indicator-card">
               <div className="module-header">
-                <h2>Santé du marché</h2>
+                <h2>Santé du marché · {displayProductId}</h2>
                 <span className="sync-time">INDICATEURS</span>
               </div>
-              {agent.indicators === null ? (
+              {displayIndicators === null ? (
                 <p className="empty-state">Aucun snapshot calculé.</p>
               ) : (
                 <>
@@ -1333,15 +1384,15 @@ export function App({
                       }}
                     >
                       <span style={{ color: "var(--fg-muted)" }}>
-                        RSI · {describeRsiZone(agent.indicators.rsi).label}
+                        RSI · {describeRsiZone(displayIndicators.rsi).label}
                       </span>
-                      <strong>{agent.indicators.rsi.toFixed(1)}</strong>
+                      <strong>{displayIndicators.rsi.toFixed(1)}</strong>
                     </div>
                     <div className="rsi-meter-bar">
                       <div
                         className="rsi-meter-Thumb"
                         style={{
-                          left: `${Math.min(100, Math.max(0, agent.indicators.rsi))}%`,
+                          left: `${Math.min(100, Math.max(0, displayIndicators.rsi))}%`,
                         }}
                       />
                     </div>
@@ -1349,17 +1400,25 @@ export function App({
                   <dl>
                     <div>
                       <dt>Tendance EMA</dt>
-                      <dd className={agent.indicators.emaFast >= agent.indicators.emaSlow ? "pnl-positive" : "pnl-negative"}>
-                        {agent.indicators.emaFast >= agent.indicators.emaSlow ? "Haussière" : "Baissière"}
+                      <dd className={displayIndicators.emaFast >= displayIndicators.emaSlow ? "pnl-positive" : "pnl-negative"}>
+                        {displayIndicators.emaFast >= displayIndicators.emaSlow ? "Haussière" : "Baissière"}
                       </dd>
                     </div>
                     <div>
                       <dt>MACD</dt>
-                      <dd>{agent.indicators.macd.toFixed(2)}</dd>
+                      <dd>
+                        {Math.abs(displayIndicators.macd) > 0 && Math.abs(displayIndicators.macd) < 0.1
+                          ? displayIndicators.macd.toFixed(4)
+                          : displayIndicators.macd.toFixed(2)}
+                      </dd>
                     </div>
                     <div>
                       <dt>Volatilité (ATR)</dt>
-                      <dd>{agent.indicators.atr.toFixed(2)}</dd>
+                      <dd>
+                        {displayIndicators.atr > 0 && displayIndicators.atr < 0.1
+                          ? displayIndicators.atr.toFixed(4)
+                          : displayIndicators.atr.toFixed(2)}
+                      </dd>
                     </div>
                   </dl>
                 </>

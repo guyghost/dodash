@@ -141,7 +141,15 @@ export const allocateSignals = (
     const isBoundedSell = net < 0 && heldQty !== undefined && Number.isFinite(heldQty);
     if (isBoundedSell) {
       if (heldQty <= input.minNetQuantity) continue;
-    } else if (Math.abs(net) <= input.minNetQuantity || remainingNotional <= 0) {
+    } else if (
+      (net > 0 &&
+        input.closeFullPositionOnSell === true &&
+        heldQty !== undefined &&
+        Number.isFinite(heldQty) &&
+        heldQty > input.minNetQuantity) ||
+      Math.abs(net) <= input.minNetQuantity ||
+      remainingNotional <= 0
+    ) {
       continue;
     }
 

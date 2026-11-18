@@ -1089,6 +1089,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			1,
 			Math.min(DASHBOARD_PNL_HISTORY_MAX_CYCLES, Math.trunc(limit)),
 		);
+		const confirmedBudget = Math.max(1, Math.floor(boundedLimit * 0.7));
 		const cycles = this.sql<{
 			cycle_id: string;
 			triggered_at: number;
@@ -1098,8 +1099,25 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			product_id: string | null;
 		}>`
       SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json, product_id
-      FROM dodash_cycles
-      ORDER BY triggered_at DESC
+      FROM (
+        SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json, product_id
+        FROM (
+          SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json, product_id
+          FROM dodash_cycles
+          WHERE outcome = 'ORDER_CONFIRMED'
+          ORDER BY triggered_at DESC
+          LIMIT ${confirmedBudget}
+        )
+        UNION
+        SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json, product_id
+        FROM (
+          SELECT cycle_id, triggered_at, completed_at, outcome, artifacts_json, product_id
+          FROM dodash_cycles
+          ORDER BY triggered_at DESC
+          LIMIT ${boundedLimit}
+        )
+      )
+      ORDER BY (CASE WHEN outcome = 'ORDER_CONFIRMED' THEN 0 ELSE 1 END) ASC, triggered_at DESC
       LIMIT ${boundedLimit}
     `;
 		const cycleIds = cycles.map((row) => row.cycle_id);

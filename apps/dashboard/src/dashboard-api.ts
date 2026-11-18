@@ -46,6 +46,18 @@ export interface AgentStateView {
     readonly macd: number;
     readonly atr: number;
   } | null;
+  readonly indicatorsByProduct?: Readonly<
+    Record<
+      string,
+      {
+        readonly rsi: number;
+        readonly emaFast: number;
+        readonly emaSlow: number;
+        readonly macd: number;
+        readonly atr: number;
+      }
+    >
+  >;
 }
 
 export interface CycleView {
@@ -467,6 +479,20 @@ export const parseAgentState = (value: unknown): AgentStateView => {
         : primaryProduct !== null
           ? Object.freeze({ ok: true as const, value: primaryProduct.valuation })
           : null;
+    const indicatorsByProduct: Record<
+      string,
+      NonNullable<AgentStateView["indicators"]>
+    > = {};
+    if (sessionProducts !== null) {
+      for (const [pid, prod] of Object.entries(sessionProducts)) {
+        if (isRecord(prod) && "previousIndicators" in prod) {
+          const parsedInd = parseIndicators(prod.previousIndicators);
+          if (parsedInd !== null) {
+            indicatorsByProduct[pid] = parsedInd;
+          }
+        }
+      }
+    }
     return Object.freeze({
       enabled: value.enabled,
       phase,
@@ -501,6 +527,7 @@ export const parseAgentState = (value: unknown): AgentStateView => {
         "previousIndicators" in primarySessionProduct
           ? parseIndicators(primarySessionProduct.previousIndicators)
           : parseIndicators(value.previousIndicators),
+      indicatorsByProduct: Object.freeze(indicatorsByProduct),
     });
   }
 

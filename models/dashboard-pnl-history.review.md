@@ -101,5 +101,6 @@ reconstruite à partir du coût moyen ou de l’heure du cycle.
 
 - [x] Chaque cycle et point d'équité expose `productId: string | null` (issu de `dodash_cycles.product_id` ou d'`artifacts_json`).
 - [x] `carriedPortfolio` et `carriedMark` sont isolés par `productId` : aucun mélange de `averagePrice`, de `positionQuantity` ou de `valuationMark` entre deux paires distinctes (`BTC-USD`, `ETH-USD`, `SOL-USD`, `XRP-USD`).
+- [x] La fenêtre SQL `getPnlHistory(limit)` conserve les cycles `ORDER_CONFIRMED` récents aux côtés des derniers cycles de veille sans dépasser `limit`, garantissant la présence du `previousPortfolio` lors des clôtures `SELL`.
 - [x] Rétrocompatibilité totale avec les appels mono-produit sans `productId`.
 - Verdict : **APPROUVÉ**.
