@@ -462,12 +462,15 @@ export const runTradingCycle = async (
                   const positionAware =
                     input.configuration.strategyOptions?.positionAware === true;
                   let effectiveSignals: readonly Signal[] = signals;
+                  const allowPaperShort =
+                    input.configuration.executionMode === "paper" && positionAware;
                   if (
-                    input.configuration.executionMode === "paper" &&
-                    positionAware &&
-                    portfolio.positionQuantity > 0 &&
+                    allowPaperShort &&
+                    portfolio.positionQuantity !== 0 &&
                     portfolio.averagePrice > 0
                   ) {
+                    const isLongPosition = portfolio.positionQuantity > 0;
+                    const absPositionQty = Math.abs(portfolio.positionQuantity);
                     const riskCfg = input.configuration.risk;
                     const atrVal = artifacts.indicators?.atr;
                     const useAtr =
@@ -492,82 +495,140 @@ export const runTradingCycle = async (
                           bpsTakeDistance,
                         )
                       : bpsTakeDistance;
-                    const baseStopLossPrice =
-                      portfolio.averagePrice - stopDistance;
-                    const takeProfitPrice =
-                      portfolio.averagePrice + takeDistance;
-                    // Axe 2 : Plus haut observé depuis l'entrée (lastTradeAt) pour
-                    // Breakeven Stop (+22 bps -> +5 bps) et Trailing Stop (+35 bps).
                     const candlesSinceEntry =
                       input.lastTradeAt !== null
                         ? (artifacts.market?.candles ?? []).filter(
                             (c) => c.start >= input.lastTradeAt!,
                           )
                         : [];
-                    const highWaterMark = Math.max(
-                      portfolio.averagePrice,
-                      last.close,
-                      ...candlesSinceEntry.map((c) => c.high),
-                    );
-                    const peakGainBps =
-                      ((highWaterMark - portfolio.averagePrice) /
-                        portfolio.averagePrice) *
-                      10_000;
-                    const dynamicFloorStop =
-                      peakGainBps >= 35
-                        ? Math.max(
-                            portfolio.averagePrice * 1.001,
-                            highWaterMark -
-                              Math.max(
-                                useAtr ? atrVal * 1.0 : 0,
-                                highWaterMark * 0.0018,
-                              ),
-                          )
-                        : peakGainBps >= 22
-                          ? portfolio.averagePrice * 1.0005
-                          : baseStopLossPrice;
-                    const stopLossPrice = Math.max(
-                      baseStopLossPrice,
-                      dynamicFloorStop,
-                    );
-                    if (
-                      last.close <= stopLossPrice ||
-                      last.close >= takeProfitPrice
-                    ) {
-                      const exitSignal = createSignal({
-                        strategyId:
-                          input.configuration.strategyIds[0] ?? "rsi-reversion",
-                        productId: input.configuration.productId,
-                        side: "SELL",
-                        confidence: 1,
-                        suggestedSize: portfolio.positionQuantity,
-                        reasonCode:
-                          last.close >= takeProfitPrice
-                            ? "PAPER_TAKE_PROFIT"
-                            : stopLossPrice > portfolio.averagePrice
-                              ? "PAPER_TRAILING_STOP"
-                              : "PAPER_STOP_LOSS",
-                      });
-                      if (exitSignal.ok) {
-                        effectiveSignals = Object.freeze([exitSignal.value]);
-                      }
-                    } else if (
-                      artifacts.indicators !== undefined &&
-                      artifacts.indicators.rsi < 65 &&
-                      last.close <= portfolio.averagePrice * 1.0025
-                    ) {
-                      // À l'intérieur du corridor [stopLossPrice, takeProfitPrice],
-                      // tant que le rebond n'a pas atteint RSI >= 65 et que la
-                      // position n'est pas en gain significatif (> +25 bps), ignorer
-                      // les signaux SELL prématurés pour laisser les gagnants atteindre
-                      // le Breakeven (+22 bps), le Trailing Stop (+35 bps) ou le TP.
-                      effectiveSignals = Object.freeze(
-                        signals.filter((signal) => signal.side !== "SELL"),
+
+                    if (isLongPosition) {
+                      const baseStopLossPrice =
+                        portfolio.averagePrice - stopDistance;
+                      const takeProfitPrice =
+                        portfolio.averagePrice + takeDistance;
+                      const highWaterMark = Math.max(
+                        portfolio.averagePrice,
+                        last.close,
+                        ...candlesSinceEntry.map((c) => c.high),
                       );
+                      const peakGainBps =
+                        ((highWaterMark - portfolio.averagePrice) /
+                          portfolio.averagePrice) *
+                        10_000;
+                      const dynamicFloorStop =
+                        peakGainBps >= 35
+                          ? Math.max(
+                              portfolio.averagePrice * 1.001,
+                              highWaterMark -
+                                Math.max(
+                                  useAtr ? atrVal * 1.0 : 0,
+                                  highWaterMark * 0.0018,
+                                ),
+                            )
+                          : peakGainBps >= 22
+                            ? portfolio.averagePrice * 1.0005
+                            : baseStopLossPrice;
+                      const stopLossPrice = Math.max(
+                        baseStopLossPrice,
+                        dynamicFloorStop,
+                      );
+                      if (
+                        last.close <= stopLossPrice ||
+                        last.close >= takeProfitPrice
+                      ) {
+                        const exitSignal = createSignal({
+                          strategyId:
+                            input.configuration.strategyIds[0] ?? "rsi-reversion",
+                          productId: input.configuration.productId,
+                          side: "SELL",
+                          confidence: 1,
+                          suggestedSize: absPositionQty,
+                          reasonCode:
+                            last.close >= takeProfitPrice
+                              ? "PAPER_TAKE_PROFIT"
+                              : stopLossPrice > portfolio.averagePrice
+                                ? "PAPER_TRAILING_STOP"
+                                : "PAPER_STOP_LOSS",
+                        });
+                        if (exitSignal.ok) {
+                          effectiveSignals = Object.freeze([exitSignal.value]);
+                        }
+                      } else if (
+                        artifacts.indicators !== undefined &&
+                        artifacts.indicators.rsi < 65 &&
+                        last.close <= portfolio.averagePrice * 1.0025
+                      ) {
+                        effectiveSignals = Object.freeze(
+                          signals.filter((signal) => signal.side !== "SELL"),
+                        );
+                      }
+                    } else {
+                      // Position SHORT symétrique : SL au-dessus, TP en-dessous,
+                      // Breakeven (+22 bps -> -5 bps) & Trailing Stop (+35 bps).
+                      const baseStopLossPrice =
+                        portfolio.averagePrice + stopDistance;
+                      const takeProfitPrice =
+                        portfolio.averagePrice - takeDistance;
+                      const lowWaterMark = Math.min(
+                        portfolio.averagePrice,
+                        last.close,
+                        ...candlesSinceEntry.map((c) => c.low),
+                      );
+                      const peakGainBps =
+                        ((portfolio.averagePrice - lowWaterMark) /
+                          portfolio.averagePrice) *
+                        10_000;
+                      const dynamicCeilingStop =
+                        peakGainBps >= 35
+                          ? Math.min(
+                              portfolio.averagePrice * 0.999,
+                              lowWaterMark +
+                                Math.max(
+                                  useAtr ? atrVal * 1.0 : 0,
+                                  lowWaterMark * 0.0018,
+                                ),
+                            )
+                          : peakGainBps >= 22
+                            ? portfolio.averagePrice * 0.9995
+                            : baseStopLossPrice;
+                      const stopLossPrice = Math.min(
+                        baseStopLossPrice,
+                        dynamicCeilingStop,
+                      );
+                      if (
+                        last.close >= stopLossPrice ||
+                        last.close <= takeProfitPrice
+                      ) {
+                        const exitSignal = createSignal({
+                          strategyId:
+                            input.configuration.strategyIds[0] ?? "rsi-reversion",
+                          productId: input.configuration.productId,
+                          side: "BUY",
+                          confidence: 1,
+                          suggestedSize: absPositionQty,
+                          reasonCode:
+                            last.close <= takeProfitPrice
+                              ? "PAPER_TAKE_PROFIT"
+                              : stopLossPrice < portfolio.averagePrice
+                                ? "PAPER_TRAILING_STOP"
+                                : "PAPER_STOP_LOSS",
+                        });
+                        if (exitSignal.ok) {
+                          effectiveSignals = Object.freeze([exitSignal.value]);
+                        }
+                      } else if (
+                        artifacts.indicators !== undefined &&
+                        artifacts.indicators.rsi > 35 &&
+                        last.close >= portfolio.averagePrice * 0.9975
+                      ) {
+                        effectiveSignals = Object.freeze(
+                          signals.filter((signal) => signal.side !== "BUY"),
+                        );
+                      }
                     }
                   } else if (
-                    input.configuration.executionMode === "paper" &&
-                    positionAware &&
+                    allowPaperShort &&
                     portfolio.positionQuantity === 0 &&
                     artifacts.indicators !== undefined
                   ) {
@@ -580,14 +641,26 @@ export const runTradingCycle = async (
                       input.lastTradeAt !== null &&
                       nowMs - input.lastTradeAt < postCloseCooldownMs
                     ) {
-                      // Anti-revenge-buying : bloquer tout nouveau BUY pendant au
-                      // moins 5 minutes après la clôture précédente.
-                      effectiveSignals = Object.freeze(
-                        signals.filter((sig) => sig.side !== "BUY"),
-                      );
+                      // Anti-revenge-buying/shorting : bloquer toute nouvelle
+                      // ouverture pendant au moins 5 minutes après la clôture.
+                      effectiveSignals = Object.freeze([]);
                     } else {
-                      // Axe 1 (calibré 1m) : Filtre de régime directionnel (+DI / -DI / ADX)
-                      // et sizing défensif sous EMA (BEARISH / BULLISH / COUNTER-TREND).
+                      // Filtre de tendance horaire (EMA 60 sur les bougies 1m) +
+                      // Régime directionnel (+DI / -DI / ADX) symétrique LONG/SHORT.
+                      const candles = artifacts.market?.candles ?? [];
+                      let hourlyEma: number | null = null;
+                      if (candles.length >= 60) {
+                        const k = 2 / 61;
+                        let ema = candles[0]!.close;
+                        for (let i = 1; i < candles.length; i += 1) {
+                          ema = candles[i]!.close * k + ema * (1 - k);
+                        }
+                        hourlyEma = ema;
+                      }
+                      const hourlyBull =
+                        hourlyEma !== null && last.close >= hourlyEma;
+                      const hourlyBear =
+                        hourlyEma !== null && last.close < hourlyEma;
                       const ind = artifacts.indicators;
                       const isBearishRegime =
                         ind.minusDi !== undefined &&
@@ -601,64 +674,63 @@ export const runTradingCycle = async (
                         ind.plusDi > ind.minusDi * 1.25 &&
                         ind.trendStrength >= 20 &&
                         ind.emaFast >= ind.emaSlow;
-                      const isCounterTrendEma = ind.emaFast < ind.emaSlow;
-                      if (isBearishRegime) {
-                        const adjusted: Signal[] = [];
-                        for (const sig of signals) {
-                          if (sig.side !== "BUY") {
-                            adjusted.push(sig);
-                            continue;
+
+                      const adjusted: Signal[] = [];
+                      for (const sig of signals) {
+                        if (sig.side === "HOLD") {
+                          adjusted.push(sig);
+                          continue;
+                        }
+                        let multiplier: number | null = 1;
+                        if (sig.side === "BUY") {
+                          if (hourlyBear) {
+                            multiplier =
+                              sig.strategyId === "rsi-reversion" && ind.rsi <= 20
+                                ? 0.4
+                                : null;
+                          } else if (isBearishRegime) {
+                            multiplier =
+                              sig.strategyId === "rsi-reversion" && ind.rsi <= 22
+                                ? 0.4
+                                : null;
+                          } else if (isBullishRegime) {
+                            multiplier = 1.15;
+                          } else if (ind.emaFast < ind.emaSlow) {
+                            multiplier = 0.4;
                           }
-                          if (sig.strategyId === "rsi-reversion" && ind.rsi <= 22) {
-                            const scaled = createSignal({
-                              strategyId: sig.strategyId,
-                              productId: sig.productId,
-                              side: "BUY",
-                              confidence: sig.confidence,
-                              suggestedSize: sig.suggestedSize * 0.4,
-                              reasonCode: sig.reasonCode,
-                            });
-                            if (scaled.ok) adjusted.push(scaled.value);
+                        } else if (sig.side === "SELL") {
+                          if (hourlyBull) {
+                            multiplier =
+                              sig.strategyId === "rsi-reversion" && ind.rsi >= 80
+                                ? 0.4
+                                : null;
+                          } else if (isBullishRegime) {
+                            multiplier =
+                              sig.strategyId === "rsi-reversion" && ind.rsi >= 78
+                                ? 0.4
+                                : null;
+                          } else if (isBearishRegime) {
+                            multiplier = 1.15;
+                          } else if (ind.emaFast > ind.emaSlow) {
+                            multiplier = 0.4;
                           }
                         }
-                        effectiveSignals = Object.freeze(adjusted);
-                      } else if (isBullishRegime) {
-                        const adjusted: Signal[] = [];
-                        for (const sig of signals) {
-                          if (sig.side !== "BUY") {
-                            adjusted.push(sig);
-                            continue;
-                          }
+                        if (multiplier === null) continue;
+                        if (multiplier === 1) {
+                          adjusted.push(sig);
+                        } else {
                           const scaled = createSignal({
                             strategyId: sig.strategyId,
                             productId: sig.productId,
-                            side: "BUY",
+                            side: sig.side,
                             confidence: sig.confidence,
-                            suggestedSize: sig.suggestedSize * 1.15,
+                            suggestedSize: sig.suggestedSize * multiplier,
                             reasonCode: sig.reasonCode,
                           });
                           if (scaled.ok) adjusted.push(scaled.value);
                         }
-                        effectiveSignals = Object.freeze(adjusted);
-                      } else if (isCounterTrendEma) {
-                        const adjusted: Signal[] = [];
-                        for (const sig of signals) {
-                          if (sig.side !== "BUY") {
-                            adjusted.push(sig);
-                            continue;
-                          }
-                          const scaled = createSignal({
-                            strategyId: sig.strategyId,
-                            productId: sig.productId,
-                            side: "BUY",
-                            confidence: sig.confidence,
-                            suggestedSize: sig.suggestedSize * 0.4,
-                            reasonCode: sig.reasonCode,
-                          });
-                          if (scaled.ok) adjusted.push(scaled.value);
-                        }
-                        effectiveSignals = Object.freeze(adjusted);
                       }
+                      effectiveSignals = Object.freeze(adjusted);
                     }
                   }
                   return allocateSignals({
@@ -682,12 +754,11 @@ export const runTradingCycle = async (
                     ...(positionAware
                       ? {
                           positionQuantities: {
-                            [input.configuration.productId]: Math.max(
-                              0,
+                            [input.configuration.productId]:
                               portfolio.positionQuantity,
-                            ),
                           },
                           closeFullPositionOnSell: true,
+                          ...(allowPaperShort ? { allowShort: true } : {}),
                         }
                       : {}),
                   });
@@ -743,6 +814,9 @@ export const runTradingCycle = async (
                 )
               : null;
           const atr = current.indicators?.atr;
+          const allowPaperShortRisk =
+            input.configuration.executionMode === "paper" &&
+            input.configuration.strategyOptions?.positionAware === true;
           const result = checkRisk(
             order,
             {
@@ -755,7 +829,9 @@ export const runTradingCycle = async (
               killSwitchActive: session.context.shutdownMode === "kill-switch",
               ...(atr !== undefined && Number.isFinite(atr) && atr > 0 ? { atr } : {}),
             },
-            input.configuration.risk,
+            allowPaperShortRisk
+              ? { ...input.configuration.risk, allowShort: true }
+              : input.configuration.risk,
           );
           if (!result.ok) {
             await send({ type: "RISK_FAILED", error: workflowError("risk", "RISK_FAILURE") });

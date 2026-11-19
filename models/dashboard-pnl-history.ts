@@ -452,6 +452,18 @@ export const projectDashboardPnlHistory = (
         realizedPnl =
           (trade.fillPrice - previousPortfolio.averagePrice) * closedQuantity -
           trade.fee;
+      } else if (
+        previousPortfolio !== null &&
+        trade.side === "BUY" &&
+        previousPortfolio.positionQuantity < 0
+      ) {
+        const closedQuantity = Math.min(
+          Math.abs(previousPortfolio.positionQuantity),
+          trade.quantity,
+        );
+        realizedPnl =
+          (previousPortfolio.averagePrice - trade.fillPrice) * closedQuantity -
+          trade.fee;
       }
       if (artifacts.valuationMark !== null) {
         const direction = trade.side === "SELL" ? -1 : 1;
@@ -503,7 +515,7 @@ export const projectDashboardPnlHistory = (
   const finalPortfolio = carriedPortfolioByProduct.get(lastProductKey) ?? null;
   const finalProtection = protectionByProduct.get(lastProductKey) ?? null;
   const openPosition =
-    finalPortfolio !== null && finalPortfolio.positionQuantity > 0
+    finalPortfolio !== null && finalPortfolio.positionQuantity !== 0
       ? {
           quantity: finalPortfolio.positionQuantity,
           averagePrice: finalPortfolio.averagePrice,

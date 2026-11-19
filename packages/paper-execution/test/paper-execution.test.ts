@@ -97,4 +97,70 @@ describe("executePaperOrder", () => {
       }),
     ).toEqual({ ok: false, error: { code: "INVALID_BROKER_CONFIG" } });
   });
+
+  it("opens and covers a short position when allowShort is true and rejects otherwise", () => {
+    const sellIntent = createOrderIntent({
+      clientOrderId: "paper-short-open",
+      decisionId: "decision-short-1",
+      strategyIds: ["ema-cross"],
+      productId: productId.value,
+      side: "SELL",
+      type: "MARKET",
+      quantity: 2,
+      limitPrice: null,
+    });
+    const buyCoverIntent = createOrderIntent({
+      clientOrderId: "paper-short-close",
+      decisionId: "decision-short-2",
+      strategyIds: ["ema-cross"],
+      productId: productId.value,
+      side: "BUY",
+      type: "MARKET",
+      quantity: 2,
+      limitPrice: null,
+    });
+    if (!sellIntent.ok || !buyCoverIntent.ok) throw new Error("invalid fixture intent");
+    const flat: PaperPortfolio = { cash: 1_000, positionQuantity: 0, averagePrice: 0 };
+
+    // Blocked by default when allowShort is omitted/false
+    expect(
+      executePaperOrder(flat, sellIntent.value, 100, 1, {
+        feeBps: 10,
+        slippageBps: 0,
+      }),
+    ).toEqual({ ok: false, error: { code: "INSUFFICIENT_POSITION" } });
+
+    // Blocked when cash cannot cover margin of opening short
+    expect(
+      executePaperOrder({ cash: 50, positionQuantity: 0, averagePrice: 0 }, sellIntent.value, 100, 1, {
+        feeBps: 10,
+        slippageBps: 0,
+        allowShort: true,
+      }),
+    ).toEqual({ ok: false, error: { code: "INSUFFICIENT_CASH" } });
+
+    // Opens short when allowShort is true
+    const opened = executePaperOrder(flat, sellIntent.value, 100, 1, {
+      feeBps: 10,
+      slippageBps: 0,
+      allowShort: true,
+    });
+    expect(opened.ok).toBe(true);
+    if (!opened.ok) return;
+    expect(opened.value.portfolio.positionQuantity).toBe(-2);
+    expect(opened.value.portfolio.averagePrice).toBe(100);
+
+    // Covers short at lower price -> positive realized PnL
+    const covered = executePaperOrder(opened.value.portfolio, buyCoverIntent.value, 95, 2, {
+      feeBps: 10,
+      slippageBps: 0,
+      allowShort: true,
+    });
+    expect(covered.ok).toBe(true);
+    if (!covered.ok) return;
+    expect(covered.value.portfolio.positionQuantity).toBe(0);
+    expect(covered.value.portfolio.averagePrice).toBe(0);
+    expect(covered.value.trade.closedQuantity).toBe(2);
+    expect(covered.value.trade.realizedPnl).toBeCloseTo(10 - 95 * 2 * 0.001);
+  });
 });

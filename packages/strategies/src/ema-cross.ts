@@ -10,6 +10,7 @@ export interface EmaCrossConfig {
   readonly id?: string;
   readonly baseSize: number;
   readonly positionAware?: boolean;
+  readonly allowShort?: boolean;
 }
 
 const blockedHold = (
@@ -80,7 +81,11 @@ export const createEmaCrossStrategy = (config: EmaCrossConfig): Strategy => {
         if (side === "BUY" && context.positionSide === "LONG") {
           return blockedHold(id, context.productId, "EMA_ALREADY_LONG");
         }
-        if (side === "SELL" && context.positionSide === "FLAT") {
+        if (
+          side === "SELL" &&
+          context.positionSide === "FLAT" &&
+          config.allowShort !== true
+        ) {
           return blockedHold(id, context.productId, "EMA_NO_POSITION_TO_SELL");
         }
         if (side === "SELL" && context.positionSide === "SHORT") {

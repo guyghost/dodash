@@ -18,6 +18,8 @@ export const createConfiguredStrategyRegistry = (
   configuration: AgentConfiguration,
 ) => {
   const options = configuration.strategyOptions;
+  const allowShort =
+    configuration.executionMode === "paper" && options?.positionAware === true;
   const strategies = configuration.strategyIds.map((id) => {
     let strategy: Strategy;
     switch (id) {
@@ -33,6 +35,7 @@ export const createConfiguredStrategyRegistry = (
           ...(options?.positionAware === undefined
             ? {}
             : { positionAware: options.positionAware }),
+          ...(allowShort ? { allowShort: true } : {}),
         });
         break;
       case "ema-cross":
@@ -42,6 +45,7 @@ export const createConfiguredStrategyRegistry = (
           ...(options?.positionAware === undefined
             ? {}
             : { positionAware: options.positionAware }),
+          ...(allowShort ? { allowShort: true } : {}),
         });
         break;
       case "breakout":
@@ -55,6 +59,7 @@ export const createConfiguredStrategyRegistry = (
           ...(options?.positionAware === undefined
             ? {}
             : { positionAware: options.positionAware }),
+          ...(allowShort ? { allowShort: true } : {}),
         });
         break;
       // Seuil figé §5 (percentile p75 in-sample, dao #38 — variant non

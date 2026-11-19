@@ -13,6 +13,7 @@ export interface RsiReversionConfig {
   readonly baseSize: number;
   readonly maxTrendStrength?: number;
   readonly positionAware?: boolean;
+  readonly allowShort?: boolean;
 }
 
 const blockedHold = (
@@ -65,7 +66,11 @@ export const createRsiReversionStrategy = (
         if (side === "BUY" && context.positionSide === "LONG") {
           return blockedHold(id, context.productId, "RSI_ALREADY_LONG");
         }
-        if (side === "SELL" && context.positionSide === "FLAT") {
+        if (
+          side === "SELL" &&
+          context.positionSide === "FLAT" &&
+          config.allowShort !== true
+        ) {
           return blockedHold(id, context.productId, "RSI_NO_POSITION_TO_SELL");
         }
         if (side === "SELL" && context.positionSide === "SHORT") {

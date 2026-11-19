@@ -129,8 +129,7 @@ export const projectPaperValuation = (
   if (
     !Number.isFinite(input.cash) ||
     input.cash < 0 ||
-    !Number.isFinite(input.positionQuantity) ||
-    input.positionQuantity < 0
+    !Number.isFinite(input.positionQuantity)
   ) {
     return { ok: false, error: { code: "INVALID_PORTFOLIO" } };
   }

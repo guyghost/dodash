@@ -10,6 +10,7 @@ export interface RiskConfig {
   readonly takeProfitBps: number;
   readonly atrStopLossMultiple?: number;
   readonly atrTakeProfitMultiple?: number;
+  readonly allowShort?: boolean;
 }
 
 export interface RiskSnapshot {
@@ -129,16 +130,19 @@ export const checkRisk = (
     return ok({ status: "REJECTED", reasonCode: "KILL_SWITCH_ACTIVE" });
   }
 
-  const isPositionReducingSell =
-    intent.side === "SELL" &&
-    snapshot.currentPositionQuantity > 0 &&
-    intent.quantity <= snapshot.currentPositionQuantity + 1e-12;
+  const isPositionReducing =
+    (intent.side === "SELL" &&
+      snapshot.currentPositionQuantity > 0 &&
+      intent.quantity <= snapshot.currentPositionQuantity + 1e-12) ||
+    (intent.side === "BUY" &&
+      snapshot.currentPositionQuantity < 0 &&
+      intent.quantity <= Math.abs(snapshot.currentPositionQuantity) + 1e-12);
 
-  if (!isPositionReducingSell && snapshot.dailyPnl <= -config.maxDailyLoss) {
+  if (!isPositionReducing && snapshot.dailyPnl <= -config.maxDailyLoss) {
     return ok({ status: "REJECTED", reasonCode: "DAILY_LOSS_LIMIT" });
   }
   if (
-    !isPositionReducingSell &&
+    !isPositionReducing &&
     snapshot.lastTradeAt !== null &&
     snapshot.now - snapshot.lastTradeAt < config.cooldownMs
   ) {
@@ -146,20 +150,20 @@ export const checkRisk = (
   }
 
   const orderNotional = intent.quantity * snapshot.marketPrice;
-  if (!isPositionReducingSell && orderNotional > config.maxOrderNotional) {
+  if (!isPositionReducing && orderNotional > config.maxOrderNotional) {
     return ok({ status: "REJECTED", reasonCode: "ORDER_NOTIONAL_LIMIT" });
   }
 
   const signedQuantity = intent.side === "BUY" ? intent.quantity : -intent.quantity;
   const projectedPositionQuantity =
     snapshot.currentPositionQuantity + signedQuantity;
-  if (projectedPositionQuantity < -1e-12) {
+  if (config.allowShort !== true && projectedPositionQuantity < -1e-12) {
     return ok({ status: "REJECTED", reasonCode: "SPOT_SHORT_FORBIDDEN" });
   }
   const projectedPositionNotional =
     Math.abs(projectedPositionQuantity) * snapshot.marketPrice;
   if (
-    !isPositionReducingSell &&
+    !isPositionReducing &&
     projectedPositionNotional > config.maxPositionNotional
   ) {
     return ok({ status: "REJECTED", reasonCode: "POSITION_NOTIONAL_LIMIT" });
@@ -168,7 +172,7 @@ export const checkRisk = (
   const projectedGrossExposure =
     snapshot.otherExposureNotional + projectedPositionNotional;
   if (
-    !isPositionReducingSell &&
+    !isPositionReducing &&
     projectedGrossExposure > config.maxGrossExposure
   ) {
     return ok({ status: "REJECTED", reasonCode: "GROSS_EXPOSURE_LIMIT" });

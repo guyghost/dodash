@@ -165,7 +165,7 @@ const validateProductFacts = (
   product: DashboardPortfolioProductInput,
 ): boolean =>
   isNonNegativeFinite(product.cash) &&
-  isNonNegativeFinite(product.positionQuantity) &&
+  isFiniteNumber(product.positionQuantity) &&
   isNonNegativeFinite(product.averagePrice) &&
   isFiniteNumber(product.dailyPnl) &&
   isPositiveFinite(product.maxGrossExposure) &&

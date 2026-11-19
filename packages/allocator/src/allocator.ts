@@ -32,6 +32,7 @@ export interface AllocationInput {
   readonly maxSpreadBps?: number;
   readonly positionQuantities?: Readonly<Record<string, number>>;
   readonly closeFullPositionOnSell?: boolean;
+  readonly allowShort?: boolean;
 }
 
 export interface AllocationDecision {
@@ -138,15 +139,30 @@ export const allocateSignals = (
     );
     netQuantities[productKey] = net;
     const heldQty = input.positionQuantities?.[productKey];
-    const isBoundedSell = net < 0 && heldQty !== undefined && Number.isFinite(heldQty);
-    if (isBoundedSell) {
+    const hasHeld = heldQty !== undefined && Number.isFinite(heldQty);
+    const allowShort = input.allowShort === true;
+    const isClosingLong = net < 0 && hasHeld && (allowShort ? heldQty > input.minNetQuantity : true);
+    const isClosingShort = allowShort && net > 0 && hasHeld && heldQty < -input.minNetQuantity;
+    const isClosingOrder = isClosingLong || isClosingShort;
+    const isPyramidingLong =
+      net > 0 &&
+      input.closeFullPositionOnSell === true &&
+      hasHeld &&
+      heldQty > input.minNetQuantity;
+    const isPyramidingShort =
+      allowShort &&
+      net < 0 &&
+      input.closeFullPositionOnSell === true &&
+      hasHeld &&
+      heldQty < -input.minNetQuantity;
+
+    if (isClosingLong) {
       if (heldQty <= input.minNetQuantity) continue;
+    } else if (isClosingShort) {
+      if (Math.abs(heldQty) <= input.minNetQuantity) continue;
     } else if (
-      (net > 0 &&
-        input.closeFullPositionOnSell === true &&
-        heldQty !== undefined &&
-        Number.isFinite(heldQty) &&
-        heldQty > input.minNetQuantity) ||
+      isPyramidingLong ||
+      isPyramidingShort ||
       Math.abs(net) <= input.minNetQuantity ||
       remainingNotional <= 0
     ) {
@@ -156,10 +172,11 @@ export const allocateSignals = (
     const book = input.orderBooks?.[productKey];
     if (isSpreadBlocked(book, input.maxSpreadBps)) continue;
 
-    const quantity = isBoundedSell
+    const heldAbs = hasHeld ? Math.abs(heldQty) : 0;
+    const quantity = isClosingOrder
       ? input.closeFullPositionOnSell === true
-        ? heldQty
-        : Math.min(Math.abs(net), heldQty)
+        ? heldAbs
+        : Math.min(Math.abs(net), heldAbs)
       : Math.min(Math.abs(net), remainingNotional / price);
     if (quantity <= input.minNetQuantity) continue;
     const clientOrderId = createClientOrderId(
@@ -196,7 +213,7 @@ export const allocateSignals = (
       return err({ code: "INVALID_ORDER_INTENT", cause: intent.error });
     }
     orders.push(intent.value);
-    if (!isBoundedSell) {
+    if (!isClosingOrder) {
       remainingNotional -= quantity * price;
     }
   }

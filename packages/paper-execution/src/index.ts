@@ -11,6 +11,7 @@ export interface PaperBrokerConfig {
   readonly feeBps: number;
   readonly slippageBps: number;
   readonly makerFeeBps?: number;
+  readonly allowShort?: boolean;
 }
 
 export interface PaperPortfolio {
@@ -78,11 +79,15 @@ export const executePaperOrder = (
   if (intent.side === "BUY" && notional + fee > portfolio.cash + cashTolerance) {
     return err({ code: "INSUFFICIENT_CASH" });
   }
-  if (
-    intent.side === "SELL" &&
-    intent.quantity > portfolio.positionQuantity + positionTolerance
-  ) {
-    return err({ code: "INSUFFICIENT_POSITION" });
+  if (intent.side === "SELL") {
+    if (config.allowShort === true) {
+      const openingShortQty = Math.max(0, intent.quantity - Math.max(0, portfolio.positionQuantity));
+      if (openingShortQty > positionTolerance && openingShortQty * price + fee > portfolio.cash + cashTolerance) {
+        return err({ code: "INSUFFICIENT_CASH" });
+      }
+    } else if (intent.quantity > portfolio.positionQuantity + positionTolerance) {
+      return err({ code: "INSUFFICIENT_POSITION" });
+    }
   }
   const fill = createFill({
     fillId: `paper:${intent.clientOrderId}:${executedAt}`,

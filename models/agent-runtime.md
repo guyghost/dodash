@@ -265,3 +265,24 @@ En mode `paper` avec `positionAware === true` :
    - Lorsque `portfolio.positionQuantity === 0` et `input.lastTradeAt !== null`, si `now - input.lastTradeAt < Math.max(risk.cooldownMs, 300_000)` (5 minutes minimum après une clôture), les signaux `BUY` sont filtrés pour empêcher tout rachat à la bougie suivante après un Stop-Loss.
 3. **Seuil de sortie anticipée en gain relevé à `+25 bps` / `RSI >= 65`** :
    - À l'intérieur du corridor `[stopLossPrice, takeProfitPrice]`, un signal `SELL` non protecteur est ignoré tant que `rsi < 65` et `last.close <= portfolio.averagePrice * 1.0025` (`+25 bps`), afin que les gagnants atteignent le Breakeven (`+22 bps`), le Trailing Stop (`+35 bps`) ou le Take-Profit (`+55 bps`).
+
+## Amendement 2026-11-19 (v4) — Filtre de Tendance Horaire (`EMA 60`) & Long/Short Symétrique en Paper
+
+Strictement borné à `executionMode === "paper"` avec `positionAware === true` (le mode `live` spot reste `allowShort: false` / `SPOT_SHORT_FORBIDDEN`) :
+
+1. **Support `allowShort?: boolean` (défaut `false`) de bout en bout** :
+   - **Stratégies** (`rsi-reversion`, `ema-cross`, `breakout`) : lorsque `allowShort === true`, `FLAT` autorise `BUY` et `SELL` ; `LONG` bloque `BUY` ; `SHORT` bloque `SELL`.
+   - **Allocateur** (`allocateSignals`) : en `LONG`, `net < 0` ferme `heldQty` ; en `SHORT` (`heldQty < -minNet`), `net > 0` couvre `Math.abs(heldQty)` sans inversion en un seul ordre ; en `FLAT`, `net > 0` ouvre un `LONG` et `net < 0` ouvre un `SHORT` plafonnés par `remainingNotional / price`.
+   - **Risque** (`checkRisk`) : `SPOT_SHORT_FORBIDDEN` est levé uniquement si `config.allowShort === true`. Tout ordre réduisant une position (`SELL` sur `LONG` ou `BUY` sur `SHORT`, `quantity <= |currentPositionQuantity|`) est exempté des limites perte/cooldown/exposition.
+   - **Paper Broker** (`executePaperOrder`) : lorsque `config.allowShort === true`, un `SELL` ouvrant un `SHORT` vérifie la marge cash (`notional + fee <= portfolio.cash + cashTolerance`) et applique la comptabilité short (`positionQuantity < 0`, `realizedPnl` au rachat `BUY` = `(averagePrice - price) * closedQuantity - fee`).
+2. **Filtre de tendance horaire (`EMA 60` sur les 200 bougies `1m`)** :
+   - Calculé purement sur `candles.map(c => c.close)` dès que `candles.length >= 60`.
+   - **Tendance horaire haussière (`last.close >= ema60`)** : `BUY` autorisé (`1,15×` en `BULLISH`, `1,0×` neutre, `0,4×` si `emaFast < emaSlow`) ; ouverture `SELL` (short) bloquée sauf `rsi-reversion` avec `rsi >= 80` (`0,4×`).
+   - **Tendance horaire baissière (`last.close < ema60`)** : ouverture `SELL` (short) autorisée (`1,15×` en `BEARISH`, `1,0×` neutre, `0,4×` si `emaFast > emaSlow`) ; ouverture `BUY` (long) bloquée sauf `rsi-reversion` avec `rsi <= 20` (`0,4×`).
+3. **Protection & Breakeven / Trailing Stop symétrique sur `SHORT` (`positionQuantity < 0`)** :
+   - `baseStopLossPrice = averagePrice + stopDistance`, `takeProfitPrice = averagePrice - takeDistance`.
+   - `lowWaterMark = Math.min(averagePrice, last.close, ...candlesSinceEntry.map(c => c.low))`, `peakGainBps = ((averagePrice - lowWaterMark) / averagePrice) * 10_000`.
+   - Breakeven (`peakGainBps >= 22`) → `stopLossPrice <= averagePrice * 0.9995` ; Trailing (`peakGainBps >= 35`) → `stopLossPrice <= Math.min(averagePrice * 0.999, lowWaterMark + Math.max(atr, lowWaterMark * 0.0018))`.
+   - Hors SL/TP, un `BUY` stratégie non protecteur est ignoré tant que `rsi > 35` et `last.close >= averagePrice * 0.9975` (`< +25 bps`).
+4. **Projection `/pnl` & Dashboard** :
+   - `models/dashboard-pnl-history.ts` et `apps/dashboard/src/dashboard-api.ts` acceptent `positionQuantity` signé (`< 0` pour `SHORT`) avec `grossExposure = |positionQuantity| * markPrice`.

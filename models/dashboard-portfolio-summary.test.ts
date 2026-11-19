@@ -256,7 +256,7 @@ describe("dashboard portfolio summary projection", () => {
   it("fails closed on out-of-domain product facts", () => {
     const cases: Partial<DashboardPortfolioProductInput>[] = [
       { cash: Number.NaN },
-      { positionQuantity: -0.1 },
+      { positionQuantity: Number.NaN },
       { averagePrice: -1 },
       { dailyPnl: Number.POSITIVE_INFINITY },
       { maxGrossExposure: 0 },

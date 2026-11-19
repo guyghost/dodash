@@ -88,3 +88,9 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
   - [x] Le plancher de cooldown post-clôture (`300_000 ms`) ne s'applique qu'aux `BUY` lorsque `positionQuantity === 0` ; les `SELL` protecteurs restent toujours exécutables.
   - [x] Rétrocompatible avec les sessions live existantes sans redémarrage ni perte d'état Durable Object.
   - Verdict : **APPROUVÉ**.
+- **Revue Amendement 2026-11-19 (v4) — Filtre Horaire `EMA 60` & Long/Short Symétrique en Paper** :
+  - [x] Isolation `live` garantie : `allowShort` vaut `false` par défaut dans les stratégies, l'allocateur, le risque et le broker ; seul `executionMode === "paper"` avec `positionAware === true` l'active.
+  - [x] Aucun levier caché : un `SHORT` paper exige `notional + fee <= portfolio.cash`, et aucune inversion directe `LONG <-> SHORT` en un seul ordre n'est permise (clôture vers `FLAT` d'abord, puis cooldown).
+  - [x] Les ordres de réduction (`SELL` sur `LONG`, `BUY` sur `SHORT`) sont symétriquement exemptés des limites de perte/cooldown/exposition.
+  - [x] Projection `/pnl` et `dashboard-api.ts` alignées sur `positionQuantity` signé et `Math.abs(positionQuantity) * markPrice`.
+  - Verdict : **APPROUVÉ**.

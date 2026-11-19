@@ -397,7 +397,7 @@ export const parseAgentState = (value: unknown): AgentStateView => {
     typeof value.enabled !== "boolean" ||
     !Number.isSafeInteger(value.updatedAt) ||
     !isNonNegativeFinite(value.portfolio.cash) ||
-    !isNonNegativeFinite(value.portfolio.positionQuantity) ||
+    !isFiniteNumber(value.portfolio.positionQuantity) ||
     !isFiniteNumber(value.portfolio.averagePrice) ||
     !isFiniteNumber(value.dailyPnl)
   ) {
@@ -811,7 +811,7 @@ export const parsePortfolioSummary = (value: unknown): PortfolioSummaryView => {
       typeof item.status !== "string" ||
       !PORTFOLIO_PRODUCT_STATUSES.has(item.status) ||
       !isFiniteNumber(item.cash) ||
-      !isNonNegativeFinite(item.positionQuantity) ||
+      !isFiniteNumber(item.positionQuantity) ||
       !isNonNegativeFinite(item.averagePrice) ||
       !isFiniteNumber(item.dailyPnl) ||
       !isFiniteNumber(item.maxGrossExposure) ||
@@ -856,9 +856,9 @@ export const parsePortfolioSummary = (value: unknown): PortfolioSummaryView => {
       valuation.exposureNotional !== grossExposure ||
       valuation.exposureQuality !== exposureQuality ||
       (item.positionQuantity === 0 && (grossExposure !== 0 || exposureQuality !== "fresh")) ||
-      (item.positionQuantity > 0 && grossExposure === null && exposureQuality !== "unavailable") ||
-      (item.positionQuantity > 0 && grossExposure !== null &&
-        (valuation.markPrice === null || grossExposure !== item.positionQuantity * valuation.markPrice || exposureQuality !== valuation.quality))
+      (item.positionQuantity !== 0 && grossExposure === null && exposureQuality !== "unavailable") ||
+      (item.positionQuantity !== 0 && grossExposure !== null &&
+        (valuation.markPrice === null || grossExposure !== Math.abs(item.positionQuantity) * valuation.markPrice || exposureQuality !== valuation.quality))
     );
     if (valuation.asOf !== asOf || invalidNewMeasurement) {
       throw invalidResponse();

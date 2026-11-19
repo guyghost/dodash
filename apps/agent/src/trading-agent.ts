@@ -2889,12 +2889,17 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			return reconciled.value;
 		}
 
+		const allowPaperShort =
+			configuration.executionMode === "paper" &&
+			configuration.strategyOptions?.positionAware === true;
 		const execution = executePaperOrder(
 			portfolio,
 			intent,
 			marketPrice,
 			executedAt,
-			configuration.broker,
+			allowPaperShort
+				? { ...configuration.broker, allowShort: true }
+				: configuration.broker,
 		);
 		if (!execution.ok) {
 			return {
