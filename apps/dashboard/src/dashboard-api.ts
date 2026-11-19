@@ -1005,10 +1005,19 @@ export const createHttpGateway = (
     ? { authorization: `Bearer ${token}` }
     : {};
   const call = async (path: string, init?: RequestInit): Promise<unknown> => {
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timeoutId =
+      controller === null
+        ? null
+        : globalThis.setTimeout(() => controller.abort(), 12_000);
     let response: Response;
     try {
       response = await request(`${base}${path}`, {
+        cache: "no-store",
         ...init,
+        ...(controller === null || init?.signal !== undefined
+          ? {}
+          : { signal: controller.signal }),
         headers: {
           accept: "application/json",
           ...authHeader,
@@ -1017,6 +1026,8 @@ export const createHttpGateway = (
       });
     } catch {
       throw new DashboardRequestError({ code: "REQUEST_FAILED", retryable: true });
+    } finally {
+      if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
     }
     if (!response.ok) {
       throw new DashboardRequestError({

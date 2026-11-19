@@ -83,3 +83,8 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
   - [x] Fraîcheur maximale de 30s sur le cache ticker Coinbase en lecture.
   - [x] Filtre de régime directionnel (`BEARISH` / `BULLISH` / `RANGE`) et Breakeven / Trailing Stop reconstruits purement à partir de `indicators` (`plusDi`, `minusDi`, `trendStrength`) et des bougies postérieures à `lastTradeAt`, sans nouvelle table ni mutation d'état XState.
   - Verdict : **APPROUVÉ**.
+- **Revue Amendement 2026-11-19 (v3) — Calibration 1m (`BEARISH`, Cooldown 5 min, Sortie `+25 bps`, Sizing `0.4×` sous EMA)** :
+  - [x] Aucun nouvel état, événement ou transition XState ; règles purement fonctionnelles dans le filtrage/ajustement des signaux en `paper` + `positionAware`.
+  - [x] Le plancher de cooldown post-clôture (`300_000 ms`) ne s'applique qu'aux `BUY` lorsque `positionQuantity === 0` ; les `SELL` protecteurs restent toujours exécutables.
+  - [x] Rétrocompatible avec les sessions live existantes sans redémarrage ni perte d'état Durable Object.
+  - Verdict : **APPROUVÉ**.

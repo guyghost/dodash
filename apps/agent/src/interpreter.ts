@@ -553,14 +553,14 @@ export const runTradingCycle = async (
                       }
                     } else if (
                       artifacts.indicators !== undefined &&
-                      artifacts.indicators.rsi < 55 &&
-                      last.close <= portfolio.averagePrice * 1.0005
+                      artifacts.indicators.rsi < 65 &&
+                      last.close <= portfolio.averagePrice * 1.0025
                     ) {
                       // À l'intérieur du corridor [stopLossPrice, takeProfitPrice],
-                      // tant que le rebond n'a pas atteint RSI >= 55 et que la
-                      // position n'est pas en gain net (> +5 bps), ignorer les
-                      // signaux SELL prématurés (ex. micro-croisement EMA ou breakout
-                      // bas) pour éviter une liquidation à 100 % en perte hors Stop-Loss.
+                      // tant que le rebond n'a pas atteint RSI >= 65 et que la
+                      // position n'est pas en gain significatif (> +25 bps), ignorer
+                      // les signaux SELL prématurés pour laisser les gagnants atteindre
+                      // le Breakeven (+22 bps), le Trailing Stop (+35 bps) ou le TP.
                       effectiveSignals = Object.freeze(
                         signals.filter((signal) => signal.side !== "SELL"),
                       );
@@ -571,59 +571,94 @@ export const runTradingCycle = async (
                     portfolio.positionQuantity === 0 &&
                     artifacts.indicators !== undefined
                   ) {
-                    // Axe 1 : Filtre de régime directionnel (+DI / -DI / ADX) et
-                    // adaptation de la taille d'entrée (BEARISH / BULLISH / RANGE).
-                    const ind = artifacts.indicators;
-                    const isBearishRegime =
-                      ind.minusDi !== undefined &&
-                      ind.plusDi !== undefined &&
-                      ind.minusDi > ind.plusDi * 1.25 &&
-                      ind.trendStrength >= 22 &&
-                      ind.emaFast < ind.emaSlow;
-                    const isBullishRegime =
-                      ind.plusDi !== undefined &&
-                      ind.minusDi !== undefined &&
-                      ind.plusDi > ind.minusDi * 1.25 &&
-                      ind.trendStrength >= 20 &&
-                      ind.emaFast >= ind.emaSlow;
-                    if (isBearishRegime) {
-                      const adjusted: Signal[] = [];
-                      for (const sig of signals) {
-                        if (sig.side !== "BUY") {
-                          adjusted.push(sig);
-                          continue;
+                    const nowMs = (input.now ?? Date.now)();
+                    const postCloseCooldownMs = Math.max(
+                      input.configuration.risk.cooldownMs,
+                      300_000,
+                    );
+                    if (
+                      input.lastTradeAt !== null &&
+                      nowMs - input.lastTradeAt < postCloseCooldownMs
+                    ) {
+                      // Anti-revenge-buying : bloquer tout nouveau BUY pendant au
+                      // moins 5 minutes après la clôture précédente.
+                      effectiveSignals = Object.freeze(
+                        signals.filter((sig) => sig.side !== "BUY"),
+                      );
+                    } else {
+                      // Axe 1 (calibré 1m) : Filtre de régime directionnel (+DI / -DI / ADX)
+                      // et sizing défensif sous EMA (BEARISH / BULLISH / COUNTER-TREND).
+                      const ind = artifacts.indicators;
+                      const isBearishRegime =
+                        ind.minusDi !== undefined &&
+                        ind.plusDi !== undefined &&
+                        ind.minusDi > ind.plusDi * 1.2 &&
+                        ind.trendStrength >= 15 &&
+                        ind.emaFast < ind.emaSlow;
+                      const isBullishRegime =
+                        ind.plusDi !== undefined &&
+                        ind.minusDi !== undefined &&
+                        ind.plusDi > ind.minusDi * 1.25 &&
+                        ind.trendStrength >= 20 &&
+                        ind.emaFast >= ind.emaSlow;
+                      const isCounterTrendEma = ind.emaFast < ind.emaSlow;
+                      if (isBearishRegime) {
+                        const adjusted: Signal[] = [];
+                        for (const sig of signals) {
+                          if (sig.side !== "BUY") {
+                            adjusted.push(sig);
+                            continue;
+                          }
+                          if (sig.strategyId === "rsi-reversion" && ind.rsi <= 22) {
+                            const scaled = createSignal({
+                              strategyId: sig.strategyId,
+                              productId: sig.productId,
+                              side: "BUY",
+                              confidence: sig.confidence,
+                              suggestedSize: sig.suggestedSize * 0.4,
+                              reasonCode: sig.reasonCode,
+                            });
+                            if (scaled.ok) adjusted.push(scaled.value);
+                          }
                         }
-                        if (sig.strategyId === "rsi-reversion" && ind.rsi <= 22) {
+                        effectiveSignals = Object.freeze(adjusted);
+                      } else if (isBullishRegime) {
+                        const adjusted: Signal[] = [];
+                        for (const sig of signals) {
+                          if (sig.side !== "BUY") {
+                            adjusted.push(sig);
+                            continue;
+                          }
                           const scaled = createSignal({
                             strategyId: sig.strategyId,
                             productId: sig.productId,
                             side: "BUY",
                             confidence: sig.confidence,
-                            suggestedSize: sig.suggestedSize * 0.5,
+                            suggestedSize: sig.suggestedSize * 1.15,
                             reasonCode: sig.reasonCode,
                           });
                           if (scaled.ok) adjusted.push(scaled.value);
                         }
-                      }
-                      effectiveSignals = Object.freeze(adjusted);
-                    } else if (isBullishRegime) {
-                      const adjusted: Signal[] = [];
-                      for (const sig of signals) {
-                        if (sig.side !== "BUY") {
-                          adjusted.push(sig);
-                          continue;
+                        effectiveSignals = Object.freeze(adjusted);
+                      } else if (isCounterTrendEma) {
+                        const adjusted: Signal[] = [];
+                        for (const sig of signals) {
+                          if (sig.side !== "BUY") {
+                            adjusted.push(sig);
+                            continue;
+                          }
+                          const scaled = createSignal({
+                            strategyId: sig.strategyId,
+                            productId: sig.productId,
+                            side: "BUY",
+                            confidence: sig.confidence,
+                            suggestedSize: sig.suggestedSize * 0.4,
+                            reasonCode: sig.reasonCode,
+                          });
+                          if (scaled.ok) adjusted.push(scaled.value);
                         }
-                        const scaled = createSignal({
-                          strategyId: sig.strategyId,
-                          productId: sig.productId,
-                          side: "BUY",
-                          confidence: sig.confidence,
-                          suggestedSize: sig.suggestedSize * 1.15,
-                          reasonCode: sig.reasonCode,
-                        });
-                        if (scaled.ok) adjusted.push(scaled.value);
+                        effectiveSignals = Object.freeze(adjusted);
                       }
-                      effectiveSignals = Object.freeze(adjusted);
                     }
                   }
                   return allocateSignals({

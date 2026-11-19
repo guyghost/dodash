@@ -253,3 +253,15 @@ En mode `paper` `positionAware`, lorsqu'une position longue est ouverte (`portfo
   - **Palier Breakeven (`peakGainBps >= 22`)** : le Stop-Loss remonte au minimum à `portfolio.averagePrice * 1.0005` (`+5 bps`, couvrant les frais aller-retour).
   - **Palier Trailing Stop (`peakGainBps >= 35`)** : le Stop-Loss suit le plus haut à `Math.max(portfolio.averagePrice * 1.0010, highWaterMark - Math.max(atrVal ?? 0, highWaterMark * 0.0018))`.
 - Si `last.close <= effectiveStopLossPrice`, l'interpréteur émet un signal `SELL` prioritaire fermant 100 % de la position (`PAPER_TRAILING_STOP` si `effectiveStopLossPrice > portfolio.averagePrice`, sinon `PAPER_STOP_LOSS`).
+
+## Amendement 2026-11-19 (v3) — Calibration 1m : Régime Baissier, Anti-Revenge-Buying & Asymétrie Gain/Perte
+
+En mode `paper` avec `positionAware === true` :
+
+1. **Calibration 1-minute du filtre `BEARISH` et sizing défensif sous EMA** :
+   - Le régime `BEARISH` est actif dès que `minusDi > plusDi * 1.2 && trendStrength >= 15 && emaFast < emaSlow` (seuil ADX abaissé de `22` à `15` pour capturer les glissades régulières en 1-minute). En `BEARISH`, seuls les `BUY` de `rsi-reversion` avec `rsi <= 22` sont conservés, avec `suggestedSize * 0.4`.
+   - Hors `BEARISH` et `BULLISH`, si `emaFast < emaSlow` (rebond contre-tendance), tout signal `BUY` voit sa taille réduite à `suggestedSize * 0.4` afin d'éviter l'explosion de notionnel sur les chutes de RSI.
+2. **Plancher de cooldown post-clôture (anti-revenge-buying)** :
+   - Lorsque `portfolio.positionQuantity === 0` et `input.lastTradeAt !== null`, si `now - input.lastTradeAt < Math.max(risk.cooldownMs, 300_000)` (5 minutes minimum après une clôture), les signaux `BUY` sont filtrés pour empêcher tout rachat à la bougie suivante après un Stop-Loss.
+3. **Seuil de sortie anticipée en gain relevé à `+25 bps` / `RSI >= 65`** :
+   - À l'intérieur du corridor `[stopLossPrice, takeProfitPrice]`, un signal `SELL` non protecteur est ignoré tant que `rsi < 65` et `last.close <= portfolio.averagePrice * 1.0025` (`+25 bps`), afin que les gagnants atteignent le Breakeven (`+22 bps`), le Trailing Stop (`+35 bps`) ou le Take-Profit (`+55 bps`).
