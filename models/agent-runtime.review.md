@@ -94,3 +94,7 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
   - [x] Les ordres de réduction (`SELL` sur `LONG`, `BUY` sur `SHORT`) sont symétriquement exemptés des limites de perte/cooldown/exposition.
   - [x] Projection `/pnl` et `dashboard-api.ts` alignées sur `positionQuantity` signé et `Math.abs(positionQuantity) * markPrice`.
   - Verdict : **APPROUVÉ**.
+- **Revue Amendement 2026-11-20 (v5) — Wide Trailing `V5B` (`>= +75 bps`, recul `max(1,5× ATR, 40 bps)`)** :
+  - [x] Ajustement purement paramétrique des seuils de trailing stop dans l'interpréteur `paper`, sans modification de la machine XState ni du schéma persisté.
+  - [x] Validé empiriquement en backtest `5m` (`+$103,35` vs `-$53,30`, WR `51,5 %`, Max DD `0,419 %`).
+  - Verdict : **APPROUVÉ**.

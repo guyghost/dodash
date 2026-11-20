@@ -286,3 +286,10 @@ Strictement borné à `executionMode === "paper"` avec `positionAware === true` 
    - Hors SL/TP, un `BUY` stratégie non protecteur est ignoré tant que `rsi > 35` et `last.close >= averagePrice * 0.9975` (`< +25 bps`).
 4. **Projection `/pnl` & Dashboard** :
    - `models/dashboard-pnl-history.ts` et `apps/dashboard/src/dashboard-api.ts` acceptent `positionQuantity` signé (`< 0` pour `SHORT`) avec `grossExposure = |positionQuantity| * markPrice`.
+
+## Amendement 2026-11-20 (v5) — Calibration Wide Trailing (`V5B`) validée par backtest `5m`
+
+Suite à l'étude d'ablation sur 5 jours réels Hyperliquid (`5m`, 1 441 bougies/paire), le Breakeven (`+22 bps`) et le Trailing Stop (`+35 bps` / recul `18 bps`) s'avéraient trop serrés (coupure prématurée de `117` trades gagnants). Ils sont remplacés par le **Wide Trailing symétrique (`V5B`)** :
+
+- **LONG (`positionQuantity > 0`)** : le plancher dynamique ne s'active qu'à partir de `peakGainBps >= 75` à `Math.max(portfolio.averagePrice * 1.001, highWaterMark - Math.max(useAtr ? atrVal * 1.5 : 0, highWaterMark * 0.004))`. En deçà de `+75 bps`, `baseStopLossPrice` reste inchangé pour laisser le trade atteindre le Take-Profit.
+- **SHORT (`positionQuantity < 0`)** : le plafond dynamique ne s'active qu'à partir de `peakGainBps >= 75` à `Math.min(portfolio.averagePrice * 0.999, lowWaterMark + Math.max(useAtr ? atrVal * 1.5 : 0, lowWaterMark * 0.004))`.

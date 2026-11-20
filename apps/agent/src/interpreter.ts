@@ -517,18 +517,16 @@ export const runTradingCycle = async (
                           portfolio.averagePrice) *
                         10_000;
                       const dynamicFloorStop =
-                        peakGainBps >= 35
+                        peakGainBps >= 75
                           ? Math.max(
                               portfolio.averagePrice * 1.001,
                               highWaterMark -
                                 Math.max(
-                                  useAtr ? atrVal * 1.0 : 0,
-                                  highWaterMark * 0.0018,
+                                  useAtr ? atrVal * 1.5 : 0,
+                                  highWaterMark * 0.004,
                                 ),
                             )
-                          : peakGainBps >= 22
-                            ? portfolio.averagePrice * 1.0005
-                            : baseStopLossPrice;
+                          : baseStopLossPrice;
                       const stopLossPrice = Math.max(
                         baseStopLossPrice,
                         dynamicFloorStop,
@@ -580,18 +578,16 @@ export const runTradingCycle = async (
                           portfolio.averagePrice) *
                         10_000;
                       const dynamicCeilingStop =
-                        peakGainBps >= 35
+                        peakGainBps >= 75
                           ? Math.min(
                               portfolio.averagePrice * 0.999,
                               lowWaterMark +
                                 Math.max(
-                                  useAtr ? atrVal * 1.0 : 0,
-                                  lowWaterMark * 0.0018,
+                                  useAtr ? atrVal * 1.5 : 0,
+                                  lowWaterMark * 0.004,
                                 ),
                             )
-                          : peakGainBps >= 22
-                            ? portfolio.averagePrice * 0.9995
-                            : baseStopLossPrice;
+                          : baseStopLossPrice;
                       const stopLossPrice = Math.min(
                         baseStopLossPrice,
                         dynamicCeilingStop,
