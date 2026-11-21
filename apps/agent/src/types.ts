@@ -12,6 +12,7 @@ import type { IndicatorSnapshot } from "@dodash/indicators-prolog";
 import type {
 	DailyRiskWindow,
 	PaperValuationMark,
+	PaperPositionProtection,
 	ShutdownMode,
 	WorkflowError,
 } from "@dodash/models";
@@ -19,7 +20,7 @@ import type { PaperPortfolio } from "@dodash/paper-execution";
 import type { RiskDecision } from "@dodash/risk";
 
 import type { AgentConfiguration } from "./configuration.js";
-import type { PersistedTradingMachine } from "./machine-session.js";
+import type { PersistedTradingMachine, TradingMachineSession } from "./machine-session.js";
 
 export interface MarketSnapshot {
 	readonly productId: ProductId;
@@ -58,6 +59,7 @@ export interface MarketRetryCheckpoint {
 }
 
 export interface CycleArtifacts {
+	readonly paperProtection?: PaperPositionProtection | null;
 	readonly cycleId: string;
 	readonly triggeredAt: number;
 	readonly marketRetry?: MarketRetryCheckpoint;
@@ -204,10 +206,12 @@ export interface TradingCycleEffects {
 	proposePortfolioRisk?(
 		productId: string,
 		proposedGrossExposure: number,
+		positionChange?: { readonly currentQuantity: number; readonly projectedQuantity: number },
 	): Promise<PortfolioAdmissionDecision>;
 }
 
 export interface RunTradingCycleInput {
+	readonly session?: TradingMachineSession;
 	readonly agentId: string;
 	readonly configuration: AgentConfiguration;
 	readonly machine: PersistedTradingMachine;

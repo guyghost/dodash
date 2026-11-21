@@ -1,5 +1,6 @@
 import {
   normalizePaperValuationMark,
+  normalizePaperPositionProtection,
   normalizeMarketAdmission,
   multiProductPortfolioMachine,
   projectDashboardPortfolioSummary,
@@ -147,11 +148,13 @@ export const proposePortfolioRisk = (
   current: PersistedPortfolioMachine,
   productId: string,
   proposedGrossExposure: number,
+  positionChange?: { readonly currentQuantity: number; readonly projectedQuantity: number },
 ): { readonly record: PersistedPortfolioMachine; readonly decision: PortfolioAdmissionDecision } => {
   const record = sendPortfolioEvent(current, {
     type: "RISK_PROPOSED",
     productId,
     proposedGrossExposure,
+    ...(positionChange === undefined ? {} : { positionChange }),
   });
   const last = record.context.lastDecision;
   const own = last?.productId === productId ? last : null;
@@ -504,6 +507,7 @@ export const resolveRestoredPortfolioSession = (
         ...runtime.machine,
         context: {
           ...runtime.machine.context,
+          paperProtection: normalizePaperPositionProtection(runtime.machine.context.paperProtection),
           marketAdmission: normalizeMarketAdmission(runtime.machine.context.marketAdmission, runtime.machine.context),
         },
       }),
@@ -577,7 +581,13 @@ export const carryPaperProductRuntime = (
 ): PortfolioProductRuntime =>
   Object.freeze({
     ...previous,
-    machine,
+    machine: Object.freeze({
+      ...machine,
+      context: {
+        ...machine.context,
+        paperProtection: normalizePaperPositionProtection(previous.machine.context.paperProtection),
+      },
+    }),
   });
 
 /** Applique cash / quantité / prix moyen d'un book durable sur une manche neuve. */

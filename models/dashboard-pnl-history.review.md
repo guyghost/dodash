@@ -1,5 +1,11 @@
 # Revue — historique PnL et équité du dashboard (dao #26)
 
+## Revue de l'amendement du 2026-11-21 — Positions signées et protections
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
+
+La revue `trading-safety-corrections.review.md` approuve et vérifie les plans short, le trailing persisté, l'isolation de la position sélectionnée et la suppression des niveaux/confirmations inventés. La projection reste pure et en lecture seule. Les tests React et la démo navigateur confirment l'affichage conservateur lorsque la protection manque.
+
 Verdict : **APPROUVÉ** (2 corrections intégrées au modèle avant approbation,
 0 bloqueur ouvert).
 Modèle : `dashboard-pnl-history.md`

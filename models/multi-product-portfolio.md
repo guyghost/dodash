@@ -1,5 +1,9 @@
 # Portefeuille multi-produits avec budget de risque consolidé (DAO #24)
 
+## Amendement 2026-11-21 — Réductions d'exposition après audit
+
+Le contrat normatif `trading-safety-corrections.md` précise INV-P1/INV-P2 : les plafonds financiers bloquent les augmentations, pas une réduction sans inversion validée par la garde. Le kill switch et le statut actif du produit restent prioritaires. La machine et `evaluatePortfolioRisk` partagent cette sémantique.
+
 Statut : MODÉLISÉ (revue incluse ; le branchement runtime est modélisé au §9
 mais **hors périmètre d'implémentation** de ce cycle — voir §3).
 

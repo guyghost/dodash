@@ -11,6 +11,7 @@ import {
   decisionCandlePnl,
   planTargetExposure,
   resolveDailyRiskWindow,
+  resolvePaperPositionProtection,
   targetExposureRiskGate,
   type TradingCycleEvent,
   type WorkflowError,
@@ -110,7 +111,7 @@ const resolveFundingInput = async (
 export const runTradingCycle = async (
   input: RunTradingCycleInput,
 ): Promise<RunTradingCycleResult> => {
-  const session = createTradingMachineSession(
+  const session = input.session ?? createTradingMachineSession(
     {
       agentId: input.agentId,
       strategyIds: input.configuration.strategyIds,
@@ -469,73 +470,31 @@ export const runTradingCycle = async (
                     input.configuration.timeframe === "ONE_MINUTE";
                   const earlyExitBps = isOneMinute ? 25 : 45;
                   const rsiExitFloorBps = isOneMinute ? 5 : 15;
+                  const protection = allowPaperShort
+                    ? resolvePaperPositionProtection(session.context.paperProtection ?? null, {
+                        positionQuantity: portfolio.positionQuantity,
+                        averagePrice: portfolio.averagePrice,
+                        enteredAt: input.lastTradeAt,
+                        candles: artifacts.market?.candles ?? [],
+                        ...(artifacts.indicators?.atr === undefined ? {} : { atr: artifacts.indicators.atr }),
+                        risk: input.configuration.risk,
+                      })
+                    : null;
+                  if (allowPaperShort) {
+                    await send({ type: "PAPER_PROTECTION_UPDATED", protection });
+                    if (artifacts !== null) artifacts = Object.freeze({ ...artifacts, paperProtection: protection });
+                  }
                   if (
                     allowPaperShort &&
                     portfolio.positionQuantity !== 0 &&
-                    portfolio.averagePrice > 0
+                    portfolio.averagePrice > 0 &&
+                    protection !== null
                   ) {
                     const isLongPosition = portfolio.positionQuantity > 0;
                     const absPositionQty = Math.abs(portfolio.positionQuantity);
-                    const riskCfg = input.configuration.risk;
-                    const atrVal = artifacts.indicators?.atr;
-                    const useAtr =
-                      atrVal !== undefined &&
-                      Number.isFinite(atrVal) &&
-                      atrVal > 0 &&
-                      riskCfg.atrStopLossMultiple !== undefined &&
-                      riskCfg.atrTakeProfitMultiple !== undefined;
-                    const bpsStopDistance =
-                      portfolio.averagePrice * (riskCfg.stopLossBps / 10_000);
-                    const bpsTakeDistance =
-                      portfolio.averagePrice * (riskCfg.takeProfitBps / 10_000);
-                    const stopDistance = useAtr
-                      ? Math.max(
-                          atrVal * (riskCfg.atrStopLossMultiple ?? 2),
-                          bpsStopDistance,
-                        )
-                      : bpsStopDistance;
-                    const takeDistance = useAtr
-                      ? Math.max(
-                          atrVal * (riskCfg.atrTakeProfitMultiple ?? 3),
-                          bpsTakeDistance,
-                        )
-                      : bpsTakeDistance;
-                    const candlesSinceEntry =
-                      input.lastTradeAt !== null
-                        ? (artifacts.market?.candles ?? []).filter(
-                            (c) => c.start >= input.lastTradeAt!,
-                          )
-                        : [];
+                    const { stopLossPrice, takeProfitPrice } = protection;
 
                     if (isLongPosition) {
-                      const baseStopLossPrice =
-                        portfolio.averagePrice - stopDistance;
-                      const takeProfitPrice =
-                        portfolio.averagePrice + takeDistance;
-                      const highWaterMark = Math.max(
-                        portfolio.averagePrice,
-                        last.close,
-                        ...candlesSinceEntry.map((c) => c.high),
-                      );
-                      const peakGainBps =
-                        ((highWaterMark - portfolio.averagePrice) /
-                          portfolio.averagePrice) *
-                        10_000;
-                      const dynamicFloorStop =
-                        peakGainBps >= 75
-                          ? Math.max(
-                              portfolio.averagePrice * 1.001,
-                              highWaterMark -
-                                Math.max(
-                                  useAtr ? atrVal * 1.5 : 0,
-                                  highWaterMark * 0.004,
-                                ),
-                            )
-                          : baseStopLossPrice;
-                      const stopLossPrice = Math.max(
-                        baseStopLossPrice,
-                        dynamicFloorStop,
-                      );
                       if (
                         last.close <= stopLossPrice ||
                         last.close >= takeProfitPrice
@@ -562,7 +521,7 @@ export const runTradingCycle = async (
                           }
                         }
                       } else if (
-                        artifacts.indicators !== undefined &&
+                        artifacts?.indicators !== undefined &&
                         last.close <=
                           portfolio.averagePrice * (1 + earlyExitBps / 10_000) &&
                         !(
@@ -577,36 +536,6 @@ export const runTradingCycle = async (
                         );
                       }
                     } else {
-                      // Position SHORT symétrique : SL au-dessus, TP en-dessous,
-                      // Wide Trailing (+75 bps / 1,5x ATR / 40 bps).
-                      const baseStopLossPrice =
-                        portfolio.averagePrice + stopDistance;
-                      const takeProfitPrice =
-                        portfolio.averagePrice - takeDistance;
-                      const lowWaterMark = Math.min(
-                        portfolio.averagePrice,
-                        last.close,
-                        ...candlesSinceEntry.map((c) => c.low),
-                      );
-                      const peakGainBps =
-                        ((portfolio.averagePrice - lowWaterMark) /
-                          portfolio.averagePrice) *
-                        10_000;
-                      const dynamicCeilingStop =
-                        peakGainBps >= 75
-                          ? Math.min(
-                              portfolio.averagePrice * 0.999,
-                              lowWaterMark +
-                                Math.max(
-                                  useAtr ? atrVal * 1.5 : 0,
-                                  lowWaterMark * 0.004,
-                                ),
-                            )
-                          : baseStopLossPrice;
-                      const stopLossPrice = Math.min(
-                        baseStopLossPrice,
-                        dynamicCeilingStop,
-                      );
                       if (
                         last.close >= stopLossPrice ||
                         last.close <= takeProfitPrice
@@ -633,7 +562,7 @@ export const runTradingCycle = async (
                           }
                         }
                       } else if (
-                        artifacts.indicators !== undefined &&
+                        artifacts?.indicators !== undefined &&
                         last.close >=
                           portfolio.averagePrice * (1 - earlyExitBps / 10_000) &&
                         !(
@@ -651,7 +580,7 @@ export const runTradingCycle = async (
                   } else if (
                     allowPaperShort &&
                     portfolio.positionQuantity === 0 &&
-                    artifacts.indicators !== undefined
+                    artifacts?.indicators !== undefined
                   ) {
                     const nowMs = (input.now ?? Date.now)();
                     const postCloseCooldownMs = Math.max(
@@ -745,7 +674,7 @@ export const runTradingCycle = async (
                   const effectiveBook = forceMarketExecution ? null : book;
                   return allocateSignals({
                     agentId: input.agentId,
-                    cycleId: artifacts.cycleId,
+                    cycleId: artifacts?.cycleId ?? input.cycleId,
                     decisionId,
                     signals: effectiveSignals,
                     marketPrices: { [input.configuration.productId]: last.close },
@@ -862,6 +791,10 @@ export const runTradingCycle = async (
             const admission = await input.effects.proposePortfolioRisk(
               input.configuration.productId,
               result.value.projectedPositionNotional,
+              {
+                currentQuantity: portfolio.positionQuantity,
+                projectedQuantity: portfolio.positionQuantity + (order.side === "BUY" ? order.quantity : -order.quantity),
+              },
             );
             if (!admission.approved) {
               await send({ type: "RISK_REJECTED" });
@@ -1181,7 +1114,7 @@ export const runTradingCycle = async (
     }
     throw new Error("Trading interpreter exceeded its bounded step budget");
   } finally {
-    session.stop();
+    if (input.session === undefined) session.stop();
   }
 };
 

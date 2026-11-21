@@ -717,6 +717,14 @@ export {
 	targetExposureRiskGate,
 } from "./target-exposure.js";
 export { tradingCycleMachine } from "./trading-cycle.machine.js";
+export {
+	normalizePaperPositionProtection,
+	resolvePaperPositionProtection,
+} from "./paper-position-protection.js";
+export type {
+	PaperPositionProtection,
+	PaperPositionProtectionInput,
+} from "./paper-position-protection.js";
 export type {
 	ControlPermissions,
 	CycleOutcome,

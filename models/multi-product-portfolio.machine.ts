@@ -68,7 +68,12 @@ export type MultiProductPortfolioEvent =
       grossExposure: number;
       dailyPnl: number;
     }
-  | { type: "RISK_PROPOSED"; productId: string; proposedGrossExposure: number }
+  | {
+      type: "RISK_PROPOSED";
+      productId: string;
+      proposedGrossExposure: number;
+      positionChange?: { readonly currentQuantity: number; readonly projectedQuantity: number };
+    }
   | { type: "KILL_SWITCH_ENGAGED"; controlId: string }
   | { type: "RESET" };
 
@@ -143,16 +148,28 @@ export const multiProductPortfolioMachine = setup({
     admissible: ({ context, event }) => {
       if (event.type !== "RISK_PROPOSED") return false;
       const known = Object.hasOwn(context.statuses, event.productId);
+      const change = event.positionChange;
+      const reducing =
+        change === undefined
+          ? event.proposedGrossExposure < (context.exposure[event.productId] ?? 0)
+          : Number.isFinite(change.currentQuantity) &&
+            Number.isFinite(change.projectedQuantity) &&
+            Math.abs(change.projectedQuantity) < Math.abs(change.currentQuantity) &&
+            (change.projectedQuantity === 0 ||
+              Math.sign(change.projectedQuantity) === Math.sign(change.currentQuantity));
       return (
         known &&
         context.statuses[event.productId] === "running" &&
         !context.killSwitchActive &&
-        sumOverSorted(context.dailyPnl) > -context.limits.maxDailyLoss &&
-        sumWithReplacement(
-          context.exposure,
-          event.productId,
-          event.proposedGrossExposure,
-        ) <= context.limits.maxGrossExposure
+        Number.isFinite(event.proposedGrossExposure) &&
+        event.proposedGrossExposure >= 0 &&
+        (reducing ||
+          (sumOverSorted(context.dailyPnl) > -context.limits.maxDailyLoss &&
+            sumWithReplacement(
+              context.exposure,
+              event.productId,
+              event.proposedGrossExposure,
+            ) <= context.limits.maxGrossExposure))
       );
     },
     // INV-P3 : quiescence — aucun produit pending/running restant.

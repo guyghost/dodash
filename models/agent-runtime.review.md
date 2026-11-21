@@ -1,5 +1,11 @@
 # Revue du modèle d’exécution Agent
 
+## Revue de l'amendement du 2026-11-21 — Acteur unique et trailing durable
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
+
+La revue `trading-safety-corrections.review.md` approuve et vérifie le propriétaire d'exécution, l'acteur XState partagé avec les commandes et le drainage des soumissions possibles. Le calcul du trailing est pur, puis transporté et persisté par `PAPER_PROTECTION_UPDATED`. Les seuils et la comptabilité v7 restent conservés ; la matrice de non-régression et les résultats globaux figurent dans la revue commune.
+
 | Cas | Comportement fermé | Couverture |
 | --- | --- | --- |
 | Démarrage sans permission | événement refusé par XState | Couvert |

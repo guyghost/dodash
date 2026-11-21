@@ -4,6 +4,7 @@ import {
   type PaperValuation,
   type PaperValuationMark,
 } from "./paper-valuation.js";
+import { normalizePaperPositionProtection, type PaperPositionProtection } from "./paper-position-protection.js";
 
 export const DASHBOARD_PNL_HISTORY_MAX_CYCLES = 50;
 export const DASHBOARD_PNL_HISTORY_DEFAULT_LIMIT = 30;
@@ -105,6 +106,7 @@ type SubmissionFacts =
   | { readonly kind: "none" };
 
 interface ArtifactsFacts {
+  readonly paperProtection: PaperPositionProtection | null;
   readonly productId: string | null;
   readonly marketPrice: number | null;
   readonly hasMarketSnapshot: boolean;
@@ -271,7 +273,10 @@ const parseArtifacts = (raw: string): ArtifactsFacts | null => {
     }
   }
 
+  const paperProtection = normalizePaperPositionProtection(parsed.paperProtection);
+  if (parsed.paperProtection !== undefined && parsed.paperProtection !== null && paperProtection === null) return null;
   return {
+    paperProtection,
     productId,
     marketPrice,
     hasMarketSnapshot,
@@ -425,16 +430,28 @@ export const projectDashboardPnlHistory = (
       }
       if (
         submission.kind === "trade" &&
-        artifacts.side === "BUY" &&
-        artifacts.stopLossPrice !== null &&
-        artifacts.takeProfitPrice !== null
+        ((artifacts.side === "BUY" && submission.portfolio.positionQuantity > 0) ||
+          (artifacts.side === "SELL" && submission.portfolio.positionQuantity < 0))
       ) {
-        protectionByProduct.set(productKey, {
+        protectionByProduct.set(productKey, artifacts.stopLossPrice === null || artifacts.takeProfitPrice === null ? null : {
           stopLossPrice: artifacts.stopLossPrice,
           takeProfitPrice: artifacts.takeProfitPrice,
           protectiveOrderConfirmed: submission.protectiveOrderConfirmed,
         });
       }
+      if (submission.portfolio.positionQuantity === 0) protectionByProduct.delete(productKey);
+    }
+
+    const protectedPortfolio = carriedPortfolioByProduct.get(productKey);
+    if (artifacts.paperProtection !== null && protectedPortfolio !== undefined &&
+      artifacts.paperProtection.averagePrice === protectedPortfolio.averagePrice &&
+      ((artifacts.paperProtection.side === "LONG" && protectedPortfolio.positionQuantity > 0) ||
+        (artifacts.paperProtection.side === "SHORT" && protectedPortfolio.positionQuantity < 0))) {
+      protectionByProduct.set(productKey, {
+        stopLossPrice: artifacts.paperProtection.stopLossPrice,
+        takeProfitPrice: artifacts.paperProtection.takeProfitPrice,
+        protectiveOrderConfirmed: false,
+      });
     }
 
     let realizedPnl: number | null = null;

@@ -127,6 +127,7 @@ import { runTradingCycle } from "./interpreter.js";
 import {
 	createTradingMachineSession,
 	type PersistedTradingMachine,
+	type TradingMachineSession,
 } from "./machine-session.js";
 import {
 	createOperatorNotificationDeduper,
@@ -289,8 +290,36 @@ const parseJson = <T>(raw: string): T | null => {
 
 const PAPER_BOOK_ROW_ID = "session";
 
+interface ActiveTradingCycle {
+	session: TradingMachineSession | null;
+	completion: Promise<void>;
+}
+
 export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	override initialState = INITIAL_AGENT_STATE;
+	private activeCycles?: Map<string, ActiveTradingCycle>;
+
+	private async runExclusiveCycle(
+		key: string,
+		execute: (active: ActiveTradingCycle) => Promise<void>,
+	): Promise<void> {
+		this.activeCycles ??= new Map();
+		const cycles = this.activeCycles;
+		const running = cycles.get(key);
+		if (running !== undefined) return running.completion;
+		const active: ActiveTradingCycle = {
+			session: null,
+			completion: Promise.resolve(),
+		};
+		cycles.set(key, active);
+		try {
+			active.completion = execute(active);
+			await active.completion;
+		} finally {
+			active.session?.stop();
+			cycles.delete(key);
+		}
+	}
 
 	/**
 	 * Toute écriture d'état recopié le book paper dans une table dédiée.
@@ -1189,7 +1218,8 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		if (this.state.machine === null || this.state.configuration === null) {
 			return { ok: false, error: { code: "NOT_CONFIGURED" } };
 		}
-		const session = createTradingMachineSession(
+		const running = this.activeCycles?.get("single");
+		const session = running?.session ?? createTradingMachineSession(
 			{
 				agentId: this.name,
 				strategyIds: this.state.configuration.strategyIds,
@@ -1205,8 +1235,9 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				: session.context.cycleId;
 		session.send(event);
 		const machine = session.record;
-		session.stop();
+		if (running === undefined) session.stop();
 		await this.persistMachine(machine);
+		if (running !== undefined) await running.completion;
 		await this.runCurrent(false, resumeCycleId);
 		const controlEvent: TradingTelemetryEvent = {
 			schemaVersion: 3,
@@ -1248,6 +1279,16 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		triggerAlarm: boolean,
 		resumeCycleIdOverride?: string | null,
 	): Promise<void> {
+		return this.runExclusiveCycle("single", (active) =>
+			this.runCurrentCycle(triggerAlarm, active, resumeCycleIdOverride),
+		);
+	}
+
+	private async runCurrentCycle(
+		triggerAlarm: boolean,
+		active: ActiveTradingCycle,
+		resumeCycleIdOverride?: string | null,
+	): Promise<void> {
 		const startedAt = Date.now();
 		const configuration = this.state.configuration;
 		const machine = this.state.machine;
@@ -1280,7 +1321,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				identity.triggeredAt,
 			),
 		);
-		const result = await runTradingCycle({
+		active.session?.stop();
+		const session = createTradingMachineSession({
+			agentId: this.name,
+			strategyIds: configuration.strategyIds,
+			maxMarketStalenessMs: configuration.maxMarketStalenessMs,
+		}, machine);
+		active.session = session;
+		const completed = await runTradingCycle({
+			session,
 			agentId: this.name,
 			configuration,
 			machine,
@@ -1295,6 +1344,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			triggerAlarm: wake.triggerAlarm,
 			effects: this.createEffects(configuration),
 		});
+		const result = { ...completed, machine: session.record };
 
 		const acceptedPaperMark: PaperValuationMark | null =
 			configuration.executionMode === "paper"
@@ -1426,7 +1476,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			await this.removeIntervalSchedule();
 		}
 		if (shouldStartPendingCycle(wake, this.state.machine?.value ?? null)) {
-			await this.runCurrent(true);
+			await this.runCurrentCycle(true, active);
 		}
 	}
 
@@ -1628,11 +1678,14 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			if (product === undefined || !machineIsEnabled(product.machine.value)) {
 				continue;
 			}
-			await this.controlProduct(session, productId, {
+			this.controlProduct(session, productId, {
 				type: "STOP_REQUESTED",
 				permissions,
 			});
 		}
+		await Promise.all(
+			[...(this.activeCycles?.values() ?? [])].map((active) => active.completion),
+		);
 		await this.runPortfolio(false);
 		return { ok: true, state: this.stateSnapshot() };
 	}
@@ -1663,12 +1716,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			if (product === undefined || !machineIsEnabled(product.machine.value)) {
 				continue;
 			}
-			await this.controlProduct(session, productId, {
+			this.controlProduct(session, productId, {
 				type: "KILL_SWITCH_ENGAGED",
 				permissions,
 				controlId: crypto.randomUUID(),
 			});
 		}
+		await Promise.all(
+			[...(this.activeCycles?.values() ?? [])].map((active) => active.completion),
+		);
 		await this.runPortfolio(false);
 		return { ok: true, state: this.stateSnapshot() };
 	}
@@ -1757,15 +1813,17 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 	}
 
 	/** Événement de contrôle typé vers la machine d'un seul produit. */
-	private async controlProduct(
+	private controlProduct(
 		session: PortfolioSessionState,
 		productId: ProductId,
 		event: TradingCycleEvent,
-	): Promise<void> {
-		const product = session.products[productId];
+	): void {
+		const product =
+			this.state.portfolioSession?.products[productId] ?? session.products[productId];
 		if (product === undefined) return;
 		try {
-			const machine = createTradingMachineSession(
+			const running = this.activeCycles?.get(`product:${productId}`);
+			const machine = running?.session ?? createTradingMachineSession(
 				{
 					agentId: this.name,
 					strategyIds: session.configuration.strategyIds,
@@ -1775,7 +1833,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			);
 			machine.send(event);
 			const record = machine.record;
-			machine.stop();
+			if (running === undefined) machine.stop();
 			this.persistProductMachine(productId, record);
 		} catch (error) {
 			console.error(
@@ -1911,6 +1969,22 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		productId: ProductId,
 		triggerAlarm: boolean,
 	): Promise<void> {
+		return this.runExclusiveCycle(`product:${productId}`, (active) =>
+			this.runProductCycleExecution(
+				this.state.portfolioSession ?? session,
+				productId,
+				triggerAlarm,
+				active,
+			),
+		);
+	}
+
+	private async runProductCycleExecution(
+		session: PortfolioSessionState,
+		productId: ProductId,
+		triggerAlarm: boolean,
+		active: ActiveTradingCycle,
+	): Promise<void> {
 		const startedAt = Date.now();
 		const product = session.products[productId];
 		if (product === undefined) return;
@@ -1958,7 +2032,15 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				identity.triggeredAt,
 			),
 		);
-		const result = await runTradingCycle({
+		active.session?.stop();
+		const machineSession = createTradingMachineSession({
+			agentId: this.name,
+			strategyIds: configuration.strategyIds,
+			maxMarketStalenessMs: configuration.maxMarketStalenessMs,
+		}, product.machine);
+		active.session = machineSession;
+		const completed = await runTradingCycle({
+			session: machineSession,
 			agentId: this.name,
 			configuration,
 			machine: product.machine,
@@ -1973,6 +2055,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			triggerAlarm: wake.triggerAlarm,
 			effects: this.createProductEffects(configuration),
 		});
+		const result = { ...completed, machine: machineSession.record };
 
 		const lastPaperMark = acceptPaperValuationMark(
 			result.artifacts?.market?.valuationMark,
@@ -2117,7 +2200,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				latest.products[productId]?.machine.value ?? null,
 			)
 		) {
-			await this.runProductCycle(latest, productId, true);
+			await this.runProductCycleExecution(latest, productId, true, active);
 		}
 	}
 
@@ -2181,6 +2264,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			proposePortfolioRisk: async (
 				proposedProductId,
 				proposedGrossExposure,
+				positionChange,
 			) => {
 				const current = this.state.portfolioSession;
 				if (current === null) {
@@ -2190,6 +2274,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 					current.portfolio,
 					proposedProductId,
 					proposedGrossExposure,
+					positionChange,
 				);
 				this.persistPortfolio(proposal.record);
 				return proposal.decision;

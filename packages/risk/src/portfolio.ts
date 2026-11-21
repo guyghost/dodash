@@ -2,6 +2,7 @@ import { err, ok, type OrderIntent, type Result } from "@dodash/domain";
 
 import {
   checkRisk,
+  isPositionReducingOrder,
   type RiskConfig,
   type RiskError,
   type RiskReasonCode,
@@ -117,22 +118,6 @@ export const evaluatePortfolioRisk = (
     (total, input) => total + input.snapshot.dailyPnl,
     0,
   );
-  if (consolidatedDailyPnl <= -limits.maxDailyLoss) {
-    return ok({
-      decisions: sorted.map((input) => ({
-        productId: input.productId,
-        decision: {
-          status: "REJECTED" as const,
-          reasonCode: "CONSOLIDATED_DAILY_LOSS_LIMIT" as const,
-        },
-      })),
-      consolidatedGrossExposure: sorted.reduce(
-        (total, input) => total + currentNotional(input),
-        0,
-      ),
-      consolidatedDailyPnl,
-    });
-  }
 
   // INV-P4 : le total démarre au socle (positions courantes de tous les
   // produits) ; une ordre approuvé remplace le socle du produit par sa
@@ -150,6 +135,13 @@ export const evaluatePortfolioRisk = (
     }
     const risk = checkRisk(input.intent, input.snapshot, input.config);
     if (!risk.ok) return err(risk.error);
+    const reducing = isPositionReducingOrder(input.intent, input.snapshot.currentPositionQuantity);
+    if (!reducing && consolidatedDailyPnl <= -limits.maxDailyLoss) {
+      decisions.push({ productId: input.productId, decision: {
+        status: "REJECTED", reasonCode: "CONSOLIDATED_DAILY_LOSS_LIMIT",
+      } });
+      continue;
+    }
     if (risk.value.status === "REJECTED") {
       decisions.push({
         productId: input.productId,
@@ -162,7 +154,7 @@ export const evaluatePortfolioRisk = (
     }
     const delta =
       risk.value.projectedPositionNotional - baseline;
-    if (runningGross + delta > limits.maxGrossExposure) {
+    if (!reducing && runningGross + delta > limits.maxGrossExposure) {
       decisions.push({
         productId: input.productId,
         decision: {

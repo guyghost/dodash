@@ -1,5 +1,11 @@
 # Revue du modèle — portefeuille multi-produits (DAO #24)
 
+## Revue de l'amendement du 2026-11-21 — Réductions d'exposition
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
+
+La revue `trading-safety-corrections.review.md` approuve et vérifie l'exemption des réductions sans inversion, la priorité du kill switch et le contrôle partagé de tous les produits avant drainage. Les décisions restent dans les gardes de `models/` ; les effets transportent les quantités validées. La matrice de tests et les résultats globaux sont consignés dans cette revue commune.
+
 ## Couverture
 
 | Cas | Comportement attendu | Décision |

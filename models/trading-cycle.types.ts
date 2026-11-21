@@ -1,3 +1,5 @@
+import type { PaperPositionProtection } from "./paper-position-protection.js";
+
 export type ShutdownMode =
   | "none"
   | "stop"
@@ -113,6 +115,7 @@ export interface MarketAdmission {
 }
 
 export interface TradingCycleContext {
+  readonly paperProtection?: PaperPositionProtection | null;
   readonly agentId: string;
   readonly strategyIds: readonly string[];
   readonly permissions: ControlPermissions;
@@ -142,6 +145,7 @@ export interface TradingCycleContext {
 }
 
 export type TradingCycleEvent =
+  | { readonly type: "PAPER_PROTECTION_UPDATED"; readonly protection: PaperPositionProtection | null }
   | {
       readonly type: "START_REQUESTED";
       readonly permissions: ControlPermissions;

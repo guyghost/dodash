@@ -118,6 +118,15 @@ const resolveProtectionDistances = (
   };
 };
 
+export const isPositionReducingOrder = (
+  intent: OrderIntent,
+  currentPositionQuantity: number,
+): boolean =>
+  (intent.side === "SELL" && currentPositionQuantity > 0 &&
+    intent.quantity <= currentPositionQuantity + 1e-12) ||
+  (intent.side === "BUY" && currentPositionQuantity < 0 &&
+    intent.quantity <= Math.abs(currentPositionQuantity) + 1e-12);
+
 export const checkRisk = (
   intent: OrderIntent,
   snapshot: RiskSnapshot,
@@ -130,13 +139,7 @@ export const checkRisk = (
     return ok({ status: "REJECTED", reasonCode: "KILL_SWITCH_ACTIVE" });
   }
 
-  const isPositionReducing =
-    (intent.side === "SELL" &&
-      snapshot.currentPositionQuantity > 0 &&
-      intent.quantity <= snapshot.currentPositionQuantity + 1e-12) ||
-    (intent.side === "BUY" &&
-      snapshot.currentPositionQuantity < 0 &&
-      intent.quantity <= Math.abs(snapshot.currentPositionQuantity) + 1e-12);
+  const isPositionReducing = isPositionReducingOrder(intent, snapshot.currentPositionQuantity);
 
   if (!isPositionReducing && snapshot.dailyPnl <= -config.maxDailyLoss) {
     return ok({ status: "REJECTED", reasonCode: "DAILY_LOSS_LIMIT" });

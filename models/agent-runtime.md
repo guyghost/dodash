@@ -1,5 +1,9 @@
 # Modèle d’exécution du Trading Agent
 
+## Amendement 2026-11-21 — Corrections de sûreté après audit
+
+Le contrat normatif `trading-safety-corrections.md` complète les règles v7 : acteur unique partagé avec les commandes de contrôle, propriétaire d'exécution par créneau, événement `PAPER_PROTECTION_UPDATED` et protection paper persistée, sans modification des seuils v7.
+
 Le Durable Object est un interpréteur de `tradingCycleMachine`. La phase XState
 est persistée après chaque événement ; elle seule sélectionne l’effet suivant.
 
