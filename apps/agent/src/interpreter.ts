@@ -462,8 +462,13 @@ export const runTradingCycle = async (
                   const positionAware =
                     input.configuration.strategyOptions?.positionAware === true;
                   let effectiveSignals: readonly Signal[] = signals;
+                  let forceMarketExecution = false;
                   const allowPaperShort =
                     input.configuration.executionMode === "paper" && positionAware;
+                  const isOneMinute =
+                    input.configuration.timeframe === "ONE_MINUTE";
+                  const earlyExitBps = isOneMinute ? 25 : 45;
+                  const rsiExitFloorBps = isOneMinute ? 5 : 15;
                   if (
                     allowPaperShort &&
                     portfolio.positionQuantity !== 0 &&
@@ -535,6 +540,12 @@ export const runTradingCycle = async (
                         last.close <= stopLossPrice ||
                         last.close >= takeProfitPrice
                       ) {
+                        const exitReason =
+                          last.close >= takeProfitPrice
+                            ? "PAPER_TAKE_PROFIT"
+                            : stopLossPrice > portfolio.averagePrice
+                              ? "PAPER_TRAILING_STOP"
+                              : "PAPER_STOP_LOSS";
                         const exitSignal = createSignal({
                           strategyId:
                             input.configuration.strategyIds[0] ?? "rsi-reversion",
@@ -542,22 +553,23 @@ export const runTradingCycle = async (
                           side: "SELL",
                           confidence: 1,
                           suggestedSize: absPositionQty,
-                          reasonCode:
-                            last.close >= takeProfitPrice
-                              ? "PAPER_TAKE_PROFIT"
-                              : stopLossPrice > portfolio.averagePrice
-                                ? "PAPER_TRAILING_STOP"
-                                : "PAPER_STOP_LOSS",
+                          reasonCode: exitReason,
                         });
                         if (exitSignal.ok) {
                           effectiveSignals = Object.freeze([exitSignal.value]);
+                          if (exitReason === "PAPER_STOP_LOSS") {
+                            forceMarketExecution = true;
+                          }
                         }
                       } else if (
                         artifacts.indicators !== undefined &&
-                        last.close <= portfolio.averagePrice * 1.0025 &&
+                        last.close <=
+                          portfolio.averagePrice * (1 + earlyExitBps / 10_000) &&
                         !(
                           artifacts.indicators.rsi >= 75 &&
-                          last.close > portfolio.averagePrice * 1.0005
+                          last.close >
+                            portfolio.averagePrice *
+                              (1 + rsiExitFloorBps / 10_000)
                         )
                       ) {
                         effectiveSignals = Object.freeze(
@@ -566,7 +578,7 @@ export const runTradingCycle = async (
                       }
                     } else {
                       // Position SHORT symétrique : SL au-dessus, TP en-dessous,
-                      // Breakeven (+22 bps -> -5 bps) & Trailing Stop (+35 bps).
+                      // Wide Trailing (+75 bps / 1,5x ATR / 40 bps).
                       const baseStopLossPrice =
                         portfolio.averagePrice + stopDistance;
                       const takeProfitPrice =
@@ -599,6 +611,12 @@ export const runTradingCycle = async (
                         last.close >= stopLossPrice ||
                         last.close <= takeProfitPrice
                       ) {
+                        const exitReason =
+                          last.close <= takeProfitPrice
+                            ? "PAPER_TAKE_PROFIT"
+                            : stopLossPrice < portfolio.averagePrice
+                              ? "PAPER_TRAILING_STOP"
+                              : "PAPER_STOP_LOSS";
                         const exitSignal = createSignal({
                           strategyId:
                             input.configuration.strategyIds[0] ?? "rsi-reversion",
@@ -606,22 +624,23 @@ export const runTradingCycle = async (
                           side: "BUY",
                           confidence: 1,
                           suggestedSize: absPositionQty,
-                          reasonCode:
-                            last.close <= takeProfitPrice
-                              ? "PAPER_TAKE_PROFIT"
-                              : stopLossPrice < portfolio.averagePrice
-                                ? "PAPER_TRAILING_STOP"
-                                : "PAPER_STOP_LOSS",
+                          reasonCode: exitReason,
                         });
                         if (exitSignal.ok) {
                           effectiveSignals = Object.freeze([exitSignal.value]);
+                          if (exitReason === "PAPER_STOP_LOSS") {
+                            forceMarketExecution = true;
+                          }
                         }
                       } else if (
                         artifacts.indicators !== undefined &&
-                        last.close >= portfolio.averagePrice * 0.9975 &&
+                        last.close >=
+                          portfolio.averagePrice * (1 - earlyExitBps / 10_000) &&
                         !(
                           artifacts.indicators.rsi <= 25 &&
-                          last.close < portfolio.averagePrice * 0.9995
+                          last.close <
+                            portfolio.averagePrice *
+                              (1 - rsiExitFloorBps / 10_000)
                         )
                       ) {
                         effectiveSignals = Object.freeze(
@@ -647,22 +666,23 @@ export const runTradingCycle = async (
                       // ouverture pendant au moins 5 minutes après la clôture.
                       effectiveSignals = Object.freeze([]);
                     } else {
-                      // Filtre de tendance horaire (EMA 60 sur les bougies 1m) +
-                      // Régime directionnel (+DI / -DI / ADX) symétrique LONG/SHORT.
+                      // Filtre de tendance multi-horizon (EMA 180 en 1m = 3h,
+                      // EMA 60 en >= 5m = 5h+) + régime directionnel (+DI/-DI/ADX).
                       const candles = artifacts.market?.candles ?? [];
-                      let hourlyEma: number | null = null;
-                      if (candles.length >= 60) {
-                        const k = 2 / 61;
+                      const trendEmaPeriod = isOneMinute ? 180 : 60;
+                      let trendEma: number | null = null;
+                      if (candles.length >= trendEmaPeriod) {
+                        const k = 2 / (trendEmaPeriod + 1);
                         let ema = candles[0]!.close;
                         for (let i = 1; i < candles.length; i += 1) {
                           ema = candles[i]!.close * k + ema * (1 - k);
                         }
-                        hourlyEma = ema;
+                        trendEma = ema;
                       }
-                      const hourlyBull =
-                        hourlyEma !== null && last.close >= hourlyEma;
-                      const hourlyBear =
-                        hourlyEma !== null && last.close < hourlyEma;
+                      const trendBull =
+                        trendEma !== null && last.close >= trendEma;
+                      const trendBear =
+                        trendEma !== null && last.close < trendEma;
                       const ind = artifacts.indicators;
                       const isBearishRegime =
                         ind.minusDi !== undefined &&
@@ -685,32 +705,16 @@ export const runTradingCycle = async (
                         }
                         let multiplier: number | null = 1;
                         if (sig.side === "BUY") {
-                          if (hourlyBear) {
-                            multiplier =
-                              sig.strategyId === "rsi-reversion" && ind.rsi <= 20
-                                ? 0.4
-                                : null;
-                          } else if (isBearishRegime) {
-                            multiplier =
-                              sig.strategyId === "rsi-reversion" && ind.rsi <= 22
-                                ? 0.4
-                                : null;
+                          if (trendBear || isBearishRegime) {
+                            multiplier = null;
                           } else if (isBullishRegime) {
                             multiplier = 1.15;
                           } else if (ind.emaFast < ind.emaSlow) {
                             multiplier = 0.4;
                           }
                         } else if (sig.side === "SELL") {
-                          if (hourlyBull) {
-                            multiplier =
-                              sig.strategyId === "rsi-reversion" && ind.rsi >= 80
-                                ? 0.4
-                                : null;
-                          } else if (isBullishRegime) {
-                            multiplier =
-                              sig.strategyId === "rsi-reversion" && ind.rsi >= 78
-                                ? 0.4
-                                : null;
+                          if (trendBull || isBullishRegime) {
+                            multiplier = null;
                           } else if (isBearishRegime) {
                             multiplier = 1.15;
                           } else if (ind.emaFast > ind.emaSlow) {
@@ -735,6 +739,10 @@ export const runTradingCycle = async (
                       effectiveSignals = Object.freeze(adjusted);
                     }
                   }
+                  const effectiveExecutionStyle = forceMarketExecution
+                    ? ("MARKET" as const)
+                    : input.configuration.executionStyle;
+                  const effectiveBook = forceMarketExecution ? null : book;
                   return allocateSignals({
                     agentId: input.agentId,
                     cycleId: artifacts.cycleId,
@@ -744,15 +752,15 @@ export const runTradingCycle = async (
                     capitalAvailable: Math.max(0, portfolio.cash),
                     maxDecisionNotional: input.configuration.maxDecisionNotional,
                     minNetQuantity: input.configuration.minNetQuantity,
-                    ...(input.configuration.executionStyle === undefined
+                    ...(effectiveExecutionStyle === undefined
                       ? {}
-                      : { executionStyle: input.configuration.executionStyle }),
+                      : { executionStyle: effectiveExecutionStyle }),
                     ...(input.configuration.maxSpreadBps === undefined
                       ? {}
                       : { maxSpreadBps: input.configuration.maxSpreadBps }),
-                    ...(book === null
+                    ...(effectiveBook === null
                       ? {}
-                      : { orderBooks: { [input.configuration.productId]: book } }),
+                      : { orderBooks: { [input.configuration.productId]: effectiveBook } }),
                     ...(positionAware
                       ? {
                           positionQuantities: {

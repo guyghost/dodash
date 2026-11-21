@@ -148,9 +148,10 @@ describe("executePaperOrder", () => {
     expect(opened.ok).toBe(true);
     if (!opened.ok) return;
     expect(opened.value.portfolio.positionQuantity).toBe(-2);
-    expect(opened.value.portfolio.averagePrice).toBe(100);
+    // Prix moyen net encaissé après frais d'entrée (10 bps sur 200 = 0,20 → 99,90/unité)
+    expect(opened.value.portfolio.averagePrice).toBeCloseTo(99.9);
 
-    // Covers short at lower price -> positive realized PnL
+    // Covers short at lower price -> positive realized PnL exact == Δcash (INV-AR6)
     const covered = executePaperOrder(opened.value.portfolio, buyCoverIntent.value, 95, 2, {
       feeBps: 10,
       slippageBps: 0,
@@ -161,6 +162,11 @@ describe("executePaperOrder", () => {
     expect(covered.value.portfolio.positionQuantity).toBe(0);
     expect(covered.value.portfolio.averagePrice).toBe(0);
     expect(covered.value.trade.closedQuantity).toBe(2);
-    expect(covered.value.trade.realizedPnl).toBeCloseTo(10 - 95 * 2 * 0.001);
+    const entryFee = 100 * 2 * 0.001;
+    const exitFee = 95 * 2 * 0.001;
+    expect(covered.value.trade.realizedPnl).toBeCloseTo(10 - entryFee - exitFee);
+    expect(covered.value.trade.realizedPnl).toBeCloseTo(
+      covered.value.portfolio.cash - flat.cash,
+    );
   });
 });

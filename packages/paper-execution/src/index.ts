@@ -124,7 +124,7 @@ export const executePaperOrder = (
         ? 0
         : (Math.abs(current) * portfolio.averagePrice +
             Math.abs(delta) * price +
-            (intent.side === "BUY" ? fee : 0)) /
+            (intent.side === "BUY" ? fee : -fee)) /
           Math.abs(nextQuantity);
   } else if (nextQuantity === 0) {
     averagePrice = 0;

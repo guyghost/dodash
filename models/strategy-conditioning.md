@@ -152,3 +152,32 @@ Résolution déterministe pour un signal brut `side` (`BUY` sur `crossedUp`, `SE
 9. `breakout` avec `positionAware: true` : `BUY` bloqué si `LONG` (`BREAKOUT_ALREADY_LONG`) ; `SELL` bloqué si `FLAT` (`BREAKOUT_NO_POSITION_TO_SELL`) ; `SELL` autorisé si `LONG`.
 10. `funding-trend` avec `exitThreshold` invalide (`-1`, `NaN`, `>= enterThreshold`) → `INVALID_STRATEGY_CONFIG`.
 11. `funding-trend` avec `exitThreshold` : `LONG` avec `fundingAvg > -exitThreshold` → `SELL` (`FUNDING_CARRY_EXIT`) ; `SHORT` avec `fundingAvg < exitThreshold` → `BUY` (`FUNDING_CARRY_EXIT`) ; `FLAT` ou `undefined` → pas de sortie de carry ; warm-up (`fundingAvg === undefined`) reste prioritaire (`FUNDING_WARMUP`).
+
+## Amendement 2026-11-21 — Symétrie de `maxTrendStrength` en mode `allowShort`
+
+### 1. Constat
+
+Sur la campagne paper multi-produits `btc-usd--multi` (Long/Short symétrique, `maxTrendStrength = 40`), la garde `maxTrendStrength` dans `rsi-reversion` ne testait que `side === "BUY"`, indépendamment de `context.positionSide` :
+1. En forte tendance haussière (`trendStrength > maxTrendStrength`), une ouverture `SELL` (short) n'était pas filtrée.
+2. En forte tendance baissière (`trendStrength > maxTrendStrength`), un rachat `BUY` permettant de clôturer un `SHORT` sur survente RSI était indûment bloqué par `RSI_TREND_BLOCKED`.
+
+### 2. Résolution pure (`packages/strategies/src/rsi-reversion.ts`)
+
+- Lorsque `config.allowShort !== true` (mode spot V1) : comportement strictement inchangé (`side === "BUY" && trendStrength > maxTrendStrength` → `RSI_TREND_BLOCKED`).
+- Lorsque `config.allowShort === true` et `config.maxTrendStrength !== undefined` et `context.indicators.trendStrength > config.maxTrendStrength` :
+  - Si `side === "BUY"` et (`context.positionSide === "FLAT"` ou `context.positionSide === undefined`) → `HOLD` (`RSI_TREND_BLOCKED`).
+  - Si `side === "SELL"` et (`context.positionSide === "FLAT"` ou `context.positionSide === undefined`) → `HOLD` (`RSI_TREND_BLOCKED`).
+  - Si `side === "BUY"` et `context.positionSide === "SHORT"` (clôture de short) ou `side === "SELL"` et `context.positionSide === "LONG"` (clôture de long) → **non bloqué** par `maxTrendStrength`.
+
+### 3. Invariant additionnel
+
+- **INV-SC6 (Symétrie `allowShort` de `maxTrendStrength`)** : en mode `allowShort: true`, `maxTrendStrength` filtre symétriquement les ouvertures (`BUY` et `SELL` sur `FLAT`/`undefined`) et ne bloque jamais une clôture de position existante.
+
+### 4. Vérification requise
+
+12. `rsi-reversion` avec `allowShort: true`, `positionAware: true` et `maxTrendStrength: 25` :
+    - `FLAT` + `rsi < oversold` + `trendStrength > 25` → `HOLD` (`RSI_TREND_BLOCKED`).
+    - `FLAT` + `rsi > overbought` + `trendStrength > 25` → `HOLD` (`RSI_TREND_BLOCKED`).
+    - `SHORT` + `rsi < oversold` + `trendStrength > 25` → `BUY` (`RSI_OVERSOLD`, clôture autorisée).
+    - `LONG` + `rsi > overbought` + `trendStrength > 25` → `SELL` (`RSI_OVERBOUGHT`, clôture autorisée).
+    - Sans `allowShort` (`false`/`undefined`) : comportement historique inchangé (`INV-SC1`).

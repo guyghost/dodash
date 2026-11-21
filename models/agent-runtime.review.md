@@ -101,3 +101,15 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
 - **Revue Amendement 2026-11-21 (v6) — Garde anti-micro-sortie (`RSI 75/25` + plancher `+5 bps`)** :
   - [x] Règle pure dans le filtrage des signaux non protecteurs en `paper` ; les Stop-Loss, Take-Profit et Trailing Stop restent prioritaires et inchangés.
   - Verdict : **APPROUVÉ**.
+
+## Revue de l'amendement du 2026-11-21 (v7) — Stop-Loss `MARKET`, tendance multi-horizon, seuils `5m` et comptabilité `SHORT`
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
+
+- **Pureté et effets** : aucune nouvelle phase, événement ni transition dans `tradingCycleMachine` ; aucun nouvel effet réseau ou stockage. Le choix `MARKET` pour `PAPER_STOP_LOSS` reste une projection pure vers `allocateSignals`.
+- **Invariants (`INV-AR4` à `INV-AR7`)** :
+  - `PAPER_STOP_LOSS` paye désormais les frais taker + slippage (`MARKET`), éliminant le biais optimiste du carnet synthétique sur les stops d'urgence.
+  - Le filtre de tendance (`EMA 180` en `1m`, `EMA 60` en `>= 5m`) s'exécute uniquement sur les bougies déjà présentes (`candleLimit: 200`), sans requête additionnelle, et supprime les entrées contre-tendance `0,4×` mesurées perdantes (`WR 42,4 %`).
+  - L'inclusion des frais d'entrée dans `averagePrice` sur `SHORT` restaure l'identité comptable `realizedPnl === Δcash` entre `executePaperOrder` et `projectDashboardPnlHistory` (qui réutilise `previousPortfolio.averagePrice`).
+- **Isolation `live` / `perp`** : toutes les règles d'interpréteur sont strictement gardées par `executionMode === "paper" && positionAware` ; `allowShort` reste `false` en `live` spot (`SPOT_SHORT_FORBIDDEN`).
+- **Limites acceptées** : sur les positions `SHORT` déjà ouvertes en production avant déploiement, l'ancien `averagePrice` sans frais d'entrée reste porté jusqu'à clôture (écart négligeable de `1 bps` sur un seul trade en cours), puis toutes les nouvelles positions appliquent la symétrie exacte.
