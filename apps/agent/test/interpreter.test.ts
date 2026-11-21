@@ -1027,5 +1027,384 @@ describe("runTradingCycle", () => {
       expect(result.artifacts?.signals?.[0]?.reasonCode).toBe("RSI_ALREADY_LONG");
       expect(submitted).toEqual([]);
     });
+
+    it("Amendement v7 (INV-AR4) : PAPER_STOP_LOSS force MARKET (taker+slippage), PAPER_TAKE_PROFIT reste LIMIT", async () => {
+      const parsed = parseAgentConfiguration({
+        productId: "BTC-USD",
+        timeframe: "FIVE_MINUTE",
+        strategyIds: ["rsi-reversion"],
+        strategyOptions: { positionAware: true },
+        executionStyle: "LIMIT_PASSIVE",
+        candleLimit: 6,
+        intervalSeconds: 300,
+        maxMarketStalenessMs: 360_000,
+        broker: { feeBps: 6, slippageBps: 2, makerFeeBps: 1 },
+        indicators: {
+          rsiPeriod: 5,
+          emaFastPeriod: 3,
+          emaSlowPeriod: 5,
+          atrPeriod: 3,
+          historicalVolatilityPeriod: 2,
+          momentumPeriod: 1,
+          returnPeriods: [1],
+          vwapPeriod: 2,
+          relativeVolumePeriod: 1,
+          volumeSpikeThreshold: 2,
+          volumeTrendPeriod: 2,
+          trendStrengthPeriod: 1,
+        },
+        risk: {
+          maxOrderNotional: 2_000,
+          maxPositionNotional: 10_000,
+          maxGrossExposure: 20_000,
+          maxDailyLoss: 1_000,
+          cooldownMs: 0,
+          stopLossBps: 50,
+          takeProfitBps: 150,
+        },
+      });
+      if (!parsed.ok) throw new Error("invalid config");
+      const config = parsed.value;
+      const make5m = (closes: readonly number[]): readonly Candle[] =>
+        closes.map((close, index) => ({
+          start: index * 300_000,
+          open: close,
+          high: close + 0.2,
+          low: close - 0.2,
+          close,
+          volume: 10,
+        }));
+
+      // 1) Stop-Loss : position LONG @ 100, close @ 99.0 (-100 bps <= -50 bps SL)
+      const slOrders: OrderIntent[] = [];
+      const slCandles = make5m([100, 99.9, 99.7, 99.5, 99.3, 99.0]);
+      const slNow = slCandles.at(-1)!.start + 300_000;
+      const slResult = await runTradingCycle({
+        agentId: "agent-v7-sl",
+        configuration: config,
+        machine: readyMachine("agent-v7-sl", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio: { cash: 9_000, positionQuantity: 10, averagePrice: 100 },
+        dailyPnl: 0,
+        lastTradeAt: 0,
+        triggeredAt: slNow,
+        cycleId: "cycle-v7-sl",
+        now: () => slNow,
+        triggerAlarm: true,
+        effects: {
+          reconcileAccount: async (p, observedAt) =>
+            ok({
+              snapshotId: `s:${observedAt}`,
+              observedAt,
+              portfolio: p,
+              accountEquity: p.cash + p.positionQuantity * p.averagePrice,
+              otherExposureNotional: 0,
+            }),
+          fetchMarketData: async () =>
+            ok({
+              productId: config.productId,
+              timeframe: config.timeframe,
+              candles: slCandles,
+              source: "coinbase",
+              cached: false,
+            }),
+          ensureSchedule: async () => ok({ nextWakeAt: slNow + 300_000 }),
+          checkpoint: async () => ok(undefined),
+          persistMachine: async () => undefined,
+          persistOrderIntent: async (_id, intent) => {
+            slOrders.push(intent);
+            return ok(undefined);
+          },
+          authorize: async () => ok({ issuedAt: slNow, expiresAt: slNow + 60_000 }),
+          submitOrder: async (intent, _r, _a, price, p, at) => {
+            const executed = executePaperOrder(p, intent, price, at, config.broker);
+            if (!executed.ok) throw new Error(executed.error.code);
+            return {
+              status: "CONFIRMED",
+              exchangeOrderId: executed.value.trade.fill.exchangeOrderId,
+              fill: executed.value.trade.fill,
+              portfolio: executed.value.portfolio,
+            };
+          },
+          reconcileOrder: async () => {
+            throw new Error("no reconcile expected");
+          },
+          cancelCurrentEffect: async () => ok(undefined),
+          persistCycle: async () => ok(undefined),
+        },
+      });
+      expect(slResult.machine.context.outcome).toBe("ORDER_CONFIRMED");
+      expect(slOrders[0]?.type).toBe("MARKET");
+      expect(slOrders[0]?.limitPrice).toBeNull();
+      // Slippage 2 bps sur SELL @ 99.0 → 99.0 * (1 - 0.0002) = 98.9802
+      expect(slResult.artifacts?.execution?.fill?.price).toBeCloseTo(99.0 * (1 - 2 / 10_000));
+
+      // 2) Take-Profit : position LONG @ 100, close @ 102.0 (+200 bps >= +150 bps TP)
+      const tpOrders: OrderIntent[] = [];
+      const tpCandles = make5m([100, 100.4, 100.8, 101.2, 101.6, 102.0]);
+      const tpNow = tpCandles.at(-1)!.start + 300_000;
+      const tpResult = await runTradingCycle({
+        agentId: "agent-v7-tp",
+        configuration: config,
+        machine: readyMachine("agent-v7-tp", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio: { cash: 9_000, positionQuantity: 10, averagePrice: 100 },
+        dailyPnl: 0,
+        lastTradeAt: 0,
+        triggeredAt: tpNow,
+        cycleId: "cycle-v7-tp",
+        now: () => tpNow,
+        triggerAlarm: true,
+        effects: {
+          reconcileAccount: async (p, observedAt) =>
+            ok({
+              snapshotId: `s:${observedAt}`,
+              observedAt,
+              portfolio: p,
+              accountEquity: p.cash + p.positionQuantity * p.averagePrice,
+              otherExposureNotional: 0,
+            }),
+          fetchMarketData: async () =>
+            ok({
+              productId: config.productId,
+              timeframe: config.timeframe,
+              candles: tpCandles,
+              source: "coinbase",
+              cached: false,
+            }),
+          ensureSchedule: async () => ok({ nextWakeAt: tpNow + 300_000 }),
+          checkpoint: async () => ok(undefined),
+          persistMachine: async () => undefined,
+          persistOrderIntent: async (_id, intent) => {
+            tpOrders.push(intent);
+            return ok(undefined);
+          },
+          authorize: async () => ok({ issuedAt: tpNow, expiresAt: tpNow + 60_000 }),
+          submitOrder: async (intent, _r, _a, price, p, at) => {
+            const executed = executePaperOrder(p, intent, price, at, config.broker);
+            if (!executed.ok) throw new Error(executed.error.code);
+            return {
+              status: "CONFIRMED",
+              exchangeOrderId: executed.value.trade.fill.exchangeOrderId,
+              fill: executed.value.trade.fill,
+              portfolio: executed.value.portfolio,
+            };
+          },
+          reconcileOrder: async () => {
+            throw new Error("no reconcile expected");
+          },
+          cancelCurrentEffect: async () => ok(undefined),
+          persistCycle: async () => ok(undefined),
+        },
+      });
+      expect(tpResult.machine.context.outcome).toBe("ORDER_CONFIRMED");
+      expect(tpOrders[0]?.type).toBe("LIMIT");
+      expect(tpOrders[0]?.limitPrice).toBe(102.0);
+      expect(tpResult.artifacts?.execution?.fill?.price).toBe(102.0);
+    });
+
+    it("Amendement v7 (INV-AR5) : bloque BUY contre-tendance sous EMA60 (5m) même avec RSI <= 20", async () => {
+      const parsed = parseAgentConfiguration({
+        productId: "BTC-USD",
+        timeframe: "FIVE_MINUTE",
+        strategyIds: ["rsi-reversion"],
+        strategyOptions: { positionAware: true },
+        executionStyle: "LIMIT_PASSIVE",
+        candleLimit: 65,
+        intervalSeconds: 300,
+        maxMarketStalenessMs: 360_000,
+        indicators: {
+          rsiPeriod: 5,
+          emaFastPeriod: 3,
+          emaSlowPeriod: 5,
+          atrPeriod: 3,
+          historicalVolatilityPeriod: 2,
+          momentumPeriod: 1,
+          returnPeriods: [1],
+          vwapPeriod: 2,
+          relativeVolumePeriod: 1,
+          volumeSpikeThreshold: 2,
+          volumeTrendPeriod: 2,
+          trendStrengthPeriod: 1,
+        },
+        risk: {
+          maxOrderNotional: 2_000,
+          maxPositionNotional: 10_000,
+          maxGrossExposure: 20_000,
+          maxDailyLoss: 1_000,
+          cooldownMs: 0,
+          stopLossBps: 50,
+          takeProfitBps: 150,
+        },
+      });
+      if (!parsed.ok) throw new Error("invalid config");
+      const config = parsed.value;
+      // 60 bougies plates à 100 puis 5 bougies en chute → close < EMA60 et RSI << 20
+      const closes = [...Array(60).fill(100), 99, 98, 97, 96, 95];
+      const candles: readonly Candle[] = closes.map((close, index) => ({
+        start: index * 300_000,
+        open: close,
+        high: close + 0.1,
+        low: close - 0.1,
+        close,
+        volume: 10,
+      }));
+      const now = candles.at(-1)!.start + 300_000;
+      const submitted: OrderIntent[] = [];
+      const result = await runTradingCycle({
+        agentId: "agent-v7-trend",
+        configuration: config,
+        machine: readyMachine("agent-v7-trend", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio: { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+        dailyPnl: 0,
+        lastTradeAt: null,
+        triggeredAt: now,
+        cycleId: "cycle-v7-trend",
+        now: () => now,
+        triggerAlarm: true,
+        effects: {
+          reconcileAccount: async (p, observedAt) =>
+            ok({
+              snapshotId: `s:${observedAt}`,
+              observedAt,
+              portfolio: p,
+              accountEquity: p.cash,
+              otherExposureNotional: 0,
+            }),
+          fetchMarketData: async () =>
+            ok({
+              productId: config.productId,
+              timeframe: config.timeframe,
+              candles,
+              source: "coinbase",
+              cached: false,
+            }),
+          ensureSchedule: async () => ok({ nextWakeAt: now + 300_000 }),
+          checkpoint: async () => ok(undefined),
+          persistMachine: async () => undefined,
+          persistOrderIntent: async (_id, intent) => {
+            submitted.push(intent);
+            return ok(undefined);
+          },
+          authorize: async () => ok({ issuedAt: now, expiresAt: now + 60_000 }),
+          submitOrder: async () => {
+            throw new Error("no order expected");
+          },
+          reconcileOrder: async () => {
+            throw new Error("no reconcile expected");
+          },
+          cancelCurrentEffect: async () => ok(undefined),
+          persistCycle: async () => ok(undefined),
+        },
+      });
+      expect(result.artifacts?.signals?.[0]?.side).toBe("BUY");
+      expect(result.machine.context.outcome).toBe("NO_ACTION");
+      expect(submitted).toEqual([]);
+    });
+
+    it("Amendement v7 (5m) : filtre une sortie stratégie non protectrice à +30 bps (< +45 bps et RSI < 75)", async () => {
+      const parsed = parseAgentConfiguration({
+        productId: "BTC-USD",
+        timeframe: "FIVE_MINUTE",
+        strategyIds: ["breakout"],
+        strategyOptions: { positionAware: true },
+        executionStyle: "LIMIT_PASSIVE",
+        candleLimit: 22,
+        intervalSeconds: 300,
+        maxMarketStalenessMs: 360_000,
+        indicators: {
+          rsiPeriod: 5,
+          emaFastPeriod: 3,
+          emaSlowPeriod: 5,
+          atrPeriod: 3,
+          historicalVolatilityPeriod: 2,
+          momentumPeriod: 1,
+          returnPeriods: [1],
+          vwapPeriod: 2,
+          relativeVolumePeriod: 1,
+          volumeSpikeThreshold: 2,
+          volumeTrendPeriod: 2,
+          trendStrengthPeriod: 1,
+        },
+        risk: {
+          maxOrderNotional: 2_000,
+          maxPositionNotional: 10_000,
+          maxGrossExposure: 20_000,
+          maxDailyLoss: 1_000,
+          cooldownMs: 0,
+          stopLossBps: 50,
+          takeProfitBps: 150,
+        },
+      });
+      if (!parsed.ok) throw new Error("invalid config");
+      const config = parsed.value;
+      // Position LONG @ 100.0 ; 21 bougies à 100.50 puis cassure bas de range à 100.30 (+30 bps, RSI bas < 75)
+      const closes = [...Array(21).fill(100.5), 100.3];
+      const candles: readonly Candle[] = closes.map((close, index) => ({
+        start: index * 300_000,
+        open: close,
+        high: close + 0.05,
+        low: close - 0.05,
+        close,
+        volume: 10,
+      }));
+      const now = candles.at(-1)!.start + 300_000;
+      const submitted: OrderIntent[] = [];
+      const result = await runTradingCycle({
+        agentId: "agent-v7-5m-exit",
+        configuration: config,
+        machine: readyMachine("agent-v7-5m-exit", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio: { cash: 9_000, positionQuantity: 10, averagePrice: 100 },
+        dailyPnl: 0,
+        lastTradeAt: 0,
+        triggeredAt: now,
+        cycleId: "cycle-v7-5m-exit",
+        now: () => now,
+        triggerAlarm: true,
+        effects: {
+          reconcileAccount: async (p, observedAt) =>
+            ok({
+              snapshotId: `s:${observedAt}`,
+              observedAt,
+              portfolio: p,
+              accountEquity: p.cash + p.positionQuantity * p.averagePrice,
+              otherExposureNotional: 0,
+            }),
+          fetchMarketData: async () =>
+            ok({
+              productId: config.productId,
+              timeframe: config.timeframe,
+              candles,
+              source: "coinbase",
+              cached: false,
+            }),
+          ensureSchedule: async () => ok({ nextWakeAt: now + 300_000 }),
+          checkpoint: async () => ok(undefined),
+          persistMachine: async () => undefined,
+          persistOrderIntent: async (_id, intent) => {
+            submitted.push(intent);
+            return ok(undefined);
+          },
+          authorize: async () => ok({ issuedAt: now, expiresAt: now + 60_000 }),
+          submitOrder: async () => {
+            throw new Error("no order expected");
+          },
+          reconcileOrder: async () => {
+            throw new Error("no reconcile expected");
+          },
+          cancelCurrentEffect: async () => ok(undefined),
+          persistCycle: async () => ok(undefined),
+        },
+      });
+      expect(result.artifacts?.signals?.[0]?.side).toBe("SELL");
+      expect(result.machine.context.outcome).toBe("NO_ACTION");
+      expect(submitted).toEqual([]);
+    });
   });
 });

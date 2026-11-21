@@ -80,10 +80,17 @@ export const createRsiReversionStrategy = (
 
       if (
         config.maxTrendStrength !== undefined &&
-        side === "BUY" &&
         context.indicators.trendStrength > config.maxTrendStrength
       ) {
-        return blockedHold(id, context.productId, "RSI_TREND_BLOCKED");
+        const isTrendBlocked =
+          config.allowShort === true
+            ? (side === "BUY" || side === "SELL") &&
+              (context.positionSide === undefined ||
+                context.positionSide === "FLAT")
+            : side === "BUY";
+        if (isTrendBlocked) {
+          return blockedHold(id, context.productId, "RSI_TREND_BLOCKED");
+        }
       }
 
       const confidence = Math.min(1, Math.abs(50 - rsi) / 50);

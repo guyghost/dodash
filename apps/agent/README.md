@@ -42,7 +42,8 @@ COINBASE_API_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----
 
 En production, enregistrer `COINBASE_API_KEY_ID`,
 `COINBASE_API_PRIVATE_KEY` et `COINBASE_PORTFOLIO_ID` avec
-`wrangler secret put`; ne jamais les ajouter à `wrangler.jsonc`. La clé doit
+`pnpm exec cf workers secrets update <NOM> --text "<VALEUR>"`; ne jamais les
+ajouter à `cloudflare.config.ts`. La clé doit
 avoir les permissions `view` et `trade`. Chaque requête utilise un JWT ES256
 neuf, valable au plus deux minutes. Ni la clé ni le JWT ne sont persistés dans
 l’état Agent ou SQLite.

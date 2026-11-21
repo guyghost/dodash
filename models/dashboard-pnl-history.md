@@ -1,5 +1,9 @@
 # Historique PnL et équité du dashboard (dao #26)
 
+## Amendement 2026-11-21 — Positions signées et protections vérifiables
+
+Le contrat normatif `trading-safety-corrections.md` complète la projection et son affichage : positions LONG/SHORT, plans paper persistés non confirmés par un exchange, identité produit/position vérifiée et absence explicite de protection. Aucun niveau ni badge de confirmation n'est fabriqué dans l'interface.
+
 Statut : APPROUVÉ
 Date : 2026-09-03
 Prérequis : `dashboard-session.md` (frontière proxy et machine de session),

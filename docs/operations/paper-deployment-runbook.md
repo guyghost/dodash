@@ -24,8 +24,7 @@ du worker paper agent. Toute tentative d'appel trade exige des secrets absents �
 - Dataset Analytics Engine dédié : `dodash_paper_trading`.
 - Service bindings croisés exclusivement entre workers paper
   (`MARKET_DATA`, `AGENT_SERVICE`, `DASHBOARD_API`).
-- Configs versionnées : `apps/*/wrangler.paper.jsonc` (jamais les
-  `wrangler.jsonc` production).
+- Configs versionnées : `apps/*/cloudflare.config.ts` (mode `-m paper`).
 
 **Isolation (preuve inventaire avant/après, 2026-09-04 ~16:37Z → ~16:55Z)** :
 9 workers avant, 13 après (les 4 nouveaux sont tous préfixés `dodash-paper-*`) ;
@@ -44,18 +43,18 @@ ressource du compte modifiée.
 
 ## 3. Chemin de reproduction exact
 
-Prérequis : Node 22, pnpm 11.23 (corepack), `wrangler` authentifié sur le
-compte, `pnpm install --frozen-lockfile`.
+Prérequis : Node 22, pnpm 11.23 (corepack), CLI Cloudflare `cf` authentifié sur le
+compte (`pnpm exec cf auth login` / `pnpm exec cf auth whoami`), `pnpm install --frozen-lockfile`.
 
 ```sh
 # 0) Build des paquets workspace — REQUIS (piège n°1 de
 #    docs/analysis/analyse-paper-local-2026-09-04.md : sans dist/, le bundling
-#    wrangler échoue sur "Could not resolve \"@dodash/domain\"")
+#    échoue sur "Could not resolve \"@dodash/domain\"")
 pnpm build
 
 # 1) KV paper dédié (si absent) — versionner l'ID dans
-#    apps/mcp-market-data/wrangler.paper.jsonc
-npx wrangler kv namespace create dodash-paper-market-cache
+#    apps/mcp-market-data/cloudflare.config.ts
+pnpm exec cf kv namespaces create --title dodash-paper-market-cache
 #    → 2026-09-04 : abddec98934a40a4b4c85f8d00e5f055
 
 # 2) Tokens internes ≥ 32 chars (48 hex ici) — JAMAIS dans le dépôt.
@@ -68,24 +67,24 @@ T2=$(openssl rand -hex 24)   # DASHBOARD_ACCESS_TOKEN  (dashboard-api)
 # 3) Déploiement dans l'ordre du runbook production, secrets après chaque
 #    worker, health check avant de passer au suivant.
 cd apps/mcp-market-data
-npx wrangler deploy -c wrangler.paper.jsonc
-printf '%s' "$T0" | npx wrangler secret put INTERNAL_SERVICE_TOKEN -c wrangler.paper.jsonc
+pnpm exec cf deploy -m paper
+pnpm exec cf workers secrets update INTERNAL_SERVICE_TOKEN --text "$T0" -m paper
 curl -s https://dodash-paper-mcp-market-data.guyghost.workers.dev/health
 
 cd ../agent
-npx wrangler deploy -c wrangler.paper.jsonc
-printf '%s' "$T0" | npx wrangler secret put INTERNAL_SERVICE_TOKEN -c wrangler.paper.jsonc
-printf '%s' "$T1" | npx wrangler secret put CONTROL_API_TOKEN -c wrangler.paper.jsonc
+pnpm exec cf deploy -m paper
+pnpm exec cf workers secrets update INTERNAL_SERVICE_TOKEN --text "$T0" -m paper
+pnpm exec cf workers secrets update CONTROL_API_TOKEN --text "$T1" -m paper
 curl -s https://dodash-paper-agent.guyghost.workers.dev/health
 
 cd ../dashboard-api
-npx wrangler deploy -c wrangler.paper.jsonc
-printf '%s' "$T2" | npx wrangler secret put DASHBOARD_ACCESS_TOKEN -c wrangler.paper.jsonc
-printf '%s' "$T1" | npx wrangler secret put CONTROL_API_TOKEN -c wrangler.paper.jsonc
+pnpm exec cf deploy -m paper
+pnpm exec cf workers secrets update DASHBOARD_ACCESS_TOKEN --text "$T2" -m paper
+pnpm exec cf workers secrets update CONTROL_API_TOKEN --text "$T1" -m paper
 curl -s https://dodash-paper-dashboard-api.guyghost.workers.dev/health
 
 cd ../dashboard
-npx wrangler deploy -c wrangler.paper.jsonc   # requiert dist/client (pnpm build)
+pnpm exec cf deploy -m paper   # requiert dist/client (pnpm build)
 curl -s https://dodash-paper-dashboard.guyghost.workers.dev/health
 # (le workers.dev du dashboard peut répondre "error code: 1042" pendant ~20 s
 # après le premier déploiement : délai de propagation, réessayer.)
@@ -93,7 +92,7 @@ curl -s https://dodash-paper-dashboard.guyghost.workers.dev/health
 # 4) Preuve paper-only : les secrets de chaque worker doivent lister UNIQUEMENT
 #    les tokens internes ci-dessus — aucun secret Coinbase/Hyperliquid.
 for app in mcp-market-data agent dashboard-api dashboard; do
-  (cd apps/$app && npx wrangler secret list -c wrangler.paper.jsonc)
+  (cd apps/$app && pnpm exec cf workers secrets list -m paper)
 done
 
 # 5) Instance paper BTC-USD — MODE PORTEFEUILLE N ≥ 2 (dao #43, amendement
@@ -218,17 +217,15 @@ vérifié par listing avant suppression :
 
 ```sh
 # Vérifier l'inventaire avant destruction (ne supprimer QUE les 4 noms paper)
-curl -s -H "Authorization: Bearer $CF_TOKEN" \
-  "https://api.cloudflare.com/client/v4/accounts/bab940ffcf652079ec6172c267afa11e/workers/services" \
-  | python3 -c "import json,sys; [print(s['id']) for s in json.load(sys.stdin)['result']]"
-npx wrangler kv namespace list
+pnpm exec cf workers list
+pnpm exec cf kv namespaces list
 
-cd apps/dashboard       && npx wrangler delete -c wrangler.paper.jsonc   # dodash-paper-dashboard
-cd ../dashboard-api     && npx wrangler delete -c wrangler.paper.jsonc   # dodash-paper-dashboard-api
-cd ../agent             && npx wrangler delete -c wrangler.paper.jsonc   # dodash-paper-agent
-cd ../mcp-market-data   && npx wrangler delete -c wrangler.paper.jsonc   # dodash-paper-mcp-market-data
+cd apps/dashboard       && pnpm exec cf workers delete -m paper   # dodash-paper-dashboard
+cd ../dashboard-api     && pnpm exec cf workers delete -m paper   # dodash-paper-dashboard-api
+cd ../agent             && pnpm exec cf workers delete -m paper   # dodash-paper-agent
+cd ../mcp-market-data   && pnpm exec cf workers delete -m paper   # dodash-paper-mcp-market-data
 
-npx wrangler kv namespace delete --namespace-id abddec98934a40a4b4c85f8d00e5f055
+pnpm exec cf kv namespaces delete abddec98934a40a4b4c85f8d00e5f055
 # Re-lister workers + KV : retour à l'inventaire « avant » (9 workers, 1 KV).
 ```
 
@@ -304,16 +301,16 @@ Procédure (ordre du §3, secrets inchangés) :
 
 ```sh
 pnpm build
-cd apps/mcp-market-data && npx wrangler deploy -c wrangler.paper.jsonc
-cd ../agent             && npx wrangler deploy -c wrangler.paper.jsonc
-cd ../dashboard-api     && npx wrangler deploy -c wrangler.paper.jsonc
-cd ../dashboard         && npx wrangler deploy -c wrangler.paper.jsonc
+cd apps/mcp-market-data && pnpm exec cf deploy -m paper
+cd ../agent             && pnpm exec cf deploy -m paper
+cd ../dashboard-api     && pnpm exec cf deploy -m paper
+cd ../dashboard         && pnpm exec cf deploy -m paper
 for w in mcp-market-data agent dashboard-api dashboard; do
   curl -s -A "Mozilla/5.0" https://dodash-paper-$w.guyghost.workers.dev/health; echo
 done
 ```
 
-Vérification après le premier cycle aligné (AE, `_sample_interval` à contrôler) :
+Vérification après le premier cycle aligné (AE via `cf analytics-engine sql query`, `_sample_interval` à contrôler) :
 
 ```sql
 SELECT timestamp, blob1, blob2, blob5, blob6, blob8, blob9, double4, double11

@@ -861,7 +861,7 @@ export function App({
   const positionProduct =
     portfolioProducts.length > 0
       ? selectedProductId === "ALL"
-        ? (portfolioProducts.find((p) => p.positionQuantity > 0) ?? activeProduct)
+        ? (portfolioProducts.find((product) => product.positionQuantity !== 0) ?? activeProduct)
         : activeProduct
       : null;
   const isConsolidatedView =
@@ -946,34 +946,20 @@ export function App({
 
   const effectiveOpenPosition =
     positionProduct !== null
-      ? positionProduct.positionQuantity > 0
+      ? positionProduct.positionQuantity !== 0
         ? {
             quantity: positionProduct.positionQuantity,
             averagePrice: positionProduct.averagePrice,
           }
         : null
       : (pnlHistory?.openPosition ?? null);
-  const effectiveProtection =
-    effectiveOpenPosition === null
-      ? null
-      : pnlHistory?.protection !== null &&
-          pnlHistory?.protection !== undefined &&
-          (positionProduct === null ||
-            Math.abs(
-              (pnlHistory.openPosition?.averagePrice ?? 0) -
-                effectiveOpenPosition.averagePrice,
-            ) <=
-              effectiveOpenPosition.averagePrice * 0.01)
-        ? pnlHistory.protection
-        : positionProduct !== null &&
-            agent?.configuration?.executionMode === "paper" &&
-            effectiveOpenPosition.averagePrice > 0
-          ? {
-              stopLossPrice: effectiveOpenPosition.averagePrice * (1 - 0.0035),
-              takeProfitPrice: effectiveOpenPosition.averagePrice * (1 + 0.0055),
-              protectiveOrderConfirmed: true,
-            }
-          : null;
+  const historyPosition = pnlHistory?.openPosition;
+  const historyMatchesPosition = effectiveOpenPosition !== null &&
+    historyPosition !== null && historyPosition !== undefined &&
+    (positionProduct === null || pnlHistory?.cycles[0]?.productId === positionProduct.productId) &&
+    historyPosition.quantity === effectiveOpenPosition.quantity &&
+    historyPosition.averagePrice === effectiveOpenPosition.averagePrice;
+  const effectiveProtection = historyMatchesPosition ? pnlHistory?.protection ?? null : null;
   const stopPrice = effectiveProtection?.stopLossPrice ?? null;
   const takePrice = effectiveProtection?.takeProfitPrice ?? null;
   const entryPrice = effectiveOpenPosition?.averagePrice ?? null;
@@ -987,7 +973,7 @@ export function App({
       price === null ||
       stopPrice === null ||
       takePrice === null ||
-      takePrice <= stopPrice
+      takePrice === stopPrice
     ) {
       return null;
     }

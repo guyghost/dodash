@@ -204,6 +204,53 @@ describe("rsi-reversion — conditionnement (models/strategy-conditioning.md §3
     expect(result.ok && result.value.side).toBe("HOLD");
     expect(result.ok && result.value.reasonCode).toBe("RSI_ALREADY_LONG");
   });
+
+  it("INV-SC6 (allowShort) : maxTrendStrength bloque symétriquement BUY et SELL sur FLAT, jamais en clôture", () => {
+    const strategy = createRsiReversionStrategy({
+      oversold: 30,
+      overbought: 70,
+      baseSize: 0.01,
+      positionAware: true,
+      allowShort: true,
+      maxTrendStrength: 25,
+    });
+
+    const flatBuy = strategy.evaluate(
+      makeContext({
+        positionSide: "FLAT",
+        indicators: snapshot({ rsi: 20, trendStrength: 40 }),
+      }),
+    );
+    expect(flatBuy.ok && flatBuy.value.side).toBe("HOLD");
+    expect(flatBuy.ok && flatBuy.value.reasonCode).toBe("RSI_TREND_BLOCKED");
+
+    const flatSell = strategy.evaluate(
+      makeContext({
+        positionSide: "FLAT",
+        indicators: snapshot({ rsi: 80, trendStrength: 40 }),
+      }),
+    );
+    expect(flatSell.ok && flatSell.value.side).toBe("HOLD");
+    expect(flatSell.ok && flatSell.value.reasonCode).toBe("RSI_TREND_BLOCKED");
+
+    const closeShort = strategy.evaluate(
+      makeContext({
+        positionSide: "SHORT",
+        indicators: snapshot({ rsi: 20, trendStrength: 40 }),
+      }),
+    );
+    expect(closeShort.ok && closeShort.value.side).toBe("BUY");
+    expect(closeShort.ok && closeShort.value.reasonCode).toBe("RSI_OVERSOLD");
+
+    const closeLong = strategy.evaluate(
+      makeContext({
+        positionSide: "LONG",
+        indicators: snapshot({ rsi: 80, trendStrength: 40 }),
+      }),
+    );
+    expect(closeLong.ok && closeLong.value.side).toBe("SELL");
+    expect(closeLong.ok && closeLong.value.reasonCode).toBe("RSI_OVERBOUGHT");
+  });
 });
 
 describe("breakout — conditionnement (models/strategy-conditioning.md §3.3)", () => {

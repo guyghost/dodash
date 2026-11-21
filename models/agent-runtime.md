@@ -1,5 +1,9 @@
 # Modèle d’exécution du Trading Agent
 
+## Amendement 2026-11-21 — Corrections de sûreté après audit
+
+Le contrat normatif `trading-safety-corrections.md` complète les règles v7 : acteur unique partagé avec les commandes de contrôle, propriétaire d'exécution par créneau, événement `PAPER_PROTECTION_UPDATED` et protection paper persistée, sans modification des seuils v7.
+
 Le Durable Object est un interpréteur de `tradingCycleMachine`. La phase XState
 est persistée après chaque événement ; elle seule sélectionne l’effet suivant.
 
@@ -293,3 +297,47 @@ Suite à l'étude d'ablation sur 5 jours réels Hyperliquid (`5m`, 1 441 bougies
 
 - **LONG (`positionQuantity > 0`)** : le plancher dynamique ne s'active qu'à partir de `peakGainBps >= 75` à `Math.max(portfolio.averagePrice * 1.001, highWaterMark - Math.max(useAtr ? atrVal * 1.5 : 0, highWaterMark * 0.004))`. En deçà de `+75 bps`, `baseStopLossPrice` reste inchangé pour laisser le trade atteindre le Take-Profit.
 - **SHORT (`positionQuantity < 0`)** : le plafond dynamique ne s'active qu'à partir de `peakGainBps >= 75` à `Math.min(portfolio.averagePrice * 0.999, lowWaterMark + Math.max(useAtr ? atrVal * 1.5 : 0, lowWaterMark * 0.004))`.
+
+## Amendement 2026-11-21 (v6) — Garde anti-micro-sortie en frais (`RSI 75/25` + plancher net `+5 bps`)
+
+À l'intérieur du corridor `[stopLossPrice, takeProfitPrice]`, une sortie anticipée sur signal stratégie non protecteur n'est autorisée que si elle dégage un gain net suffisant :
+- **LONG** : autorisée uniquement si `last.close > averagePrice * 1.0025` (`+25 bps`) **ou** (`rsi >= 75 && last.close > averagePrice * 1.0005`), éliminant les sorties à l'équilibre qui paient uniquement les frais.
+- **SHORT** : autorisée uniquement si `last.close < averagePrice * 0.9975` (`+25 bps`) **ou** (`rsi <= 25 && last.close < averagePrice * 0.9995`).
+
+## Amendement 2026-11-21 (v7) — Stop-Loss Paper `MARKET`, filtre de tendance multi-horizon (`EMA 180`/`EMA 60`), suppression du contre-tendance `0,4×`, seuils `5m` et symétrie comptable `SHORT`
+
+### 1. Constat (campagne V5B `2026-11-20 10:15 → 2026-11-21 09:30 UTC`, `N = 231` AR vérifiés)
+
+1. **Coût irréaliste des Stop-Loss paper** : en mode `LIMIT_PASSIVE`, les 80 sorties `PAPER_STOP_LOSS` étaient exécutées au `close` en `LIMIT` (`1 bps` maker, `0` slippage) via le carnet synthétique, alors qu'un stop d'urgence réel s'exécute en `MARKET` (`feeBps + slippageBps`).
+2. **Entrées contre-tendance perdantes** : sur une baisse de `-6,23 %`, `EMA 60` sur bougies `1m` (demi-vie ~20 min) a laissé passer 91 `LONG` (`-$30,54`, `PF 0,66`) contre 140 `SHORT` (`+$54,77`, `PF 1,45`) ; les entrées contre-tendance `0,4×` (`< 300 $`) affichent `WR 42,4 %` et `-9,0 bps/AR`.
+3. **Calibration `5m` & alignement Wide Trailing (`+75 bps`)** : avec `takeProfitBps = 55` en `1m`, le Take-Profit fermait avant l'activation du Wide Trailing (`+75 bps`). Sur `FIVE_MINUTE` (où `takeProfitBps` vise `120–150 bps`), le seuil de sortie anticipée sur signal stratégie (`+25 bps` / `+5 bps` RSI) reste trop bas face à l'ATR `5m`.
+4. **Asymétrie comptable `SHORT`** : dans `executePaperOrder` (`packages/paper-execution/src/index.ts`), `averagePrice` incluait les frais d'entrée sur `LONG` (`+fee`) mais pas sur `SHORT` (`0`), surestimant `realizedPnl` sur chaque clôture `SHORT` du montant des frais d'entrée par rapport au delta de cash réel.
+
+### 2. Résolution pure
+
+1. **Exécution `MARKET` sur `PAPER_STOP_LOSS` (`interpreter.ts`)** :
+   - Lorsqu'un signal protecteur de sortie émis en `paper` porte `reasonCode === "PAPER_STOP_LOSS"`, l'appel à `allocateSignals` force `executionStyle: "MARKET"` et omet `orderBooks` (aucun carnet synthétique), afin que `executePaperOrder` applique `feeBps` (taker) et `slippageBps`.
+   - `PAPER_TAKE_PROFIT`, `PAPER_TRAILING_STOP`, les ouvertures et les sorties stratégie conservent `input.configuration.executionStyle`.
+2. **Filtre de tendance multi-horizon et blocage strict du contre-tendance (`interpreter.ts`)** :
+   - Période `trendEmaPeriod = input.configuration.timeframe === "ONE_MINUTE" ? 180 : 60` (3 h en `1m`, 5 h en `5m`), calculée sur `candles.map(c => c.close)` dès que `candles.length >= trendEmaPeriod`.
+   - Tendance baissière (`last.close < trendEma`) : toute ouverture `BUY` est bloquée (`null`), y compris `rsi-reversion`.
+   - Tendance haussière (`last.close >= trendEma`) : toute ouverture `SELL` est bloquée (`null`), y compris `rsi-reversion`.
+   - Contre-régime directionnel (`isBearishRegime` pour `BUY`, `isBullishRegime` pour `SELL`) : bloqué (`null`), supprimant les entrées `0,4×` en rattrapage de couteau.
+3. **Seuils de sortie anticipée adaptés au timeframe (`interpreter.ts`)** :
+   - En `ONE_MINUTE` : inchangés (`+25 bps` ou `RSI >= 75 / <= 25` avec gain net `> +5 bps`).
+   - En `timeframe !== "ONE_MINUTE"` (ex. `FIVE_MINUTE`) : sortie stratégie non protectrice autorisée uniquement si le gain dépasse `+45 bps` (`1.0045` / `0.9955`) **ou** (`RSI >= 75 / <= 25` et gain net `> +15 bps`, soit `1.0015` / `0.9985`).
+4. **Symétrie comptable `SHORT` (`packages/paper-execution/src/index.ts`)** :
+   - Lors de l'ouverture ou de l'augmentation d'un `SHORT` (`sameDirection && intent.side === "SELL"`), `averagePrice = (|current| * portfolio.averagePrice + |delta| * price - fee) / |nextQuantity|` (base nette encaissée après frais d'entrée), à condition que le numérateur soit strictement positif (garanti par `feeBps < 10_000`).
+
+### 3. Invariants additionnels
+
+- **INV-AR4** : En mode `paper`, un `PAPER_STOP_LOSS` produit toujours un `OrderIntent` de type `MARKET` (`limitPrice === null`), même lorsque `executionStyle === "LIMIT_PASSIVE"`.
+- **INV-AR5** : Aucune ouverture `BUY` n'est émise lorsque `last.close < trendEma` (avec `trendEmaPeriod = 180` en `1m`, `60` sinon), et aucune ouverture `SELL` lorsque `last.close >= trendEma`.
+- **INV-AR6** : Sur un cycle complet ouverture + clôture intégrale en `executePaperOrder` (LONG ou SHORT, sans flux externe), `realizedPnl === cashFinal - cashInitial` à la précision flottante près.
+- **INV-AR7** : Les modes `live` et `perp` ne sont pas affectés par ces règles `paper`.
+
+### 4. Vérification requise
+
+- `executePaperOrder` sur `SHORT` : `averagePrice` intègre les frais d'entrée (`price - fee / qty`) et `realizedPnl` à la clôture égale exactement `cashFinal - cashInitial`.
+- `runTradingCycle` en `paper` + `LIMIT_PASSIVE` + `positionAware` : un `PAPER_STOP_LOSS` émet un ordre `MARKET` (`limitPrice: null`, frais `feeBps` + `slippageBps`), tandis qu'un `PAPER_TAKE_PROFIT` reste en `LIMIT` (`makerFeeBps`, `0` slippage).
+- `runTradingCycle` en `paper` + `positionAware` : aucune ouverture `BUY` contre-tendance sous `trendEma` même avec `RSI <= 20` ; en `FIVE_MINUTE`, une sortie stratégie à `+30 bps` (sous `+45 bps` et `RSI < 75`) est filtrée.

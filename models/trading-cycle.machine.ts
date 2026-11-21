@@ -1,4 +1,5 @@
 import { assign, setup } from "xstate";
+import { normalizePaperPositionProtection } from "./paper-position-protection.js";
 
 import type {
   RetryAttempts,
@@ -116,6 +117,10 @@ export const tradingCycleMachine = setup({
     shouldFailAfterPersistence: ({ context }) => context.terminalFailure,
   },
   actions: {
+    recordPaperProtection: assign(({ event }) =>
+      event.type === "PAPER_PROTECTION_UPDATED"
+        ? { paperProtection: normalizePaperPositionProtection(event.protection) }
+        : {}),
     initializeRun: assign(({ context, event }) => {
       if (event.type !== "START_REQUESTED") return {};
       return {
@@ -375,6 +380,7 @@ export const tradingCycleMachine = setup({
     })),
     clearTransientAuthorization: assign({ authorizationExpiresAt: null }),
     resetMachine: assign(({ context }) => ({
+      paperProtection: null,
       permissions: { canControl: false, canTrade: false },
       cycleId: null,
       triggeredAt: null,
@@ -402,6 +408,7 @@ export const tradingCycleMachine = setup({
 }).createMachine({
   id: "tradingCycle",
   context: ({ input }) => ({
+    paperProtection: null,
     agentId: input.agentId,
     strategyIds: input.strategyIds,
     permissions: { canControl: false, canTrade: false },
@@ -624,6 +631,7 @@ export const tradingCycleMachine = setup({
         target: "cancelling",
       },
       on: {
+        PAPER_PROTECTION_UPDATED: { actions: "recordPaperProtection" },
         ALLOCATION_COMPLETED: [
           {
             guard: "hasAllocatedOrders",
