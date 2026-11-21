@@ -293,3 +293,9 @@ Suite à l'étude d'ablation sur 5 jours réels Hyperliquid (`5m`, 1 441 bougies
 
 - **LONG (`positionQuantity > 0`)** : le plancher dynamique ne s'active qu'à partir de `peakGainBps >= 75` à `Math.max(portfolio.averagePrice * 1.001, highWaterMark - Math.max(useAtr ? atrVal * 1.5 : 0, highWaterMark * 0.004))`. En deçà de `+75 bps`, `baseStopLossPrice` reste inchangé pour laisser le trade atteindre le Take-Profit.
 - **SHORT (`positionQuantity < 0`)** : le plafond dynamique ne s'active qu'à partir de `peakGainBps >= 75` à `Math.min(portfolio.averagePrice * 0.999, lowWaterMark + Math.max(useAtr ? atrVal * 1.5 : 0, lowWaterMark * 0.004))`.
+
+## Amendement 2026-11-21 (v6) — Garde anti-micro-sortie en frais (`RSI 75/25` + plancher net `+5 bps`)
+
+À l'intérieur du corridor `[stopLossPrice, takeProfitPrice]`, une sortie anticipée sur signal stratégie non protecteur n'est autorisée que si elle dégage un gain net suffisant :
+- **LONG** : autorisée uniquement si `last.close > averagePrice * 1.0025` (`+25 bps`) **ou** (`rsi >= 75 && last.close > averagePrice * 1.0005`), éliminant les sorties à l'équilibre qui paient uniquement les frais.
+- **SHORT** : autorisée uniquement si `last.close < averagePrice * 0.9975` (`+25 bps`) **ou** (`rsi <= 25 && last.close < averagePrice * 0.9995`).

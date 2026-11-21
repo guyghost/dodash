@@ -98,3 +98,6 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
   - [x] Ajustement purement paramétrique des seuils de trailing stop dans l'interpréteur `paper`, sans modification de la machine XState ni du schéma persisté.
   - [x] Validé empiriquement en backtest `5m` (`+$103,35` vs `-$53,30`, WR `51,5 %`, Max DD `0,419 %`).
   - Verdict : **APPROUVÉ**.
+- **Revue Amendement 2026-11-21 (v6) — Garde anti-micro-sortie (`RSI 75/25` + plancher `+5 bps`)** :
+  - [x] Règle pure dans le filtrage des signaux non protecteurs en `paper` ; les Stop-Loss, Take-Profit et Trailing Stop restent prioritaires et inchangés.
+  - Verdict : **APPROUVÉ**.

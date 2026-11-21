@@ -554,8 +554,11 @@ export const runTradingCycle = async (
                         }
                       } else if (
                         artifacts.indicators !== undefined &&
-                        artifacts.indicators.rsi < 65 &&
-                        last.close <= portfolio.averagePrice * 1.0025
+                        last.close <= portfolio.averagePrice * 1.0025 &&
+                        !(
+                          artifacts.indicators.rsi >= 75 &&
+                          last.close > portfolio.averagePrice * 1.0005
+                        )
                       ) {
                         effectiveSignals = Object.freeze(
                           signals.filter((signal) => signal.side !== "SELL"),
@@ -615,8 +618,11 @@ export const runTradingCycle = async (
                         }
                       } else if (
                         artifacts.indicators !== undefined &&
-                        artifacts.indicators.rsi > 35 &&
-                        last.close >= portfolio.averagePrice * 0.9975
+                        last.close >= portfolio.averagePrice * 0.9975 &&
+                        !(
+                          artifacts.indicators.rsi <= 25 &&
+                          last.close < portfolio.averagePrice * 0.9995
+                        )
                       ) {
                         effectiveSignals = Object.freeze(
                           signals.filter((signal) => signal.side !== "BUY"),
