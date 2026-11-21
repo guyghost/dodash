@@ -9,11 +9,11 @@ frontière Coinbase, comme dans le reste du domaine.
 
 ## Configuration locale
 
-1. Remplacer l’identifiant KV factice de `wrangler.jsonc` lors du provisioning.
+1. Remplacer l’identifiant KV factice de `cloudflare.config.ts` lors du provisioning.
 2. Créer `.dev.vars` (ignoré par Git) avec un `INTERNAL_SERVICE_TOKEN` aléatoire
    d’au moins 32 caractères.
 3. Lancer `pnpm --filter @dodash/mcp-market-data dev`.
 
-Le token interne est un secret Wrangler et ne doit jamais être ajouté à
-`wrangler.jsonc`. Le serveur MCP public est en lecture seule ; une couche OAuth
+Le token interne est un secret Cloudflare (`cf workers secrets update`) et ne doit jamais être ajouté à
+`cloudflare.config.ts`. Le serveur MCP public est en lecture seule ; une couche OAuth
 devra être ajoutée avant toute exposition sur un domaine public non protégé.

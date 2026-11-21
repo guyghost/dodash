@@ -75,9 +75,10 @@ Copier les exemples `.dev.vars.example` en `.dev.vars` dans :
 - `apps/dashboard-api` pour le token opérateur et le token de contrôle Agent.
 
 Les tokens doivent contenir au moins 32 caractères. En production, les placer
-avec `wrangler secret put` et ne jamais les écrire dans `wrangler.jsonc`.
-Le namespace KV `dodash-market-cache` est provisionné séparément et son
-identifiant est versionné dans `apps/mcp-market-data/wrangler.jsonc`.
+avec `pnpm exec cf workers secrets update <NOM> --text "<VALEUR>"` et ne jamais
+les écrire dans `cloudflare.config.ts`. Le namespace KV `dodash-market-cache`
+est provisionné séparément (`cf kv namespaces create`) et son identifiant est
+versionné dans `apps/mcp-market-data/cloudflare.config.ts`.
 
 **Secret interne partagé** : `INTERNAL_SERVICE_TOKEN` de `apps/agent` doit
 être **la même valeur** que celle de `apps/mcp-market-data/.dev.vars`
@@ -85,12 +86,12 @@ identifiant est versionné dans `apps/mcp-market-data/wrangler.jsonc`.
 que celle de `apps/agent`). Un token généré indépendamment provoque des 401
 interne, masqués en `AUTHENTICATION_FAILURE` (phase `market-data`) côté cycle.
 
-### Stack local (wrangler dev)
+### Stack local (`cf dev`)
 
 Deux prérequis pour que le premier démarrage fonctionne :
 
 1. Builder d'abord les paquets workspace (`pnpm build`) : les workers
-   résolvent `@dodash/*` via leurs `dist/` — sans build, `wrangler dev`
+   résolvent `@dodash/*` via leurs `dist/` — sans build, `cf dev`
    échoue avec `Could not resolve "@dodash/domain"`.
 2. Quand les trois workers tournent côte à côte, donner à chacun un port
    HTTP **et** un port debugger distincts (sinon `Address already in use
@@ -99,13 +100,13 @@ Deux prérequis pour que le premier démarrage fonctionne :
 
 ```sh
 pnpm build
-cd apps/mcp-market-data && npx wrangler dev --port 8787 --inspector-port 9229
-cd apps/agent           && npx wrangler dev --port 8788 --inspector-port 9230
-cd apps/dashboard-api   && npx wrangler dev --port 8789 --inspector-port 9231
+cd apps/mcp-market-data && pnpm exec cf dev -- --port 8787 --inspector-port 9229
+cd apps/agent           && pnpm exec cf dev -- --port 8788 --inspector-port 9230
+cd apps/dashboard-api   && pnpm exec cf dev -- --port 8789 --inspector-port 9231
 ```
 
 Les bindings de service se connectent automatiquement entre sessions
-`wrangler dev` locales (`[connected]` dans les logs).
+`cf dev` locales (`[connected]` dans les logs).
 
 Ordre de déploiement : market data, Agent, dashboard API, puis dashboard. Seul
 `dodash-dashboard` est public ; il transmet `/api/*` au proxy privé par service
