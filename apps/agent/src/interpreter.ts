@@ -464,6 +464,7 @@ export const runTradingCycle = async (
                     input.configuration.strategyOptions?.positionAware === true;
                   let effectiveSignals: readonly Signal[] = signals;
                   let forceMarketExecution = false;
+                  let wickTakeProfitPrice: number | null = null;
                   const allowPaperShort =
                     input.configuration.executionMode === "paper" && positionAware;
                   const isOneMinute =
@@ -493,14 +494,23 @@ export const runTradingCycle = async (
                     const isLongPosition = portfolio.positionQuantity > 0;
                     const absPositionQty = Math.abs(portfolio.positionQuantity);
                     const { stopLossPrice, takeProfitPrice } = protection;
+                    const isPostEntryCandle =
+                      input.lastTradeAt !== null && last.start > input.lastTradeAt;
 
                     if (isLongPosition) {
+                      const hitTpOnClose = last.close >= takeProfitPrice;
+                      const hitTpOnWick =
+                        !hitTpOnClose &&
+                        isPostEntryCandle &&
+                        last.high >= takeProfitPrice &&
+                        last.low > stopLossPrice;
                       if (
                         last.close <= stopLossPrice ||
-                        last.close >= takeProfitPrice
+                        hitTpOnClose ||
+                        hitTpOnWick
                       ) {
                         const exitReason =
-                          last.close >= takeProfitPrice
+                          hitTpOnClose || hitTpOnWick
                             ? "PAPER_TAKE_PROFIT"
                             : stopLossPrice > portfolio.averagePrice
                               ? "PAPER_TRAILING_STOP"
@@ -516,8 +526,13 @@ export const runTradingCycle = async (
                         });
                         if (exitSignal.ok) {
                           effectiveSignals = Object.freeze([exitSignal.value]);
-                          if (exitReason === "PAPER_STOP_LOSS") {
+                          if (
+                            exitReason === "PAPER_STOP_LOSS" ||
+                            exitReason === "PAPER_TRAILING_STOP"
+                          ) {
                             forceMarketExecution = true;
+                          } else if (hitTpOnWick) {
+                            wickTakeProfitPrice = takeProfitPrice;
                           }
                         }
                       } else if (
@@ -536,12 +551,19 @@ export const runTradingCycle = async (
                         );
                       }
                     } else {
+                      const hitTpOnClose = last.close <= takeProfitPrice;
+                      const hitTpOnWick =
+                        !hitTpOnClose &&
+                        isPostEntryCandle &&
+                        last.low <= takeProfitPrice &&
+                        last.high < stopLossPrice;
                       if (
                         last.close >= stopLossPrice ||
-                        last.close <= takeProfitPrice
+                        hitTpOnClose ||
+                        hitTpOnWick
                       ) {
                         const exitReason =
-                          last.close <= takeProfitPrice
+                          hitTpOnClose || hitTpOnWick
                             ? "PAPER_TAKE_PROFIT"
                             : stopLossPrice < portfolio.averagePrice
                               ? "PAPER_TRAILING_STOP"
@@ -557,8 +579,13 @@ export const runTradingCycle = async (
                         });
                         if (exitSignal.ok) {
                           effectiveSignals = Object.freeze([exitSignal.value]);
-                          if (exitReason === "PAPER_STOP_LOSS") {
+                          if (
+                            exitReason === "PAPER_STOP_LOSS" ||
+                            exitReason === "PAPER_TRAILING_STOP"
+                          ) {
                             forceMarketExecution = true;
+                          } else if (hitTpOnWick) {
+                            wickTakeProfitPrice = takeProfitPrice;
                           }
                         }
                       } else if (
@@ -596,7 +623,8 @@ export const runTradingCycle = async (
                       effectiveSignals = Object.freeze([]);
                     } else {
                       // Filtre de tendance multi-horizon (EMA 180 en 1m = 3h,
-                      // EMA 60 en >= 5m = 5h+) + régime directionnel (+DI/-DI/ADX).
+                      // EMA 60 en >= 5m = 5h+) + régime directionnel (+DI/-DI/ADX)
+                      // + Anti-Climax Chase (v8).
                       const candles = artifacts.market?.candles ?? [];
                       const trendEmaPeriod = isOneMinute ? 180 : 60;
                       let trendEma: number | null = null;
@@ -613,6 +641,10 @@ export const runTradingCycle = async (
                       const trendBear =
                         trendEma !== null && last.close < trendEma;
                       const ind = artifacts.indicators;
+                      const atrVal =
+                        ind.atr !== undefined && Number.isFinite(ind.atr) && ind.atr > 0
+                          ? ind.atr
+                          : 0;
                       const isBearishRegime =
                         ind.minusDi !== undefined &&
                         ind.plusDi !== undefined &&
@@ -632,9 +664,17 @@ export const runTradingCycle = async (
                           adjusted.push(sig);
                           continue;
                         }
+                        const isMomentumSig =
+                          sig.strategyId === "breakout" ||
+                          sig.strategyId === "ema-cross";
                         let multiplier: number | null = 1;
                         if (sig.side === "BUY") {
-                          if (trendBear || isBearishRegime) {
+                          const isClimaxBuy =
+                            isMomentumSig &&
+                            (ind.rsi > 68 ||
+                              (atrVal > 0 &&
+                                last.close > ind.emaSlow + atrVal * 2.2));
+                          if (trendBear || isBearishRegime || isClimaxBuy) {
                             multiplier = null;
                           } else if (isBullishRegime) {
                             multiplier = 1.15;
@@ -642,7 +682,12 @@ export const runTradingCycle = async (
                             multiplier = 0.4;
                           }
                         } else if (sig.side === "SELL") {
-                          if (trendBull || isBullishRegime) {
+                          const isClimaxSell =
+                            isMomentumSig &&
+                            (ind.rsi < 32 ||
+                              (atrVal > 0 &&
+                                last.close < ind.emaSlow - atrVal * 2.2));
+                          if (trendBull || isBullishRegime || isClimaxSell) {
                             multiplier = null;
                           } else if (isBearishRegime) {
                             multiplier = 1.15;
@@ -671,7 +716,41 @@ export const runTradingCycle = async (
                   const effectiveExecutionStyle = forceMarketExecution
                     ? ("MARKET" as const)
                     : input.configuration.executionStyle;
-                  const effectiveBook = forceMarketExecution ? null : book;
+                  const effectiveBook = forceMarketExecution
+                    ? null
+                    : wickTakeProfitPrice !== null
+                      ? Object.freeze({
+                          bestBid: wickTakeProfitPrice,
+                          bestAsk: wickTakeProfitPrice,
+                          spreadBps: 0,
+                        })
+                      : book;
+                  // v8 Risk-Based Position Sizing : plafonne les nouvelles ouvertures
+                  // à ~6 bps du cash par Stop-Loss (~6 $ sur 10 000 $).
+                  const effectiveMaxDecisionNotional = (() => {
+                    if (!allowPaperShort || portfolio.positionQuantity !== 0) {
+                      return input.configuration.maxDecisionNotional;
+                    }
+                    const riskCfg = input.configuration.risk;
+                    const atrVal = artifacts?.indicators?.atr;
+                    const useAtr =
+                      atrVal !== undefined &&
+                      Number.isFinite(atrVal) &&
+                      atrVal > 0 &&
+                      riskCfg.atrStopLossMultiple !== undefined;
+                    const bpsStopPct = riskCfg.stopLossBps / 10_000;
+                    const atrStopPct =
+                      useAtr && last.close > 0
+                        ? (atrVal * (riskCfg.atrStopLossMultiple ?? 1.5)) /
+                          last.close
+                        : 0;
+                    const stopDistPct = Math.max(bpsStopPct, atrStopPct, 0.002);
+                    const riskBudgetUsd = Math.max(2, portfolio.cash * 0.0006);
+                    return Math.min(
+                      input.configuration.maxDecisionNotional,
+                      riskBudgetUsd / stopDistPct,
+                    );
+                  })();
                   return allocateSignals({
                     agentId: input.agentId,
                     cycleId: artifacts?.cycleId ?? input.cycleId,
@@ -679,7 +758,7 @@ export const runTradingCycle = async (
                     signals: effectiveSignals,
                     marketPrices: { [input.configuration.productId]: last.close },
                     capitalAvailable: Math.max(0, portfolio.cash),
-                    maxDecisionNotional: input.configuration.maxDecisionNotional,
+                    maxDecisionNotional: effectiveMaxDecisionNotional,
                     minNetQuantity: input.configuration.minNetQuantity,
                     ...(effectiveExecutionStyle === undefined
                       ? {}
@@ -697,7 +776,9 @@ export const runTradingCycle = async (
                               portfolio.positionQuantity,
                           },
                           closeFullPositionOnSell: true,
-                          ...(allowPaperShort ? { allowShort: true } : {}),
+                          ...(allowPaperShort
+                            ? { allowShort: true, combineMode: "MAX" as const }
+                            : {}),
                         }
                       : {}),
                   });

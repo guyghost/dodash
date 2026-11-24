@@ -144,8 +144,9 @@ export const resolvePaperPositionProtection = (
 				? Math.max(baseStop, trailingStop, carried?.stopLossPrice ?? baseStop)
 				: Math.min(baseStop, trailingStop, carried?.stopLossPrice ?? baseStop),
 		takeProfitPrice:
-			side === "LONG"
+			carried?.takeProfitPrice ??
+			(side === "LONG"
 				? input.averagePrice + takeDistance
-				: input.averagePrice - takeDistance,
+				: input.averagePrice - takeDistance),
 	});
 };

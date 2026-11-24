@@ -341,3 +341,16 @@ Suite à l'étude d'ablation sur 5 jours réels Hyperliquid (`5m`, 1 441 bougies
 - `executePaperOrder` sur `SHORT` : `averagePrice` intègre les frais d'entrée (`price - fee / qty`) et `realizedPnl` à la clôture égale exactement `cashFinal - cashInitial`.
 - `runTradingCycle` en `paper` + `LIMIT_PASSIVE` + `positionAware` : un `PAPER_STOP_LOSS` émet un ordre `MARKET` (`limitPrice: null`, frais `feeBps` + `slippageBps`), tandis qu'un `PAPER_TAKE_PROFIT` reste en `LIMIT` (`makerFeeBps`, `0` slippage).
 - `runTradingCycle` en `paper` + `positionAware` : aucune ouverture `BUY` contre-tendance sous `trendEma` même avec `RSI <= 20` ; en `FIVE_MINUTE`, une sortie stratégie à `+30 bps` (sous `+45 bps` et `RSI < 75`) est filtrée.
+
+## Amendement 2026-11-24 (v8) — Correctifs Clôture Short/Spread/Breakout, TP Ancré & Mèche, Anti-Climax Chase et Risk-Based Sizing
+
+### 1. Correctifs de sûreté d'exécution
+1. **Couverture garantie des `SHORT` (`packages/paper-execution/src/index.ts`)** : lorsque `config.allowShort === true`, un `BUY` ne vérifie `INSUFFICIENT_CASH` que sur la quantité ouvrant un `LONG` net (`openingLongQty = Math.max(0, intent.quantity - Math.max(0, -portfolio.positionQuantity))`), afin qu'un rachat de couverture (`SHORT -> FLAT`) ne soit jamais rejeté. Le cash résultant reste borné `>= 0`.
+2. **Priorité de clôture face au spread & Trailing Stop `MARKET` (`allocator.ts` & `interpreter.ts`)** : dans `allocateSignals`, `isClosingOrder` contourne `isSpreadBlocked(book, maxSpreadBps)`. Dans `interpreter.ts`, `PAPER_TRAILING_STOP` force `MARKET` comme `PAPER_STOP_LOSS`.
+3. **TP ancré à l'entrée & exécution sur mèche (`paper-position-protection.ts` & `interpreter.ts`)** : `takeProfitPrice` conserve `carried?.takeProfitPrice` tant que la position est inchangée. Si une bougie strictement postérieure à `lastTradeAt` touche `takeProfitPrice` en séance (`last.high >= takeProfitPrice` en `LONG`, `last.low <= takeProfitPrice` en `SHORT`) sans clôturer au-delà, `PAPER_TAKE_PROFIT` est exécuté en `LIMIT` au prix `takeProfitPrice`.
+4. **Filtre volume `breakout` limité aux entrées (`packages/strategies/src/breakout.ts`)** : lorsque `positionAware === true`, `minRelativeVolume` ne bloque que lorsque `positionSide === undefined || positionSide === "FLAT"`.
+
+### 2. Leviers de rentabilité (Sizing & Sélection d'entrée)
+1. **Agrégation sans empilement (`combineMode: "MAX"` dans `allocator.ts`)** : lorsque `combineMode === "MAX"`, l'allocateur retient le `max` des signaux concordants (majoré de `× 1,15` si `>= 2` stratégies concordent) au lieu de leur somme brute, évitant le doublement accidentel de taille sur les mèches de panique.
+2. ***Risk-Based Position Sizing* (`interpreter.ts`)** : pour toute nouvelle entrée en `paper` + `positionAware`, le notionnel maximal de décision est borné par `riskBudgetUsd / stopDistPct` avec `riskBudgetUsd = Math.max(2, portfolio.cash * 0.0006)` (`6 bps` du cash par Stop-Loss, soit `~6 $` sur `10 000 $`), réduisant automatiquement la taille lorsque l'ATR s'écarte.
+3. **Filtre *Anti-Climax Chase* (`interpreter.ts`)** : bloque toute ouverture momentum (`breakout`, `ema-cross`) en `BUY` lorsque `rsi > 68` ou `close > emaSlow + 2,2 × atr`, et en `SELL` lorsque `rsi < 32` ou `close < emaSlow - 2,2 × atr`.

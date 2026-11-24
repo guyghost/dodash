@@ -119,3 +119,11 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
   - L'inclusion des frais d'entrée dans `averagePrice` sur `SHORT` restaure l'identité comptable `realizedPnl === Δcash` entre `executePaperOrder` et `projectDashboardPnlHistory` (qui réutilise `previousPortfolio.averagePrice`).
 - **Isolation `live` / `perp`** : toutes les règles d'interpréteur sont strictement gardées par `executionMode === "paper" && positionAware` ; `allowShort` reste `false` en `live` spot (`SPOT_SHORT_FORBIDDEN`).
 - **Limites acceptées** : sur les positions `SHORT` déjà ouvertes en production avant déploiement, l'ancien `averagePrice` sans frais d'entrée reste porté jusqu'à clôture (écart négligeable de `1 bps` sur un seul trade en cours), puis toutes les nouvelles positions appliquent la symétrie exacte.
+
+## Revue de l'amendement du 2026-11-24 (v8) — Sûreté de clôture, TP ancré/mèche, Anti-Climax Chase & Risk-Based Sizing
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
+
+- [x] **Sûreté de clôture** : un ordre fermant un `SHORT` ou un `LONG` ne peut plus être bloqué ni par `INSUFFICIENT_CASH` ni par `maxSpreadBps` ni par `minRelativeVolume`.
+- [x] **Cohérence carnet TP** : `takeProfitPrice` reste invariant après l'entrée (`carried?.takeProfitPrice`), et l'exécution sur mèche n'est activée que pour les bougies strictement postérieures à `lastTradeAt` (`last.start > lastTradeAt`), évitant tout biais rétroactif sur la bougie d'entrée.
+- [x] **Maîtrise du risque par trade** : `combineMode: "MAX"` (optionnel, défaut `"SUM"`) et le plafond `riskBudgetUsd / stopDistPct` normalisent la perte maximale par Stop-Loss indépendamment des pics d'ATR, sans modifier la machine XState ni impacter le mode `live`.

@@ -33,6 +33,7 @@ export interface AllocationInput {
   readonly positionQuantities?: Readonly<Record<string, number>>;
   readonly closeFullPositionOnSell?: boolean;
   readonly allowShort?: boolean;
+  readonly combineMode?: "SUM" | "MAX";
 }
 
 export interface AllocationDecision {
@@ -129,14 +130,35 @@ export const allocateSignals = (
       return err({ code: "MISSING_MARKET_PRICE", productId: productKey });
     }
 
-    const net = group.signals.reduce(
-      (total, signal) =>
-        total +
-        (signal.side === "BUY" ? 1 : -1) *
-          signal.suggestedSize *
-          signal.confidence,
-      0,
-    );
+    const net =
+      input.combineMode === "MAX"
+        ? (() => {
+            let buyMax = 0;
+            let buyCount = 0;
+            let sellMax = 0;
+            let sellCount = 0;
+            for (const signal of group.signals) {
+              const weighted = signal.suggestedSize * signal.confidence;
+              if (signal.side === "BUY") {
+                buyCount += 1;
+                if (weighted > buyMax) buyMax = weighted;
+              } else if (signal.side === "SELL") {
+                sellCount += 1;
+                if (weighted > sellMax) sellMax = weighted;
+              }
+            }
+            const buyTotal = buyCount >= 2 ? buyMax * 1.15 : buyMax;
+            const sellTotal = sellCount >= 2 ? sellMax * 1.15 : sellMax;
+            return buyTotal - sellTotal;
+          })()
+        : group.signals.reduce(
+            (total, signal) =>
+              total +
+              (signal.side === "BUY" ? 1 : -1) *
+                signal.suggestedSize *
+                signal.confidence,
+            0,
+          );
     netQuantities[productKey] = net;
     const heldQty = input.positionQuantities?.[productKey];
     const hasHeld = heldQty !== undefined && Number.isFinite(heldQty);
@@ -170,7 +192,7 @@ export const allocateSignals = (
     }
 
     const book = input.orderBooks?.[productKey];
-    if (isSpreadBlocked(book, input.maxSpreadBps)) continue;
+    if (!isClosingOrder && isSpreadBlocked(book, input.maxSpreadBps)) continue;
 
     const heldAbs = hasHeld ? Math.abs(heldQty) : 0;
     const quantity = isClosingOrder

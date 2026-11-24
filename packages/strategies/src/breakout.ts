@@ -87,7 +87,11 @@ export const createBreakoutStrategy = (config: BreakoutConfig): Strategy => {
           }
         }
 
-        if (config.minRelativeVolume !== undefined) {
+        const isOpeningContext =
+          config.positionAware !== true ||
+          context.positionSide === undefined ||
+          context.positionSide === "FLAT";
+        if (config.minRelativeVolume !== undefined && isOpeningContext) {
           const relVol = context.indicators.relativeVolume;
           if (
             relVol === null ||

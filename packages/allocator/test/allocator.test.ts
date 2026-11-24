@@ -220,5 +220,34 @@ describe("allocateSignals", () => {
       expect(fullClose.value.orders[0]?.quantity).toBeCloseTo(0.012, 10);
     }
   });
+
+  it("combineMode MAX évite l'empilement brut et laisse passer les clôtures malgré maxSpreadBps", () => {
+    const maxCombined = allocateSignals({
+      ...base,
+      combineMode: "MAX",
+      signals: [signal("ema", "BUY", 1, 0.02), signal("breakout", "BUY", 1, 0.015)],
+    });
+    expect(maxCombined.ok && maxCombined.value.outcome).toBe("ALLOCATED");
+    if (maxCombined.ok) {
+      expect(maxCombined.value.orders[0]?.quantity).toBeCloseTo(0.02 * 1.15, 10);
+    }
+
+    const closingDespiteSpread = allocateSignals({
+      ...base,
+      maxSpreadBps: 10,
+      orderBooks: {
+        "BTC-USD": { bestBid: 49_900, bestAsk: 50_100, spreadBps: 40 },
+      },
+      signals: [signal("rsi", "BUY", 1, 0.05)],
+      positionQuantities: { "BTC-USD": -0.02 },
+      closeFullPositionOnSell: true,
+      allowShort: true,
+    });
+    expect(closingDespiteSpread.ok && closingDespiteSpread.value.outcome).toBe("ALLOCATED");
+    if (closingDespiteSpread.ok) {
+      expect(closingDespiteSpread.value.orders[0]?.side).toBe("BUY");
+      expect(closingDespiteSpread.value.orders[0]?.quantity).toBeCloseTo(0.02, 10);
+    }
+  });
 });
 

@@ -76,8 +76,21 @@ export const executePaperOrder = (
   const cashTolerance = Math.max(1, Math.abs(portfolio.cash)) * Number.EPSILON * 16;
   const positionTolerance =
     Math.max(1, Math.abs(portfolio.positionQuantity)) * Number.EPSILON * 16;
-  if (intent.side === "BUY" && notional + fee > portfolio.cash + cashTolerance) {
-    return err({ code: "INSUFFICIENT_CASH" });
+  if (intent.side === "BUY") {
+    if (config.allowShort === true) {
+      const openingLongQty = Math.max(
+        0,
+        intent.quantity - Math.max(0, -portfolio.positionQuantity),
+      );
+      if (
+        openingLongQty > positionTolerance &&
+        openingLongQty * price + fee > portfolio.cash + cashTolerance
+      ) {
+        return err({ code: "INSUFFICIENT_CASH" });
+      }
+    } else if (notional + fee > portfolio.cash + cashTolerance) {
+      return err({ code: "INSUFFICIENT_CASH" });
+    }
   }
   if (intent.side === "SELL") {
     if (config.allowShort === true) {
@@ -134,7 +147,7 @@ export const executePaperOrder = (
 
   const cashDelta = intent.side === "BUY" ? -(notional + fee) : notional - fee;
   const rawCash = portfolio.cash + cashDelta;
-  const cash = Math.abs(rawCash) <= cashTolerance ? 0 : rawCash;
+  const cash = rawCash <= cashTolerance ? 0 : rawCash;
   return ok(
     Object.freeze({
       portfolio: Object.freeze({

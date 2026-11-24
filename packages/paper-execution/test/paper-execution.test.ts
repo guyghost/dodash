@@ -168,5 +168,19 @@ describe("executePaperOrder", () => {
     expect(covered.value.trade.realizedPnl).toBeCloseTo(
       covered.value.portfolio.cash - flat.cash,
     );
+
+    // Covers an underwater short even when buyback exceeds remaining cash
+    const stressedCover = executePaperOrder(
+      { cash: 150, positionQuantity: -2, averagePrice: 100 },
+      buyCoverIntent.value,
+      120,
+      3,
+      { feeBps: 10, slippageBps: 0, allowShort: true },
+    );
+    expect(stressedCover.ok).toBe(true);
+    if (stressedCover.ok) {
+      expect(stressedCover.value.portfolio.positionQuantity).toBe(0);
+      expect(stressedCover.value.portfolio.cash).toBe(0);
+    }
   });
 });
