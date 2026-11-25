@@ -156,3 +156,89 @@ it("does not apply another product's protection at the same average price", asyn
 	expect(badges.textContent).toContain("NON PROTÉGÉ");
 	expect(badges.textContent).not.toContain("STOP");
 });
+
+it("resolves BTC-USD protection from /state protectionsByProduct even when XRP-USD ran the latest cycle (v9)", async () => {
+	const products = [product("BTC-USD", 1), product("XRP-USD", 0)];
+	const summary: PortfolioSummaryView = {
+		kind: "portfolio",
+		phase: "running",
+		killSwitchActive: false,
+		asOf,
+		products,
+		consolidated: {
+			equity: 2_100,
+			valuationQuality: "fresh",
+			grossExposure: 100,
+			exposureQuality: "fresh",
+			maxGrossExposure: 20_000,
+			dailyPnl: 0,
+			maxDailyLoss: 100,
+		},
+	};
+	const state: AgentStateView = {
+		enabled: true,
+		phase: "waiting",
+		updatedAt: asOf,
+		configuration: {
+			productId: "BTC-USD",
+			timeframe: "FIVE_MINUTE",
+			strategyIds: ["rsi-reversion"],
+			intervalSeconds: 300,
+			executionMode: "paper",
+		},
+		portfolio: { cash: 1_000, positionQuantity: 1, averagePrice: 100 },
+		dailyPnl: 0,
+		nextWakeAt: null,
+		lastTradeAt: asOf - 600_000,
+		lastCycle: null,
+		portfolioSummary: summary,
+		paperValuation: null,
+		indicators: null,
+		protectionsByProduct: {
+			"BTC-USD": {
+				stopLossPrice: 98.8,
+				takeProfitPrice: 101.5,
+				protectiveOrderConfirmed: false,
+			},
+		},
+	};
+	const history: PnlHistoryView = {
+		equityCurve: [],
+		cycles: [
+			{
+				cycleId: "xrp-hold",
+				productId: "XRP-USD",
+				triggeredAt: asOf - 2_000,
+				completedAt: asOf,
+				outcome: "NO_ACTION",
+				marketPrice: 1.0,
+				valuation: valuation(0, 1_000),
+				side: null,
+				quantity: null,
+				fillPrice: null,
+				fee: null,
+				realizedPnl: null,
+				slippageBps: null,
+			},
+		],
+		openPosition: null,
+		protection: null,
+	};
+	const gateway: DashboardGateway = {
+		loadState: async () => state,
+		loadCycles: async () => [],
+		loadPnlHistory: async () => history,
+		command: async () => state,
+	};
+	render(
+		<App gateways={{ createHttp: () => gateway, createDemo: () => gateway }} />,
+	);
+	await userEvent.click(screen.getByRole("button", { name: "Voir la démo" }));
+	const badges = await screen.findByRole("group", {
+		name: "Position et protections",
+	});
+	expect(badges.textContent).not.toContain("NON PROTÉGÉ");
+	expect(badges.textContent).toContain("POSITION 1 · LONG");
+	expect(badges.textContent).toContain("STOP 98,80");
+	expect(badges.textContent).toContain("TAKE-PROFIT 101,50");
+});

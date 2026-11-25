@@ -725,8 +725,18 @@ export const runTradingCycle = async (
                           spreadBps: 0,
                         })
                       : book;
-                  // v8 Risk-Based Position Sizing : plafonne les nouvelles ouvertures
-                  // à ~6 bps du cash par Stop-Loss (~6 $ sur 10 000 $).
+                  // v8/v9 Risk-Based Position Sizing & ségrégation du collatéral short :
+                  // plafonne les nouvelles ouvertures à ~6 bps de l'équité marquée par SL.
+                  const markedEquity =
+                    portfolio.cash + portfolio.positionQuantity * last.close;
+                  const freeCollateral =
+                    allowPaperShort && portfolio.positionQuantity < 0
+                      ? Math.max(
+                          0,
+                          portfolio.cash -
+                            2 * Math.abs(portfolio.positionQuantity) * last.close,
+                        )
+                      : Math.max(0, portfolio.cash);
                   const effectiveMaxDecisionNotional = (() => {
                     if (!allowPaperShort || portfolio.positionQuantity !== 0) {
                       return input.configuration.maxDecisionNotional;
@@ -745,7 +755,7 @@ export const runTradingCycle = async (
                           last.close
                         : 0;
                     const stopDistPct = Math.max(bpsStopPct, atrStopPct, 0.002);
-                    const riskBudgetUsd = Math.max(2, portfolio.cash * 0.0006);
+                    const riskBudgetUsd = Math.max(2, markedEquity * 0.0006);
                     return Math.min(
                       input.configuration.maxDecisionNotional,
                       riskBudgetUsd / stopDistPct,
@@ -757,7 +767,7 @@ export const runTradingCycle = async (
                     decisionId,
                     signals: effectiveSignals,
                     marketPrices: { [input.configuration.productId]: last.close },
-                    capitalAvailable: Math.max(0, portfolio.cash),
+                    capitalAvailable: freeCollateral,
                     maxDecisionNotional: effectiveMaxDecisionNotional,
                     minNetQuantity: input.configuration.minNetQuantity,
                     ...(effectiveExecutionStyle === undefined
@@ -869,12 +879,15 @@ export const runTradingCycle = async (
             input.effects.proposePortfolioRisk !== undefined &&
             targetExposureGate?.portfolioAdmission !== false
           ) {
+            const rawProjected =
+              portfolio.positionQuantity +
+              (order.side === "BUY" ? order.quantity : -order.quantity);
             const admission = await input.effects.proposePortfolioRisk(
               input.configuration.productId,
               result.value.projectedPositionNotional,
               {
                 currentQuantity: portfolio.positionQuantity,
-                projectedQuantity: portfolio.positionQuantity + (order.side === "BUY" ? order.quantity : -order.quantity),
+                projectedQuantity: Math.abs(rawProjected) <= 1e-12 ? 0 : rawProjected,
               },
             );
             if (!admission.approved) {

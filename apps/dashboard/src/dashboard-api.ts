@@ -3,6 +3,7 @@ import {
   DASHBOARD_REMOTE_PHASES,
   isCandleCloseMarkSource,
   LIVE_TRADING_POLICY,
+  normalizePaperPositionProtection,
   type DashboardDirectCommand,
   type DashboardError,
   type DashboardRemotePhase,
@@ -58,6 +59,16 @@ export interface AgentStateView {
       }
     >
   >;
+  readonly protectionsByProduct?: Readonly<
+    Record<
+      string,
+      {
+        readonly stopLossPrice: number;
+        readonly takeProfitPrice: number;
+        readonly protectiveOrderConfirmed: boolean;
+      }
+    >
+  >;
 }
 
 export interface CycleView {
@@ -105,6 +116,19 @@ export interface PnlHistoryView {
         readonly protectiveOrderConfirmed: boolean;
       }
     | null;
+  readonly openPositionsByProduct?: Readonly<
+    Record<string, { readonly quantity: number; readonly averagePrice: number }>
+  >;
+  readonly protectionsByProduct?: Readonly<
+    Record<
+      string,
+      {
+        readonly stopLossPrice: number;
+        readonly takeProfitPrice: number;
+        readonly protectiveOrderConfirmed: boolean;
+      } | null
+    >
+  >;
 }
 
 export interface PaperValuationView {
@@ -483,12 +507,47 @@ export const parseAgentState = (value: unknown): AgentStateView => {
       string,
       NonNullable<AgentStateView["indicators"]>
     > = {};
+    const protectionsByProduct: Record<
+      string,
+      {
+        readonly stopLossPrice: number;
+        readonly takeProfitPrice: number;
+        readonly protectiveOrderConfirmed: boolean;
+      }
+    > = {};
     if (sessionProducts !== null) {
+      const summaryByProduct = new Map(
+        portfolioSummary.products.map((item) => [item.productId, item] as const),
+      );
       for (const [pid, prod] of Object.entries(sessionProducts)) {
         if (isRecord(prod) && "previousIndicators" in prod) {
           const parsedInd = parseIndicators(prod.previousIndicators);
           if (parsedInd !== null) {
             indicatorsByProduct[pid] = parsedInd;
+          }
+        }
+        if (
+          isRecord(prod) &&
+          isRecord(prod.machine) &&
+          isRecord(prod.machine.context) &&
+          "paperProtection" in prod.machine.context
+        ) {
+          const normalizedProt = normalizePaperPositionProtection(
+            prod.machine.context.paperProtection,
+          );
+          const summaryItem = summaryByProduct.get(pid);
+          if (
+            normalizedProt !== null &&
+            summaryItem !== undefined &&
+            normalizedProt.averagePrice === summaryItem.averagePrice &&
+            ((normalizedProt.side === "LONG" && summaryItem.positionQuantity > 0) ||
+              (normalizedProt.side === "SHORT" && summaryItem.positionQuantity < 0))
+          ) {
+            protectionsByProduct[pid] = Object.freeze({
+              stopLossPrice: normalizedProt.stopLossPrice,
+              takeProfitPrice: normalizedProt.takeProfitPrice,
+              protectiveOrderConfirmed: false,
+            });
           }
         }
       }
@@ -528,6 +587,9 @@ export const parseAgentState = (value: unknown): AgentStateView => {
           ? parseIndicators(primarySessionProduct.previousIndicators)
           : parseIndicators(value.previousIndicators),
       indicatorsByProduct: Object.freeze(indicatorsByProduct),
+      ...(Object.keys(protectionsByProduct).length > 0
+        ? { protectionsByProduct: Object.freeze(protectionsByProduct) }
+        : {}),
     });
   }
 
@@ -586,11 +648,23 @@ export const parseAgentState = (value: unknown): AgentStateView => {
     });
   }
 
+  const parsedConfiguration = parseConfiguration(value.configuration);
+  const singleProtection =
+    "paperProtection" in machineContext
+      ? normalizePaperPositionProtection(machineContext.paperProtection)
+      : null;
+  const singleMatches =
+    singleProtection !== null &&
+    parsedConfiguration !== null &&
+    singleProtection.averagePrice === value.portfolio.averagePrice &&
+    ((singleProtection.side === "LONG" && value.portfolio.positionQuantity > 0) ||
+      (singleProtection.side === "SHORT" && value.portfolio.positionQuantity < 0));
+
   return Object.freeze({
     enabled: value.enabled,
     phase: phase as DashboardRemotePhase,
     updatedAt: Number(value.updatedAt),
-    configuration: parseConfiguration(value.configuration),
+    configuration: parsedConfiguration,
     portfolio: Object.freeze({
       cash: value.portfolio.cash,
       positionQuantity: value.portfolio.positionQuantity,
@@ -603,6 +677,17 @@ export const parseAgentState = (value: unknown): AgentStateView => {
     portfolioSummary,
     paperValuation,
     indicators: parseIndicators(value.previousIndicators),
+    ...(singleMatches && parsedConfiguration !== null && singleProtection !== null
+      ? {
+          protectionsByProduct: Object.freeze({
+            [parsedConfiguration.productId]: Object.freeze({
+              stopLossPrice: singleProtection.stopLossPrice,
+              takeProfitPrice: singleProtection.takeProfitPrice,
+              protectiveOrderConfirmed: false,
+            }),
+          }),
+        }
+      : {}),
   });
 };
 
@@ -762,11 +847,72 @@ export const parsePnlHistory = (input: unknown): PnlHistoryView => {
       protectiveOrderConfirmed: value.protection.protectiveOrderConfirmed,
     });
   }
+  let openPositionsByProduct: PnlHistoryView["openPositionsByProduct"];
+  if ("openPositionsByProduct" in value && value.openPositionsByProduct !== undefined) {
+    if (!isRecord(value.openPositionsByProduct)) throw invalidResponse();
+    const mapped: Record<
+      string,
+      { readonly quantity: number; readonly averagePrice: number }
+    > = {};
+    for (const [pid, pos] of Object.entries(value.openPositionsByProduct)) {
+      if (
+        pid.length === 0 ||
+        !isRecord(pos) ||
+        !isFiniteNumber(pos.quantity) ||
+        pos.quantity === 0 ||
+        !isNonNegativeFinite(pos.averagePrice)
+      ) {
+        throw invalidResponse();
+      }
+      mapped[pid] = Object.freeze({
+        quantity: pos.quantity,
+        averagePrice: pos.averagePrice,
+      });
+    }
+    openPositionsByProduct = Object.freeze(mapped);
+  }
+  let protectionsByProduct: PnlHistoryView["protectionsByProduct"];
+  if ("protectionsByProduct" in value && value.protectionsByProduct !== undefined) {
+    if (!isRecord(value.protectionsByProduct)) throw invalidResponse();
+    const mapped: Record<
+      string,
+      {
+        readonly stopLossPrice: number;
+        readonly takeProfitPrice: number;
+        readonly protectiveOrderConfirmed: boolean;
+      } | null
+    > = {};
+    for (const [pid, prot] of Object.entries(value.protectionsByProduct)) {
+      if (pid.length === 0) throw invalidResponse();
+      if (prot === null) {
+        mapped[pid] = null;
+        continue;
+      }
+      if (
+        !isRecord(prot) ||
+        !isFiniteNumber(prot.stopLossPrice) ||
+        prot.stopLossPrice <= 0 ||
+        !isFiniteNumber(prot.takeProfitPrice) ||
+        prot.takeProfitPrice <= 0 ||
+        typeof prot.protectiveOrderConfirmed !== "boolean"
+      ) {
+        throw invalidResponse();
+      }
+      mapped[pid] = Object.freeze({
+        stopLossPrice: prot.stopLossPrice,
+        takeProfitPrice: prot.takeProfitPrice,
+        protectiveOrderConfirmed: prot.protectiveOrderConfirmed,
+      });
+    }
+    protectionsByProduct = Object.freeze(mapped);
+  }
   return Object.freeze({
     equityCurve: Object.freeze(equityCurve),
     cycles: Object.freeze(cycles),
     openPosition,
     protection,
+    ...(openPositionsByProduct === undefined ? {} : { openPositionsByProduct }),
+    ...(protectionsByProduct === undefined ? {} : { protectionsByProduct }),
   });
 };
 
@@ -1042,10 +1188,10 @@ export const createHttpGateway = (
     loadState: async (agentName: string) =>
       parseAgentState(await call(`/api/agents/${encodeURIComponent(agentName)}/state`)),
     loadCycles: async (agentName: string) =>
-      parseCycles(await call(`/api/agents/${encodeURIComponent(agentName)}/cycles?limit=12`)),
+      parseCycles(await call(`/api/agents/${encodeURIComponent(agentName)}/cycles?limit=30`)),
     loadPnlHistory: async (agentName: string) =>
       parsePnlHistory(
-        await call(`/api/agents/${encodeURIComponent(agentName)}/pnl?limit=30`),
+        await call(`/api/agents/${encodeURIComponent(agentName)}/pnl?limit=50`),
       ),
     command: async (
       agentName: string,
@@ -1062,19 +1208,28 @@ export const createHttpGateway = (
       return parseAgentState(payload.state);
     },
     submitPerpOrder: async (agentName: string, body: PerpOrderRequestBody) => {
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      const timeoutId =
+        controller === null
+          ? null
+          : globalThis.setTimeout(() => controller.abort(), 12_000);
       let response: Response;
       try {
         response = await request(`${base}/api/agents/${encodeURIComponent(agentName)}/perp-order`, {
           method: "POST",
+          cache: "no-store",
+          ...(controller === null ? {} : { signal: controller.signal }),
           headers: {
             accept: "application/json",
-            authorization: `Bearer ${token}`,
+            ...authHeader,
             "content-type": "application/json",
           },
           body: JSON.stringify(body),
         });
       } catch {
         throw new DashboardRequestError({ code: "REQUEST_FAILED", retryable: true });
+      } finally {
+        if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
       }
       const payload = await boundedJson(response);
       if (!isRecord(payload) || !isRecord(payload.result)) {

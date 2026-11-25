@@ -84,7 +84,7 @@ export const fetchDydxCandles = async (
 		// toISO = clôture de fenêtre : borne de start exclusive observée.
 		fromISO: new Date(request.endMs - request.limit * duration).toISOString(),
 		toISO: new Date(request.endMs).toISOString(),
-		limit: String(Math.min(request.limit, 1000)),
+		limit: String(Math.min(request.limit + 1, 1000)),
 	});
 	let response: Response;
 	try {
@@ -101,7 +101,11 @@ export const fetchDydxCandles = async (
 	}
 	if (!response.ok) {
 		await response.body?.cancel().catch(() => undefined);
-		return err({ code: "UPSTREAM_UNAVAILABLE", status: response.status });
+		return err(
+			response.status === 429
+				? { code: "RATE_LIMITED" }
+				: { code: "UPSTREAM_UNAVAILABLE", status: response.status },
+		);
 	}
 	let text: string;
 	try {
@@ -135,7 +139,11 @@ export const fetchDydxCandles = async (
 		if (!candle.ok) return err(invalidResponse);
 		candles.push(candle.value);
 	}
-	return ok(Object.freeze(candles.sort((a, b) => a.start - b.start)));
+	return ok(
+		Object.freeze(
+			candles.sort((a, b) => a.start - b.start).slice(-request.limit),
+		),
+	);
 };
 
 export interface DydxBookMid {
@@ -164,7 +172,11 @@ export const fetchDydxBookMid = async (
 	}
 	if (!response.ok) {
 		await response.body?.cancel().catch(() => undefined);
-		return err({ code: "UPSTREAM_UNAVAILABLE", status: response.status });
+		return err(
+			response.status === 429
+				? { code: "RATE_LIMITED" }
+				: { code: "UPSTREAM_UNAVAILABLE", status: response.status },
+		);
 	}
 	let text: string;
 	try {

@@ -354,3 +354,38 @@ Suite à l'étude d'ablation sur 5 jours réels Hyperliquid (`5m`, 1 441 bougies
 1. **Agrégation sans empilement (`combineMode: "MAX"` dans `allocator.ts`)** : lorsque `combineMode === "MAX"`, l'allocateur retient le `max` des signaux concordants (majoré de `× 1,15` si `>= 2` stratégies concordent) au lieu de leur somme brute, évitant le doublement accidentel de taille sur les mèches de panique.
 2. ***Risk-Based Position Sizing* (`interpreter.ts`)** : pour toute nouvelle entrée en `paper` + `positionAware`, le notionnel maximal de décision est borné par `riskBudgetUsd / stopDistPct` avec `riskBudgetUsd = Math.max(2, portfolio.cash * 0.0006)` (`6 bps` du cash par Stop-Loss, soit `~6 $` sur `10 000 $`), réduisant automatiquement la taille lorsque l'ATR s'écarte.
 3. **Filtre *Anti-Climax Chase* (`interpreter.ts`)** : bloque toute ouverture momentum (`breakout`, `ema-cross`) en `BUY` lorsque `rsi > 68` ou `close > emaSlow + 2,2 × atr`, et en `SELL` lorsque `rsi < 32` ou `close < emaSlow - 2,2 × atr`.
+
+## Amendement 2026-11-25 (v9) — Ségrégation du collatéral Short, tolérance IEEE-754 de clôture, rollover UTC `00:00`, `realizedPnl` persisté & purge SQLite intégrale
+
+### 1. Constat (audit complet post-`77899b4`)
+
+1. **Résidu flottant IEEE-754 sur clôture** : lors d'une clôture intégrale `BUY` sur un `SHORT` ou `SELL` sur un `LONG`, `portfolio.positionQuantity + delta` peut valoir `±1e-16` au lieu de `0`. Dans `interpreter.ts` (`proposePortfolioRisk`), ce résidu de signe opposé était transmis brut, faisant échouer l'exemption de réduction dans `multiProductPortfolioMachine` lorsque le plafond consolidé ou la perte journalière est atteint.
+2. **Ségrégation des produits de vente à découvert (`SHORT`)** : en comptabilité `paper` (`executePaperOrder`), vendre à découvert crédite `portfolio.cash` du produit de la vente (`+notional - fee`). Sans ségrégation, `portfolio.cash` gonfle artificiellement d'environ `2×` le notionnel short, doublant `riskBudgetUsd` si une augmentation short survenait et autorisant un sur-levier implicite dans `executePaperOrder`.
+3. **Bascule UTC `00:00` inter-produits et orphelins SQLite (`trading-agent.ts`)** :
+   - À `00:00 UTC`, dans `runPortfolio`, le produit #1 proposait son risque alors que l'orchestrateur consolidé portait encore les `dailyPnl` de la veille des produits #2 à #4.
+   - `reportProductExposureFromState` valorisait l'exposition initiale sur `lastCycle.marketPrice` au lieu de `lastPaperMark.price`.
+   - `persistCycle` purgeait `dodash_cycles` sans purger les lignes orphelines de `dodash_orders` ni borner les cycles `RISK_REJECTED` / `FAILED`.
+4. **Perte du `realizedPnl` hors fenêtre SQL** : lorsque l'ordre d'ouverture sortait de la fenêtre `LIMIT 50` de `/pnl`, `previousPortfolio` devenait `null` et la clôture affichait `realizedPnl: null`, alors que `executePaperOrder` calcule déjà le `realizedPnl` exact à l'exécution.
+
+### 2. Résolution pure
+
+1. **Normalisation flottante à la clôture (`interpreter.ts` & `multi-product-portfolio.machine.ts`)** : toute quantité projetée `|projectedQuantity| <= 1e-12` est ramenée à `0` avant évaluation de l'exemption de réduction.
+2. **Collatéral libre `SHORT` et équité marquée (`packages/paper-execution/src/index.ts` & `interpreter.ts`)** :
+   - Dans `executePaperOrder` (`allowShort === true`, `side === "SELL"`), le collatéral libre disponible pour ouvrir ou accroître un `SHORT` est `freeCashForShort = portfolio.positionQuantity < 0 ? portfolio.cash - 2 * Math.abs(portfolio.positionQuantity) * price : portfolio.cash`.
+   - Dans `interpreter.ts`, `freeCollateral` applique la même ségrégation pour `capitalAvailable`, et `riskBudgetUsd` est indexé sur l'équité marquée réelle (`portfolio.cash + portfolio.positionQuantity * last.close`).
+3. **Persistance de `realizedPnl` sur `OrderSubmission` (`types.ts` & `trading-agent.ts`)** : `submitPaperOrder` enregistre `realizedPnl: execution.value.trade.closedQuantity > 0 ? execution.value.trade.realizedPnl : null` dans `execution_json`.
+4. **Rollover UTC synchronisé & purge SQLite complète (`trading-agent.ts`)** :
+   - Au début d'un réveil `runPortfolio`, chaque créneau recalcule sa fenêtre `resolveCycleDailyRiskStart` à `batchTriggeredAt` avant `reportProductExposureFromState` (qui lit `lastPaperMark?.price ?? lastCycle?.marketPrice ?? null`).
+   - `persistCycle` borne également `RISK_REJECTED` et `FAILED` aux 400 plus récents et supprime les `dodash_orders` sans `cycle_id` parent.
+
+### 3. Invariants additionnels
+
+- **INV-AR8** : Un `SHORT` ouvert en `paper` immobilise son produit de vente plus `100 %` de marge initiale ; `executePaperOrder` rejette `INSUFFICIENT_CASH` dès que `openingShortQty * price + fee > freeCashForShort + cashTolerance`.
+- **INV-AR9** : Toute clôture intégrale à `±1e-12` près est traitée comme `projectedQuantity === 0` dans la couture portefeuille.
+- **INV-AR10** : Aucune ligne de `dodash_orders` ne survit sans cycle parent dans `dodash_cycles`.
+
+### 4. Vérification requise
+
+- `executePaperOrder` avec `allowShort: true` rejette l'empilement de `SHORT` au-delà du collatéral initial (`freeCashForShort`), tout en autorisant la couverture `BUY` d'un `SHORT` existant.
+- Clôture avec résidu IEEE-754 (`0.1 + 0.2 - 0.3`) approuvée par `multiProductPortfolioMachine` même sous `CONSOLIDATED_DAILY_LOSS_LIMIT` / `CONSOLIDATED_GROSS_EXPOSURE_LIMIT`.
+- `submitPaperOrder` persiste `realizedPnl` et `projectDashboardPnlHistory` le restitue même sans cycle d'ouverture dans la fenêtre.

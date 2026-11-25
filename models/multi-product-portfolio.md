@@ -390,3 +390,16 @@ le redémarrage recopient le book et `lastDecisionCandleClosedAt`. Seul
 et ramène chaque manche à `initialCapital`. Une restauration invalide
 désarme sans effacer la session. Le mode live et les flags
 `LIVE_TRADING_ENABLED` / `HYPERLIQUID_PERP_TRADING_ENABLED` sont inchangés.
+
+## 15. Amendement 2026-11-25 (v9) — Tolérance flottante IEEE-754 sur réduction sans inversion & synchronisation UTC `00:00`
+
+### Constat
+1. Dans `multiProductPortfolioMachine` (`admissible`), la condition `Math.sign(change.projectedQuantity) === Math.sign(change.currentQuantity)` rejetait une clôture intégrale lorsque l'arithmétique flottante produisait `projectedQuantity = -5.55e-17` sur un `LONG` (ex. `0.3 - (0.1 + 0.2)`) ou `+5.55e-17` sur un `SHORT`, classant à tort la clôture comme une inversion lorsque `CONSOLIDATED_DAILY_LOSS_LIMIT` ou `CONSOLIDATED_GROSS_EXPOSURE_LIMIT` était actif.
+2. Lors du premier réveil après `00:00 UTC`, l'orchestrateur consolidé évaluait le créneau #1 avec les `dailyPnl` de la veille encore mémorisés sur les créneaux #2 à #N.
+
+### Résolution pure
+1. Dans la garde `admissible` de `models/multi-product-portfolio.machine.ts`, `snappedProjected = Math.abs(change.projectedQuantity) <= 1e-12 ? 0 : change.projectedQuantity` est utilisé pour tester la réduction sans inversion (`Math.abs(snappedProjected) < Math.abs(change.currentQuantity) && (snappedProjected === 0 || Math.sign(snappedProjected) === Math.sign(change.currentQuantity))`). Une véritable inversion au-delà de `1e-12` reste rejetée sous plafond dépassé.
+2. Avant l'exécution séquentielle d'un réveil `runPortfolio`, le runtime rafraîchit la fenêtre `dailyRiskWindow` de chaque créneau à l'instant `batchTriggeredAt` et rapporte `PRODUCT_EXPOSURE_REPORTED` avec le mark `lastPaperMark?.price ?? lastCycle?.marketPrice ?? null`.
+
+### Vérification requise
+- Test unitaire sur `multiProductPortfolioMachine` : une proposition `RISK_PROPOSED` avec `currentQuantity = 0.3` et `projectedQuantity = -5.55e-17` (clôture IEEE-754) est approuvée même lorsque `dailyPnl` consolidé dépasse `maxDailyLoss`, tandis qu'une inversion réelle (`projectedQuantity = -0.01`) reste rejetée `CONSOLIDATED_DAILY_LOSS_LIMIT`.

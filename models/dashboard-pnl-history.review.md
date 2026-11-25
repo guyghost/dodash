@@ -110,3 +110,11 @@ reconstruite à partir du coût moyen ou de l’heure du cycle.
 - [x] La fenêtre SQL `getPnlHistory(limit)` conserve les cycles `ORDER_CONFIRMED` récents aux côtés des derniers cycles de veille sans dépasser `limit`, garantissant la présence du `previousPortfolio` lors des clôtures `SELL`.
 - [x] Rétrocompatibilité totale avec les appels mono-produit sans `productId`.
 - Verdict : **APPROUVÉ**.
+
+## Revue complémentaire — Amendement 2026-11-25 (v9 — `openPositionsByProduct`, `protectionsByProduct` & `realizedPnl` persisté)
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
+
+- [x] **Isolation et conservatisme (P1, P3, P6)** : `protectionsByProduct[pid]` n'est peuplé que pour le `pid` dont le plan a été validé sur la position courante (même signe et même `averagePrice` pour `paperProtection`). Un autre produit au même `averagePrice` sans plan propre reste à `null` (`NON PROTÉGÉ`).
+- [x] **Traçabilité du `realizedPnl`** : `submission.realizedPnl` provient directement du fait brut `execution_json` persisté par `executePaperOrder` ; toute valeur non finie dans `execution_json` déclenche `INVALID_EXECUTION_JSON` (fail-closed, P3).
+- [x] **Bornes SQL inchangées (P4)** : `DASHBOARD_PNL_HISTORY_MAX_CYCLES = 50` reste respecté côté Agent et `dashboard-api`.

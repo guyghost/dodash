@@ -209,3 +209,18 @@ Sur une instance multi-produits (`btc-usd--multi` : `BTC-USD`, `ETH-USD`, `SOL-U
    - En mode mono-produit (`productId === null` ou unique), le comportement reste bit-à-bit identique.
 3. **Préservation des cycles d'ordres exécutés dans la fenêtre SQL bornée (`getPnlHistory`)** :
    - Pour éviter que les cycles `NO_ACTION` (4 par minute en multi-produits) n'évincent le cycle `BUY` d'ouverture après 8 minutes, la sélection SQL de `getPnlHistory(limit)` unit jusqu'à `⌊0,7 × limit⌋` cycles `ORDER_CONFIRMED` récents avec les cycles les plus récents tous statuts confondus, bornés au total à `LIMIT N` (`N ∈ [1, 50]`).
+
+## Amendement 2026-11-25 (v9) — Positions/protections par produit & priorité au `realizedPnl` persisté
+
+### 1. Problème
+1. Bien que `projectDashboardPnlHistory` isole `carriedPortfolioByProduct` et `protectionByProduct` par paire, la sortie n'exposait qu'un seul couple scalaire `{ openPosition, protection }` correspondant au **dernier produit présent dans la fenêtre SQL** (`lastProductKey`, typiquement `XRP-USD`). Lorsqu'une position était ouverte sur `BTC-USD`, `ETH-USD` ou `SOL-USD`, `App.tsx` constatait `cycles[0].productId !== positionProduct.productId` et affichait à tort `NON PROTÉGÉ` malgré un `paperProtection` actif.
+2. Lorsqu'une position restait ouverte suffisamment longtemps pour que son ordre d'ouverture sorte de la fenêtre SQL `LIMIT 50`, `previousPortfolio` valait `null` lors du cycle de clôture et `realizedPnl` tombait à `null`.
+
+### 2. Résolution pure
+1. **Dictionnaires par produit sur `DashboardPnlHistory`** : lorsque des clés produits explicites sont présentes, `projectDashboardPnlHistory` expose en complément optionnel `openPositionsByProduct: Readonly<Record<string, { quantity: number; averagePrice: number }>>` (pour chaque produit avec `positionQuantity !== 0`) et `protectionsByProduct: Readonly<Record<string, DashboardPnlProtection | null>>` (protection vérifiée correspondante). En fenêtre vide ou mono-produit sans `productId`, la forme de sortie reste inchangée.
+2. **Priorité au `realizedPnl` d'exécution persisté** : `parseSubmission` lit le champ optionnel `realizedPnl` (`number | null`) de `execution_json` (validé fini si numérique). Sur un fill confirmé, si `submission.realizedPnl` est un nombre fini, il fait foi directement, garantissant un `realizedPnl` exact même lorsque l'ordre d'ouverture a quitté la fenêtre SQL ; sinon (historique legacy), la formule §3.3 sur `previousPortfolio` s'applique comme auparavant.
+3. **Vérification croisée `/state` + `/pnl` dans le gateway UI (`dashboard-api.ts` & `App.tsx`)** : `parseAgentState` extrait également `protectionsByProduct` depuis `portfolioSession.products[pid].machine.context.paperProtection` lorsque celui-ci concorde exactement avec `positionQuantity` (signe) et `averagePrice` du créneau, et `loadPnlHistory` interroge `/pnl?limit=50`.
+
+### 3. Vérification requise
+- En multi-produits (`BTC-USD` ouvert et protégé, suivi d'un cycle `XRP-USD` plat), `openPositionsByProduct["BTC-USD"]` et `protectionsByProduct["BTC-USD"]` restituent la position et le plan SL/TP de `BTC-USD` sans contaminer `XRP-USD`.
+- Un ordre de clôture portant `realizedPnl` dans `execution_json` restitue ce `realizedPnl` même en tête de fenêtre SQL sans `previousPortfolio`.

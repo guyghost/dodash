@@ -151,6 +151,30 @@ describe("executePaperOrder", () => {
     // Prix moyen net encaissé après frais d'entrée (10 bps sur 200 = 0,20 → 99,90/unité)
     expect(opened.value.portfolio.averagePrice).toBeCloseTo(99.9);
 
+    // Segregates short sale proceeds from free collateral: flat.cash was 1_000,
+    // shorting 2 @ 100 engaged 200 margin (leaving ~800 free collateral, even though
+    // portfolio.cash became 1_199.80). Attempting to short 9 more @ 100 (900 notional)
+    // must be rejected as INSUFFICIENT_CASH (INV-AR8).
+    const overLeveredShort = createOrderIntent({
+      clientOrderId: "order-over-short",
+      decisionId: "dec-over-short",
+      strategyIds: ["ema-cross"],
+      productId: productId.value,
+      side: "SELL",
+      type: "MARKET",
+      quantity: 9,
+      limitPrice: null,
+    });
+    expect(overLeveredShort.ok).toBe(true);
+    if (!overLeveredShort.ok) return;
+    expect(
+      executePaperOrder(opened.value.portfolio, overLeveredShort.value, 100, 1, {
+        feeBps: 10,
+        slippageBps: 0,
+        allowShort: true,
+      }),
+    ).toEqual({ ok: false, error: { code: "INSUFFICIENT_CASH" } });
+
     // Covers short at lower price -> positive realized PnL exact == Δcash (INV-AR6)
     const covered = executePaperOrder(opened.value.portfolio, buyCoverIntent.value, 95, 2, {
       feeBps: 10,

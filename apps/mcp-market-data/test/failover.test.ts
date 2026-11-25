@@ -291,4 +291,32 @@ describe("transports — échec de flux après en-têtes 200 (revue PR #27)", ()
 			error: { code: "NETWORK_UNAVAILABLE" },
 		});
 	});
+
+	it("rejette une devise de cotation non supportée sur Hyperliquid et mappe HTTP 429 en RATE_LIMITED", async () => {
+		const unsupportedQuote = await fetchHyperliquidMid("BTC-EUR", {
+			fetch: brokenStream as unknown as typeof fetch,
+		});
+		expect(unsupportedQuote).toEqual({
+			ok: false,
+			error: { code: "INVALID_REQUEST" },
+		});
+
+		const rateLimitedFetch = vi.fn(async () => ({
+			ok: false,
+			status: 429,
+			body: { cancel: async () => undefined },
+		})) as unknown as typeof fetch;
+
+		const hl429 = await fetchHyperliquidCandles(
+			{ productId: "BTC-USD", timeframe: "ONE_MINUTE", limit: 2, endMs },
+			{ fetch: rateLimitedFetch },
+		);
+		expect(hl429).toEqual({ ok: false, error: { code: "RATE_LIMITED" } });
+
+		const dydx429 = await fetchDydxCandles(
+			{ productId: "BTC-USD", timeframe: "ONE_MINUTE", limit: 2, endMs },
+			{ fetch: rateLimitedFetch },
+		);
+		expect(dydx429).toEqual({ ok: false, error: { code: "RATE_LIMITED" } });
+	});
 });

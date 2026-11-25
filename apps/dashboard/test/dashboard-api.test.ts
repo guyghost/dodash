@@ -496,7 +496,7 @@ describe("pnl history boundary", () => {
 
     const [url] = request.mock.calls[0] ?? [];
     expect(url).toBe(
-      "https://dashboard-api.example/api/agents/btc%20agent/pnl?limit=30",
+      "https://dashboard-api.example/api/agents/btc%20agent/pnl?limit=50",
     );
     expect(view.cycles).toHaveLength(2);
   });
@@ -527,7 +527,17 @@ describe("pnl history boundary", () => {
           "BTC-USD": {
             machine: {
               value: "waiting",
-              context: { nextWakeAt: 1_700_000_360_000 },
+              context: {
+                nextWakeAt: 1_700_000_360_000,
+                paperProtection: {
+                  side: "LONG",
+                  averagePrice: 60_000,
+                  enteredAt: 1_700_000_100_000,
+                  extremePrice: 60_500,
+                  stopLossPrice: 59_100,
+                  takeProfitPrice: 61_800,
+                },
+              },
             },
             previousIndicators: state.previousIndicators,
             lastCycle: { signalCount: 3 },
@@ -552,5 +562,12 @@ describe("pnl history boundary", () => {
     expect(parsed.dailyPnl).toBe(32.5);
     expect(parsed.indicators?.rsi).toBe(52);
     expect(parsed.paperValuation?.ok).toBe(true);
+    expect(parsed.protectionsByProduct).toEqual({
+      "BTC-USD": {
+        stopLossPrice: 59_100,
+        takeProfitPrice: 61_800,
+        protectiveOrderConfirmed: false,
+      },
+    });
   });
 });

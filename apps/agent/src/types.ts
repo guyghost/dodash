@@ -84,6 +84,7 @@ export type OrderSubmission =
 			readonly exchangeOrderId: string;
 			readonly portfolio: PaperPortfolio;
 			readonly fill: Fill | null;
+			readonly realizedPnl?: number | null;
 			readonly protectiveOrderId?: string;
 			readonly accountEquity?: number;
 			readonly otherExposureNotional?: number;

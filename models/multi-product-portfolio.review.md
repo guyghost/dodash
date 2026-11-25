@@ -130,3 +130,10 @@ est une répétition paper de la politique, `production-launch` reste
 l'unique chemin vers le live.
 
 Amendement approuvé en revue.
+
+## Revue complémentaire — amendement §15 (2026-11-25, v9)
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
+
+- [x] La tolérance `1e-12` sur `projectedQuantity` dans `admissible` préserve strictement INV-P1 et INV-P2 : seule une poussière numérique d'annulation flottante (`<= 1e-12`) est assimilée à `0` ; toute inversion économique réelle (`> 1e-12`) demeure bloquée sous plafond dépassé.
+- [x] La remise à l'heure UTC des `dailyPnl` par créneau avant l'itération `runPortfolio` garantit que la somme consolidée `Σ_p dailyPnl_p` reflète exclusivement la journée UTC courante dès `00:00 UTC`.

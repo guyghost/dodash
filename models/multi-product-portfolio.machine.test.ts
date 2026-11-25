@@ -262,4 +262,41 @@ describe("multiProductPortfolioMachine", () => {
       reasonCode: "CONSOLIDATED_GROSS_EXPOSURE_LIMIT",
     });
   });
+
+  it("approuve une clôture avec résidu flottant IEEE-754 mais rejette une vraie inversion sous perte consolidée (v9 INV-AR9)", () => {
+    const actor = createPortfolioActor();
+    start(actor);
+    send(actor, {
+      type: "PRODUCT_EXPOSURE_REPORTED",
+      productId: "BTC-USD",
+      grossExposure: 3_000,
+      dailyPnl: -2_000, // dépasse maxDailyLoss (1_000)
+    });
+    // Clôture intégrale avec poussière flottante IEEE-754 : 0.3 - (0.1 + 0.2) = -5.551115123125783e-17
+    const floatResidue = 0.3 - (0.1 + 0.2);
+    send(actor, {
+      type: "RISK_PROPOSED",
+      productId: "BTC-USD",
+      proposedGrossExposure: 0,
+      positionChange: { currentQuantity: 0.3, projectedQuantity: floatResidue },
+    });
+    expect(lastDecision(actor)).toEqual({
+      productId: "BTC-USD",
+      approved: true,
+      reasonCode: null,
+    });
+
+    // Inversion réelle au-delà de 1e-12 : rejetée sous CONSOLIDATED_DAILY_LOSS_LIMIT
+    send(actor, {
+      type: "RISK_PROPOSED",
+      productId: "BTC-USD",
+      proposedGrossExposure: 100,
+      positionChange: { currentQuantity: 0.3, projectedQuantity: -0.01 },
+    });
+    expect(lastDecision(actor)).toEqual({
+      productId: "BTC-USD",
+      approved: false,
+      reasonCode: "CONSOLIDATED_DAILY_LOSS_LIMIT",
+    });
+  });
 });

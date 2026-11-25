@@ -127,3 +127,12 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
 - [x] **Sûreté de clôture** : un ordre fermant un `SHORT` ou un `LONG` ne peut plus être bloqué ni par `INSUFFICIENT_CASH` ni par `maxSpreadBps` ni par `minRelativeVolume`.
 - [x] **Cohérence carnet TP** : `takeProfitPrice` reste invariant après l'entrée (`carried?.takeProfitPrice`), et l'exécution sur mèche n'est activée que pour les bougies strictement postérieures à `lastTradeAt` (`last.start > lastTradeAt`), évitant tout biais rétroactif sur la bougie d'entrée.
 - [x] **Maîtrise du risque par trade** : `combineMode: "MAX"` (optionnel, défaut `"SUM"`) et le plafond `riskBudgetUsd / stopDistPct` normalisent la perte maximale par Stop-Loss indépendamment des pics d'ATR, sans modifier la machine XState ni impacter le mode `live`.
+
+## Revue de l'amendement du 2026-11-25 (v9) — Collatéral Short ségrégué, tolérance IEEE-754, rollover UTC `00:00`, `realizedPnl` persisté & purge SQLite
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
+
+- [x] **Pureté et ségrégation comptable (`INV-AR8`)** : la déduction `2 * |positionQuantity| * price` retire à la fois le produit de vente short encaissé et la marge `1×` déjà engagée, empêchant tout levier implicite `> 1×` en `paper` sans altérer l'identité d'équité `cash + positionQuantity * markPrice`.
+- [x] **Sûreté de clôture IEEE-754 (`INV-AR9`)** : le seuil `1e-12` est cohérent avec `@dodash/risk` (`currentPositionQuantity + 1e-12`) et élimine les faux rejets d'inversion sur poussière flottante.
+- [x] **Continuité UTC `00:00` & hygiène SQLite (`INV-AR10`)** : le rollover préalable de `dailyPnl` sur tous les créneaux évite le blocage fantôme du 1er créneau à minuit UTC ; la suppression des `dodash_orders` orphelins maintient l'empreinte SQLite du Durable Object bornée sur le long terme.
+- [x] **Isolation `live` / `perp`** : aucune transition de `tradingCycleMachine` ni politique `live` n'est modifiée.

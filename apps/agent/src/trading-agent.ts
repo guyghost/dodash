@@ -1890,7 +1890,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 				productId,
 				grossExposure: productGrossExposure(
 					product.portfolio,
-					product.lastCycle?.marketPrice ?? null,
+					product.lastPaperMark?.price ?? product.lastCycle?.marketPrice ?? null,
 				),
 				dailyPnl: product.dailyPnl,
 			}),
@@ -1917,7 +1917,52 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 		const session = this.state.portfolioSession;
 		if (session === null || this.state.portfolioRestoreError !== null) return;
 		if (triggerAlarm) {
+			const batchNow = Date.now();
+			let rolledAny = false;
+			const rolledProducts: Record<string, PortfolioProductRuntime> = {
+				...session.products,
+			};
 			for (const productId of portfolioProductIds(session)) {
+				const product = session.products[productId];
+				if (product === undefined) continue;
+				const rolled = resolveCycleDailyRiskStart(
+					session.configuration.executionMode,
+					product.dailyRiskWindow ?? null,
+					product.dailyPnl,
+					batchNow,
+					paperValuationFor(
+						session.configuration.executionMode,
+						product.portfolio,
+						product.lastPaperMark,
+						batchNow,
+					),
+				);
+				if (
+					rolled.window !== (product.dailyRiskWindow ?? null) ||
+					rolled.dailyPnl !== product.dailyPnl
+				) {
+					rolledProducts[productId] = Object.freeze({
+						...product,
+						dailyRiskWindow: rolled.window,
+						dailyPnl: rolled.dailyPnl,
+					});
+					rolledAny = true;
+				}
+			}
+			if (rolledAny) {
+				const nextSession: PortfolioSessionState = {
+					...session,
+					products: Object.freeze(rolledProducts),
+				};
+				this.setState({
+					...this.state,
+					portfolioSession: nextSession,
+					updatedAt: batchNow,
+				});
+			}
+			for (const productId of portfolioProductIds(
+				this.state.portfolioSession ?? session,
+			)) {
 				this.reportProductExposureFromState(productId);
 			}
 		}
@@ -2997,6 +3042,10 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			exchangeOrderId: execution.value.trade.fill.exchangeOrderId,
 			portfolio: execution.value.portfolio,
 			fill: execution.value.trade.fill,
+			realizedPnl:
+				execution.value.trade.closedQuantity > 0
+					? execution.value.trade.realizedPnl
+					: null,
 		};
 
 		try {
@@ -3509,19 +3558,28 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
           error_json = excluded.error_json,
           updated_at = excluded.updated_at
       `;
-			if (machine.context.outcome === "NO_ACTION") {
+			if (
+				machine.context.outcome === "NO_ACTION" ||
+				machine.context.outcome === "RISK_REJECTED" ||
+				machine.context.outcome === "FAILED"
+			) {
+				const targetOutcome = machine.context.outcome;
 				this.sql`
           DELETE FROM dodash_cycles
-          WHERE outcome = 'NO_ACTION'
+          WHERE outcome = ${targetOutcome}
             AND triggered_at < COALESCE(
               (
                 SELECT triggered_at FROM dodash_cycles
-                WHERE outcome = 'NO_ACTION'
+                WHERE outcome = ${targetOutcome}
                 ORDER BY triggered_at DESC
                 LIMIT 1 OFFSET 400
               ),
               0
             )
+        `;
+				this.sql`
+          DELETE FROM dodash_orders
+          WHERE cycle_id NOT IN (SELECT cycle_id FROM dodash_cycles)
         `;
 			}
 			return ok(undefined);

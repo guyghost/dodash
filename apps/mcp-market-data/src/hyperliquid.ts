@@ -54,8 +54,17 @@ const INTERVAL_BY_TIMEFRAME: Readonly<Record<Timeframe, string>> =
 	});
 
 const coinOf = (productId: string): string | null => {
-	const coin = productId.split("-")[0];
-	return coin === undefined || coin.length === 0 ? null : coin;
+	const parts = productId.split("-");
+	if (parts.length !== 2) return null;
+	const [coin, quote] = parts;
+	if (
+		coin === undefined ||
+		coin.length === 0 ||
+		(quote !== "USD" && quote !== "PERP")
+	) {
+		return null;
+	}
+	return coin;
 };
 
 export interface BackupCandleRequest {
@@ -104,7 +113,11 @@ export const fetchHyperliquidCandles = async (
 	}
 	if (!response.ok) {
 		await response.body?.cancel().catch(() => undefined);
-		return err({ code: "UPSTREAM_UNAVAILABLE", status: response.status });
+		return err(
+			response.status === 429
+				? { code: "RATE_LIMITED" }
+				: { code: "UPSTREAM_UNAVAILABLE", status: response.status },
+		);
 	}
 	let text: string;
 	try {
@@ -147,14 +160,33 @@ export interface HyperliquidMid {
 	readonly observedAt: number;
 }
 
+const ALL_MIDS_CACHE_TTL_MS = 2_500;
+let cachedAllMids: {
+	readonly mids: Record<string, number>;
+	readonly observedAt: number;
+} | null = null;
+
 export const fetchHyperliquidMid = async (
 	productId: string,
 	deps: HyperliquidDeps = {},
 ): Promise<Result<HyperliquidMid, MarketDataError>> => {
 	const coin = coinOf(productId);
 	if (coin === null) return err({ code: "INVALID_REQUEST" });
+	const useSharedCache = deps.fetch === undefined;
 	const fetcher = deps.fetch ?? fetch;
 	const now = deps.now ?? Date.now;
+	const currentNow = now();
+	if (
+		useSharedCache &&
+		cachedAllMids !== null &&
+		currentNow >= cachedAllMids.observedAt &&
+		currentNow - cachedAllMids.observedAt <= ALL_MIDS_CACHE_TTL_MS
+	) {
+		const cachedPrice = cachedAllMids.mids[coin];
+		if (cachedPrice !== undefined && cachedPrice > 0) {
+			return ok({ price: cachedPrice, observedAt: cachedAllMids.observedAt });
+		}
+	}
 	let response: Response;
 	try {
 		response = await fetcher(HYPERLIQUID_INFO_URL, {
@@ -169,7 +201,11 @@ export const fetchHyperliquidMid = async (
 	}
 	if (!response.ok) {
 		await response.body?.cancel().catch(() => undefined);
-		return err({ code: "UPSTREAM_UNAVAILABLE", status: response.status });
+		return err(
+			response.status === 429
+				? { code: "RATE_LIMITED" }
+				: { code: "UPSTREAM_UNAVAILABLE", status: response.status },
+		);
 	}
 	let text: string;
 	try {
@@ -186,7 +222,11 @@ export const fetchHyperliquidMid = async (
 	} catch {
 		return err(invalidResponse);
 	}
+	const observedAt = now();
+	if (useSharedCache) {
+		cachedAllMids = { mids, observedAt };
+	}
 	const price = mids[coin];
 	if (price === undefined || price <= 0) return err(invalidResponse);
-	return ok({ price, observedAt: now() });
+	return ok({ price, observedAt });
 };

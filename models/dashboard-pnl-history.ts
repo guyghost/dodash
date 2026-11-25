@@ -80,6 +80,12 @@ export interface DashboardPnlHistory {
     | { readonly quantity: number; readonly averagePrice: number }
     | null;
   readonly protection: DashboardPnlProtection | null;
+  readonly openPositionsByProduct?: Readonly<
+    Record<string, { readonly quantity: number; readonly averagePrice: number }>
+  >;
+  readonly protectionsByProduct?: Readonly<
+    Record<string, DashboardPnlProtection | null>
+  >;
 }
 
 interface PortfolioFacts {
@@ -100,6 +106,7 @@ type SubmissionFacts =
       readonly status: "CONFIRMED" | "PROTECTION_FAILED";
       readonly portfolio: PortfolioFacts;
       readonly fill: FillFacts | null;
+      readonly realizedPnl: number | null;
       readonly protectiveOrderConfirmed: boolean;
     }
   | { readonly kind: "portfolio-only"; readonly portfolio: PortfolioFacts }
@@ -195,12 +202,18 @@ const parseSubmission = (raw: string): SubmissionFacts | null => {
   }
   const fill = parseFill(parsed.fill);
   if (parsed.fill !== null && fill === null) return null;
+  let realizedPnl: number | null = null;
+  if ("realizedPnl" in parsed && parsed.realizedPnl !== undefined && parsed.realizedPnl !== null) {
+    if (!isFiniteNumber(parsed.realizedPnl)) return null;
+    realizedPnl = parsed.realizedPnl;
+  }
   const protectiveOrderId = parsed.protectiveOrderId;
   return {
     kind: "trade",
     status,
     portfolio,
     fill,
+    realizedPnl,
     protectiveOrderConfirmed:
       typeof protectiveOrderId === "string" && protectiveOrderId.length > 0,
   };
@@ -398,6 +411,7 @@ export const projectDashboardPnlHistory = (
           readonly quantity: number;
           readonly fillPrice: number;
           readonly fee: number;
+          readonly persistedRealizedPnl: number | null;
         }
       | null = null;
 
@@ -425,6 +439,7 @@ export const projectDashboardPnlHistory = (
             quantity: submission.fill.quantity,
             fillPrice: submission.fill.price,
             fee: submission.fill.fee,
+            persistedRealizedPnl: submission.realizedPnl,
           };
         }
       }
@@ -457,7 +472,9 @@ export const projectDashboardPnlHistory = (
     let realizedPnl: number | null = null;
     let slippageBps: number | null = null;
     if (trade !== null) {
-      if (
+      if (trade.persistedRealizedPnl !== null) {
+        realizedPnl = trade.persistedRealizedPnl;
+      } else if (
         previousPortfolio !== null &&
         trade.side === "SELL" &&
         previousPortfolio.positionQuantity > 0
@@ -539,6 +556,23 @@ export const projectDashboardPnlHistory = (
         }
       : null;
 
+  const openPositionsByProduct: Record<
+    string,
+    { readonly quantity: number; readonly averagePrice: number }
+  > = {};
+  const protectionsByProduct: Record<string, DashboardPnlProtection | null> = {};
+  let hasExplicitProductPositions = false;
+  for (const [key, pf] of carriedPortfolioByProduct.entries()) {
+    if (key === "__single__" || pf.positionQuantity === 0) continue;
+    hasExplicitProductPositions = true;
+    openPositionsByProduct[key] = Object.freeze({
+      quantity: pf.positionQuantity,
+      averagePrice: pf.averagePrice,
+    });
+    const prot = protectionByProduct.get(key) ?? null;
+    protectionsByProduct[key] = prot === null ? null : Object.freeze(prot);
+  }
+
   return Object.freeze({
     ok: true as const,
     value: Object.freeze({
@@ -547,6 +581,12 @@ export const projectDashboardPnlHistory = (
       openPosition: openPosition === null ? null : Object.freeze(openPosition),
       protection:
         openPosition === null ? null : finalProtection,
+      ...(hasExplicitProductPositions
+        ? {
+            openPositionsByProduct: Object.freeze(openPositionsByProduct),
+            protectionsByProduct: Object.freeze(protectionsByProduct),
+          }
+        : {}),
     }),
   });
 };

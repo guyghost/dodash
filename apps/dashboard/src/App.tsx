@@ -83,7 +83,13 @@ const toDashboardError = (error: unknown): DashboardError =>
 
 const outcomeClass = (outcome: string): string => {
   if (outcome === "ORDER_CONFIRMED") return "positive";
-  if (outcome === "RISK_REJECTED" || outcome === "FAILED") return "negative";
+  if (
+    outcome === "RISK_REJECTED" ||
+    outcome === "ORDER_REJECTED" ||
+    outcome === "FAILED"
+  ) {
+    return "negative";
+  }
   return "neutral";
 };
 
@@ -91,6 +97,8 @@ const outcomeLabel = (outcome: string): string => {
   if (outcome === "ORDER_CONFIRMED") return "Ordre exécuté";
   if (outcome === "NO_ACTION") return "Aucun signal";
   if (outcome === "RISK_REJECTED") return "Risque bloqué";
+  if (outcome === "ORDER_REJECTED") return "Ordre rejeté";
+  if (outcome === "CANCELLED") return "Annulé";
   if (outcome === "FAILED") return "Échec";
   if (outcome === "DECISION_WINDOW_MISSED") return "Fenêtre manquée";
   return outcome;
@@ -110,6 +118,7 @@ const describeLatestDecision = (params: {
   readonly indicators: AgentStateView["indicators"];
   readonly nextWakeAt: number | null;
   readonly nowMs: number;
+  readonly intervalSeconds?: number;
 }): {
   readonly badge: string;
   readonly tone: "positive" | "negative" | "neutral";
@@ -146,6 +155,22 @@ const describeLatestDecision = (params: {
       explanation: `${rsiNote} Le modèle de risque a refusé la prise de position pour protéger le capital.`,
     };
   }
+  if (params.outcome === "ORDER_REJECTED") {
+    return {
+      badge: "Rejet courtier",
+      tone: "negative",
+      headline: `Ordre refusé à l’exécution sur ${params.productId}${priceText}`,
+      explanation: `${rsiNote} Le courtier a rejeté l’ordre soumis ; le portefeuille reste inchangé.`,
+    };
+  }
+  if (params.outcome === "CANCELLED") {
+    return {
+      badge: "Cycle annulé",
+      tone: "neutral",
+      headline: `Cycle interrompu proprement sur ${params.productId}${priceText}`,
+      explanation: "Arrêt demandé pendant le cycle ; aucun ordre résiduel n’a été laissé ouvert.",
+    };
+  }
   if (params.outcome === "FAILED") {
     return {
       badge: "Incident",
@@ -154,7 +179,12 @@ const describeLatestDecision = (params: {
       explanation: "Le dernier cycle a rencontré une erreur technique. L’agent retentera automatiquement au prochain réveil.",
     };
   }
-  const countdown = formatCountdown(params.nextWakeAt, params.nowMs);
+  const countdown = formatCountdown(
+    params.nextWakeAt,
+    params.nowMs,
+    params.enabled,
+    params.intervalSeconds ?? 60,
+  );
   return {
     badge: "En veille active",
     tone: "neutral",
@@ -219,8 +249,10 @@ const formatCountdown = (
   nextWakeAt: number | null,
   nowMs: number,
   enabled = false,
+  intervalSeconds = 60,
 ): string => {
   if (nextWakeAt === null && !enabled) return "—";
+  const stepMs = Math.max(1_000, intervalSeconds * 1_000);
   const normalizedMs =
     nextWakeAt === null
       ? null
@@ -231,7 +263,7 @@ const formatCountdown = (
     normalizedMs !== null && normalizedMs > nowMs
       ? normalizedMs
       : enabled
-        ? Math.ceil((nowMs + 1) / 60_000) * 60_000
+        ? Math.ceil((nowMs + 1) / stepMs) * stepMs
         : (normalizedMs ?? nowMs);
   const remainingSec = Math.max(0, Math.round((targetMs - nowMs) / 1_000));
   const mins = Math.floor(remainingSec / 60);
@@ -608,9 +640,20 @@ export function App({
         timeframe,
         strategyIds,
         executionMode,
-        ...(executionMode === "paper"
+            ...(executionMode === "paper"
           ? {
-              intervalSeconds: timeframe === "ONE_MINUTE" ? 60 : 300,
+              intervalSeconds:
+                timeframe === "ONE_MINUTE"
+                  ? 60
+                  : timeframe === "FIVE_MINUTE"
+                    ? 300
+                    : timeframe === "FIFTEEN_MINUTE"
+                      ? 900
+                      : timeframe === "ONE_HOUR"
+                        ? 3_600
+                        : timeframe === "SIX_HOUR"
+                          ? 21_600
+                          : 86_400,
               executionStyle: "LIMIT_PASSIVE" as const,
               strategyOptions: {
                 positionAware: true,
@@ -953,13 +996,41 @@ export function App({
           }
         : null
       : (pnlHistory?.openPosition ?? null);
+  const historyProductPos =
+    positionProduct !== null
+      ? pnlHistory?.openPositionsByProduct?.[positionProduct.productId]
+      : undefined;
+  const historyProductProt =
+    positionProduct !== null
+      ? pnlHistory?.protectionsByProduct?.[positionProduct.productId]
+      : undefined;
+  const stateProductProt =
+    effectiveOpenPosition !== null
+      ? agent?.protectionsByProduct?.[positionProductId]
+      : undefined;
   const historyPosition = pnlHistory?.openPosition;
-  const historyMatchesPosition = effectiveOpenPosition !== null &&
-    historyPosition !== null && historyPosition !== undefined &&
-    (positionProduct === null || pnlHistory?.cycles[0]?.productId === positionProduct.productId) &&
+  const historyMatchesPosition =
+    effectiveOpenPosition !== null &&
+    historyPosition !== null &&
+    historyPosition !== undefined &&
+    (positionProduct === null ||
+      pnlHistory?.cycles[0]?.productId === positionProduct.productId) &&
     historyPosition.quantity === effectiveOpenPosition.quantity &&
     historyPosition.averagePrice === effectiveOpenPosition.averagePrice;
-  const effectiveProtection = historyMatchesPosition ? pnlHistory?.protection ?? null : null;
+  const effectiveProtection =
+    effectiveOpenPosition === null
+      ? null
+      : historyProductPos !== undefined &&
+          historyProductPos.quantity === effectiveOpenPosition.quantity &&
+          historyProductPos.averagePrice === effectiveOpenPosition.averagePrice &&
+          historyProductProt !== undefined &&
+          historyProductProt !== null
+        ? historyProductProt
+        : stateProductProt !== undefined
+          ? stateProductProt
+          : historyMatchesPosition
+            ? (pnlHistory?.protection ?? null)
+            : null;
   const stopPrice = effectiveProtection?.stopLossPrice ?? null;
   const takePrice = effectiveProtection?.takeProfitPrice ?? null;
   const entryPrice = effectiveOpenPosition?.averagePrice ?? null;
@@ -968,18 +1039,25 @@ export function App({
     paperValuation?.markPrice ??
     agent?.lastCycle?.marketPrice ??
     entryPrice;
+  const scaleAnchors = [stopPrice, takePrice, entryPrice, currentMark].filter(
+    (price): price is number => price !== null && Number.isFinite(price),
+  );
+  const scaleMin = scaleAnchors.length >= 2 ? Math.min(...scaleAnchors) : null;
+  const scaleMax = scaleAnchors.length >= 2 ? Math.max(...scaleAnchors) : null;
   const clampPercent = (price: number | null): number | null => {
     if (
       price === null ||
       stopPrice === null ||
       takePrice === null ||
-      takePrice === stopPrice
+      scaleMin === null ||
+      scaleMax === null ||
+      scaleMax === scaleMin
     ) {
       return null;
     }
     return Math.min(
       100,
-      Math.max(0, ((price - stopPrice) / (takePrice - stopPrice)) * 100),
+      Math.max(0, ((price - scaleMin) / (scaleMax - scaleMin)) * 100),
     );
   };
   const entryPercent = clampPercent(entryPrice);
@@ -1027,6 +1105,7 @@ export function App({
     indicators: displayIndicators,
     nextWakeAt: agent?.nextWakeAt ?? null,
     nowMs,
+    intervalSeconds: agent?.configuration?.intervalSeconds ?? 60,
   });
 
   const recentSessionLogs = useMemo(() => {
@@ -1110,7 +1189,14 @@ export function App({
                 <div className="telemetry-pill">
                   <span className={`pulse-dot ${agent.enabled ? "live" : "danger"}`} />
                   <span>RÉVEIL</span>
-                  <strong>{formatCountdown(agent.nextWakeAt, nowMs, agent.enabled)}</strong>
+                  <strong>
+                    {formatCountdown(
+                      agent.nextWakeAt,
+                      nowMs,
+                      agent.enabled,
+                      agent.configuration?.intervalSeconds ?? 60,
+                    )}
+                  </strong>
                 </div>
                 <div className="telemetry-pill" aria-live="polite">
                   <span>SYNC</span>
@@ -1368,7 +1454,8 @@ export function App({
                           ) : (
                             <>
                               <span className="outcome neutral">
-                                POSITION {quantity.format(effectiveOpenPosition.quantity)}
+                                POSITION {quantity.format(effectiveOpenPosition.quantity)} ·{" "}
+                                {effectiveOpenPosition.quantity < 0 ? "SHORT" : "LONG"}
                               </span>
                               {effectiveProtection === null ? (
                                 <span className="outcome negative">NON PROTÉGÉ</span>
@@ -1416,9 +1503,19 @@ export function App({
                               </div>
                               <div className="protection-scale-labels">
                                 <div>
-                                  <small>SL</small>
+                                  <small>
+                                    {effectiveProtection.stopLossPrice <=
+                                    effectiveProtection.takeProfitPrice
+                                      ? "SL"
+                                      : "TP"}
+                                  </small>
                                   <strong>
-                                    {money.format(effectiveProtection.stopLossPrice)}
+                                    {money.format(
+                                      Math.min(
+                                        effectiveProtection.stopLossPrice,
+                                        effectiveProtection.takeProfitPrice,
+                                      ),
+                                    )}
                                   </strong>
                                 </div>
                                 <div>
@@ -1428,9 +1525,19 @@ export function App({
                                   </strong>
                                 </div>
                                 <div>
-                                  <small>TP</small>
+                                  <small>
+                                    {effectiveProtection.stopLossPrice <=
+                                    effectiveProtection.takeProfitPrice
+                                      ? "TP"
+                                      : "SL"}
+                                  </small>
                                   <strong>
-                                    {money.format(effectiveProtection.takeProfitPrice)}
+                                    {money.format(
+                                      Math.max(
+                                        effectiveProtection.stopLossPrice,
+                                        effectiveProtection.takeProfitPrice,
+                                      ),
+                                    )}
                                   </strong>
                                 </div>
                               </div>
@@ -1524,7 +1631,7 @@ export function App({
                   {/* Node 5: Architectural Invariant */}
                   <div className="rail-node">
                     <p className="rail-invariant">
-                      SELL de réduction exemptés des limites perte/cooldown.
+                      Ordres de réduction (LONG/SHORT) exemptés perte/cooldown.
                       <br />
                       <span>Le LLM propose ; le modèle décide.</span>
                     </p>
@@ -2113,7 +2220,13 @@ export function App({
                                           "—"
                                         ) : (
                                           <span className={`side-pill ${cycle.side.toLowerCase()}`}>
-                                            {cycle.side === "BUY" ? "ACHAT" : "VENTE"}
+                                            {cycle.side === "BUY"
+                                              ? cycle.realizedPnl !== null
+                                                ? "ACHAT · RACHAT"
+                                                : "ACHAT"
+                                              : cycle.realizedPnl !== null
+                                                ? "VENTE · CLÔTURE"
+                                                : "VENTE"}
                                           </span>
                                         )}
                                       </td>

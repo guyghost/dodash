@@ -149,14 +149,20 @@ export const multiProductPortfolioMachine = setup({
       if (event.type !== "RISK_PROPOSED") return false;
       const known = Object.hasOwn(context.statuses, event.productId);
       const change = event.positionChange;
+      const snappedProjected =
+        change !== undefined && Number.isFinite(change.projectedQuantity)
+          ? Math.abs(change.projectedQuantity) <= 1e-12
+            ? 0
+            : change.projectedQuantity
+          : Number.NaN;
       const reducing =
         change === undefined
           ? event.proposedGrossExposure < (context.exposure[event.productId] ?? 0)
           : Number.isFinite(change.currentQuantity) &&
-            Number.isFinite(change.projectedQuantity) &&
-            Math.abs(change.projectedQuantity) < Math.abs(change.currentQuantity) &&
-            (change.projectedQuantity === 0 ||
-              Math.sign(change.projectedQuantity) === Math.sign(change.currentQuantity));
+            Number.isFinite(snappedProjected) &&
+            Math.abs(snappedProjected) < Math.abs(change.currentQuantity) &&
+            (snappedProjected === 0 ||
+              Math.sign(snappedProjected) === Math.sign(change.currentQuantity));
       return (
         known &&
         context.statuses[event.productId] === "running" &&

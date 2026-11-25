@@ -617,5 +617,57 @@ describe("projectDashboardPnlHistory", () => {
     const sell = result.value.cycles[0];
     expect(sell?.productId).toBe("XRP-USD");
     expect(sell?.realizedPnl).toBeCloseTo((1.0 - 0.99) * 1000 - 0.1, 8);
+    expect(result.value.openPositionsByProduct).toEqual({
+      "ETH-USD": { quantity: 1, averagePrice: 1800 },
+    });
+  });
+
+  it("honors persisted realizedPnl when the opening order aged out of the SQL window (v9)", () => {
+    const closeOnlyCycle: DashboardPnlCycleRow = {
+      cycleId: "btc-close-aged",
+      productId: "BTC-USD",
+      triggeredAt: t0 + 900_000,
+      completedAt: t0 + 901_000,
+      outcome: "ORDER_CONFIRMED",
+      artifactsJson: JSON.stringify({
+        market: {
+          productId: "BTC-USD",
+          timeframe: "FIVE_MINUTE",
+          candles: [{ close: 68_500 }],
+          valuationMark: {
+            price: 68_500,
+            source: "HYPERLIQUID_CANDLE_CLOSE",
+            timeframe: "FIVE_MINUTE",
+            candleClosedAt: t0 + 900_000,
+            maxMarketStalenessMs: 420_000,
+          },
+        },
+        order: {
+          clientOrderId: "order-btc-close",
+          decisionId: "dec-btc-close",
+          strategyIds: ["rsi-reversion"],
+          productId: "BTC-USD",
+          side: "SELL",
+          type: "LIMIT",
+          quantity: 0.05,
+          limitPrice: 68_500,
+        },
+      }),
+    };
+    const closeOrder: DashboardPnlOrderRow = orderRow(
+      "order-btc-close",
+      "btc-close-aged",
+      {
+        status: "CONFIRMED",
+        exchangeOrderId: "paper:order-btc-close",
+        portfolio: { cash: 10_014.25, positionQuantity: 0, averagePrice: 0 },
+        fill: { price: 68_500, quantity: 0.05, fee: 0.34 },
+        realizedPnl: 14.25,
+      },
+    );
+
+    const result = projectDashboardPnlHistory([closeOnlyCycle], [closeOrder], 30);
+    if (!result.ok) throw new Error("projection must succeed");
+    expect(result.value.cycles[0]?.realizedPnl).toBe(14.25);
   });
 });

@@ -95,7 +95,14 @@ export const executePaperOrder = (
   if (intent.side === "SELL") {
     if (config.allowShort === true) {
       const openingShortQty = Math.max(0, intent.quantity - Math.max(0, portfolio.positionQuantity));
-      if (openingShortQty > positionTolerance && openingShortQty * price + fee > portfolio.cash + cashTolerance) {
+      const freeCashForShort =
+        portfolio.positionQuantity < 0
+          ? portfolio.cash - 2 * Math.abs(portfolio.positionQuantity) * price
+          : portfolio.cash;
+      if (
+        openingShortQty > positionTolerance &&
+        openingShortQty * price + fee > freeCashForShort + cashTolerance
+      ) {
         return err({ code: "INSUFFICIENT_CASH" });
       }
     } else if (intent.quantity > portfolio.positionQuantity + positionTolerance) {
