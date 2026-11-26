@@ -49,3 +49,7 @@ La projection d'historique reconnaît les protections des ouvertures LONG et SHO
 - Risque local et consolidé : clôtures LONG/SHORT et réductions partielles malgré pertes/plafond, augmentations et inversions refusées, kill prioritaire.
 - Dashboard : short visible, échelle orientée correctement, absence de protection, produit différent, plans short et absence de fausse confirmation.
 - Aller-retour short avec frais : PnL égal au delta de cash.
+
+## Amendement 2026-11-26 (v10) — Ancrage du stop initial face aux variations d'ATR et borne post-entrée exacte
+
+Pour une même position (`carried !== null`), tant que le seuil de trailing (`peakGainBps >= 75`) n'est pas atteint, `resolvePaperPositionProtection` conserve exactement `carried.stopLossPrice` (ni élargi si l'ATR monte, ni resserré prématurément si l'ATR baisse). La fenêtre de bougies post-entrée inclut toute bougie clôturée strictement après `enteredAt` (`candle.start + duration > enteredAt`), et `paperProtection` est initialisé immédiatement à `ORDER_CONFIRMED` sur le portefeuille post-fill (ou remis à `null` à la clôture).

@@ -1130,7 +1130,7 @@ export class TradingAgent extends Agent<TradingEnv, TradingAgentState> {
 			1,
 			Math.min(DASHBOARD_PNL_HISTORY_MAX_CYCLES, Math.trunc(limit)),
 		);
-		const confirmedBudget = Math.max(1, Math.floor(boundedLimit * 0.7));
+		const confirmedBudget = Math.max(1, Math.floor(boundedLimit * 0.5));
 		const cycles = this.sql<{
 			cycle_id: string;
 			triggered_at: number;

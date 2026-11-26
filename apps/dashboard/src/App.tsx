@@ -1437,6 +1437,27 @@ export function App({
                         {displayPositionMark === null ? "—" : money.format(displayPositionMark)}
                       </span>
                     </div>
+                    {isConsolidatedView &&
+                      portfolioProducts.filter((p) => p.positionQuantity !== 0).length > 1 && (
+                        /* biome-ignore lint/a11y/useSemanticElements: groupe de boutons de présentation */
+                        <div className="cadence-group" role="group" aria-label="Positions ouvertes">
+                          {portfolioProducts
+                            .filter((p) => p.positionQuantity !== 0)
+                            .map((p) => (
+                              <button
+                                key={p.productId}
+                                type="button"
+                                className={`cadence-btn ${
+                                  positionProductId === p.productId ? "active" : ""
+                                }`}
+                                onClick={() => setSelectedProductId(p.productId)}
+                              >
+                                {p.productId.split("-")[0]}{" "}
+                                {p.positionQuantity < 0 ? "SHORT" : "LONG"}
+                              </button>
+                            ))}
+                        </div>
+                      )}
                     <div className="rail-metrics rail-metrics-compact">
                       <Metric label="POSITION" value={quantity.format(displayPositionQty)} />
                       <Metric label="PRIX MOYEN" value={money.format(displayAvgPrice)} />

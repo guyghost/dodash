@@ -1406,5 +1406,177 @@ describe("runTradingCycle", () => {
       expect(result.machine.context.outcome).toBe("NO_ACTION");
       expect(submitted).toEqual([]);
     });
+
+    it("Amendement v10 : initialise paperProtection dès ORDER_CONFIRMED et applique le cooldown 3xTF en 5m", async () => {
+      const parsed = parseAgentConfiguration({
+        productId: "BTC-USD",
+        timeframe: "FIVE_MINUTE",
+        strategyIds: ["breakout"],
+        strategyOptions: { positionAware: true },
+        executionStyle: "LIMIT_PASSIVE",
+        candleLimit: 25,
+        intervalSeconds: 300,
+        maxMarketStalenessMs: 420_000,
+        maxDecisionNotional: 1_000,
+        indicators: {
+          rsiPeriod: 5,
+          emaFastPeriod: 3,
+          emaSlowPeriod: 5,
+          atrPeriod: 3,
+          historicalVolatilityPeriod: 2,
+          momentumPeriod: 1,
+          returnPeriods: [1],
+          vwapPeriod: 2,
+          relativeVolumePeriod: 1,
+          volumeSpikeThreshold: 2,
+          volumeTrendPeriod: 2,
+          trendStrengthPeriod: 1,
+        },
+        broker: { feeBps: 6, slippageBps: 2, makerFeeBps: 1 },
+        risk: {
+          maxOrderNotional: 2_000,
+          maxPositionNotional: 10_000,
+          maxGrossExposure: 20_000,
+          maxDailyLoss: 1_000,
+          cooldownMs: 300_000,
+          stopLossBps: 50,
+          takeProfitBps: 150,
+          atrStopLossMultiple: 1.8,
+          atrTakeProfitMultiple: 3.5,
+        },
+      });
+      if (!parsed.ok) throw new Error("invalid config");
+      const config = parsed.value;
+      // 21 bougies en oscillation autour de 100 puis cassure haussière mesurée à 100.45 (sous RSI 68 et < 2.2x ATR)
+      const closes = [
+        100, 100.2, 99.8, 100.1, 99.9, 100.2, 99.8, 100.1, 99.9, 100.2,
+        99.8, 100.1, 99.9, 100.2, 99.8, 100.1, 99.9, 100.2, 99.8, 100.1,
+        100.0, 100.45,
+      ];
+      const candles: readonly Candle[] = closes.map((close, index) => ({
+        start: index * 300_000,
+        open: close - 0.05,
+        high: index === closes.length - 1 ? close + 0.2 : Math.min(100.4, close + 0.2),
+        low: close - 0.2,
+        close,
+        volume: 20,
+      }));
+      const now = candles.at(-1)!.start + 300_000;
+
+      // 1) Cooldown 5m = 3 * 300_000 = 900_000 ms : bloqué 10 min (600_000 ms) après clôture
+      const cooledResult = await runTradingCycle({
+        agentId: "agent-v10-cd",
+        configuration: config,
+        machine: readyMachine("agent-v10-cd", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio: { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+        dailyPnl: 0,
+        lastTradeAt: now - 600_000,
+        triggeredAt: now,
+        cycleId: "cycle-v10-cd",
+        now: () => now,
+        triggerAlarm: true,
+        effects: {
+          reconcileAccount: async (p, observedAt) =>
+            ok({
+              snapshotId: `s:${observedAt}`,
+              observedAt,
+              portfolio: p,
+              accountEquity: p.cash,
+              otherExposureNotional: 0,
+            }),
+          fetchMarketData: async () =>
+            ok({
+              productId: config.productId,
+              timeframe: config.timeframe,
+              candles,
+              source: "coinbase",
+              cached: false,
+            }),
+          ensureSchedule: async () => ok({ nextWakeAt: now + 300_000 }),
+          checkpoint: async () => ok(undefined),
+          persistMachine: async () => undefined,
+          persistOrderIntent: async () => ok(undefined),
+          authorize: async () => ok({ issuedAt: now, expiresAt: now + 60_000 }),
+          submitOrder: async () => {
+            throw new Error("cooldown should block order");
+          },
+          reconcileOrder: async () => {
+            throw new Error("no reconcile expected");
+          },
+          cancelCurrentEffect: async () => ok(undefined),
+          persistCycle: async () => ok(undefined),
+        },
+      });
+      expect(cooledResult.machine.context.outcome).toBe("NO_ACTION");
+
+      // 2) Après cooldown (> 15 min) : ouverture confirmée ET paperProtection initialisé dès T+0 !
+      const openResult = await runTradingCycle({
+        agentId: "agent-v10-open",
+        configuration: config,
+        machine: readyMachine("agent-v10-open", config.strategyIds),
+        artifacts: null,
+        previousIndicators: null,
+        portfolio: { cash: 10_000, positionQuantity: 0, averagePrice: 0 },
+        dailyPnl: 0,
+        lastTradeAt: now - 1_200_000,
+        triggeredAt: now,
+        cycleId: "cycle-v10-open",
+        now: () => now,
+        triggerAlarm: true,
+        effects: {
+          reconcileAccount: async (p, observedAt) =>
+            ok({
+              snapshotId: `s:${observedAt}`,
+              observedAt,
+              portfolio: p,
+              accountEquity: p.cash,
+              otherExposureNotional: 0,
+            }),
+          fetchMarketData: async () =>
+            ok({
+              productId: config.productId,
+              timeframe: config.timeframe,
+              candles,
+              source: "coinbase",
+              cached: false,
+            }),
+          ensureSchedule: async () => ok({ nextWakeAt: now + 300_000 }),
+          checkpoint: async () => ok(undefined),
+          persistMachine: async () => undefined,
+          persistOrderIntent: async () => ok(undefined),
+          authorize: async () => ok({ issuedAt: now, expiresAt: now + 60_000 }),
+          submitOrder: async (intent, _r, _a, price, p, at) => {
+            const executed = executePaperOrder(p, intent, price, at, {
+              ...config.broker,
+              allowShort: true,
+            });
+            if (!executed.ok) throw new Error(executed.error.code);
+            return {
+              status: "CONFIRMED",
+              exchangeOrderId: executed.value.trade.fill.exchangeOrderId,
+              fill: executed.value.trade.fill,
+              portfolio: executed.value.portfolio,
+            };
+          },
+          reconcileOrder: async () => {
+            throw new Error("no reconcile expected");
+          },
+          cancelCurrentEffect: async () => ok(undefined),
+          persistCycle: async () => ok(undefined),
+        },
+      });
+      expect(openResult.machine.context.outcome).toBe("ORDER_CONFIRMED");
+      expect(openResult.portfolio.positionQuantity).toBeGreaterThan(0);
+      expect(openResult.machine.context.paperProtection).not.toBeNull();
+      expect(openResult.machine.context.paperProtection?.side).toBe("LONG");
+      expect(openResult.machine.context.paperProtection?.averagePrice).toBeCloseTo(
+        openResult.portfolio.averagePrice,
+      );
+      expect(openResult.artifacts?.paperProtection).toEqual(
+        openResult.machine.context.paperProtection,
+      );
+    });
   });
 });

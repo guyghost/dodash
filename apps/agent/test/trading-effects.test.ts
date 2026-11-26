@@ -240,6 +240,41 @@ describe("createTradingCycleEffects", () => {
     expect(deps.submitLiveOrder).not.toHaveBeenCalled();
   });
 
+  it("bypasses execution-price guard on paper position-reducing exits (v10 INV-AR13)", async () => {
+    const deps = makeDependencies({
+      env: {
+        MARKET_DATA: {
+          fetch: vi.fn(async () => new Response("rate limited", { status: 429 })),
+        },
+        INTERNAL_SERVICE_TOKEN: "internal",
+      } as never,
+    });
+    const effects = createTradingCycleEffects(deps);
+
+    // Opening BUY is still blocked when quote is unavailable
+    const opening = await effects.submitOrder(
+      { side: "BUY", quantity: 1 } as never,
+      { status: "APPROVED" } as never,
+      { issuedAt: 1, expiresAt: 2 } as never,
+      100,
+      { cash: 1_000, positionQuantity: 0, averagePrice: 0 },
+      7,
+    );
+    expect(opening.status).toBe("REJECTED");
+
+    // Closing SELL on an open LONG bypasses the guard in paper mode
+    const closing = await effects.submitOrder(
+      { side: "SELL", quantity: 1 } as never,
+      { status: "APPROVED" } as never,
+      { issuedAt: 1, expiresAt: 2 } as never,
+      100,
+      { cash: 900, positionQuantity: 1, averagePrice: 100 },
+      8,
+    );
+    expect(closing).toEqual({ status: "CONFIRMED" });
+    expect(deps.submitPaperOrder).toHaveBeenCalledTimes(1);
+  });
+
   it("cancels without a kill switch outside live mode", async () => {
     const deps = makeDependencies();
     const effects = createTradingCycleEffects(deps);

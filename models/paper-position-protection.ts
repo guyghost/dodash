@@ -17,6 +17,7 @@ export interface PaperPositionProtectionInput {
 		readonly low: number;
 		readonly close: number;
 	}[];
+	readonly timeframeMs?: number;
 	readonly atr?: number;
 	readonly risk: {
 		readonly stopLossBps: number;
@@ -88,10 +89,24 @@ export const resolvePaperPositionProtection = (
 		normalized.enteredAt === input.enteredAt
 			? normalized
 			: null;
+	const inferredDuration =
+		input.candles.length >= 2
+			? Math.max(0, input.candles[1]!.start - input.candles[0]!.start)
+			: 0;
+	const duration =
+		input.timeframeMs !== undefined &&
+		Number.isFinite(input.timeframeMs) &&
+		input.timeframeMs > 0
+			? input.timeframeMs
+			: inferredDuration;
 	const candles =
 		input.enteredAt === null
 			? []
-			: input.candles.filter((candle) => candle.start >= input.enteredAt!);
+			: input.candles.filter((candle) =>
+					duration > 0
+						? candle.start + duration > input.enteredAt!
+						: candle.start >= input.enteredAt!,
+				);
 	const useAtr =
 		input.atr !== undefined &&
 		Number.isFinite(input.atr) &&
@@ -128,9 +143,10 @@ export const resolvePaperPositionProtection = (
 		side === "LONG"
 			? input.averagePrice - stopDistance
 			: input.averagePrice + stopDistance;
+	const anchoredStop = carried?.stopLossPrice ?? baseStop;
 	const trailingStop =
 		peakGainBps < 75
-			? baseStop
+			? anchoredStop
 			: side === "LONG"
 				? Math.max(input.averagePrice * 1.001, extremePrice - trailingDistance)
 				: Math.min(input.averagePrice * 0.999, extremePrice + trailingDistance);
@@ -140,9 +156,11 @@ export const resolvePaperPositionProtection = (
 		enteredAt: input.enteredAt,
 		extremePrice,
 		stopLossPrice:
-			side === "LONG"
-				? Math.max(baseStop, trailingStop, carried?.stopLossPrice ?? baseStop)
-				: Math.min(baseStop, trailingStop, carried?.stopLossPrice ?? baseStop),
+			peakGainBps < 75
+				? anchoredStop
+				: side === "LONG"
+					? Math.max(anchoredStop, trailingStop)
+					: Math.min(anchoredStop, trailingStop),
 		takeProfitPrice:
 			carried?.takeProfitPrice ??
 			(side === "LONG"

@@ -136,3 +136,12 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
 - [x] **Sûreté de clôture IEEE-754 (`INV-AR9`)** : le seuil `1e-12` est cohérent avec `@dodash/risk` (`currentPositionQuantity + 1e-12`) et élimine les faux rejets d'inversion sur poussière flottante.
 - [x] **Continuité UTC `00:00` & hygiène SQLite (`INV-AR10`)** : le rollover préalable de `dailyPnl` sur tous les créneaux évite le blocage fantôme du 1er créneau à minuit UTC ; la suppression des `dodash_orders` orphelins maintient l'empreinte SQLite du Durable Object bornée sur le long terme.
 - [x] **Isolation `live` / `perp`** : aucune transition de `tradingCycleMachine` ni politique `live` n'est modifiée.
+
+## Revue de l'amendement du 2026-11-26 (v10) — Ancrage Stop `T+0`, borne post-entrée, suppression `0,4×` contre-EMA, exemption clôture `guardExecutionPrice` & cooldown `3×TF`
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**
+
+- [x] **Monotonie et ancrage (`INV-AR11`)** : l'ancrage de `stopLossPrice` sur `carried?.stopLossPrice ?? baseStop` sous `peakGainBps < 75` préserve l'invariant 3 de `trading-safety-corrections.md` (un stop LONG ne baisse jamais, un stop SHORT ne monte jamais) tout en empêchant l'étranglement accidentel lors des baisses d'ATR.
+- [x] **Exactitude temporelle (`INV-AR12`)** : l'utilisation de `candle.start + duration > enteredAt` corrige le biais off-by-one dû au stagger/latence (`+0,5 s` à `+8,5 s`) sans jamais réintroduire de biais rétroactif sur la bougie d'entrée (`candle.start + duration <= enteredAt`).
+- [x] **Sûreté de clôture (`INV-AR13`)** : exempter uniquement `executionMode === "paper" && isPositionReducingOrder(...)` de `guardExecutionPrice` garantit l'exécution des stops d'urgence en paper tout en laissant intacte la protection `live`/`perp`.
+- [x] **Pureté et déterminisme** : `artifacts.triggeredAt` remplace `Date.now()` dans le calcul du cooldown post-clôture ; aucune nouvelle phase ni transition XState.

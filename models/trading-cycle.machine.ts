@@ -738,6 +738,7 @@ export const tradingCycleMachine = setup({
         target: "reconcilingOrder",
       },
       on: {
+        PAPER_PROTECTION_UPDATED: { actions: "recordPaperProtection" },
         ORDER_CONFIRMED: {
           target: "persisting",
           actions: "recordOrderConfirmed",

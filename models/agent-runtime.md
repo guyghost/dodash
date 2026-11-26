@@ -389,3 +389,44 @@ Suite à l'étude d'ablation sur 5 jours réels Hyperliquid (`5m`, 1 441 bougies
 - `executePaperOrder` avec `allowShort: true` rejette l'empilement de `SHORT` au-delà du collatéral initial (`freeCashForShort`), tout en autorisant la couverture `BUY` d'un `SHORT` existant.
 - Clôture avec résidu IEEE-754 (`0.1 + 0.2 - 0.3`) approuvée par `multiProductPortfolioMachine` même sous `CONSOLIDATED_DAILY_LOSS_LIMIT` / `CONSOLIDATED_GROSS_EXPOSURE_LIMIT`.
 - `submitPaperOrder` persiste `realizedPnl` et `projectDashboardPnlHistory` le restitue même sans cycle d'ouverture dans la fenêtre.
+
+## Amendement 2026-11-26 (v10) — Ancrage du Stop-Loss à l'entrée (`T+0`), borne post-entrée exacte, suppression effective du contre-EMA `0,4×`, exemption `guardExecutionPrice` sur clôture paper et cooldown adaptatif
+
+### 1. Constat (forensique live 2026-11-26, 35 fills / 17 clôtures)
+
+1. **Resserrement involontaire du Stop-Loss initial** : dans `resolvePaperPositionProtection`, `baseStop` était recalculé sur l'ATR courant et passé dans `Math.max(baseStop, trailingStop, carried.stopLossPrice)`. Toute baisse temporaire d'ATR après l'entrée étranglait définitivement le stop vers le plancher `50 bps` avant l'activation du trailing (`+75 bps`), provoquant des sorties prématurées à `50–54 bps`.
+2. **Aveuglement de la 1re bougie `5m` post-entrée & retard d'initialisation de `paperProtection`** : une entrée au réveil `16:05:00.540` évalue la bougie `[16:00, 16:05)` ; la bougie suivante `[16:05, 16:10)` a `start = 16:05:00.000 < lastTradeAt`, si bien que `candle.start >= enteredAt` et `last.start > lastTradeAt` ignoraient les 5 premières minutes du trade (mèche TP et extrême trailing). De plus, `paperProtection` n'était pas initialisé dès `ORDER_CONFIRMED`.
+3. **Résidu contre-EMA `0,4×`** : les branches `emaFast < emaSlow` (`BUY`) et `emaFast > emaSlow` (`SELL`) à `multiplier = 0.4` étaient restées actives dans `interpreter.ts`, générant `0` gain / `6` pertes (`-15,65 $`) sur la journée.
+4. **Sûreté de clôture face à `guardExecutionPrice`** : en mode `paper`, un écart temporaire `> 200 bps` entre la clôture Hyperliquid et la quote Coinbase lors d'un flash-crash pouvait rejeter un ordre de clôture protecteur (`PAPER_STOP_LOSS`).
+5. **Cooldown post-clôture fixe (`5 min`) et horloge non déterministe** : `300 000 ms` ne couvre qu'une seule bougie en `5m` et utilisait `Date.now()` au lieu de `artifacts.triggeredAt`.
+
+### 2. Résolution pure
+
+1. **Ancrage intégral de `stopLossPrice` et borne `candleClosedAt > enteredAt` (`models/paper-position-protection.ts`)** :
+   - `PaperPositionProtectionInput` accepte `timeframeMs?: number`.
+   - Tant que `peakGainBps < 75`, `stopLossPrice` conserve strictement `carried?.stopLossPrice ?? baseStop` (aucun resserrement sur baisse d'ATR). À partir de `peakGainBps >= 75`, `stopLossPrice` progresse de manière monotone vers `trailingStop`.
+   - Une bougie `c` est considérée post-entrée si `duration > 0 ? c.start + duration > enteredAt : c.start >= enteredAt` (avec `duration = timeframeMs ?? delta(candles[0], candles[1])`). Lorsque `enteredAt === null`, aucune mèche n'est retenue (comportement conservateur sur `last.close`).
+2. **Initialisation `paperProtection` dès `ORDER_CONFIRMED` & borne `isPostEntryCandle` (`interpreter.ts`)** :
+   - Dès `ORDER_CONFIRMED` en `paper` `positionAware`, `paperProtection` est calculé immédiatement sur l'ATR et le `portfolio` post-fill (ou remis à `null` si `positionQuantity === 0`) et émis via `PAPER_PROTECTION_UPDATED`.
+   - `isPostEntryCandle = input.lastTradeAt !== null && last.start + timeframeMs > input.lastTradeAt`.
+3. **Suppression du contre-EMA `0,4×` & *RSI Hook* (`interpreter.ts`)** :
+   - Pour `BUY` avec `emaFast < emaSlow` : bloqué (`null`), sauf `rsi-reversion` avec retournement haussier confirmé (`previousIndicators !== null && previousIndicators.rsi < 30 && ind.rsi > previousIndicators.rsi && last.close > last.open`).
+   - Pour `SELL` avec `emaFast > emaSlow` : bloqué (`null`), sauf `rsi-reversion` avec retournement baissier confirmé (`previousIndicators !== null && previousIndicators.rsi > 70 && ind.rsi < previousIndicators.rsi && last.close < last.open`).
+4. **Cooldown déterministe adapté au timeframe (`interpreter.ts`)** :
+   - `nowMs = artifacts.triggeredAt` ; `postCloseCooldownMs = Math.max(risk.cooldownMs, isOneMinute ? 300_000 : timeframeMs * 3)` (`15 min` en `5m`).
+5. **Exemption `guardExecutionPrice` sur clôture `paper` (`trading-effects.ts`)** :
+   - En `executionMode === "paper"`, un ordre qui réduit ou clôture une position existante (`isPositionReducingOrder(intent, portfolio.positionQuantity)`) n'est pas bloqué par `guardExecutionPrice`. Les modes `live` et `perp` restent inchangés.
+6. **Fenêtre `/pnl` équilibrée (`trading-agent.ts`)** :
+   - `confirmedBudget = Math.floor(boundedLimit * 0.5)` (`25` ordres + `25` cycles récents sur `limit = 50`).
+
+### 3. Invariants additionnels
+
+- **INV-AR11** : Pour une position ouverte tant que `peakGainBps < 75`, une variation d'ATR (à la hausse comme à la baisse) ne modifie jamais `stopLossPrice`.
+- **INV-AR12** : La première bougie clôturée strictement après `enteredAt` (`candle.start + timeframeMs > enteredAt`) est incluse dans `extremePrice` et éligible à `hitTpOnWick` ; la bougie d'entrée (`candle.start + timeframeMs <= enteredAt`) reste exclue.
+- **INV-AR13** : En mode `paper`, un ordre réduisant une position n'est jamais rejeté par `guardExecutionPrice`.
+
+### 4. Vérification requise
+
+- `resolvePaperPositionProtection` : une baisse d'ATR de `1,0` à `0,1` sous `peakGainBps < 75` laisse `stopLossPrice` identique ; une bougie `5m` `[16:05, 16:10)` après `enteredAt = 16:05:08` est incluse dans `extremePrice`, contrairement à la bougie d'entrée `[16:00, 16:05)`.
+- `runTradingCycle` en `paper` `positionAware` : `paperProtection` est peuplé dès le cycle `ORDER_CONFIRMED` d'ouverture et remis à `null` à la clôture ; une ouverture `BUY` avec `emaFast < emaSlow` sans *RSI hook* est bloquée ; un `5m` post-clôture bloque pendant `15 min` (`3 × 5m`).
+- `trading-effects` : en mode `paper`, une clôture (`SELL` sur `LONG` ou `BUY` sur `SHORT`) passe même si la quote Coinbase diverge de `> 200 bps` ou échoue, tandis qu'une ouverture reste bloquée.

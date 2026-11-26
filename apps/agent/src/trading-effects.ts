@@ -279,20 +279,31 @@ export const createTradingCycleEffects = (
 			portfolio,
 			at,
 		) => {
-			const quote = await fetchExecutionQuote(
-				deps.env.MARKET_DATA,
-				deps.env.INTERNAL_SERVICE_TOKEN,
-				deps.configuration.productId,
-			);
-			const guarded = guardExecutionPrice({
-				productId: deps.configuration.productId,
-				decisionPrice: marketPrice,
-				quote,
-				maxDivergenceBps:
-					deps.configuration.executionPriceMaxDivergenceBps ??
-					EXECUTION_PRICE_MAX_DIVERGENCE_BPS,
-			});
-			if (!guarded.ok) return { status: "REJECTED", error: guarded.error };
+			const isReducing =
+				(intent.side === "SELL" &&
+					portfolio.positionQuantity > 0 &&
+					intent.quantity <= portfolio.positionQuantity + 1e-12) ||
+				(intent.side === "BUY" &&
+					portfolio.positionQuantity < 0 &&
+					intent.quantity <= Math.abs(portfolio.positionQuantity) + 1e-12);
+			const skipPaperReducingGuard =
+				deps.configuration.executionMode === "paper" && isReducing;
+			if (!skipPaperReducingGuard) {
+				const quote = await fetchExecutionQuote(
+					deps.env.MARKET_DATA,
+					deps.env.INTERNAL_SERVICE_TOKEN,
+					deps.configuration.productId,
+				);
+				const guarded = guardExecutionPrice({
+					productId: deps.configuration.productId,
+					decisionPrice: marketPrice,
+					quote,
+					maxDivergenceBps:
+						deps.configuration.executionPriceMaxDivergenceBps ??
+						EXECUTION_PRICE_MAX_DIVERGENCE_BPS,
+				});
+				if (!guarded.ok) return { status: "REJECTED", error: guarded.error };
+			}
 			if (deps.configuration.executionMode === "paper") {
 				return deps.submitPaperOrder(
 					intent,

@@ -471,12 +471,15 @@ export const runTradingCycle = async (
                     input.configuration.timeframe === "ONE_MINUTE";
                   const earlyExitBps = isOneMinute ? 25 : 45;
                   const rsiExitFloorBps = isOneMinute ? 5 : 15;
+                  const candleDurationMs =
+                    timeframeMilliseconds[input.configuration.timeframe];
                   const protection = allowPaperShort
                     ? resolvePaperPositionProtection(session.context.paperProtection ?? null, {
                         positionQuantity: portfolio.positionQuantity,
                         averagePrice: portfolio.averagePrice,
                         enteredAt: input.lastTradeAt,
                         candles: artifacts.market?.candles ?? [],
+                        timeframeMs: candleDurationMs,
                         ...(artifacts.indicators?.atr === undefined ? {} : { atr: artifacts.indicators.atr }),
                         risk: input.configuration.risk,
                       })
@@ -495,7 +498,8 @@ export const runTradingCycle = async (
                     const absPositionQty = Math.abs(portfolio.positionQuantity);
                     const { stopLossPrice, takeProfitPrice } = protection;
                     const isPostEntryCandle =
-                      input.lastTradeAt !== null && last.start > input.lastTradeAt;
+                      input.lastTradeAt !== null &&
+                      last.start + candleDurationMs > input.lastTradeAt;
 
                     if (isLongPosition) {
                       const hitTpOnClose = last.close >= takeProfitPrice;
@@ -609,22 +613,22 @@ export const runTradingCycle = async (
                     portfolio.positionQuantity === 0 &&
                     artifacts?.indicators !== undefined
                   ) {
-                    const nowMs = (input.now ?? Date.now)();
+                    const nowMs = artifacts.triggeredAt;
                     const postCloseCooldownMs = Math.max(
                       input.configuration.risk.cooldownMs,
-                      300_000,
+                      isOneMinute ? 300_000 : candleDurationMs * 3,
                     );
                     if (
                       input.lastTradeAt !== null &&
                       nowMs - input.lastTradeAt < postCloseCooldownMs
                     ) {
                       // Anti-revenge-buying/shorting : bloquer toute nouvelle
-                      // ouverture pendant au moins 5 minutes après la clôture.
+                      // ouverture pendant au moins 3 bougies (15 min en 5m, 5 min en 1m).
                       effectiveSignals = Object.freeze([]);
                     } else {
                       // Filtre de tendance multi-horizon (EMA 180 en 1m = 3h,
                       // EMA 60 en >= 5m = 5h+) + régime directionnel (+DI/-DI/ADX)
-                      // + Anti-Climax Chase (v8).
+                      // + Anti-Climax Chase (v8) + suppression contre-EMA 0,4x (v10).
                       const candles = artifacts.market?.candles ?? [];
                       const trendEmaPeriod = isOneMinute ? 180 : 60;
                       let trendEma: number | null = null;
@@ -657,6 +661,16 @@ export const runTradingCycle = async (
                         ind.plusDi > ind.minusDi * 1.25 &&
                         ind.trendStrength >= 20 &&
                         ind.emaFast >= ind.emaSlow;
+                      const hasBullishRsiHook =
+                        previousIndicators !== null &&
+                        previousIndicators.rsi < 30 &&
+                        ind.rsi > previousIndicators.rsi &&
+                        last.close > last.open;
+                      const hasBearishRsiHook =
+                        previousIndicators !== null &&
+                        previousIndicators.rsi > 70 &&
+                        ind.rsi < previousIndicators.rsi &&
+                        last.close < last.open;
 
                       const adjusted: Signal[] = [];
                       for (const sig of signals) {
@@ -679,7 +693,10 @@ export const runTradingCycle = async (
                           } else if (isBullishRegime) {
                             multiplier = 1.15;
                           } else if (ind.emaFast < ind.emaSlow) {
-                            multiplier = 0.4;
+                            multiplier =
+                              sig.strategyId === "rsi-reversion" && hasBullishRsiHook
+                                ? 0.65
+                                : null;
                           }
                         } else if (sig.side === "SELL") {
                           const isClimaxSell =
@@ -692,7 +709,10 @@ export const runTradingCycle = async (
                           } else if (isBearishRegime) {
                             multiplier = 1.15;
                           } else if (ind.emaFast > ind.emaSlow) {
-                            multiplier = 0.4;
+                            multiplier =
+                              sig.strategyId === "rsi-reversion" && hasBearishRsiHook
+                                ? 0.65
+                                : null;
                           }
                         }
                         if (multiplier === null) continue;
@@ -993,8 +1013,37 @@ export const runTradingCycle = async (
               otherExposureNotional = result.otherExposureNotional;
               anchorReconciledDailyRisk(result.observedAt, result.accountEquity);
             }
+            const allowPaperProtection =
+              input.configuration.executionMode === "paper" &&
+              input.configuration.strategyOptions?.positionAware === true;
+            const postFillProtection = allowPaperProtection
+              ? portfolio.positionQuantity !== 0 &&
+                portfolio.averagePrice > 0 &&
+                current.market !== undefined
+                ? resolvePaperPositionProtection(null, {
+                    positionQuantity: portfolio.positionQuantity,
+                    averagePrice: portfolio.averagePrice,
+                    enteredAt: current.triggeredAt,
+                    candles: current.market.candles,
+                    timeframeMs: timeframeMilliseconds[input.configuration.timeframe],
+                    ...(current.indicators?.atr === undefined
+                      ? {}
+                      : { atr: current.indicators.atr }),
+                    risk: input.configuration.risk,
+                  })
+                : null
+              : undefined;
+            if (allowPaperProtection) {
+              await send({
+                type: "PAPER_PROTECTION_UPDATED",
+                protection: postFillProtection ?? null,
+              });
+            }
             const next = Object.freeze({
               ...current,
+              ...(allowPaperProtection
+                ? { paperProtection: postFillProtection ?? null }
+                : {}),
               execution: {
                 exchangeOrderId: result.exchangeOrderId,
                 fill: result.fill,

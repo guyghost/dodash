@@ -34,3 +34,10 @@ Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
 - Vérification navigateur native Dia sur le serveur local `127.0.0.1:5174` : démo chargée, protection BTC affichée depuis ses faits ; sélection ETH sans protection disponible affichée « NON PROTÉGÉ » sans niveaux inventés.
 - Les tests de course utilisent le shell et l'interpréteur réels avec SDK/effets simulés. Aucune validation en production ni ordre réel.
 - `npm --prefix apps/dashboard run test:sites` : 4 tests réussis sur les artefacts construits.
+
+## Revue de l'amendement du 2026-11-26 (v10)
+
+Verdict : **APPROUVÉ POUR IMPLÉMENTATION LOCALE**.
+
+- L'ancrage strict du stop initial sous `peakGainBps < 75` et l'initialisation immédiate à `ORDER_CONFIRMED` renforcent les invariants 3 et 4 (le plan est établi dès l'entrée avec l'ATR réel d'entrée, puis ne bouge que de manière monotone lorsque le trailing s'active).
+- La borne `candle.start + duration > enteredAt` préserve la rétrocompatibilité avec les entrées mono-bougie (`duration === 0`) tout en corrigeant l'omission de la première bougie `5m` en production.
